@@ -9,7 +9,7 @@ if [[ $(uname -s) != Darwin || $(uname -m) != arm64 ]]; then
 fi
 
 warmup=${ANE_BENCHMARK_WARMUP:-20}
-iterations=${ANE_BENCHMARK_ITERATIONS:-1000}
+iterations=${ANE_BENCHMARK_ITERATIONS:-2000}
 batches=${ANE_BENCHMARK_BATCHES:-5}
 cache_root=/Library/Caches/com.apple.aned/$(sw_vers -buildVersion)/InMemoryModelCache/compiler_ab_benchmark
 temporary_root=$(mktemp -d /tmp/mil-hwx-compiler-ab.XXXXXX)

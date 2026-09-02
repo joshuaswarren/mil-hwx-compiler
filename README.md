@@ -21,8 +21,8 @@ recovered in the article series *Inside the M4 Apple Neural Engine*, Part 4b.
 ## What this project is not
 
 - Not a replacement for Core ML, MLX, or Apple's ANE compiler. Apple's
-  compiler handles every operation, every shape, and every chip generation;
-  this one handles the rows in the table below.
+  compiler has much broader operation, shape, and chip coverage; this one
+  handles the rows in the table below.
 - Not a maintained framework. Bug reports and fixture contributions from other
   hardware are welcome. Feature requests will mostly go unaddressed; fork it.
 - Not usable in App Store software. The runtime loads Apple's private
@@ -30,8 +30,9 @@ recovered in the article series *Inside the M4 Apple Neural Engine*, Part 4b.
   interfaces may change without notice.
 - Not stable across OS releases. Every measured table and container layout is
   tied to macOS 26.3 (25D125), ANECompiler 9.202.0, and the H16G target.
-- Not a claim about performance. Timings in `docs/VERIFICATION.md` are
-  correctness-gate samples, not benchmarks.
+- Not performance-competitive with Apple's compiler on the composed graphs
+  measured below. Timings in `docs/VERIFICATION.md` remain correctness-gate
+  samples; the dedicated A/B table below is the benchmark.
 
 ## Provenance
 
@@ -148,6 +149,7 @@ bash tests/run_layout_hardware.sh
 bash tests/run_online_reduction_hardware.sh
 bash tests/run_affine_scan_hardware.sh
 bash tests/run_matmul_gelu_hardware.sh
+bash tests/run_compiler_ab_hardware.sh
 ```
 
 ### Composed M4 receipts
@@ -171,6 +173,33 @@ than per-process attribution.
 
 The timestamped text used for the screenshot is in
 [`docs/evidence/composed-ane-powermetrics.txt`](docs/evidence/composed-ane-powermetrics.txt).
+
+### ANECompiler latency comparison
+
+This comparison runs the original MIL through Apple `ANECCompile` and the
+research compiler, then evaluates both with the same IOSurfaces, inputs, QoS,
+and synchronous completion boundary.
+
+| FP16 graph | ANECompiler | Research compiler | Research relative to ANECompiler | Output comparison |
+|---|---:|---:|---:|---|
+| FA2 S128/D128 | 132.21 us | 1113.44 us | 8.42x slower | exact for 16,384 elements |
+| Four-stage affine scan | unavailable | unavailable | unavailable | `ANECCompile` returned `InvalidMILProgram` for the nine-input graph |
+| Matmul -> reshape -> GELU N256 | 105.64 us | 225.04 us | 2.13x slower | exact for 65,536 elements |
+
+Each reported latency is the median of two independent run-level values. Each
+run used 20 warmups and five alternating batches of 2,000 evaluations per
+compiler. The run-level value is the median of the five batch medians. The FA2
+run ranges were 131.54-132.88 us for ANECompiler and 1092.10-1134.77 us for the
+research compiler. The matmul-GELU ranges were 105.21-106.06 us and
+220.81-229.27 us.
+
+The research FA2 bundle dispatches eight HWX artifacts for one graph
+evaluation. The matmul-GELU bundle dispatches two. These results therefore
+include the current runtime dispatch paths and measure usable whole-graph
+latency. They do not isolate execution time inside one HWX program.
+
+The two-run summary receipt is in
+[`docs/evidence/compiler-ab-m4-2026-09-02.txt`](docs/evidence/compiler-ab-m4-2026-09-02.txt).
 
 The reduction sweep covers 24 operation/geometry forms. The layout sweep covers
 13 standalone S2D shapes, eight standalone D2S shapes, and four fused
