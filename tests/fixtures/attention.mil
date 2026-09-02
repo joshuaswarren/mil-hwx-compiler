@@ -1,0 +1,29 @@
+program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 64, 4, 192]> x) {
+    tensor<int32, [4]> size = const()[name = string("size"), val = tensor<int32, [4]>([1, 64, 4, 64])];
+    tensor<int32, [4]> bq = const()[name = string("bq"), val = tensor<int32, [4]>([0, 0, 0, 0])];
+    tensor<int32, [4]> bk = const()[name = string("bk"), val = tensor<int32, [4]>([0, 0, 0, 64])];
+    tensor<int32, [4]> bv = const()[name = string("bv"), val = tensor<int32, [4]>([0, 0, 0, 128])];
+    tensor<fp16, [1, 64, 4, 64]> Q0 = slice_by_size(begin = bq, size = size, x = x)[name = string("Q0")];
+    tensor<fp16, [1, 64, 4, 64]> K0 = slice_by_size(begin = bk, size = size, x = x)[name = string("K0")];
+    tensor<fp16, [1, 64, 4, 64]> V0 = slice_by_size(begin = bv, size = size, x = x)[name = string("V0")];
+    tensor<int32, [4]> pq = const()[name = string("pq"), val = tensor<int32, [4]>([0, 2, 3, 1])];
+    tensor<int32, [4]> pk = const()[name = string("pk"), val = tensor<int32, [4]>([0, 2, 1, 3])];
+    tensor<fp16, [1, 4, 64, 64]> Q = transpose(perm = pq, x = Q0)[name = string("Q")];
+    tensor<fp16, [1, 4, 64, 64]> K = transpose(perm = pk, x = K0)[name = string("K")];
+    bool no_transpose = const()[name = string("no_transpose"), val = bool(false)];
+    tensor<fp16, [1, 4, 64, 64]> scores = matmul(transpose_x = no_transpose, transpose_y = no_transpose, x = Q, y = K)[name = string("qk")];
+    fp16 scale = const()[name = string("scale"), val = fp16(0.125)];
+    tensor<fp16, [1, 4, 64, 64]> scaled = mul(x = scores, y = scale)[name = string("scale_scores")];
+    int32 axis = const()[name = string("axis"), val = int32(-1)];
+    tensor<fp16, [1, 4, 64, 64]> probabilities = softmax(axis = axis, x = scaled)[name = string("softmax")];
+    tensor<fp16, [1, 4, 64, 64]> V = transpose(perm = pq, x = V0)[name = string("V")];
+    tensor<fp16, [1, 4, 64, 64]> context = matmul(transpose_x = no_transpose, transpose_y = no_transpose, x = probabilities, y = V)[name = string("pv")];
+    tensor<int32, [4]> po = const()[name = string("po"), val = tensor<int32, [4]>([0, 3, 1, 2])];
+    tensor<fp16, [1, 64, 4, 64]> context_nchw = transpose(perm = po, x = context)[name = string("context_nchw")];
+    tensor<int32, [4]> output_shape = const()[name = string("output_shape"), val = tensor<int32, [4]>([1, 64, 4, 64])];
+    tensor<fp16, [1, 64, 4, 64]> y = reshape(shape = output_shape, x = context_nchw)[name = string("output")];
+  } -> (y);
+}
