@@ -29,3 +29,7 @@ bool ANESummarizeLatencies(const std::vector<double> &samples,
         static_cast<double>(count);
     return true;
 }
+
+bool ANEIsInvalidMILProgramError(const std::string &message) {
+    return message.find("InvalidMILProgram") != std::string::npos;
+}

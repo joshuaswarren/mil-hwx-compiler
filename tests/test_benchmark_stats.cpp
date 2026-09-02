@@ -53,6 +53,13 @@ int main() {
     expect(closeEnough(summary.p95Microseconds, 9.0),
            "small-set p95 must remain in range");
 
+    expect(ANEIsInvalidMILProgramError(
+               "ANECCompile failed: err=(InvalidMILProgram)"),
+           "Apple InvalidMILProgram failures must be classified explicitly");
+    expect(!ANEIsInvalidMILProgramError(
+               "ANECCompile failed: framework unavailable"),
+           "other Apple compiler failures must not be treated as unsupported MIL");
+
     if (failures != 0) return 1;
     std::printf("benchmark statistics: PASS\n");
     return 0;

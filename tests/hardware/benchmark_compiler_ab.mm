@@ -298,13 +298,32 @@ int main(int argc, const char *argv[]) {
         BOOL researchLoaded = [research loadWithError:&error];
         double researchLoadMicroseconds =
             (CFAbsoluteTimeGetCurrent() - researchLoadStarted) * 1.0e6;
+        if (!researchLoaded) {
+            std::fprintf(stderr, "research load: %s\n",
+                         error.description.UTF8String ?: "unknown failure");
+            return 4;
+        }
         ANEAppleBaselineRuntime *apple = [[ANEAppleBaselineRuntime alloc]
             initWithMILData:milData qos:21 error:&error];
-        BOOL appleLoaded = apple && [apple loadWithError:&error];
-        if (!researchLoaded || !appleLoaded) {
-            std::fprintf(stderr, "load: %s\n",
+        if (!apple) {
+            std::string message = error.description.UTF8String ?: "";
+            if (ANEIsInvalidMILProgramError(message)) {
+                std::printf("BASELINE_UNAVAILABLE workload=%s "
+                            "reason=InvalidMILProgram\n",
+                            workload.UTF8String);
+                [research unloadWithError:nil];
+                return 5;
+            }
+            std::fprintf(stderr, "ANECCompile: %s\n",
                          error.description.UTF8String ?: "unknown failure");
-            if (research.loaded) [research unloadWithError:nil];
+            [research unloadWithError:nil];
+            return 4;
+        }
+        BOOL appleLoaded = [apple loadWithError:&error];
+        if (!appleLoaded) {
+            std::fprintf(stderr, "ANEC load: %s\n",
+                         error.description.UTF8String ?: "unknown failure");
+            [research unloadWithError:nil];
             return 4;
         }
         std::printf("PREPARE workload=%s anec_compile_us=%.1f "

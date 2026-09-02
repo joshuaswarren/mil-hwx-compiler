@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 struct ANELatencySummary {
@@ -12,3 +13,4 @@ struct ANELatencySummary {
 
 bool ANESummarizeLatencies(const std::vector<double> &samples,
                            ANELatencySummary *summary);
+bool ANEIsInvalidMILProgramError(const std::string &message);

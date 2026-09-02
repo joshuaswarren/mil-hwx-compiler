@@ -58,7 +58,14 @@ bash tests/run_affine_scan_hardware.sh
 bash tests/run_matmul_gelu_hardware.sh
 
 run_case fa2 tests/fixtures/fa2_fp16_s128_d128.mil
-run_case affine-scan tests/fixtures/affine_scan_fp16_4.mil
+if run_case affine-scan tests/fixtures/affine_scan_fp16_4.mil; then
+    :
+else
+    status=$?
+    if [[ $status -ne 5 ]]; then
+        exit "$status"
+    fi
+fi
 run_case matmul-gelu tests/fixtures/matmul_gelu_256.mil
 
-echo "compiler A/B benchmark: PASS"
+echo "compiler A/B benchmark: COMPLETE"
