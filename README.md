@@ -150,6 +150,28 @@ bash tests/run_affine_scan_hardware.sh
 bash tests/run_matmul_gelu_hardware.sh
 ```
 
+### Composed M4 receipts
+
+| Region | Geometry | Numerical gate | Dedicated ANE rail during capture |
+|---|---|---|---|
+| FP16 attention forward | S128/D128, unmasked | 2 standard runs; max error `9.92883e-06` | 60/60 active samples; 66-105 mW; 79.98 mW average |
+| FP16 affine state scan | four N128 transitions | each stage within 1 FP16 ULP; final result within 3 ULP | 60/60 active samples; 37-152 mW; 60.20 mW average |
+| Matmul -> reshape -> GELU | N128 and N256 | matmul exact; GELU max error `0.00610352` | N256: 41/60 active samples; 152 mW peak; 38.28 mW average |
+
+For the power capture, each already-validated executable was repeated 100
+times while `powermetrics` sampled `cpu_power,ane_power` every 100 ms. Every
+repeat retained a passing numerical summary. An idle sample read `ANE Power:
+0 mW`; the table records nonzero dedicated-rail samples observed during each
+workload. Powermetrics values are estimates and are not benchmark results.
+The ANE rail is system-wide. The capture launched no other ANE workload, and
+the idle-to-active change is used as corroborating hardware evidence rather
+than per-process attribution.
+
+![M4 ANE powermetrics receipt](docs/evidence/composed-ane-powermetrics.png)
+
+The timestamped text used for the screenshot is in
+[`docs/evidence/composed-ane-powermetrics.txt`](docs/evidence/composed-ane-powermetrics.txt).
+
 The reduction sweep covers 24 operation/geometry forms. The layout sweep covers
 13 standalone S2D shapes, eight standalone D2S shapes, and four fused
 S2D-Conv-D2S shapes. Every case executes twice.

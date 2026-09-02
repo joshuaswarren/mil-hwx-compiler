@@ -1,0 +1,46 @@
+M4 ANE powermetrics receipt
+Captured: 2026-09-01, M4 local time
+Machine: Mac16,10
+OS: macOS 26.3, build 25D125
+
+Capture command:
+sudo powermetrics --samplers cpu_power,ane_power --sample-rate 100
+
+Idle baseline:
+ANE Power: 0 mW
+
+FP16 attention, S128/D128
+*** Sampled system activity (Tue Sep  1 20:22:35 2026 -0700) (105.29ms elapsed) ***
+ANE Power: 95 mW
+*** Sampled system activity (Tue Sep  1 20:22:35 2026 -0700) (105.58ms elapsed) ***
+ANE Power: 76 mW
+*** Sampled system activity (Tue Sep  1 20:22:36 2026 -0700) (105.18ms elapsed) ***
+ANE Power: 105 mW
+Summary: 60 samples, 60 active, 66-105 mW, 79.98 mW average
+Correctness loop: 100 runs, 0 failed summaries
+
+FP16 affine scan, four N128 transitions
+*** Sampled system activity (Tue Sep  1 20:23:02 2026 -0700) (105.17ms elapsed) ***
+ANE Power: 152 mW
+*** Sampled system activity (Tue Sep  1 20:23:02 2026 -0700) (105.43ms elapsed) ***
+ANE Power: 142 mW
+*** Sampled system activity (Tue Sep  1 20:23:02 2026 -0700) (105.47ms elapsed) ***
+ANE Power: 114 mW
+Summary: 60 samples, 60 active, 37-152 mW, 60.20 mW average
+Correctness loop: 100 runs, 0 failed summaries
+
+FP16 matmul -> reshape -> GELU, N256
+*** Sampled system activity (Tue Sep  1 20:23:19 2026 -0700) (105.26ms elapsed) ***
+ANE Power: 152 mW
+*** Sampled system activity (Tue Sep  1 20:23:19 2026 -0700) (105.54ms elapsed) ***
+ANE Power: 123 mW
+*** Sampled system activity (Tue Sep  1 20:23:20 2026 -0700) (104.42ms elapsed) ***
+ANE Power: 77 mW
+Summary: 60 samples, 41 active, 0-152 mW, 38.28 mW average
+Correctness loop: 100 runs, 0 failed summaries
+
+Powermetrics reports estimated rail power. These samples are evidence that the
+dedicated ANE rail was active during each correctness workload. They are not
+performance or energy-efficiency measurements. The rail is system-wide; the
+capture launched no other ANE workload, so this is corroborating hardware
+evidence rather than per-process attribution.

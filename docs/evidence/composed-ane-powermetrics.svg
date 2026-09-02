@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1190" viewBox="0 0 1500 1190">
+  <rect width="1500" height="1190" rx="24" fill="#101419"/>
+  <rect x="1" y="1" width="1498" height="1188" rx="23" fill="none" stroke="#303943" stroke-width="2"/>
+  <circle cx="38" cy="36" r="8" fill="#ff5f57"/>
+  <circle cx="66" cy="36" r="8" fill="#febc2e"/>
+  <circle cx="94" cy="36" r="8" fill="#28c840"/>
+  <text x="125" y="44" fill="#d7dee7" font-family="Menlo, Monaco, monospace" font-size="24">M4 ANE powermetrics receipt</text>
+
+  <g font-family="Menlo, Monaco, monospace" font-size="21" fill="#c9d1d9">
+    <text x="34" y="92" fill="#7ee787">$ sudo powermetrics --samplers cpu_power,ane_power --sample-rate 100</text>
+    <text x="34" y="128">Machine model: Mac16,10   OS version: 25D125</text>
+    <text x="34" y="164">Idle baseline:</text>
+    <text x="205" y="164" fill="#f2cc60">ANE Power: 0 mW</text>
+
+    <rect x="26" y="198" width="1448" height="286" rx="12" fill="#151b23" stroke="#303943"/>
+    <text x="52" y="238" fill="#79c0ff" font-size="23">FP16 attention   S128/D128</text>
+    <text x="52" y="276">*** Sampled system activity (20:22:35) (105.29ms elapsed) ***</text>
+    <text x="52" y="310" fill="#7ee787">ANE Power: 95 mW</text>
+    <text x="52" y="344">*** Sampled system activity (20:22:35) (105.58ms elapsed) ***</text>
+    <text x="52" y="378" fill="#7ee787">ANE Power: 76 mW</text>
+    <text x="52" y="412">*** Sampled system activity (20:22:36) (105.18ms elapsed) ***</text>
+    <text x="52" y="446" fill="#7ee787">ANE Power: 105 mW   60/60 active   average 79.98 mW   100 runs, 0 failures</text>
+
+    <rect x="26" y="510" width="1448" height="286" rx="12" fill="#151b23" stroke="#303943"/>
+    <text x="52" y="550" fill="#79c0ff" font-size="23">FP16 affine state scan   four N128 transitions</text>
+    <text x="52" y="588">*** Sampled system activity (20:23:02) (105.17ms elapsed) ***</text>
+    <text x="52" y="622" fill="#7ee787">ANE Power: 152 mW</text>
+    <text x="52" y="656">*** Sampled system activity (20:23:02) (105.43ms elapsed) ***</text>
+    <text x="52" y="690" fill="#7ee787">ANE Power: 142 mW</text>
+    <text x="52" y="724">*** Sampled system activity (20:23:02) (105.47ms elapsed) ***</text>
+    <text x="52" y="758" fill="#7ee787">ANE Power: 114 mW   60/60 active   average 60.20 mW   100 runs, 0 failures</text>
+
+    <rect x="26" y="822" width="1448" height="286" rx="12" fill="#151b23" stroke="#303943"/>
+    <text x="52" y="862" fill="#79c0ff" font-size="23">FP16 matmul -> reshape -> GELU   N256</text>
+    <text x="52" y="900">*** Sampled system activity (20:23:19) (105.26ms elapsed) ***</text>
+    <text x="52" y="934" fill="#7ee787">ANE Power: 152 mW</text>
+    <text x="52" y="968">*** Sampled system activity (20:23:19) (105.54ms elapsed) ***</text>
+    <text x="52" y="1002" fill="#7ee787">ANE Power: 123 mW</text>
+    <text x="52" y="1036">*** Sampled system activity (20:23:20) (104.42ms elapsed) ***</text>
+    <text x="52" y="1070" fill="#7ee787">ANE Power: 77 mW   41/60 active   average 38.28 mW   100 runs, 0 failures</text>
+
+    <text x="34" y="1152" fill="#8b949e" font-size="18">System-wide estimated rail power. Corroborates ANE activity; not a performance comparison.</text>
+  </g>
+</svg>
