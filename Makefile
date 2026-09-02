@@ -24,6 +24,7 @@ PRODUCTION_COMPILER_SOURCES := $(SUPPORT_SOURCES) $(MIL_LEXER_SOURCES) $(MIL_PAR
 RUNTIME_SOURCES := lib/Runtime/ANEProvisionedRuntime.mm
 RUNTIME_BUNDLE_SOURCES := lib/HWX/ANEHWXArtifact.mm lib/HWX/HWXImage.mm lib/IR/ANEGraphIR.mm lib/Runtime/ANEExecutableBundle.mm $(RUNTIME_SOURCES)
 RUNTIME_INCLUDES := -Ilib/IR -Ilib/HWX -Ilib/Runtime
+BENCHMARK_STATS_SOURCES := lib/Runtime/ANEBenchmarkStats.cpp
 
 .PHONY: all test clean test-cli test-no-pattern-shortcuts
 
@@ -34,6 +35,9 @@ $(BUILD):
 
 $(BUILD)/test_diagnostics: tests/test_diagnostics.mm $(SUPPORT_SOURCES) | $(BUILD)
 	$(CXX) $(CXXFLAGS) $^ $(FRAMEWORKS) -o $@
+
+$(BUILD)/test_benchmark_stats: tests/test_benchmark_stats.cpp lib/Runtime/ANEBenchmarkStats.cpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) $^ -o $@
 
 $(BUILD)/test_mil_lexer: tests/test_mil_lexer.mm $(SUPPORT_SOURCES) $(MIL_LEXER_SOURCES) | $(BUILD)
 	$(CXX) $(CXXFLAGS) -Ilib/MIL $^ $(FRAMEWORKS) -o $@
@@ -116,6 +120,9 @@ $(BUILD)/affine_scan_exec: tests/hardware/run_affine_scan.mm $(RUNTIME_BUNDLE_SO
 $(BUILD)/matmul_gelu_exec: tests/hardware/run_matmul_gelu.mm $(RUNTIME_BUNDLE_SOURCES) | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(RUNTIME_INCLUDES) $^ $(FRAMEWORKS) -framework IOSurface -ldl -o $@
 
+$(BUILD)/compiler_ab_benchmark: tests/hardware/benchmark_compiler_ab.mm tests/hardware/ANEAppleBaselineRuntime.mm $(BENCHMARK_STATS_SOURCES) $(RUNTIME_BUNDLE_SOURCES) | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(RUNTIME_INCLUDES) -Itests/hardware $^ $(FRAMEWORKS) -framework IOSurface -ldl -o $@
+
 $(BUILD)/prepare_broadcast_alu: tests/hardware/prepare_broadcast_alu.mm lib/HWX/ANEHWXArtifact.mm lib/HWX/HWXImage.mm lib/HWX/HWXObjectWriter.mm lib/IR/ANEGraphIR.mm lib/Runtime/ANEExecutableBundle.mm plugins/H16G/Encoding/H16GTDWriter.mm plugins/H16G/Encoding/H16GConvChainEncoder.mm plugins/H16G/Encoding/H16GBroadcastALUEncoder.mm | $(BUILD)
 	$(CXX) $(CXXFLAGS) -Ilib/HWX -Ilib/IR -Ilib/Runtime -Iplugins/H16G/Encoding $^ $(FRAMEWORKS) -o $@
 
@@ -179,8 +186,9 @@ test-no-pattern-shortcuts: $(BUILD)/mil-hwxc
 $(BUILD)/test_runtime_contract: tests/test_runtime_contract.mm lib/HWX/ANEHWXArtifact.mm lib/HWX/HWXImage.mm lib/IR/ANEGraphIR.mm lib/Runtime/ANEExecutableBundle.mm $(RUNTIME_SOURCES) | $(BUILD)
 	$(CXX) $(CXXFLAGS) -Ilib/IR -Ilib/HWX -Ilib/Runtime $^ $(FRAMEWORKS) -framework IOSurface -ldl -o $@
 
-test: $(BUILD)/test_diagnostics $(BUILD)/test_mil_lexer $(BUILD)/test_mil_parser $(BUILD)/test_graph_import $(BUILD)/test_operation_graph $(BUILD)/test_graph_transforms $(BUILD)/test_structural_fusion $(BUILD)/test_h16g_legalization $(BUILD)/test_hwx_planning $(BUILD)/test_structured_td_encoding $(BUILD)/test_hwx_object_writer $(BUILD)/test_h16g_constant_packing $(BUILD)/test_staged_conv_compiler $(BUILD)/test_pass_manager $(BUILD)/test_plugin_registry $(BUILD)/test_compiler_e2e $(BUILD)/test_runtime_contract test-cli test-no-pattern-shortcuts
+test: $(BUILD)/test_diagnostics $(BUILD)/test_benchmark_stats $(BUILD)/test_mil_lexer $(BUILD)/test_mil_parser $(BUILD)/test_graph_import $(BUILD)/test_operation_graph $(BUILD)/test_graph_transforms $(BUILD)/test_structural_fusion $(BUILD)/test_h16g_legalization $(BUILD)/test_hwx_planning $(BUILD)/test_structured_td_encoding $(BUILD)/test_hwx_object_writer $(BUILD)/test_h16g_constant_packing $(BUILD)/test_staged_conv_compiler $(BUILD)/test_pass_manager $(BUILD)/test_plugin_registry $(BUILD)/test_compiler_e2e $(BUILD)/test_runtime_contract test-cli test-no-pattern-shortcuts
 	$(BUILD)/test_diagnostics
+	$(BUILD)/test_benchmark_stats
 	$(BUILD)/test_mil_lexer
 	$(BUILD)/test_mil_parser
 	$(BUILD)/test_graph_import
