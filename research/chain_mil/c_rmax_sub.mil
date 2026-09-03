@@ -1,0 +1,9 @@
+program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 1, 128, 128]> x) {
+    tensor<int32, [1]> ax = const()[name = string("ax"), val = tensor<int32, [1]>([3])];
+    tensor<fp16, [1, 1, 128, 1]> m = reduce_max(x = x, axes = ax, keep_dims = bool(true))[name = string("m")];
+    tensor<fp16, [1, 1, 128, 128]> y = sub(x = x, y = m)[name = string("y")];
+  } -> (y);
+}

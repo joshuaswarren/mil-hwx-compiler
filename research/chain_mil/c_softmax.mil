@@ -1,0 +1,12 @@
+program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 1, 128, 128]> x) {
+    tensor<int32, [1]> ax = const()[name = string("ax"), val = tensor<int32, [1]>([3])];
+    tensor<fp16, [1, 1, 128, 1]> r = reduce_max(x = x, axes = ax, keep_dims = bool(true))[name = string("r")];
+    tensor<fp16, [1, 1, 128, 128]> t = sub(x = x, y = r)[name = string("t")];
+    tensor<fp16, [1, 1, 128, 128]> e = exp(x = t)[name = string("e")];
+    tensor<fp16, [1, 1, 128, 1]> s = reduce_sum(x = e, axes = ax, keep_dims = bool(true))[name = string("s")];
+    tensor<fp16, [1, 1, 128, 128]> y = real_div(x = e, y = s)[name = string("y")];
+  } -> (y);
+}

@@ -1,0 +1,37 @@
+M4 Chunked DeltaNet hardware receipt
+Date: 2026-09-03
+Machine family: M4 H16G
+Fixture: FP16 C128/D128 block expressed as 58 generic operations
+
+Compiler output
+  HWX programs: 58
+
+Numerical check: decay-only case
+  output: no nonfinite values; 0 elements over 0.01 absolute error
+  output maximum absolute error: 1.70078e-05
+  output relative L2: 0.000273656
+  final state: no nonfinite values; 0 elements over 0.01 absolute error
+  final-state maximum absolute error: 9.19215e-06
+  final-state relative L2: 0.000484024
+
+Numerical check: active-update case
+  output: no nonfinite values; 0 elements over 0.01 absolute error
+  output maximum absolute error: 3.68664e-05
+  output relative L2: 0.00421355
+  final state: no nonfinite values; 0 elements over 0.01 absolute error
+  final-state maximum absolute error: 3.63537e-05
+  final-state relative L2: 0.0044426
+
+Performance
+  warmups: 10
+  batches: 5
+  measured samples: 250
+  batch median: 22828.750 us
+  sample median: 22728.792 us
+  p95: 26420.417 us
+  minimum: 16997.500 us
+  maximum: 30404.542 us
+  mean: 22804.958 us
+
+Apple compiler comparison
+  unavailable: the same 14-input MIL program returned InvalidMILProgram

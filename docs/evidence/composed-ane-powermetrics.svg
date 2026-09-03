@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1080" viewBox="0 0 1500 1080">
+  <rect width="1500" height="1080" rx="24" fill="#101419"/>
+  <rect x="1" y="1" width="1498" height="1078" rx="23" fill="none" stroke="#303943" stroke-width="2"/>
+  <circle cx="38" cy="36" r="8" fill="#ff5f57"/>
+  <circle cx="66" cy="36" r="8" fill="#febc2e"/>
+  <circle cx="94" cy="36" r="8" fill="#28c840"/>
+  <text x="125" y="44" fill="#d7dee7" font-family="Menlo, Monaco, monospace" font-size="24">Canary compiler, M4 ANE power receipts</text>
+
+  <g font-family="Menlo, Monaco, monospace" fill="#c9d1d9">
+    <text x="34" y="94" font-size="21">Machine: Mac16,10   OS build: 25D125   Captured: 2026-09-01 and 2026-09-02</text>
+
+    <rect x="26" y="132" width="1448" height="244" rx="12" fill="#151b23" stroke="#303943"/>
+    <text x="52" y="178" fill="#79c0ff" font-size="25">FP16 attention, S128/D128</text>
+    <text x="52" y="222" font-size="22">Research path: 8 generated HWX programs</text>
+    <text x="52" y="264" fill="#7ee787" font-size="22">ANE: 60/60 active samples, 66-105 mW, 79.98 mW average</text>
+    <text x="52" y="306" font-size="22">Correctness loop: 100 runs, 0 failed summaries</text>
+    <text x="52" y="344" fill="#8b949e" font-size="19">Sampler: cpu_power, ane_power at 100 ms</text>
+
+    <rect x="26" y="402" width="1448" height="244" rx="12" fill="#151b23" stroke="#303943"/>
+    <text x="52" y="448" fill="#79c0ff" font-size="25">FP16 matmul followed by GELU, N256</text>
+    <text x="52" y="492" font-size="22">Research path: 1 generated HWX program</text>
+    <text x="52" y="534" fill="#7ee787" font-size="22">ANE: 8/60 active samples, 36-134 mW, 9.77 mW all-sample average</text>
+    <text x="52" y="576" fill="#7ee787" font-size="22">GPU: 0 mW in every sample</text>
+    <text x="52" y="614" font-size="22">40 hardware gates, 80 evaluations, 0 failed summaries</text>
+
+    <rect x="26" y="672" width="1448" height="244" rx="12" fill="#151b23" stroke="#303943"/>
+    <text x="52" y="718" fill="#79c0ff" font-size="25">Chunked DeltaNet, C128/D128</text>
+    <text x="52" y="762" font-size="22">Research path: 58 generated HWX programs</text>
+    <text x="52" y="804" fill="#7ee787" font-size="22">ANE: 73/80 active samples, 19-403 mW, 86.34 mW all-sample average</text>
+    <text x="52" y="846" fill="#7ee787" font-size="22">GPU: 0 mW in every sample</text>
+    <text x="52" y="884" font-size="22">Both numerical cases passed</text>
+
+    <text x="34" y="974" fill="#8b949e" font-size="19">System-wide estimated rails. These samples corroborate ANE execution.</text>
+    <text x="34" y="1008" fill="#8b949e" font-size="19">They do not provide per-process attribution, latency, or energy comparisons.</text>
+  </g>
+</svg>

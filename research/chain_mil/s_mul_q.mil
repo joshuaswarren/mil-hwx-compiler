@@ -1,0 +1,8 @@
+program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 1, 128, 128]> x) {
+    fp16 scale = const()[name = string("scale"), val = fp16(0.25)];
+    tensor<fp16, [1, 1, 128, 128]> y = mul(x = x, y = scale)[name = string("y")];
+  } -> (y);
+}

@@ -1,0 +1,63 @@
+M4 FP16 attention: three-program compiler and hardware receipt
+Date: 2026-09-03
+Machine: Mac16,10
+macOS build: 25D125
+Fixture: unmasked FP16 attention, S128/D128
+
+Program layout
+  program 0: matmul, multiply
+  program 1: reduce_max, subtract, exp, reduce_sum, reciprocal, multiply
+  program 2: matmul
+  shared IOSurfaces between programs: 2
+
+Numerical check
+  elements: 16384
+  mismatches: 0
+  maximum absolute error: 0
+  tolerance: 0.012
+
+Compiler A/B protocol
+  warmups: 50
+  batches: 5
+  evaluations per batch: 5000
+  measured samples per compiler: 25000
+  same MIL, input values, IOSurfaces, QoS, and synchronous completion boundary
+
+Apple compiler output
+  batch median: 126.625 us
+  sample median: 127.208 us
+  p95: 197.958 us
+  minimum: 79.583 us
+  maximum: 4561.917 us
+  mean: 245.498 us
+
+Research compiler output
+  batch median: 378.125 us
+  sample median: 369.458 us
+  p95: 3602.875 us
+  minimum: 159.375 us
+  maximum: 4670.125 us
+  mean: 649.203 us
+
+Ratio
+  research / Apple median: 2.986
+
+Research-only per-program profile
+  warmups: 50
+  measured chains: 5000
+  program 0 submit median: 114.458 us; p95: 177.667 us
+  program 1 submit median: 110.583 us; p95: 179.458 us
+  program 2 submit median: 113.146 us; p95: 183.708 us
+  profiled chain median: 361.583 us
+  plain chain median: 369.417 us
+  sum of submit medians: 354.292 us
+
+Research-only powermetrics capture
+  sample interval: 100 ms
+  samples: 140
+  samples with reported ANE activity: 61
+  active-sample mean: 601.9 mW
+  peak: 681 mW
+
+The powermetrics figures are system-wide ANE rail estimates. They confirm ANE
+activity during the run and do not measure per-process energy.

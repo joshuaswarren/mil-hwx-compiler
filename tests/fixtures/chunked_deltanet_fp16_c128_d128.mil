@@ -1,0 +1,71 @@
+program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func block_delta<ios18>(tensor<fp16, [1, 1, 128, 128]> q, tensor<fp16, [1, 1, 128, 128]> k, tensor<fp16, [1, 1, 128, 128]> kt, tensor<fp16, [1, 1, 128, 128]> v, tensor<fp16, [1, 1, 128, 1]> beta, tensor<fp16, [1, 1, 128, 128]> log_decay_diagonal, tensor<fp16, [1, 1, 128, 128]> state, tensor<fp16, [1, 1, 128, 128]> negative_strict_lower, tensor<fp16, [1, 1, 128, 128]> lower_inclusive, tensor<fp16, [1, 1, 128, 128]> upper_inclusive, tensor<fp16, [1, 1, 128, 128]> identity, tensor<fp16, [1, 1, 128, 128]> ones, tensor<fp16, [1, 1, 128, 128]> last_row_selector, tensor<fp16, [1, 1, 128, 128]> negative_ones) {
+    bool f = const()[name = string("f"), val = bool(false)];
+
+    tensor<fp16, [1, 1, 128, 128]> lower_log_terms = matmul(transpose_x = f, transpose_y = f, x = lower_inclusive, y = log_decay_diagonal)[name = string("lower_log_terms")];
+    tensor<fp16, [1, 1, 128, 128]> prefix_log_rows = matmul(transpose_x = f, transpose_y = f, x = lower_log_terms, y = ones)[name = string("prefix_log_rows")];
+    tensor<fp16, [1, 1, 128, 128]> upper_log_terms = matmul(transpose_x = f, transpose_y = f, x = log_decay_diagonal, y = upper_inclusive)[name = string("upper_log_terms")];
+    tensor<fp16, [1, 1, 128, 128]> prefix_log_columns = matmul(transpose_x = f, transpose_y = f, x = ones, y = upper_log_terms)[name = string("prefix_log_columns")];
+    tensor<fp16, [1, 1, 128, 128]> negative_prefix_columns = mul(x = prefix_log_columns, y = negative_ones)[name = string("negative_prefix_columns")];
+    tensor<fp16, [1, 1, 128, 128]> pair_log_difference = add(x = prefix_log_rows, y = negative_prefix_columns)[name = string("pair_log_difference")];
+    tensor<fp16, [1, 1, 128, 128]> pair_decay = exp(x = pair_log_difference)[name = string("pair_decay")];
+    tensor<fp16, [1, 1, 128, 128]> negative_strict_decay = mul(x = pair_decay, y = negative_strict_lower)[name = string("negative_strict_decay")];
+    tensor<fp16, [1, 1, 128, 128]> inclusive_decay = mul(x = pair_decay, y = lower_inclusive)[name = string("inclusive_decay")];
+    tensor<fp16, [1, 1, 128, 128]> final_log = matmul(transpose_x = f, transpose_y = f, x = last_row_selector, y = prefix_log_rows)[name = string("final_log")];
+    tensor<fp16, [1, 1, 128, 128]> final_log_difference = add(x = final_log, y = negative_prefix_columns)[name = string("final_log_difference")];
+    tensor<fp16, [1, 1, 128, 128]> final_decay_columns = exp(x = final_log_difference)[name = string("final_decay_columns")];
+    tensor<fp16, [1, 1, 128, 128]> terminal_decay = exp(x = final_log)[name = string("terminal_decay")];
+    tensor<fp16, [1, 1, 128, 128]> prefix_decay_rows = exp(x = prefix_log_rows)[name = string("prefix_decay_rows")];
+
+    tensor<fp16, [1, 1, 128, 128]> key_gram = matmul(transpose_x = f, transpose_y = f, x = k, y = kt)[name = string("key_gram")];
+    tensor<fp16, [1, 1, 128, 128]> negative_lower_gram = mul(x = key_gram, y = negative_strict_decay)[name = string("negative_lower_gram")];
+    tensor<fp16, [1, 1, 128, 128]> recurrence = mul(x = negative_lower_gram, y = beta)[name = string("recurrence")];
+
+    tensor<fp16, [1, 1, 128, 128]> inverse_0 = add(x = identity, y = recurrence)[name = string("inverse_0")];
+    tensor<fp16, [1, 1, 128, 128]> recurrence_copy = mul(x = recurrence, y = ones)[name = string("recurrence_copy")];
+    tensor<fp16, [1, 1, 128, 128]> power_1 = matmul(transpose_x = f, transpose_y = f, x = recurrence, y = recurrence_copy)[name = string("power_1")];
+    tensor<fp16, [1, 1, 128, 128]> factor_1 = add(x = identity, y = power_1)[name = string("factor_1")];
+    tensor<fp16, [1, 1, 128, 128]> inverse_1 = matmul(transpose_x = f, transpose_y = f, x = inverse_0, y = factor_1)[name = string("inverse_1")];
+    tensor<fp16, [1, 1, 128, 128]> power_1_copy = mul(x = power_1, y = ones)[name = string("power_1_copy")];
+    tensor<fp16, [1, 1, 128, 128]> power_2 = matmul(transpose_x = f, transpose_y = f, x = power_1, y = power_1_copy)[name = string("power_2")];
+    tensor<fp16, [1, 1, 128, 128]> factor_2 = add(x = identity, y = power_2)[name = string("factor_2")];
+    tensor<fp16, [1, 1, 128, 128]> inverse_2 = matmul(transpose_x = f, transpose_y = f, x = inverse_1, y = factor_2)[name = string("inverse_2")];
+    tensor<fp16, [1, 1, 128, 128]> power_2_copy = mul(x = power_2, y = ones)[name = string("power_2_copy")];
+    tensor<fp16, [1, 1, 128, 128]> power_3 = matmul(transpose_x = f, transpose_y = f, x = power_2, y = power_2_copy)[name = string("power_3")];
+    tensor<fp16, [1, 1, 128, 128]> factor_3 = add(x = identity, y = power_3)[name = string("factor_3")];
+    tensor<fp16, [1, 1, 128, 128]> inverse_3 = matmul(transpose_x = f, transpose_y = f, x = inverse_2, y = factor_3)[name = string("inverse_3")];
+    tensor<fp16, [1, 1, 128, 128]> power_3_copy = mul(x = power_3, y = ones)[name = string("power_3_copy")];
+    tensor<fp16, [1, 1, 128, 128]> power_4 = matmul(transpose_x = f, transpose_y = f, x = power_3, y = power_3_copy)[name = string("power_4")];
+    tensor<fp16, [1, 1, 128, 128]> factor_4 = add(x = identity, y = power_4)[name = string("factor_4")];
+    tensor<fp16, [1, 1, 128, 128]> inverse_4 = matmul(transpose_x = f, transpose_y = f, x = inverse_3, y = factor_4)[name = string("inverse_4")];
+    tensor<fp16, [1, 1, 128, 128]> power_4_copy = mul(x = power_4, y = ones)[name = string("power_4_copy")];
+    tensor<fp16, [1, 1, 128, 128]> power_5 = matmul(transpose_x = f, transpose_y = f, x = power_4, y = power_4_copy)[name = string("power_5")];
+    tensor<fp16, [1, 1, 128, 128]> factor_5 = add(x = identity, y = power_5)[name = string("factor_5")];
+    tensor<fp16, [1, 1, 128, 128]> inverse_5 = matmul(transpose_x = f, transpose_y = f, x = inverse_4, y = factor_5)[name = string("inverse_5")];
+    tensor<fp16, [1, 1, 128, 128]> power_5_copy = mul(x = power_5, y = ones)[name = string("power_5_copy")];
+    tensor<fp16, [1, 1, 128, 128]> power_6 = matmul(transpose_x = f, transpose_y = f, x = power_5, y = power_5_copy)[name = string("power_6")];
+    tensor<fp16, [1, 1, 128, 128]> factor_6 = add(x = identity, y = power_6)[name = string("factor_6")];
+    tensor<fp16, [1, 1, 128, 128]> inverse = matmul(transpose_x = f, transpose_y = f, x = inverse_5, y = factor_6)[name = string("inverse")];
+
+    tensor<fp16, [1, 1, 128, 128]> state_read = matmul(transpose_x = f, transpose_y = f, x = k, y = state)[name = string("state_read")];
+    tensor<fp16, [1, 1, 128, 128]> decayed_state_read = mul(x = state_read, y = prefix_decay_rows)[name = string("decayed_state_read")];
+    tensor<fp16, [1, 1, 128, 128]> negative_state_read = mul(x = decayed_state_read, y = negative_ones)[name = string("negative_state_read")];
+    tensor<fp16, [1, 1, 128, 128]> residual = add(x = v, y = negative_state_read)[name = string("residual")];
+    tensor<fp16, [1, 1, 128, 128]> right_hand_side = mul(x = residual, y = beta)[name = string("right_hand_side")];
+    tensor<fp16, [1, 1, 128, 128]> update_values = matmul(transpose_x = f, transpose_y = f, x = inverse, y = right_hand_side)[name = string("update_values")];
+
+    tensor<fp16, [1, 1, 128, 128]> query_key = matmul(transpose_x = f, transpose_y = f, x = q, y = kt)[name = string("query_key")];
+    tensor<fp16, [1, 1, 128, 128]> causal_query_key = mul(x = query_key, y = inclusive_decay)[name = string("causal_query_key")];
+    tensor<fp16, [1, 1, 128, 128]> state_output = matmul(transpose_x = f, transpose_y = f, x = q, y = state)[name = string("state_output")];
+    tensor<fp16, [1, 1, 128, 128]> decayed_state_output = mul(x = state_output, y = prefix_decay_rows)[name = string("decayed_state_output")];
+    tensor<fp16, [1, 1, 128, 128]> update_output = matmul(transpose_x = f, transpose_y = f, x = causal_query_key, y = update_values)[name = string("update_output")];
+    tensor<fp16, [1, 1, 128, 128]> output = add(x = decayed_state_output, y = update_output)[name = string("output")];
+
+    tensor<fp16, [1, 1, 128, 128]> decayed_key_transpose = mul(x = kt, y = final_decay_columns)[name = string("decayed_key_transpose")];
+    tensor<fp16, [1, 1, 128, 128]> state_update = matmul(transpose_x = f, transpose_y = f, x = decayed_key_transpose, y = update_values)[name = string("state_update")];
+    tensor<fp16, [1, 1, 128, 128]> decayed_state = mul(x = state, y = terminal_decay)[name = string("decayed_state")];
+    tensor<fp16, [1, 1, 128, 128]> final_state = add(x = decayed_state, y = state_update)[name = string("final_state")];
+  } -> (output, final_state);
+}

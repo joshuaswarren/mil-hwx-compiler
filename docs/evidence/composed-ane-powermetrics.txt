@@ -1,0 +1,25 @@
+M4 ANE powermetrics receipts
+Captured: 2026-09-01 and 2026-09-02, M4 local time
+Machine: Mac16,10
+OS build: 25D125
+
+Eight-program FP16 attention, S128/D128
+Capture command: sudo powermetrics --samplers cpu_power,ane_power --sample-rate 100
+ANE summary: 60 samples, 60 active, 66-105 mW, 79.98 mW average
+Correctness loop: 100 runs, 0 failed summaries
+
+One-program FP16 matmul followed by GELU, N256
+Capture command: sudo powermetrics --samplers cpu_power,gpu_power,ane_power --sample-rate 100 --sample-count 60
+GPU summary: 0 mW in every sample
+ANE summary: 60 samples, 8 active, 36-134 mW when active, 9.77 mW average over all samples
+Correctness loop: 40 hardware gates, 80 evaluations, 0 failed summaries
+
+Chunked DeltaNet, C128/D128, 58 programs
+Capture command: sudo powermetrics --samplers cpu_power,gpu_power,ane_power --sample-rate 100 --sample-count 80
+GPU summary: 0 mW in every sample
+ANE summary: 80 samples, 73 active, 19-403 mW when active, 86.34 mW average over all samples
+Hardware gate: both numerical cases passed
+
+Powermetrics reports estimated system rail power. These samples corroborate
+ANE activity during each research-compiler hardware run. They are not
+per-process attribution, latency measurements, or energy comparisons.

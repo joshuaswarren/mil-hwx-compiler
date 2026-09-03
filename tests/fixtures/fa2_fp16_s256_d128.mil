@@ -1,0 +1,13 @@
+program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 1, 256, 128]> q, tensor<fp16, [1, 1, 128, 256]> k, tensor<fp16, [1, 1, 256, 128]> v) {
+    bool f = const()[name = string("f"), val = bool(false)];
+    tensor<fp16, [1, 1, 256, 256]> scores = matmul(transpose_x = f, transpose_y = f, x = q, y = k)[name = string("scores")];
+    fp16 scale = const()[name = string("scale"), val = fp16(0.08838834764831845)];
+    tensor<fp16, [1, 1, 256, 256]> scaled = mul(x = scores, y = scale)[name = string("scaled")];
+    int32 axis = const()[name = string("axis"), val = int32(-1)];
+    tensor<fp16, [1, 1, 256, 256]> probabilities = softmax(axis = axis, x = scaled)[name = string("probabilities")];
+    tensor<fp16, [1, 1, 256, 128]> y = matmul(transpose_x = f, transpose_y = f, x = probabilities, y = v)[name = string("y")];
+  } -> (y);
+}

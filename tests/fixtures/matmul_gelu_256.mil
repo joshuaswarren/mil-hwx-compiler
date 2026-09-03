@@ -1,0 +1,11 @@
+program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 256, 256]> a, tensor<fp16, [1, 256, 256]> b) {
+    bool f = const()[name = string("f"), val = bool(false)];
+    tensor<fp16, [1, 256, 256]> product = matmul(transpose_x = f, transpose_y = f, x = a, y = b)[name = string("product")];
+    tensor<int32, [4]> shape = const()[name = string("shape"), val = tensor<int32, [4]>([1, 1, 256, 256])];
+    tensor<fp16, [1, 1, 256, 256]> matrix = reshape(shape = shape, x = product)[name = string("matrix")];
+    tensor<fp16, [1, 1, 256, 256]> y = gelu(x = matrix, mode = string("EXACT"))[name = string("gelu")];
+  } -> (y);
+}

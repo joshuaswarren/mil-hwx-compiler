@@ -1,0 +1,8 @@
+program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 1, 128, 128]> x, tensor<fp16, [1, 1, 128, 1]> r) {
+    tensor<fp16, [1, 1, 128, 128]> t = sub(x = x, y = r)[name = string("t")];
+    tensor<fp16, [1, 1, 128, 128]> y = exp(x = t)[name = string("y")];
+  } -> (y);
+}

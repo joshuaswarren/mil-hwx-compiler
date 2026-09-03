@@ -1,0 +1,11 @@
+program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 8, 128, 128]> x) {
+    int32 block = const()[name = string("block"), val = int32(4)];
+    tensor<fp16, [1, 128, 32, 32]> y = space_to_depth(
+      x = x,
+      block_size = block
+    )[name = string("pack")];
+  } -> (y);
+}

@@ -1,0 +1,66 @@
+M4 ANECompiler versus research compiler whole-graph A/B
+Captured: 2026-09-01 M4 local time, 2026-09-02 Asia/Kolkata
+Machine: Mac16,10
+OS build: 25D125
+ANECompiler: 9.202.0
+
+Method
+
+Both paths used the same input and output IOSurfaces, QoS 21, deterministic
+FP16 inputs, and synchronous evaluation. Each independent run used 20 warmup
+evaluations followed by five alternating batches of 2,000 evaluations for
+each compiler. The primary latency for a run is the median of the five batch
+medians. CPU-reference correctness gates ran before each A/B.
+
+Independent run 1
+
+FA2 FP16 S128/D128
+ANECCompile batch median: 132.875 us
+Research batch median: 1092.104 us
+Research / ANECCompile: 8.219
+Output comparison: 16,384 elements, 0 mismatches, max absolute error 0
+
+Matmul -> reshape -> GELU FP16 N256
+ANECCompile batch median: 106.062 us
+Research batch median: 229.271 us
+Research / ANECCompile: 2.162
+Output comparison: 65,536 elements, 0 mismatches, max absolute error 0
+
+Independent run 2
+
+FA2 FP16 S128/D128
+ANECCompile batch median: 131.542 us
+Research batch median: 1134.771 us
+Research / ANECCompile: 8.627
+Output comparison: 16,384 elements, 0 mismatches, max absolute error 0
+
+Matmul -> reshape -> GELU FP16 N256
+ANECCompile batch median: 105.208 us
+Research batch median: 220.812 us
+Research / ANECCompile: 2.099
+Output comparison: 65,536 elements, 0 mismatches, max absolute error 0
+
+Reported values
+
+FA2 ANECCompile: 132.21 us
+FA2 research: 1113.44 us
+FA2 research / ANECCompile: 8.42
+
+Matmul -> reshape -> GELU ANECCompile: 105.64 us
+Matmul -> reshape -> GELU research: 225.04 us
+Matmul -> reshape -> GELU research / ANECCompile: 2.13
+
+The reported latency is the median of the two independent run-level values.
+
+Unavailable Apple baseline
+
+The exact four-stage affine scan has nine external inputs. ANECompiler
+returned InvalidMILProgram on both runs, so no latency ratio is reported.
+
+Scope
+
+The research FA2 bundle dispatches eight HWX artifacts per graph evaluation.
+The research matmul-GELU bundle dispatches two. The Apple path evaluates each
+whole MIL graph through one in-memory model. These numbers include the current
+runtime dispatch paths. They are whole-graph latency measurements rather than
+isolated HWX instruction timing.
