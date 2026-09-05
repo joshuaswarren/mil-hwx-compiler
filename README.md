@@ -33,6 +33,8 @@ or invoke Apple's compiler. The currently encoded shapes are deliberately narrow
 | Operation | MIL contract |
 | --- | --- |
 | add, mul, maximum, minimum | Two distinct fp16 inputs, or one fp16 input plus a same-shape 64-element fp16 const tensor on either side. `mul` also expands one inline fp16 scalar to 64 elements. Input, output, and tensor-constant shapes must match and contain exactly 64 elements. |
+| relu | One fp16 input and matching output with the same positive static shape containing exactly 64 elements. Lowers to `maximum(x, 0)` with a synthesized 64-element zero tensor recorded as a constant input. |
+| clip | One fp16 input and matching output with the same positive static shape containing exactly 64 elements, plus finite fp32 scalar `alpha` and `beta` attributes that are exactly representable in fp16 and satisfy `alpha <= beta`. Lowers to `minimum(maximum(x, alpha), beta)` as two chained programs with synthesized constant tensors. |
 | sub | One 64-element fp16 input `x` and a same-shape fp16 const tensor `y`; the host negates the constant and emits the verified add descriptor. Two runtime inputs and `const - input` are rejected. |
 | real_div | One 64-element fp16 input `x` and a same-shape fp16 const tensor `y` whose elements are finite, nonzero powers of two with fp16-exact reciprocals; the host stores the reciprocals and emits the verified multiply descriptor. |
 | matmul | fp16 x with K=256 or 512 as [K], [...,1,K] with singleton leading dimensions, or transpose_x=true [...,K,1]; constant rank-2 W[K,512] with transpose_y=false or W[512,K] with transpose_y=true; output [512], [...,1,512] |

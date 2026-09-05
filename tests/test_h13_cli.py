@@ -75,6 +75,37 @@ def chain_source(return_values='result', middle='product'):
 }}
 '''
 
+def activation_source(op, shape=(1, 64, 1, 1), alpha=None, beta=None):
+    value_type = tensor_type(shape)
+    arguments = 'x = a' if op == 'relu' else \
+        f'x = a, alpha = fp32({alpha}), beta = fp32({beta})'
+    return f'''program(1.3)
+[buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>({value_type} a) {{
+    {value_type} y = {op}({arguments})[name = string("activation")];
+  }} -> (y);
+}}
+'''
+
+
+def activation_chain_source(op, alpha=None, beta=None, multiply=False):
+    value_type = tensor_type((1, 64, 1, 1))
+    arguments = 'x = sum' if op == 'relu' else \
+        f'x = sum, alpha = fp32({alpha}), beta = fp32({beta})'
+    tail = (f'    {value_type} result = mul(x = activated, y = b)'
+            '[name = string("result")];\n') if multiply else ''
+    returned = 'result' if multiply else 'activated'
+    return f'''program(1.3)
+[buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>({value_type} a, {value_type} b) {{
+    {value_type} sum = add(x = a, y = b)[name = string("sum")];
+    {value_type} activated = {op}({arguments})[name = string("activation")];
+{tail}  }} -> ({returned});
+}}
+'''
+
 
 def matmul_source(reduction, x_shape=None, output_shape=None, transpose_x=False,
                   transpose_y=True, weight_shape=None):
@@ -170,6 +201,56 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             assert logical_manifest['inputs'][1]['shape'] == list(shape)
             assert logical_manifest['outputs'][0]['shape'] == list(shape)
     assert (root / 'mul-canonical' / 'program-0.anec').read_bytes() != data
+    maximum_data = (root / 'maximum-canonical' / 'program-0.anec').read_bytes()
+    minimum_data = (root / 'minimum-canonical' / 'program-0.anec').read_bytes()
+    for shape in ((64,), (1, 64), (2, 4, 8)):
+        relu = compile_text(activation_source('relu', shape), f'relu-{len(shape)}d')
+        relu_manifest = json.loads((relu / 'manifest.json').read_text())
+        assert (relu / 'program-0.anec').read_bytes() == maximum_data
+        assert relu_manifest['operation'] == 'maximum'
+        assert bytes.fromhex(relu_manifest['constantInputs']['$h13.y.zero']) == \
+            struct.pack('<H', 0) * 64
+        assert relu_manifest['inputs'][1]['binding'] == 'constant'
+
+    clipped = compile_text(activation_source('clip', alpha=-1, beta=2), 'clip')
+    clipped_manifest = json.loads((clipped / 'manifest.json').read_text())
+    assert clipped_manifest['dispatchPlan'] == [0, 1]
+    assert clipped_manifest['intermediates'] == ['$h13.y.clipped-low']
+    assert [program['operation'] for program in clipped_manifest['programs']] == [
+        'maximum', 'minimum']
+    assert (clipped / 'program-0.anec').read_bytes() == maximum_data
+    assert (clipped / 'program-1.anec').read_bytes() == minimum_data
+    assert bytes.fromhex(
+        clipped_manifest['programs'][0]['constantInputs']['$h13.y.alpha']) == \
+        struct.pack('<H', 0xbc00) * 64
+    assert bytes.fromhex(
+        clipped_manifest['programs'][1]['constantInputs']['$h13.y.beta']) == \
+        struct.pack('<H', 0x4000) * 64
+    assert json.loads(inspect(clipped))['manifest'] == clipped_manifest
+    compile_text(activation_source('clip', alpha=0.1, beta=2), 'clip-inexact', False,
+                 'h13.inexact-constant')
+    compile_text(activation_source('clip', alpha=2, beta=-1), 'clip-invalid-range', False,
+                 'h13.invalid-clip-range')
+    compile_text(activation_source('clip', alpha=1, beta=1), 'clip-equal')
+
+    add_relu = compile_text(activation_chain_source('relu'), 'add-relu')
+    add_relu_manifest = json.loads((add_relu / 'manifest.json').read_text())
+    assert [program['operation'] for program in add_relu_manifest['programs']] == [
+        'add', 'maximum']
+    assert add_relu_manifest['intermediates'] == ['sum']
+    assert json.loads(inspect(add_relu))['manifest'] == add_relu_manifest
+
+    for op, alpha, beta, operations in (
+            ('relu', None, None, ('add', 'maximum', 'mul')),
+            ('clip', -1, 2, ('add', 'maximum', 'minimum', 'mul'))):
+        activation_chain = compile_text(
+            activation_chain_source(op, alpha, beta, multiply=True), f'{op}-chain')
+        activation_chain_manifest = json.loads(
+            (activation_chain / 'manifest.json').read_text())
+        assert tuple(program['operation']
+                     for program in activation_chain_manifest['programs']) == operations
+        assert json.loads(inspect(activation_chain))['manifest'] == activation_chain_manifest
+
     chain = compile_text(chain_source(), 'chain')
     chain_manifest = json.loads((chain / 'manifest.json').read_text())
     assert set(chain_manifest) == {
