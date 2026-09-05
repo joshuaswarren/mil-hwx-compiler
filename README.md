@@ -33,7 +33,7 @@ or invoke Apple's compiler. The currently encoded shapes are deliberately narrow
 | Operation | MIL contract |
 | --- | --- |
 | add, mul, maximum, minimum | Two distinct fp16 inputs and output, each [1,64,1,1] |
-| matmul | fp16 x[1,K] and constant W[512,K], K=256 or 512; transpose_x=false, transpose_y=true; output [1,512] |
+| matmul | fp16 x[1,K], K=256 or 512; constant W[K,512] with transpose_y=false or W[512,K] with transpose_y=true; transpose_x=false; output [1,512] |
 
 Exactly one function, one non-constant operation, and its single returned result
 are required. Other operations, geometry, and multi-operation graphs fail with
@@ -62,7 +62,18 @@ and allocation sizes. ANEC uses a 0x1000-byte header, a 0x274-byte descriptor,
 and constants at content offset 0x280. Older libane readers expecting a
 0x800-byte header cannot consume this format. The manifest schema is
 `mil-hwxc.h13-anec-package.v1`, not an `ANEExecutableBundle` or an mlx-omarchy
-bundle. No H13 manifest loader or device dispatcher is implemented here.
+bundle. The device-free reader validates container/binding consistency and
+converts dense little-endian fp16 bytes to and from the physical channel layout:
+
+```bash
+python3 research/inspect_anec.py build/h13-add
+python3 research/inspect_anec.py build/h13-add --pack-input a input.fp16 --output input.buffer
+python3 research/inspect_anec.py build/h13-add --unpack-output y output.buffer --output output.fp16
+```
+
+Conversion refuses incorrect byte counts and existing output files. Inspection
+does not validate task instructions or establish device safety. No device
+dispatcher is implemented here.
 
 Before hardware use, qualify the matching driver, BAR/kernel binding contract,
 and DMA spans on an ANE-enabled base M1. Compilation on an M1 Ultra host is

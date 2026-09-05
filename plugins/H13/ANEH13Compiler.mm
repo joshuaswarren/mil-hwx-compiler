@@ -108,16 +108,17 @@ static NSDictionary *binding(ANEGraphValue *value,
         } else if ([name isEqualToString:@"matmul"]) {
             NSUInteger reduction = x.type.shape.count == 2
                 ? x.type.shape[1].unsignedIntegerValue : 0;
+            BOOL transposeY = boolean(operation.arguments[@"transpose_y"], YES);
             if (operation.arguments.count != 4 || function.inputs.count != 1 ||
                 function.inputs[0] != x || (reduction != 256 && reduction != 512) ||
                 !tensor(x, @[@1, @(reduction)]) ||
-                !tensor(y, @[@512, @(reduction)]) ||
+                !tensor(y, transposeY ? @[@512, @(reduction)] : @[@(reduction), @512]) ||
                 !tensor(operation.result, @[@1, @512]) ||
                 ![y.producer.operationName isEqualToString:@"const"] ||
                 !boolean(operation.arguments[@"transpose_x"], NO) ||
-                !boolean(operation.arguments[@"transpose_y"], YES))
+                (!transposeY && !boolean(operation.arguments[@"transpose_y"], NO)))
                 return reject(diagnostics,
-                    @"H13 matmul requires fp16 x[1,K] @ const W[512,K].T, K=256 or 512, transpose_x=false, transpose_y=true", operation);
+                    @"H13 matmul requires fp16 x[1,K], K=256 or 512, constant W, transpose_x=false, and a matching transpose_y weight shape", operation);
             ANEGraphArgument *value = y.producer.attributes[@"val"];
             if (y.producer.arguments.count || value.kind != ANEGraphArgumentKindCall ||
                 ![value.calleeValueType isEqualToValueType:y.type] ||
@@ -130,7 +131,7 @@ static NSDictionary *binding(ANEGraphValue *value,
                 expectedBytes:count * 2 modelRoot:modelRoot diagnostics:diagnostics];
             if (!weights) return NO;
             program = ane::h13::encodeMatvec(static_cast<std::uint32_t>(reduction),
-                static_cast<const std::uint8_t *>(weights.bytes), weights.length);
+                static_cast<const std::uint8_t *>(weights.bytes), weights.length, transposeY);
             inputs = @[x];
         } else {
             return reject(diagnostics, [NSString stringWithFormat:

@@ -7,6 +7,14 @@ import tempfile
 from pathlib import Path
 
 compiler = str(Path(sys.argv[1] if len(sys.argv) > 1 else 'build/mil-hwxc').resolve())
+inspector = str(Path(__file__).resolve().parents[1] / "research" / "inspect_anec.py")
+
+
+def inspect(package, *args, success=True):
+    result = subprocess.run([sys.executable, inspector, str(package), *map(str, args)],
+                            capture_output=True, text=True, timeout=15, check=False)
+    assert result.returncode == (0 if success else 1), result.stderr
+    return result.stdout
 
 
 def source(op='add', channels=64, extra=''):
@@ -53,6 +61,27 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     size, td_size, count, task_size, kernel_size, inputs, outputs = struct.unpack_from('<QIIQQII', data)
     assert len(data) == 4096 + size
     assert (td_size, count, task_size, inputs, outputs) == (0x274, 1, 0x274, 2, 1)
+    assert json.loads(inspect(first))["manifest"] == manifest
+    dense = bytes(range(128))
+    raw, padded, unpacked = root / "input.fp16", root / "input.buffer", root / "output.fp16"
+    raw.write_bytes(dense)
+    inspect(first, "--pack-input", "a", raw, "--output", padded)
+    expected = bytearray(16384)
+    for channel in range(64):
+        expected[channel * 64:channel * 64 + 2] = dense[channel * 2:channel * 2 + 2]
+    assert padded.read_bytes() == expected
+    inspect(first, "--unpack-output", "y", padded, "--output", unpacked)
+    assert unpacked.read_bytes() == dense
+    inspect(first, "--pack-input", "a", raw, "--output", padded, success=False)
+    assert padded.read_bytes() == expected
+    raw.write_bytes(dense[:-1])
+    rejected = root / "rejected.buffer"
+    inspect(first, "--pack-input", "a", raw, "--output", rejected, success=False)
+    assert not rejected.exists()
+    inspect(first, "--pack-input", "y", raw, "--output", rejected, success=False)
+    manifest["inputs"][0]["index"] = 4
+    (repeated / "manifest.json").write_text(json.dumps(manifest))
+    inspect(repeated, success=False)
     multiply = compile_text(source('mul'), 'mul')
     assert (multiply / 'program-0.anec').read_bytes() != data
     compile_text(source().replace("program(1.3)", "@program(1.3)"),
@@ -75,7 +104,11 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     for reduction in (256, 512):
         weights = bytearray(128 + 512 * reduction * 2)
         struct.pack_into('<IIQQ', weights, 64, 0xDEADBEEF, 1, 512 * reduction * 2, 128)
+        for row in range(512):
+            struct.pack_into(f"<{reduction}H", weights, 128 + row * reduction * 2,
+                             *((row * 17 + column * 31) & 0x3fff for column in range(reduction)))
         struct.pack_into('<H', weights, 128, 0x3C00)
+        struct.pack_into("<H", weights, 128 + (7 * reduction + 13) * 2, 0x4200)
         (root / 'weights.bin').write_bytes(weights)
         matmul = f'''program(1.3)
 [buildInfo = dict<string, string>({{}})]
@@ -97,6 +130,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         assert struct.unpack_from('<Q', payload, 24)[0] == record['constantBytes']
         assert record["constantBytes"] == 0x80000
         assert struct.unpack_from("<I", payload, 40)[0] == 33
+        assert json.loads(inspect(projection))["manifest"] == record
         unrelated = matmul.replace(
             f"val = tensor<fp16, [512, {reduction}]>",
             "val = fp16(1.0), debug_payload = tensor<fp16, [512, " + str(reduction) + "]>")
@@ -106,8 +140,19 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             'debug_payload = BLOBFILE(path = string("@model_path/not-a-weight.bin"), offset = uint64(64)), val = tensor<')
         unchanged = compile_text(metadata, f"metadata-{reduction}")
         assert (unchanged / "program-0.anec").read_bytes() == payload
-        compile_text(matmul.replace('transpose_y = t', 'transpose_y = f'),
-                     f'wrong-transpose-{reduction}', False)
+        compile_text(matmul.replace("transpose_x = f", "transpose_x = t"),
+                     f"wrong-input-transpose-{reduction}", False)
+        normal_weights = bytearray(weights)
+        for row in range(512):
+            for column in range(reduction):
+                old = 128 + (row * reduction + column) * 2
+                new = 128 + (column * 512 + row) * 2
+                normal_weights[new:new + 2] = weights[old:old + 2]
+        (root / "weights.bin").write_bytes(normal_weights)
+        normal = matmul.replace(f"[512, {reduction}]", f"[{reduction}, 512]")
+        normal = normal.replace("transpose_y = t", "transpose_y = f")
+        equivalent = compile_text(normal, f"normal-weights-{reduction}")
+        assert (equivalent / "program-0.anec").read_bytes() == payload
         weights[128:130] = struct.pack('<H', 0x4000)
         (root / 'weights.bin').write_bytes(weights)
         changed = compile_text(matmul, f'changed-weights-{reduction}')
