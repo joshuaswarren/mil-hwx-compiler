@@ -1,0 +1,9 @@
+      ]
+    }
+  ],
+  "referenceOutputs": {
+    "y": 1536
+  },
+  "schema": "mil-hwxc.h13-linux-plan.v1"
+}
+{'deviceCalls': False, 'programs': 92, 'referenceOutputs': {'y': 1536}, 'schema': 'mil-hwxc.h13-linux-plan.v1'}

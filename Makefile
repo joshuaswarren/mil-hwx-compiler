@@ -242,6 +242,9 @@ test-h13: $(BUILD)/test_h13_encoding $(BUILD)/test_h13_anec $(BUILD)/mil-hwxc
 	$(BUILD)/test_h13_encoding
 	$(BUILD)/test_h13_anec
 	python3 tests/test_h13_cli.py $(BUILD)/mil-hwxc
+.PHONY: test-h13-reference
+test-h13-reference: $(BUILD)/mil-hwxc
+	python3 tests/test_h13_reference.py $(BUILD)/mil-hwxc
 
 $(BUILD)/test_h13_encoding: plugins/H13/H13Program.cpp tests/test_h13_encoding.cpp plugins/H13/H13Program.h | $(BUILD)
 	$(CXX) -O2 -std=c++17 -Wall -Wextra -Werror $(filter %.cpp,$^) -o $@
@@ -253,7 +256,7 @@ $(BUILD)/test_h13_anec: plugins/H13/H13ANEC.cpp tests/test_h13_anec.cpp plugins/
 test-hwx-inspection:
 	python3 tests/test_hwx_inspection.py
 
-test: test-h13 test-hwx-inspection
+test: test-h13 test-h13-reference test-hwx-inspection
 
 clean:
 	rm -rf $(BUILD)
