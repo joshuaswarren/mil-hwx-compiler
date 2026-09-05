@@ -28,16 +28,17 @@ Use this verifier on Linux. The macOS hardware suites below require Apple runtim
 
 The H13 path constructs descriptors from named register fields and packs the
 model's own weights. It does not rename H16G output, patch a binary template,
-or invoke Apple's compiler. The currently encoded shapes are deliberately narrow:
+or invoke Apple's compiler. The encoded device layouts stay fixed while logical
+tensors may use any positive static size:
 
 | Operation | MIL contract |
 | --- | --- |
-| add, mul, maximum, minimum | Two distinct fp16 inputs, or one fp16 input plus a same-shape fp16 const tensor on either side. `mul` also expands one inline fp16 scalar. Input, output, and tensor-constant shapes must match, be positive and static, and contain a multiple of 64 elements. The compiler emits one verified 64-element program per slice. |
-| relu | One fp16 input and matching output with a positive static shape containing a multiple of 64 elements. Lowers each slice to `maximum(x, 0)` with a synthesized constant input. |
-| clip | One fp16 input and matching output with a positive static shape containing a multiple of 64 elements, plus finite fp32 scalar `alpha` and `beta` attributes that are exactly representable in fp16 and satisfy `alpha <= beta`. Lowers each slice to `minimum(maximum(x, alpha), beta)` as two operation-major program groups. |
-| sub | One fp16 input `x` and a same-shape fp16 const tensor `y`, with a positive static element count that is a multiple of 64. The host negates each constant slice and emits the verified add descriptor. Two runtime inputs and `const - input` are rejected. |
-| real_div | One fp16 input `x` and a same-shape fp16 const tensor `y`, with a positive static element count that is a multiple of 64. Every constant element must be a finite, nonzero power of two with an fp16-exact reciprocal. The host stores each reciprocal slice and emits the verified multiply descriptor. |
-| matmul | With `transpose_x=false`, fp16 x has shape `[..., K]`, K is 256 or 512, and the product of the leading dimensions is the row count M. The output has shape `[..., 512]`. With `transpose_x=true`, only one logical row is accepted. W is a constant rank-2 tensor `[K,512]` with `transpose_y=false` or `[512,K]` with `transpose_y=true`. The compiler emits one verified matvec program per row. |
+| add, mul, maximum, minimum | Two distinct fp16 inputs, or one fp16 input plus a same-shape fp16 const tensor on either side. `mul` also expands one inline fp16 scalar. Input, output, and tensor-constant shapes must match and be positive and static. The compiler emits 64-element programs and zero-pads the last program. |
+| relu | One fp16 input and matching output with any positive static shape. Lowers each 64-element slice to `maximum(x, 0)`; the final slice is zero-padded. |
+| clip | One fp16 input and matching output with any positive static shape, plus finite fp32 scalar `alpha` and `beta` attributes that are exactly representable in fp16 and satisfy `alpha <= beta`. Lowers each slice to `minimum(maximum(x, alpha), beta)` as two operation-major program groups. |
+| sub | One fp16 input `x` and a same-shape fp16 const tensor `y`. The host negates each constant slice and emits the verified add descriptor. Two runtime inputs and `const - input` are rejected. |
+| real_div | One fp16 input `x` and a same-shape fp16 const tensor `y`. Every constant element must be a finite, nonzero power of two with an fp16-exact reciprocal. The host stores each reciprocal slice and emits the verified multiply descriptor. |
+| matmul | With `transpose_x=false`, fp16 x has shape `[..., K]`, `1 <= K <= 512`, and the product of the leading dimensions is the row count M. With `transpose_x=true`, only one logical row is accepted. W is a constant rank-2 tensor `[K,N]` with `transpose_y=false` or `[N,K]` with `transpose_y=true`, and the output is `[..., N]`. K is zero-extended to the 256- or 512-lane descriptor. N is emitted in 512-output programs with the last program zero-padded. K above 512 fails with `h13.reduction-too-large`. |
 
 The rank-2 W broadcast over x's leading dimensions follows coremltools commit
 [`9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4`](https://github.com/apple/coremltools/commit/9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4),
@@ -48,10 +49,11 @@ Exactly one function and at least one non-constant operation are required. A
 straight-line chain is supported when every operation satisfies its row above,
 each non-final result is consumed exactly once by the next operation, and only
 the last result is returned. Programs are ordered by operation and then by
-slice. Producer and consumer slices must each tile every intermediate tensor.
-A one-row matmul can therefore feed eight 64-element binary slices, and eight
-binary slices can feed one 512-element matmul row. Unsupported chains fail with
-`h13.unsupported-chain` rather than falling back to CPU execution.
+logical slice. Producer and consumer slices must each tile every intermediate
+tensor. Producer physical write ranges must not overlap, and every consumer
+physical range must be fully covered by producer writes. Padding beyond a
+consumer's logical count is ignored. Other retiling fails with
+`h13.unsupported-chain`.
 
 Run the host-only checks with `make test-h13` (set `GNUSTEP_PREFIX` on Linux).
 They cover encoding, coefficient packing, serialization, and the MIL CLI;
@@ -75,11 +77,13 @@ The output directory must be absent or empty. It receives one
 `programs` array, numeric `dispatchPlan`, and `tensors` object. Each tensor
 records its full logical shape, byte count, and input, output, intermediate, or
 constant role. `intermediates` keeps the names of shared tensors. A sliced
-binding records its tensor name, element offset, and element count. An unsliced
-binding omits `slice` and keeps the original binding fields. A single-program
-package also keeps the original top-level program fields for existing readers.
-Each program record contains its local logical shape, physical strides, buffer
-indices, allocation sizes, and constant bindings.
+binding records its tensor name, element offset, and logical element count. A
+padded slice also records `physicalElements`; omitting it means the physical and
+logical counts match. Pack operations zero-fill physical padding, and unpack
+operations discard it. An unsliced binding keeps the original binding fields. A
+single-program package also keeps the original top-level program fields for
+existing readers. Each program record contains its local logical shape,
+physical strides, buffer indices, allocation sizes, and constant bindings.
 
 ANEC uses a 0x1000-byte header, a 0x274-byte descriptor, and constants at
 content offset 0x280. Older libane readers expecting a 0x800-byte header cannot

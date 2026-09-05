@@ -161,7 +161,7 @@ static BOOL boolean(ANEGraphArgument *argument, BOOL expected) {
 
 static BOOL matmulGeometry(ANEGraphValue *x, ANEGraphValue *result,
                            BOOL transposeX, NSUInteger *reduction,
-                           NSUInteger *rows) {
+                           NSUInteger *rows, NSUInteger *columns) {
     if (!fp16Tensor(x) || !fp16Tensor(result)) return NO;
     NSArray<NSNumber *> *inputShape = x.type.shape;
     NSArray<NSNumber *> *outputShape = result.type.shape;
@@ -178,18 +178,19 @@ static BOOL matmulGeometry(ANEGraphValue *x, ANEGraphValue *result,
         rowCount *= dimension;
     }
     NSUInteger candidate = inputShape[rank - (transposeX ? 2 : 1)].unsignedIntegerValue;
-    if (candidate != 256 && candidate != 512) return NO;
+    NSUInteger outputColumns = outputShape[rank - 1].unsignedIntegerValue;
+    if (!candidate || !outputColumns) return NO;
     if (transposeX) {
         NSUInteger rowDimension = inputShape[rank - 1].unsignedIntegerValue;
         if (!rowDimension || outputShape[rank - 2].unsignedIntegerValue != rowDimension ||
-            outputShape[rank - 1].unsignedIntegerValue != 512 ||
             rowCount > NSUIntegerMax / rowDimension) return NO;
         rowCount *= rowDimension;
-    } else if (outputShape[rank - 1].unsignedIntegerValue != 512) {
-        return NO;
     }
+    if (rowCount > NSUIntegerMax / candidate ||
+        rowCount > NSUIntegerMax / outputColumns) return NO;
     *reduction = candidate;
     *rows = rowCount;
+    *columns = outputColumns;
     return YES;
 }
 
@@ -218,9 +219,11 @@ static void recordTensor(NSMutableDictionary<NSString *, NSDictionary *> *tensor
 }
 
 static void addSlice(NSMutableDictionary *record, ANEGraphValue *value,
-                     NSUInteger offset, NSUInteger count) {
-    record[@"slice"] = @{@"tensor": value.name, @"elementOffset": @(offset),
-                          @"elementCount": @(count)};
+                     NSUInteger offset, NSUInteger count, NSUInteger physical) {
+    NSMutableDictionary *slice = [@{@"tensor": value.name,
+        @"elementOffset": @(offset), @"elementCount": @(count)} mutableCopy];
+    if (physical != count) slice[@"physicalElements"] = @(physical);
+    record[@"slice"] = slice;
 }
 
 static BOOL constantValue(ANEGraphValue *value) {
@@ -231,7 +234,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                            ANEDiagnosticEngine *diagnostics,
                            NSDictionary<NSString *, NSData *> *synthesizedConstants,
                            NSMutableDictionary<NSString *, NSData *> *resolvedConstants,
-                           NSUInteger elementOffset, ane::h13::Program &program,
+                           NSUInteger elementOffset, NSUInteger outputElementOffset,
+                           ane::h13::Program &program,
                            NSArray<ANEGraphValue *> *__autoreleasing *inputsOut,
                            ANEGraphValue *__autoreleasing *constantInputOut,
                            NSData *__autoreleasing *constantDataOut,
@@ -264,10 +268,6 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 return reject(diagnostics,
                     @"H13 binary operations require two distinct fp16 inputs with the same positive static shape",
                     operation);
-            if (elements % 64)
-                return reject(diagnostics,
-                    @"H13 elementwise tensor element counts must be a multiple of 64",
-                    operation, @"h13.elementwise-not-multiple-of-64");
             inputs = @[x, y];
         } else {
             if (xIsConstant == yIsConstant || (binaryIndex >= 4 && xIsConstant)) {
@@ -284,13 +284,10 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 return reject(diagnostics,
                     @"H13 folded binary operations require one fp16 input and output with the same positive static shape",
                     operation, @"h13.invalid-constant-input");
-            if (elements % 64)
-                return reject(diagnostics,
-                    @"H13 elementwise tensor element counts must be a multiple of 64",
-                    operation, @"h13.elementwise-not-multiple-of-64");
-            if (elementOffset > elements - 64)
+            if (elementOffset >= elements)
                 return reject(diagnostics, @"H13 elementwise slice exceeds its tensor",
                     operation, @"h13.invalid-slice");
+            NSUInteger sliceElements = MIN((NSUInteger)64, elements - elementOffset);
 
             NSData *wholeData = synthesizedConstants[constantInput.name];
             BOOL repeatedConstant = wholeData != nil;
@@ -357,18 +354,18 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 }
             }
 
-            if (repeatedConstant) {
-                constantData = wholeData;
-            } else {
-                if (wholeData.length != elements * 2)
-                    return reject(diagnostics, @"H13 constant payload has the wrong size",
-                        operation, @"h13.invalid-constant-payload");
-                constantData = [wholeData subdataWithRange:NSMakeRange(elementOffset * 2, 128)];
-            }
+            if (!repeatedConstant && wholeData.length != elements * 2)
+                return reject(diagnostics, @"H13 constant payload has the wrong size",
+                    operation, @"h13.invalid-constant-payload");
+            NSMutableData *padded = [NSMutableData dataWithLength:128];
+            NSRange sourceRange = NSMakeRange(
+                repeatedConstant ? 0 : elementOffset * 2, sliceElements * 2);
+            [wholeData getBytes:padded.mutableBytes range:sourceRange];
+            constantData = padded;
             NSMutableData *folded = [constantData mutableCopy];
             uint16_t *words = static_cast<uint16_t *>(folded.mutableBytes);
             if (binaryIndex == 4) {
-                for (NSUInteger index = 0; index < 64; ++index) {
+                for (NSUInteger index = 0; index < sliceElements; ++index) {
                     if ((words[index] & 0x7c00u) == 0x7c00u)
                         return reject(diagnostics,
                             @"H13 sub constants must be finite for exact add lowering",
@@ -377,7 +374,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 }
                 manifestOperation = @"add";
             } else if (binaryIndex == 5) {
-                for (NSUInteger index = 0; index < 64; ++index) {
+                for (NSUInteger index = 0; index < sliceElements; ++index) {
                     uint16_t exponent = (words[index] >> 10) & 0x1fu;
                     if (exponent == 0 || exponent == 0x1fu || (words[index] & 0x03ffu))
                         return reject(diagnostics,
@@ -398,18 +395,25 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             ane::h13::BinaryOperation::Add, ane::h13::BinaryOperation::Multiply};
         program = ane::h13::encodeBinary(operations[binaryIndex]);
     } else if ([name isEqualToString:@"matmul"]) {
-        NSUInteger reduction = 0, rows = 0;
+        NSUInteger reduction = 0, rows = 0, columns = 0;
         BOOL transposeX = boolean(operation.arguments[@"transpose_x"], YES);
         BOOL transposeY = boolean(operation.arguments[@"transpose_y"], YES);
+        BOOL geometry = matmulGeometry(x, operation.result, transposeX,
+                                       &reduction, &rows, &columns);
         if (operation.arguments.count != 4 || constantValue(x) ||
             (!transposeX && !boolean(operation.arguments[@"transpose_x"], NO)) ||
             (!transposeY && !boolean(operation.arguments[@"transpose_y"], NO)) ||
-            !matmulGeometry(x, operation.result, transposeX, &reduction, &rows) ||
-            !tensor(y, transposeY ? @[@512, @(reduction)] : @[@(reduction), @512]) ||
+            !geometry ||
+            !tensor(y, transposeY ? @[@(columns), @(reduction)]
+                                  : @[@(reduction), @(columns)]) ||
             !constantValue(y))
             return reject(diagnostics,
-                @"H13 matmul requires fp16 x rows with K=256 or 512, constant rank-2 W, matching explicit transpose flags, and a 512-column output",
+                @"H13 matmul requires positive fp16 x rows, constant rank-2 W, matching explicit transpose flags, and a matching positive output shape",
                 operation);
+        if (reduction > 512)
+            return reject(diagnostics,
+                @"H13 matmul reduction exceeds the largest bit-exact descriptor (K=512)",
+                operation, @"h13.reduction-too-large");
         if (transposeX && rows > 1)
             return reject(diagnostics,
                 @"H13 transpose_x=true matmul supports exactly one logical row",
@@ -421,7 +425,11 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             ![value.callArguments[0].value.calleeName isEqualToString:@"BLOBFILE"])
             return reject(diagnostics,
                 @"H13 weights require a matching tensor value with one BLOBFILE payload", y.producer);
-        NSUInteger count = 512 * reduction;
+        if (columns > NSUIntegerMax / reduction ||
+            columns * reduction > NSUIntegerMax / 2)
+            return reject(diagnostics, @"H13 matmul weight size overflows",
+                operation, @"h13.invalid-constant-payload");
+        NSUInteger count = columns * reduction;
         NSData *weights = resolvedConstants[y.name];
         if (!weights) {
             weights = [ANEBlobResolver loadConstantForOperation:y.producer
@@ -429,8 +437,28 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             if (!weights) return NO;
             resolvedConstants[y.name] = weights;
         }
-        program = ane::h13::encodeMatvec(static_cast<std::uint32_t>(reduction),
-            static_cast<const std::uint8_t *>(weights.bytes), weights.length, transposeY);
+        NSUInteger physicalReduction = reduction <= 256 ? 256 : 512;
+        NSUInteger outputColumn = outputElementOffset % columns;
+        NSUInteger outputElements = MIN((NSUInteger)512, columns - outputColumn);
+        NSMutableData *paddedWeights =
+            [NSMutableData dataWithLength:512 * physicalReduction * 2];
+        const uint8_t *source = static_cast<const uint8_t *>(weights.bytes);
+        uint8_t *destination = static_cast<uint8_t *>(paddedWeights.mutableBytes);
+        if (transposeY) {
+            for (NSUInteger row = 0; row < outputElements; ++row)
+                std::memcpy(destination + row * physicalReduction * 2,
+                    source + ((outputColumn + row) * reduction) * 2,
+                    reduction * 2);
+        } else {
+            for (NSUInteger row = 0; row < reduction; ++row)
+                std::memcpy(destination + row * 512 * 2,
+                    source + (row * columns + outputColumn) * 2,
+                    outputElements * 2);
+        }
+        program = ane::h13::encodeMatvec(
+            static_cast<std::uint32_t>(physicalReduction),
+            static_cast<const std::uint8_t *>(paddedWeights.bytes),
+            paddedWeights.length, transposeY);
         inputs = @[x];
     } else {
         return reject(diagnostics, [NSString stringWithFormat:
@@ -595,21 +623,29 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     ANEGraphOperation *operation = nil;
     try {
         for (operation in operations) {
-            NSUInteger sliceCount = 1, inputSliceElements = 0, outputSliceElements = 0;
+            NSUInteger sliceCount = 1, inputSliceElements = 0,
+                inputPhysicalElements = 0, outputSliceElements = 0,
+                outputPhysicalElements = 0, outputChunks = 1;
+            BOOL matmul = [operation.operationName isEqualToString:@"matmul"];
             if ([binaryNames containsObject:operation.operationName]) {
                 NSUInteger elements = 0;
-                if (tensorElementCount(operation.result, &elements) && !(elements % 64)) {
-                    sliceCount = elements / 64;
-                    inputSliceElements = outputSliceElements = 64;
+                if (tensorElementCount(operation.result, &elements)) {
+                    sliceCount = (elements - 1) / 64 + 1;
+                    inputPhysicalElements = outputPhysicalElements = 64;
                 }
-            } else if ([operation.operationName isEqualToString:@"matmul"]) {
-                NSUInteger reduction = 0, rows = 0;
+            } else if (matmul) {
+                NSUInteger reduction = 0, rows = 0, columns = 0;
                 BOOL transposeX = boolean(operation.arguments[@"transpose_x"], YES);
                 if (matmulGeometry(operation.operands[@"x"].value, operation.result,
-                                   transposeX, &reduction, &rows)) {
-                    sliceCount = rows;
+                                   transposeX, &reduction, &rows, &columns)) {
+                    outputChunks = (columns - 1) / 512 + 1;
+                    if (rows > NSUIntegerMax / outputChunks)
+                        return reject(diagnostics, @"H13 matmul program count overflows",
+                            operation);
+                    sliceCount = rows * outputChunks;
                     inputSliceElements = reduction;
-                    outputSliceElements = 512;
+                    inputPhysicalElements = reduction <= 256 ? 256 : 512;
+                    outputPhysicalElements = 512;
                 }
                 ANEGraphValue *weights = operation.operands[@"y"].value;
                 if (fp16Tensor(weights))
@@ -617,8 +653,22 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             }
 
             for (NSUInteger sliceIndex = 0; sliceIndex < sliceCount; ++sliceIndex) {
-                NSUInteger inputOffset = sliceIndex * inputSliceElements;
-                NSUInteger outputOffset = sliceIndex * outputSliceElements;
+                NSUInteger inputOffset = 0, outputOffset = 0;
+                if (matmul) {
+                    NSUInteger reduction = inputSliceElements;
+                    NSUInteger columns = operation.result.type.shape.lastObject.unsignedIntegerValue;
+                    NSUInteger row = sliceIndex / outputChunks;
+                    NSUInteger chunk = sliceIndex % outputChunks;
+                    inputOffset = row * reduction;
+                    outputOffset = row * columns + chunk * 512;
+                    outputSliceElements = MIN((NSUInteger)512, columns - chunk * 512);
+                } else {
+                    inputOffset = outputOffset = sliceIndex * 64;
+                    NSUInteger elements = 0;
+                    if (tensorElementCount(operation.result, &elements))
+                        inputSliceElements = outputSliceElements =
+                            MIN((NSUInteger)64, elements - inputOffset);
+                }
                 ane::h13::Program program;
                 NSArray<ANEGraphValue *> *inputs = nil;
                 ANEGraphValue *constantInput = nil;
@@ -626,8 +676,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 NSString *manifestOperation = nil;
                 if (!lowerOperation(operation, modelRoot, diagnostics,
                                     synthesizedConstants, resolvedConstants,
-                                    inputOffset, program, &inputs, &constantInput,
-                                    &constantData, &manifestOperation))
+                                    inputOffset, outputOffset, program, &inputs,
+                                    &constantInput, &constantData, &manifestOperation))
                     return NO;
                 std::vector<std::uint8_t> anec = ane::h13::encodeANEC(program);
                 NSMutableArray *inputRecords =
@@ -640,12 +690,18 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     NSString *role = input == constantInput ? @"constant"
                         : ([intermediateValues containsObject:input] ? @"intermediate" : @"input");
                     recordTensor(tensors, input, fullShape, role);
-                    NSArray<NSNumber *> *logicalShape = sliceCount > 1
-                        ? @[@(inputSliceElements)] : fullShape;
+                    NSUInteger fullElements = 1;
+                    for (NSNumber *dimension in fullShape)
+                        fullElements *= dimension.unsignedIntegerValue;
+                    NSArray<NSNumber *> *logicalShape =
+                        inputOffset == 0 && inputSliceElements == fullElements
+                            ? fullShape : @[@(inputSliceElements)];
                     NSMutableDictionary *record =
                         [binding(input, logicalShape, program.inputs.at(index)) mutableCopy];
-                    if (sliceCount > 1)
-                        addSlice(record, input, inputOffset, inputSliceElements);
+                    if (inputOffset || inputSliceElements != fullElements ||
+                        inputPhysicalElements != inputSliceElements)
+                        addSlice(record, input, inputOffset, inputSliceElements,
+                                 inputPhysicalElements);
                     if (input == constantInput) {
                         record[@"binding"] = @"constant";
                         constantInputs[input.name] = hexData(constantData);
@@ -657,12 +713,18 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 NSString *outputRole = [intermediateValues containsObject:operation.result]
                     ? @"intermediate" : @"output";
                 recordTensor(tensors, operation.result, operation.result.type.shape, outputRole);
-                NSArray<NSNumber *> *outputShape = sliceCount > 1
-                    ? @[@(outputSliceElements)] : operation.result.type.shape;
+                NSUInteger fullOutputElements = 1;
+                for (NSNumber *dimension in operation.result.type.shape)
+                    fullOutputElements *= dimension.unsignedIntegerValue;
+                NSArray<NSNumber *> *outputShape =
+                    outputOffset == 0 && outputSliceElements == fullOutputElements
+                        ? operation.result.type.shape : @[@(outputSliceElements)];
                 NSMutableDictionary *outputRecord =
                     [binding(operation.result, outputShape, program.output) mutableCopy];
-                if (sliceCount > 1)
-                    addSlice(outputRecord, operation.result, outputOffset, outputSliceElements);
+                if (outputOffset || outputSliceElements != fullOutputElements ||
+                    outputPhysicalElements != outputSliceElements)
+                    addSlice(outputRecord, operation.result, outputOffset,
+                             outputSliceElements, outputPhysicalElements);
                 if ([intermediateValues containsObject:operation.result])
                     outputRecord[@"role"] = @"intermediate";
                 NSUInteger programIndex = programRecords.count;
@@ -683,6 +745,55 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         }
     } catch (const std::exception &exception) {
         return reject(diagnostics, [NSString stringWithUTF8String:exception.what()], operation);
+    }
+    for (NSString *name in intermediateNames) {
+        NSMutableArray<NSArray<NSNumber *> *> *produced = [NSMutableArray array];
+        NSMutableArray<NSArray<NSNumber *> *> *consumed = [NSMutableArray array];
+        for (NSDictionary *record in programRecords) {
+            for (NSString *direction in @[@"outputs", @"inputs"]) {
+                for (NSDictionary *item in record[direction]) {
+                    if (![item[@"name"] isEqualToString:name]) continue;
+                    NSDictionary *slice = item[@"slice"];
+                    NSUInteger offset = [slice[@"elementOffset"] unsignedIntegerValue];
+                    NSUInteger count = slice
+                        ? [slice[@"elementCount"] unsignedIntegerValue]
+                        : [item[@"logicalBytes"] unsignedIntegerValue] / 2;
+                    NSUInteger physical = slice[@"physicalElements"]
+                        ? [slice[@"physicalElements"] unsignedIntegerValue] : count;
+                    [([direction isEqualToString:@"outputs"] ? produced : consumed)
+                        addObject:@[@(offset), @(offset + physical)]];
+                }
+            }
+        }
+        [produced sortUsingComparator:^NSComparisonResult(
+            NSArray<NSNumber *> *left, NSArray<NSNumber *> *right) {
+            return [left[0] compare:right[0]];
+        }];
+        NSUInteger previousEnd = 0;
+        for (NSArray<NSNumber *> *range in produced) {
+            NSUInteger start = [range[0] unsignedIntegerValue];
+            if (start < previousEnd)
+                return reject(diagnostics,
+                    @"H13 intermediate physical writes must not overlap",
+                    lastOperation, chainCode);
+            previousEnd = [range[1] unsignedIntegerValue];
+        }
+        for (NSArray<NSNumber *> *consumer in consumed) {
+            NSUInteger cursor = [consumer[0] unsignedIntegerValue];
+            NSUInteger end = [consumer[1] unsignedIntegerValue];
+            for (NSArray<NSNumber *> *producer in produced) {
+                NSUInteger producerStart = [producer[0] unsignedIntegerValue];
+                NSUInteger producerEnd = [producer[1] unsignedIntegerValue];
+                if (producerEnd <= cursor) continue;
+                if (producerStart > cursor) break;
+                cursor = MAX(cursor, producerEnd);
+                if (cursor >= end) break;
+            }
+            if (cursor < end)
+                return reject(diagnostics,
+                    @"H13 intermediate consumer physical range exceeds producer writes",
+                    lastOperation, chainCode);
+        }
     }
 
     NSMutableDictionary *manifest = [@{
