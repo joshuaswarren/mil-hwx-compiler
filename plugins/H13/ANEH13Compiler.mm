@@ -5,6 +5,7 @@
 #import "MILLexer.h"
 #import "MILGraphImporter.h"
 #import "MILParser.h"
+#import "HWXObjectWriter.h"
 #include "H13Program.h"
 
 #include <cmath>
@@ -212,6 +213,51 @@ static NSDictionary *binding(ANEGraphValue *value,
         @"shape": logicalShape, @"logicalBytes": @(elements * 2),
         @"index": @(layout.index), @"nchw": physical,
         @"allocationBytes": @(layout.allocationBytes)};
+}
+
+static HWXObjectBinding *objectBinding(const ane::h13::TensorLayout &layout,
+                                       HWXObjectBindingRole role,
+                                       NSUInteger ordinal) {
+    NSArray<NSNumber *> *shape = @[@(layout.nchw[0]), @(layout.nchw[1]),
+        @(layout.nchw[2]), @(layout.nchw[3])];
+    NSUInteger batchStride = (NSUInteger)(layout.nchw[1] * layout.nchw[4]);
+    NSUInteger storageBytes = (NSUInteger)(layout.nchw[0] * batchStride);
+    NSString *name = [NSString stringWithFormat:
+        role == HWXObjectBindingRoleInput ? @"input%lu" : @"output%lu",
+        (unsigned long)ordinal];
+    return [[HWXObjectBinding alloc] initWithSymbol:name shortName:name role:role
+        elementType:ANEElementTypeFP16 shape:shape
+        rowStrideBytes:(NSUInteger)layout.nchw[5]
+        planeStrideBytes:(NSUInteger)layout.nchw[4]
+        batchStrideBytes:batchStride storageByteLength:storageBytes];
+}
+
+static NSArray<NSNumber *> *relocationOffsets(const ane::h13::Program &program) {
+    if (program.constants.empty()) return @[];
+    NSMutableArray<NSNumber *> *offsets = [NSMutableArray arrayWithCapacity:16];
+    for (NSUInteger index = 0; index < 16; ++index)
+        [offsets addObject:@(0x74 + index * sizeof(uint32_t))];
+    return offsets;
+}
+
+static NSData *encodeHWX(const ane::h13::Program &program, NSError **error) {
+    NSMutableArray<HWXObjectBinding *> *bindings = [NSMutableArray array];
+    for (NSUInteger index = 0; index < program.inputs.size(); ++index)
+        [bindings addObject:objectBinding(program.inputs[index],
+            HWXObjectBindingRoleInput, index)];
+    [bindings addObject:objectBinding(program.output,
+        HWXObjectBindingRoleOutput, 0)];
+    NSData *task = [NSData dataWithBytes:program.task.data()
+                                  length:program.task.size()];
+    NSData *constants = [NSData dataWithBytes:program.constants.data()
+                                       length:program.constants.size()];
+    HWXObjectProgramInfo *info = [[HWXObjectProgramInfo alloc]
+        initWithTaskCount:1 recordCount:1 formatCode:0 scratchByteLength:0
+        descriptorLayout:HWXProgramDescriptorLayoutLinear];
+    return [HWXObjectWriter buildObjectForArchitecture:HWXObjectArchitectureH13
+        taskDescriptor:task constantRegion:constants bindings:bindings
+        kernelRelocationOffsets:relocationOffsets(program) programInfo:info
+        error:error];
 }
 
 static void recordTensor(NSMutableDictionary<NSString *, NSDictionary *> *tensors,
@@ -533,9 +579,19 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
 @implementation ANEH13Compiler
 + (BOOL)compileMILData:(NSData *)milData
              modelRoot:(NSURL *)modelRoot
+                format:(NSString *)format
        outputDirectory:(NSURL *)directory
            diagnostics:(ANEDiagnosticEngine *)diagnostics
                  error:(NSError **)error {
+    BOOL hwx = [format isEqualToString:@"hwx"];
+    if (!hwx && ![format isEqualToString:@"anec"]) {
+        reject(diagnostics, @"H13 artifact format must be 'anec' or 'hwx'",
+               nil, @"h13.unsupported-format");
+        if (error) *error = [NSError errorWithDomain:@"dev.maderix.H13" code:2
+            userInfo:@{NSLocalizedDescriptionKey:
+                @"H13 artifact format must be 'anec' or 'hwx'"}];
+        return NO;
+    }
     MILLexer *lexer = [[MILLexer alloc] initWithData:milData diagnostics:diagnostics];
     NSArray<MILToken *> *tokens = lexer.lexAllTokens;
     if (diagnostics.errorCount) return NO;
@@ -1053,10 +1109,17 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                              outputSliceElements, outputPhysicalElements);
                 if (intermediateOutput) outputRecord[@"role"] = @"intermediate";
                 NSUInteger programIndex = programRecords.count;
-                NSString *file = [NSString stringWithFormat:@"program-%lu.anec",
-                    (unsigned long)programIndex];
+                NSData *payload = nil;
+                if (hwx) {
+                    payload = encodeHWX(program, error);
+                    if (!payload) return NO;
+                } else {
+                    payload = [NSData dataWithBytes:anec.data() length:anec.size()];
+                }
+                NSString *file = [NSString stringWithFormat:@"program-%lu.%@",
+                    (unsigned long)programIndex, format];
                 NSDictionary *record = @{
-                    @"file": file, @"bytes": @(anec.size()),
+                    @"file": file, @"bytes": @(payload.length),
                     @"taskDescriptors": @1, @"operation": manifestOperation,
                     @"inputs": inputRecords, @"constantInputs": constantInputs,
                     @"outputs": @[outputRecord],
@@ -1064,7 +1127,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     @"constantBytes": @(program.constants.size()),
                 };
                 [programRecords addObject:record];
-                [payloads addObject:[NSData dataWithBytes:anec.data() length:anec.size()]];
+                [payloads addObject:payload];
                 [dispatchPlan addObject:@(programIndex)];
             }
         }
@@ -1142,7 +1205,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
 
     NSMutableDictionary *manifest = [@{
         @"schema": @"mil-hwxc.h13-anec-package.v1",
-        @"target": @"H13", @"artifactFormat": @"anec",
+        @"target": @"H13", @"artifactFormat": format,
         @"programs": programRecords, @"dispatchPlan": dispatchPlan,
         @"intermediates": intermediateNames, @"tensors": tensors,
     } mutableCopy];

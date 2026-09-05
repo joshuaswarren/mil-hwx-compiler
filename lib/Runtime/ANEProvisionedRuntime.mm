@@ -72,10 +72,16 @@ static BOOL fail(NSError **error, ANERuntimeError code, NSString *message) {
 }
 
 static BOOL validateBindingManifest(NSArray<ANEHWXBinding *> *bindings,
+                                    BOOL isH13,
                                     NSError **error) {
     NSMutableSet<NSString *> *identifiers = [NSMutableSet set];
     NSMutableIndexSet *ioIndices = [NSMutableIndexSet indexSet];
     NSUInteger ioBindingCount = 0;
+    NSUInteger inputCount = 0;
+    NSUInteger outputCount = 0;
+    BOOL outputChannel4 = NO;
+    BOOL inputChannel5 = NO;
+    BOOL inputChannel6 = NO;
     for (ANEHWXBinding *binding in bindings) {
         if (binding.identifier.length == 0 ||
             [identifiers containsObject:binding.identifier])
@@ -99,6 +105,15 @@ static BOOL validateBindingManifest(NSArray<ANEHWXBinding *> *bindings,
             [ioIndices containsIndex:(NSUInteger)binding.ioSurfaceIndex])
             return fail(error, ANERuntimeErrorUnsupportedBundle,
                         @"I/O bindings require unique nonnegative IOSurface indices");
+        if (binding.role == ANESurfaceRoleInput) {
+            ++inputCount;
+            inputChannel5 |= binding.ioSurfaceIndex == 5;
+            inputChannel6 |= binding.ioSurfaceIndex == 6;
+        }
+        if (binding.role == ANESurfaceRoleOutput) {
+            ++outputCount;
+            outputChannel4 |= binding.ioSurfaceIndex == 4;
+        }
         [ioIndices addIndex:(NSUInteger)binding.ioSurfaceIndex];
         ++ioBindingCount;
         if (binding.rowStrideBytes == 0 ||
@@ -108,10 +123,18 @@ static BOOL validateBindingManifest(NSArray<ANEHWXBinding *> *bindings,
             return fail(error, ANERuntimeErrorUnsupportedBundle,
                         @"I/O binding strides must be monotonic and cover the logical tensor");
     }
-    if (ioBindingCount == 0 || ioIndices.count != ioBindingCount ||
-        ioIndices.firstIndex != 0 || ioIndices.lastIndex != ioBindingCount - 1)
+    if (isH13) {
+        BOOL channelsMatch = outputCount == 1 && outputChannel4 &&
+            inputCount >= 1 && inputCount <= 2 && inputChannel5 &&
+            (inputCount == 1 || inputChannel6);
+        if (!channelsMatch || ioBindingCount != inputCount + outputCount)
+            return fail(error, ANERuntimeErrorUnsupportedBundle,
+                        @"H13 requires output channel 4 and input channels 5 then 6");
+    } else if (ioBindingCount == 0 || ioIndices.count != ioBindingCount ||
+               ioIndices.firstIndex != 0 || ioIndices.lastIndex != ioBindingCount - 1) {
         return fail(error, ANERuntimeErrorUnsupportedBundle,
                     @"I/O binding indices must form one contiguous zero-based range");
+    }
     return YES;
 }
 
@@ -130,11 +153,12 @@ static BOOL validateDispatchBundle(
     NSArray<ANEHWXBinding *> **graphOutputs,
     NSDictionary<NSString *, ANEHWXBinding *> **surfaceBindings,
     NSError **error) {
-    if (![bundle.target isEqualToString:@"H16G"] ||
+    BOOL isH13 = [bundle.target isEqualToString:@"H13"];
+    if ((!isH13 && ![bundle.target isEqualToString:@"H16G"]) ||
         bundle.artifacts.count == 0 ||
         bundle.dispatchPlan.count != bundle.artifacts.count)
         return fail(error, ANERuntimeErrorUnsupportedBundle,
-                    @"dispatch plan must cover every H16G artifact exactly once");
+                    @"dispatch plan must cover every supported artifact exactly once");
 
     NSMutableDictionary<NSString *, NSNumber *> *producerByIdentifier =
         [NSMutableDictionary dictionary];
@@ -144,7 +168,7 @@ static BOOL validateDispatchBundle(
     for (NSUInteger artifactIndex = 0;
          artifactIndex < bundle.artifacts.count; ++artifactIndex) {
         ANEHWXArtifact *artifact = bundle.artifacts[artifactIndex];
-        if (!validateBindingManifest(artifact.bindings, error)) return NO;
+        if (!validateBindingManifest(artifact.bindings, isH13, error)) return NO;
         for (ANEHWXBinding *binding in artifact.bindings) {
             if (binding.role == ANESurfaceRoleWeight) continue;
             ANEHWXBinding *canonical = canonicalBindings[binding.identifier];
@@ -490,6 +514,7 @@ static BOOL validateDispatchBundle(
     NSMutableArray<ANEDispatchProfileEntry *> *entries =
         profile ? [NSMutableArray array] : nil;
     uint64_t evaluationStarted = profile ? mach_continuous_time() : 0;
+    BOOL isH13 = [_bundle.target isEqualToString:@"H13"];
     @try {
         for (NSNumber *rawArtifactIndex in _bundle.dispatchPlan) {
             NSUInteger artifactIndex = rawArtifactIndex.unsignedIntegerValue;
@@ -525,7 +550,8 @@ static BOOL validateDispatchBundle(
                 [inputObjects addObject:
                     ((id (*)(id, SEL, IOSurfaceRef))objc_msgSend)(surfaceClass,
                         @selector(objectWithIOSurface:), buffer.ioSurface)];
-                [inputIndices addObject:@(index)];
+                [inputIndices addObject:isH13
+                    ? @(inputBindings[index].ioSurfaceIndex) : @(index)];
             }
             for (NSUInteger index = 0; index < outputBindings.count; ++index) {
                 ANEIOSurfaceBuffer *buffer =
@@ -533,7 +559,8 @@ static BOOL validateDispatchBundle(
                 [outputObjects addObject:
                     ((id (*)(id, SEL, IOSurfaceRef))objc_msgSend)(surfaceClass,
                         @selector(objectWithIOSurface:), buffer.ioSurface)];
-                [outputIndices addObject:@(index)];
+                [outputIndices addObject:isH13
+                    ? @(outputBindings[index].ioSurfaceIndex) : @(index)];
             }
             uint64_t requestStarted = profile ? mach_continuous_time() : 0;
             id model = _models[artifactIndex];

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Device-free checks for source-backed H14 and existing H16G inspection."""
+"""Device-free checks for H13/H14/H16G HWX inspection."""
 from __future__ import annotations
 
 import struct
@@ -97,4 +97,10 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-inspection-") as directory:
     assert "architecture subtype=0x0007 name=H16G isa=17" in result.stdout
     assert "__TEXT/__text" in result.stdout
 
-print("HWX inspection: PASS (synthetic source-derived H14 fixture; no real H14 artifact)")
+    h13_path = root / "synthetic-h13-envelope.hwx"
+    h13_path.write_bytes(hwx(4, b""))
+    result = inspect(h13_path, success=False)
+    assert "architecture subtype=0x0004 name=H13 isa=7" in result.stdout
+    assert "H13 HWX requires a 0x274-byte" in result.stderr
+
+print("HWX inspection: PASS (H13 validation plus source-derived H14 fixture)")

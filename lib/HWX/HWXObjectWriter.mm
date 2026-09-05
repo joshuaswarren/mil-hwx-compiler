@@ -114,7 +114,25 @@ static NSData *programDescriptor(uint64_t textAddress,uint64_t textConstAddress,
                                  uint64_t scratchAddress,
                                  NSArray<NSNumber *> *resourceAddresses,
                                  uint32_t taskWordCount,
-                                 HWXObjectProgramInfo *info) {
+                                 HWXObjectProgramInfo *info,
+                                 HWXObjectArchitecture architecture) {
+    if (architecture == HWXObjectArchitectureH13) {
+        NSMutableData *d = [NSMutableData dataWithLength:0x880];
+        writeU32(d,0,4); writeU32(d,4,0x880); writeU32(d,8,1);
+        writeU32(d,0xc,0x21a); writeU64(d,0x10,textAddress);
+        writeU64(d,0x18,textConstAddress);
+        for (NSUInteger index = 0; index < MIN((NSUInteger)5,
+                                               resourceAddresses.count); ++index)
+            writeU64(d,0x30 + index * 8,
+                     resourceAddresses[index].unsignedLongLongValue);
+        writeU64(d,0x810,textAddress);
+        writeU32(d,0x818,taskWordCount - 1); writeU32(d,0x81c,1);
+        writeU32(d,0x824,0xffff); writeU32(d,0x83c,0x878);
+        writeU32(d,0x850,0x11); writeU32(d,0x858,4);
+        writeU32(d,0x860,1); writeU32(d,0x868,9); writeU32(d,0x86c,8);
+        writeString(d,0x878,@"net");
+        return d;
+    }
     BOOL mixed = info.descriptorLayout ==
         HWXProgramDescriptorLayoutScratchBackedMixed;
     NSUInteger length = mixed ? 0x8c0 : 0x8a0;
@@ -173,12 +191,15 @@ static NSData *tensorDescriptor(HWXObjectBinding *binding, uint32_t bindingIndex
     writeString(d,0xd38,@"main");writeString(d,symbolOffset,binding.symbol);
     writeString(d,shortOffset,binding.shortName);return d;
 }
-static NSData *compilerMetadata(void) {
-    NSString *text = @"ANEC v1\nresearch_hwx_compiler v1\n\n Module ANEC:\n"
-                     @"\t Target: h16g\n";
+static NSData *compilerMetadata(HWXObjectArchitecture architecture) {
+    NSString *text = @"ANEC v1\nresearch_hwx_compiler v1\n\n Module ANEC:\n";
+    text = [text stringByAppendingString:
+        architecture == HWXObjectArchitectureH13
+            ? @"\t Target: h13\n" : @"\t Target: h16g\n"];
     NSData *bytes = [text dataUsingEncoding:NSUTF8StringEncoding];
-    NSMutableData *record = [NSMutableData dataWithLength:
-        alignUp(8 + bytes.length + 1, 8)];
+    NSUInteger length = architecture == HWXObjectArchitectureH13
+        ? 0x728 : alignUp(8 + bytes.length + 1, 8);
+    NSMutableData *record = [NSMutableData dataWithLength:length];
     writeU32(record, 0, 0x08);
     writeU32(record, 4, (uint32_t)record.length);
     [record replaceBytesInRange:NSMakeRange(8, bytes.length)
@@ -333,11 +354,23 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
         kernelRelocationOffsets:kernelRelocationOffsets programInfo:info
         error:error];
 }
-
 + (NSData *)buildObjectWithTaskDescriptor:(NSData *)taskDescriptor
                              constantRegion:(NSData *)constantRegion
                                     bindings:(NSArray<HWXObjectBinding *> *)bindings
                      kernelRelocationOffsets:(NSArray<NSNumber *> *)kernelRelocationOffsets
+                                 programInfo:(HWXObjectProgramInfo *)programInfo
+                                       error:(NSError **)error {
+    return [self buildObjectForArchitecture:HWXObjectArchitectureH16G
+        taskDescriptor:taskDescriptor constantRegion:constantRegion
+        bindings:bindings kernelRelocationOffsets:kernelRelocationOffsets
+        programInfo:programInfo error:error];
+}
+
++ (NSData *)buildObjectForArchitecture:(HWXObjectArchitecture)architecture
+                             taskDescriptor:(NSData *)taskDescriptor
+                              constantRegion:(NSData *)constantRegion
+                                     bindings:(NSArray<HWXObjectBinding *> *)bindings
+                      kernelRelocationOffsets:(NSArray<NSNumber *> *)kernelRelocationOffsets
                                  programInfo:(HWXObjectProgramInfo *)programInfo
                                        error:(NSError **)error {
     NSMutableArray<HWXObjectBinding *> *inputs = [NSMutableArray array];
@@ -348,7 +381,10 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
         else
             [outputs addObject:binding];
     }
-    BOOL hasKernel = constantRegion.length != 0;
+    BOOL h13 = architecture == HWXObjectArchitectureH13;
+    BOOL supportedArchitecture = h13 || architecture == HWXObjectArchitectureH16G;
+    BOOL hasKernel = !h13 && constantRegion.length != 0;
+    BOOL hasConstants = constantRegion.length != 0;
     BOOL isThreeSurfaceProgram = bindings.count == 3 && inputs.count == 2 &&
         outputs.count == 1;
     BOOL resourceCountValid = inputs.count >= 1 && outputs.count == 1 &&
@@ -377,10 +413,12 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
             binding.batchStrideBytes >= minimumBatch &&
             binding.storageByteLength >= minimumStorage;
     }
-    BOOL relocationsValid = hasKernel || kernelRelocationOffsets.count == 0;
+    BOOL relocationsValid = (h13 ? hasConstants : hasKernel) ||
+        kernelRelocationOffsets.count == 0;
     for (NSNumber *offset in kernelRelocationOffsets) {
         NSUInteger value = offset.unsignedIntegerValue;
-        relocationsValid = relocationsValid && hasKernel && value % 4 == 0 &&
+        relocationsValid = relocationsValid && (h13 ? hasConstants : hasKernel) &&
+            value % 4 == 0 &&
             value <= taskDescriptor.length &&
             sizeof(uint32_t) <= taskDescriptor.length - value;
         if (relocationsValid) {
@@ -391,7 +429,14 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
         }
     }
     NSString *rejection = nil;
-    if (!resourceCountValid)
+    if (!supportedArchitecture)
+        rejection = @"writer supports only H13 and H16G architectures";
+    else if (h13 && (taskDescriptor.length != 0x274 ||
+                     programInfo.taskCount != 1 ||
+                     programInfo.descriptorLayout != HWXProgramDescriptorLayoutLinear ||
+                     programInfo.scratchAllocationByteLength != 0))
+        rejection = @"H13 HWX requires one 0x274-byte linear task without scratch";
+    else if (!resourceCountValid)
         rejection = @"writer requires one output, at least one input, at most four surfaces and five total resources";
     else if (taskDescriptor.length == 0 || taskDescriptor.length > 0x3fc0)
         rejection = @"writer requires a nonempty task descriptor of at most 0x3fc0 bytes";
@@ -457,14 +502,17 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
     BOOL compactThreeSurface = bindings.count == 3 &&
         programInfo.descriptorLayout == HWXProgramDescriptorLayoutLinear &&
         firstBindingLogicalValid && firstBindingLogicalBytes <= 0x100000;
-    uint32_t textFileOffset = (kernelRelocationOffsets.count <= 1 &&
-        (bindings.count == 2 || compactThreeSurface)) ? 0x4000 : 0x8000;
+    uint32_t textFileOffset = h13 ? 0x4000 :
+        ((kernelRelocationOffsets.count <= 1 &&
+          (bindings.count == 2 || compactThreeSurface)) ? 0x4000 : 0x8000);
+    uint64_t textSegmentSize = h13
+        ? alignUp(0x280 + constantRegion.length, 0x4000) : 0x8000;
     uint32_t kernelFileOffset = textFileOffset + 0x8000;
     uint64_t kernelSegmentSize = hasKernel
         ? alignUp(constantRegion.length, 0x4000) : 0;
-    uint32_t textConstFile=(uint32_t)alignUp(
-        textFileOffset+taskDescriptor.length,0x40);
-    NSMutableArray<NSData *> *commands=[NSMutableArray array];
+    uint32_t textConstFile = h13 ? textFileOffset + 0x280 :
+        (uint32_t)alignUp(textFileOffset + taskDescriptor.length, 0x40);
+    NSMutableArray<NSData *> *commands = [NSMutableArray array];
     [commands addObject:segmentRecord("__PAGEZERO",0,0x4000,0,0,0,0,4,NULL,0)];
     BOOL hasScratch = programInfo.scratchAllocationByteLength != 0;
     if (hasScratch) {
@@ -477,20 +525,23 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
         HWXObjectBinding *binding = bindings[i];
         BOOL isInput = binding.role == HWXObjectBindingRoleInput;
         uint64_t address = bindingVMs[i].unsignedLongLongValue;
-        uint64_t size = bindingSizes[i].unsignedLongLongValue;
+        uint64_t sectionSize = h13 ? binding.storageByteLength
+                                    : bindingSizes[i].unsignedLongLongValue;
+        uint64_t segmentSize = bindingSizes[i].unsignedLongLongValue;
         struct section_64 section=sectionRecord(
             isInput ? "__const" : "__data", "__FVMLIB",
-            address,size,0,14,isInput ? 0x21 : 0x23);
-        [commands addObject:segmentRecord("__FVMLIB",address,size,0,0,
+            address,sectionSize,0,14,isInput ? 0x21 : 0x23);
+        [commands addObject:segmentRecord("__FVMLIB",address,segmentSize,0,0,
             isInput ? 1 : 2,isInput ? 1 : 2,6,&section,1)];
     }
     uint32_t textFlags = kernelRelocationOffsets.count == 0 ? 0x28 : 0x128;
     struct section_64 textSecs[2]={
         sectionRecord("__text","__TEXT",textVM,taskDescriptor.length,textFileOffset,14,textFlags),
-        sectionRecord("__const","__TEXT",textConstVM,0x4000,textConstFile,6,0x26)};
+        sectionRecord("__const","__TEXT",textConstVM,
+            h13 ? constantRegion.length : 0x4000,textConstFile,6,0x26)};
     uint32_t textSegmentFlags = hasScratch ? 4 : 0;
-    [commands addObject:segmentRecord("__TEXT",textVM,0x8000,textFileOffset,0x8000,
-        5,5,textSegmentFlags,textSecs,2)];
+    [commands addObject:segmentRecord("__TEXT",textVM,textSegmentSize,
+        textFileOffset,textSegmentSize,5,5,textSegmentFlags,textSecs,2)];
     if (hasKernel) {
         struct section_64 kernSec=sectionRecord("__kern_0","__KERN_0",kernelVM,
             constantRegion.length,kernelFileOffset,6,0x26);
@@ -503,19 +554,26 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
     NSMutableArray<NSNumber *> *resourceAddresses = [bindingVMs mutableCopy];
     if (hasKernel) [resourceAddresses addObject:@(kernelVM)];
     [commands addObject:programDescriptor(textVM,textConstVM,scratchVM,
-        resourceAddresses,(uint32_t)(taskDescriptor.length / 4),programInfo)];
-    for (HWXObjectBinding *input in inputs)
-        [commands addObject:tensorDescriptor(input,1)];
-    for (HWXObjectBinding *output in outputs)
-        [commands addObject:tensorDescriptor(output,2)];
-    [commands addObject:compilerMetadata()];
+        resourceAddresses,(uint32_t)(taskDescriptor.length / 4),programInfo,
+        architecture)];
+    if (h13) {
+        for (NSUInteger index = 0; index < bindings.count; ++index)
+            [commands addObject:tensorDescriptor(bindings[index],
+                (uint32_t)index + 1)];
+    } else {
+        for (HWXObjectBinding *input in inputs)
+            [commands addObject:tensorDescriptor(input,1)];
+        for (HWXObjectBinding *output in outputs)
+            [commands addObject:tensorDescriptor(output,2)];
+    }
+    [commands addObject:compilerMetadata(architecture)];
 
     NSMutableData *symbols = nil;
     NSMutableData *strings = nil;
     NSMutableOrderedSet<NSNumber *> *kernelOffsets =
         [NSMutableOrderedSet orderedSet];
     if (hasKernel) [kernelOffsets addObject:@0];
-    for (NSNumber *relocationOffsetNumber in kernelRelocationOffsets) {
+    if (!h13) for (NSNumber *relocationOffsetNumber in kernelRelocationOffsets) {
         uint32_t addend = 0;
         [taskDescriptor getBytes:&addend range:NSMakeRange(
             relocationOffsetNumber.unsignedIntegerValue, sizeof(addend))];
@@ -524,6 +582,8 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
     uint8_t firstBindingSection = hasScratch ? 2 : 1;
     uint8_t kernelSection = (uint8_t)((hasScratch ? 1 : 0) +
         bindings.count + 3);
+    uint8_t textConstSection = (uint8_t)((hasScratch ? 1 : 0) +
+        bindings.count + 2);
     buildSymbolTables(bindings, bindingVMs, kernelVM,
                       kernelOffsets.array, firstBindingSection, kernelSection,
                       &symbols, &strings);
@@ -540,8 +600,8 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
     textSecs[0].reloff = relocationOffset;
     textSecs[0].nreloc = (uint32_t)kernelRelocationOffsets.count;
     NSUInteger textCommandIndex = 1 + (hasScratch ? 1 : 0) + bindings.count;
-    commands[textCommandIndex] = segmentRecord("__TEXT",textVM,0x8000,textFileOffset,0x8000,
-        5,5,textSegmentFlags,textSecs,2);
+    commands[textCommandIndex] = segmentRecord("__TEXT",textVM,textSegmentSize,
+        textFileOffset,textSegmentSize,5,5,textSegmentFlags,textSecs,2);
     if(sizeof(struct mach_header_64)+commandBytes>textFileOffset){
         if(error) {
             *error=[NSError errorWithDomain:HWXObjectWriterErrorDomain code:2
@@ -558,11 +618,12 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
         }
         return nil;
     }
-    NSUInteger imageLength = hasKernel
-        ? kernelFileOffset + kernelSegmentSize : textFileOffset + 0x8000;
+    NSUInteger imageLength = hasKernel ? kernelFileOffset + kernelSegmentSize
+        : textFileOffset + textSegmentSize;
     NSMutableData *image=[NSMutableData dataWithLength:imageLength];
     struct mach_header_64 header={};header.magic=0xBEEFFACE;header.cputype=0x80;
-    header.cpusubtype=0x07;header.filetype=2;header.ncmds=(uint32_t)commands.count;
+    header.cpusubtype=(uint32_t)architecture;header.filetype=2;
+    header.ncmds=(uint32_t)commands.count;
     header.sizeofcmds=(uint32_t)commandBytes;header.flags=0x00200000;
     [image replaceBytesInRange:NSMakeRange(0,sizeof(header)) withBytes:&header];
     NSUInteger offset=sizeof(header);for(NSData *c in commands){
@@ -574,13 +635,17 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
     for (NSUInteger i = 0; i < kernelRelocationOffsets.count; ++i) {
         const uint32_t relocation[2] = {
             kernelRelocationOffsets[i].unsignedIntValue,
-            0x07000000u | kernelSection};
+            (h13 ? 0x05000000u | textConstSection
+                 : 0x07000000u | kernelSection)};
         [image replaceBytesInRange:NSMakeRange(relocationOffset + i * 8,
             sizeof(relocation)) withBytes:relocation];
     }
     [image replaceBytesInRange:NSMakeRange(textFileOffset,taskDescriptor.length)
                      withBytes:taskDescriptor.bytes];
-    if (hasKernel) {
+    if (h13) {
+        [image replaceBytesInRange:NSMakeRange(textConstFile,constantRegion.length)
+                         withBytes:constantRegion.bytes];
+    } else if (hasKernel) {
         [image replaceBytesInRange:NSMakeRange(kernelFileOffset,constantRegion.length)
                          withBytes:constantRegion.bytes];
     }

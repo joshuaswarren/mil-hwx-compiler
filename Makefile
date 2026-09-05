@@ -100,6 +100,9 @@ $(BUILD)/test_pass_manager: tests/test_pass_manager.mm $(SUPPORT_SOURCES) $(PASS
 $(BUILD)/test_plugin_registry: tests/test_plugin_registry.mm $(SUPPORT_SOURCES) $(PLUGIN_SOURCES) | $(BUILD)
 	$(CXX) $(CXXFLAGS) -Ilib/Plugin $^ $(FRAMEWORKS) -o $@
 
+$(BUILD)/h13_exec: tests/hardware/run_h13.mm $(RUNTIME_BUNDLE_SOURCES) | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(RUNTIME_INCLUDES) $^ $(FRAMEWORKS) -framework IOSurface -ldl -o $@
+
 $(BUILD)/conv_exec: tests/hardware/run_conv_relu.mm $(RUNTIME_BUNDLE_SOURCES) | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(RUNTIME_INCLUDES) $^ $(FRAMEWORKS) -framework IOSurface -ldl -o $@
 
@@ -257,6 +260,12 @@ test-hwx-inspection:
 	python3 tests/test_hwx_inspection.py
 
 test: test-h13 test-h13-reference test-hwx-inspection
+
+.PHONY: test-h13-hardware
+test-h13-hardware: $(BUILD)/mil-hwxc $(BUILD)/h13_exec
+	@test -n "$(H13_MIL)" -a -n "$(H13_MODEL_ROOT)" -a -n "$(H13_INPUTS)" || \
+		(echo 'usage: make test-h13-hardware H13_MIL=model.mil H13_MODEL_ROOT=models H13_INPUTS="x=input.fp16"' >&2; exit 64)
+	tests/run_h13_hardware.sh "$(H13_MIL)" "$(H13_MODEL_ROOT)" $(H13_INPUTS)
 
 clean:
 	rm -rf $(BUILD)
