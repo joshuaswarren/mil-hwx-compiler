@@ -34,6 +34,29 @@ def source(op='add', shape=(1, 64, 1, 1), y_shape=None, output_shape=None, extra
   }} -> (y);
 }}
 '''
+def constant_source(op, value, const_first=False, blob=None):
+    shape = (1, 64, 1, 1)
+    value_type = tensor_type(shape)
+    if blob is not None:
+        constant_type = value_type
+        literal = (f'{value_type}(BLOBFILE(path = string("@model_path/{blob}"), '
+                   'offset = uint64(64)))')
+    elif isinstance(value, (tuple, list)):
+        constant_type = value_type
+        literal = f'{value_type}([{", ".join(f"fp16({item})" for item in value)}])'
+    else:
+        constant_type = 'fp16'
+        literal = f'fp16({value})'
+    x, y = ('c', 'a') if const_first else ('a', 'c')
+    return f'''program(1.3)
+ [buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>({value_type} a) {{
+    {constant_type} c = const()[name = string("c"), val = {literal}];
+    {value_type} y = {op}(x = {x}, y = {y})[name = string("binary")];
+  }} -> (y);
+}}
+'''
 
 
 def matmul_source(reduction, x_shape=None, output_shape=None, transpose_x=False,
@@ -125,6 +148,83 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             assert logical_manifest['inputs'][1]['shape'] == list(shape)
             assert logical_manifest['outputs'][0]['shape'] == list(shape)
     assert (root / 'mul-canonical' / 'program-0.anec').read_bytes() != data
+    values = tuple(1.0 + (index % 8) * 0.125 for index in range(64))
+    unchanged_constants = b''.join(struct.pack('<e', value) for value in values)
+    for op in ('add', 'mul', 'maximum', 'minimum'):
+        canonical = first if op == 'add' else root / f'{op}-canonical'
+        for const_first in (False, True):
+            folded = compile_text(constant_source(op, values, const_first),
+                                  f'{op}-constant-{"first" if const_first else "second"}')
+            folded_manifest = json.loads((folded / 'manifest.json').read_text())
+            assert (folded / 'program-0.anec').read_bytes() == (canonical / 'program-0.anec').read_bytes()
+            assert bytes.fromhex(folded_manifest['constantInputs']['c']) == unchanged_constants
+            assert folded_manifest['inputs'][0]['name'] == 'a'
+            assert folded_manifest['inputs'][1]['binding'] == 'constant'
+    sub = compile_text(constant_source('sub', values), 'sub-constant')
+    sub_manifest = json.loads((sub / 'manifest.json').read_text())
+    negated = b''.join(struct.pack('<e', -value) for value in values)
+    assert (sub / 'program-0.anec').read_bytes() == data
+    assert sub_manifest['operation'] == 'add'
+    assert sub_manifest['inputs'][1]['binding'] == 'constant'
+    assert bytes.fromhex(sub_manifest['constantInputs']['c']) == negated
+
+    packed_constant = root / 'constant.buffer'
+    inspect(sub, '--pack-constant', 'c', '--output', packed_constant)
+    expected_constant = bytearray(16384)
+    for channel in range(64):
+        expected_constant[channel * 64:channel * 64 + 2] = negated[channel * 2:channel * 2 + 2]
+    assert packed_constant.read_bytes() == expected_constant
+
+    quarters = (0.25,) * 64
+    div = compile_text(constant_source('real_div', (4.0,) * 64), 'div-four')
+    mul_quarter = compile_text(constant_source('mul', quarters), 'mul-quarter')
+    assert (div / 'program-0.anec').read_bytes() == (mul_quarter / 'program-0.anec').read_bytes()
+    div_manifest = json.loads((div / 'manifest.json').read_text())
+    mul_manifest = json.loads((mul_quarter / 'manifest.json').read_text())
+    assert div_manifest['operation'] == 'mul'
+    assert div_manifest['constantInputs'] == mul_manifest['constantInputs']
+    assert bytes.fromhex(div_manifest['constantInputs']['c']) == struct.pack('<e', 0.25) * 64
+    compile_text(constant_source('real_div', (3.0,) * 64), 'div-three', False,
+                 'h13.inexact-reciprocal')
+    extremes = compile_text(constant_source('real_div', (32768.0, 2.0 ** -14) * 32), 'div-extremes')
+    extremes_manifest = json.loads((extremes / 'manifest.json').read_text())
+    assert bytes.fromhex(extremes_manifest['constantInputs']['c']) == \
+        struct.pack('<ee', 2.0 ** -15, 16384.0) * 32
+    compile_text(constant_source('real_div', (2.0 ** -15,) * 64), 'div-subnormal', False,
+                 'h13.inexact-reciprocal')
+    compile_text(constant_source('sub', values, const_first=True), 'constant-minus-input',
+                 False, 'h13.nonfoldable-binary')
+    compile_text(constant_source('real_div', values, const_first=True),
+                 'constant-divided-by-input', False, 'h13.nonfoldable-binary')
+    compile_text(constant_source('add', 1.0), 'scalar-add', False,
+                 'h13.invalid-constant-input')
+
+    scalar_mul = compile_text(constant_source('mul', -1.0), 'scalar-mul')
+    tensor_mul = compile_text(constant_source('mul', (-1.0,) * 64), 'tensor-mul')
+    assert (scalar_mul / 'program-0.anec').read_bytes() == (tensor_mul / 'program-0.anec').read_bytes()
+    scalar_manifest = json.loads((scalar_mul / 'manifest.json').read_text())
+    tensor_manifest = json.loads((tensor_mul / 'manifest.json').read_text())
+    assert scalar_manifest['constantInputs'] == tensor_manifest['constantInputs']
+    assert scalar_manifest['inputs'][1]['shape'] == [1, 64, 1, 1]
+
+    blob = bytearray(128 + len(values) * 2)
+    struct.pack_into('<IIQQ', blob, 64, 0xDEADBEEF, 1, len(values) * 2, 128)
+    blob[128:] = b''.join(struct.pack('<e', value) for value in values)
+    (root / 'constant.bin').write_bytes(blob)
+    blob_sub = compile_text(constant_source('sub', None, blob='constant.bin'), 'blob-sub')
+    blob_manifest = json.loads((blob_sub / 'manifest.json').read_text())
+    assert (blob_sub / 'program-0.anec').read_bytes() == data
+    assert bytes.fromhex(blob_manifest['constantInputs']['c']) == negated
+
+    invalid_manifest = json.loads((blob_sub / 'manifest.json').read_text())
+    struct.pack_into('<H', blob, 128, 0x7C00)
+    (root / 'constant.bin').write_bytes(blob)
+    compile_text(constant_source('sub', None, blob='constant.bin'),
+                 'nonfinite-sub-constant', False, 'h13.nonfinite-constant')
+    invalid_manifest['constantInputs']['c'] = invalid_manifest['constantInputs']['c'][:-2]
+    invalid = compile_text(constant_source('sub', values), 'invalid-constant-manifest')
+    (invalid / 'manifest.json').write_text(json.dumps(invalid_manifest))
+    inspect(invalid, success=False)
     compile_text(source(shape=(0, 64)), 'zero-binary-shape', False)
     compile_text(source(shape=(1, 64), y_shape=(64,), output_shape=(1, 64)),
                  'broadcast-binary-shape', False)
@@ -133,7 +233,9 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     (root / "empty-output").mkdir()
     compile_text(source(), "empty-output")
     compile_text(source(shape=(1, 128, 1, 1)), 'unsupported-shape', False)
-    compile_text(source('sub'), 'unsupported-op', False)
+    compile_text(source('sub'), 'two-input-sub', False, 'h13.nonfoldable-binary')
+    compile_text(source('real_div'), 'two-input-real-div', False,
+                 'h13.nonfoldable-binary')
     compile_text(source(extra='tensor<fp16, [1, 64, 1, 1]> z = relu(x = y)[name = string("z")];'),
                  'multiple-ops', False)
     compile_text(source().replace('x = a, y = b', 'x = a, y = a'), 'unused-input', False)
