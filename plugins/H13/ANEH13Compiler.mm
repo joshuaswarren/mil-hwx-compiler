@@ -126,6 +126,12 @@ static ANEGraphArgument *valueArgument(ANEGraphValue *value,
         callArguments:@[] elements:@[] range:range];
 }
 
+static ANEGraphArgument *booleanArgument(BOOL value, ANESourceRange range) {
+    return [[ANEGraphArgument alloc] initWithKind:ANEGraphArgumentKindBoolean
+        text:value ? @"true" : @"false" value:nil calleeName:nil
+        calleeValueType:nil callArguments:@[] elements:@[] range:range];
+}
+
 static ANEGraphOperation *binaryOperation(NSString *name, ANEGraphValue *x,
                                           ANEGraphValue *y,
                                           ANEGraphValue *result,
@@ -230,12 +236,61 @@ static BOOL constantValue(ANEGraphValue *value) {
     return [value.producer.operationName isEqualToString:@"const"];
 }
 
+static NSData *linearBiasData(ANEGraphValue *bias, NSUInteger columns,
+                                NSURL *modelRoot,
+                                ANEDiagnosticEngine *diagnostics,
+                                NSMutableDictionary<NSString *, NSData *> *resolved) {
+    if (!tensor(bias, @[@(columns)])) {
+        reject(diagnostics,
+            @"H13 linear bias must be a constant fp16 vector of N elements",
+            bias.producer, @"h13.invalid-linear-bias");
+        return nil;
+    }
+    ANEGraphOperation *producer = bias.producer;
+    ANEGraphArgument *literal = producer.attributes[@"val"];
+    if (producer.arguments.count || literal.kind != ANEGraphArgumentKindCall ||
+        ![literal.calleeValueType isEqualToValueType:bias.type] ||
+        literal.callArguments.count != 1) {
+        reject(diagnostics,
+            @"H13 linear bias requires a typed inline list or BLOBFILE payload",
+            producer, @"h13.invalid-linear-bias");
+        return nil;
+    }
+    ANEGraphArgument *payload = literal.callArguments[0].value;
+    NSData *data = resolved[bias.name];
+    if (!data && payload.kind == ANEGraphArgumentKindList &&
+        payload.elements.count == columns) {
+        NSMutableData *dense = [NSMutableData dataWithLength:columns * 2];
+        uint16_t *words = static_cast<uint16_t *>(dense.mutableBytes);
+        for (NSUInteger index = 0; index < columns; ++index) {
+            if (!fp16Scalar(payload.elements[index], &words[index])) {
+                reject(diagnostics, @"H13 linear bias requires finite fp16 elements",
+                    producer, @"h13.invalid-linear-bias");
+                return nil;
+            }
+        }
+        data = dense;
+    } else if (!data && payload.kind == ANEGraphArgumentKindCall &&
+               [payload.calleeName isEqualToString:@"BLOBFILE"]) {
+        data = [ANEBlobResolver loadConstantForOperation:producer
+            expectedBytes:columns * 2 modelRoot:modelRoot diagnostics:diagnostics];
+    }
+    if (!data) {
+        if (!diagnostics.errorCount)
+            reject(diagnostics, @"H13 linear bias requires N finite fp16 elements",
+                producer, @"h13.invalid-linear-bias");
+        return nil;
+    }
+    resolved[bias.name] = data;
+    return data;
+}
+
 static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                            ANEDiagnosticEngine *diagnostics,
                            NSDictionary<NSString *, NSData *> *synthesizedConstants,
                            NSMutableDictionary<NSString *, NSData *> *resolvedConstants,
-                           NSUInteger elementOffset, NSUInteger outputElementOffset,
-                           ane::h13::Program &program,
+                           NSUInteger elementOffset, NSUInteger inputElementCount,
+                           NSUInteger outputElementOffset, ane::h13::Program &program,
                            NSArray<ANEGraphValue *> *__autoreleasing *inputsOut,
                            ANEGraphValue *__autoreleasing *constantInputOut,
                            NSData *__autoreleasing *constantDataOut,
@@ -290,9 +345,10 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             NSUInteger sliceElements = MIN((NSUInteger)64, elements - elementOffset);
 
             NSData *wholeData = synthesizedConstants[constantInput.name];
-            BOOL repeatedConstant = wholeData != nil;
+            BOOL repeatedConstant = wholeData.length == 128;
             if (wholeData) {
-                if (!tensor(constantInput, runtimeInput.type.shape) || wholeData.length != 128)
+                if (!tensor(constantInput, runtimeInput.type.shape) ||
+                    (!repeatedConstant && wholeData.length != elements * 2))
                     return reject(diagnostics,
                         @"H13 synthesized constants must match the runtime fp16 tensor shape",
                         operation, @"h13.invalid-constant-input");
@@ -410,10 +466,6 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             return reject(diagnostics,
                 @"H13 matmul requires positive fp16 x rows, constant rank-2 W, matching explicit transpose flags, and a matching positive output shape",
                 operation);
-        if (reduction > 512)
-            return reject(diagnostics,
-                @"H13 matmul reduction exceeds the largest bit-exact descriptor (K=512)",
-                operation, @"h13.reduction-too-large");
         if (transposeX && rows > 1)
             return reject(diagnostics,
                 @"H13 transpose_x=true matmul supports exactly one logical row",
@@ -437,7 +489,13 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             if (!weights) return NO;
             resolvedConstants[y.name] = weights;
         }
-        NSUInteger physicalReduction = reduction <= 256 ? 256 : 512;
+        NSUInteger reductionStart = elementOffset % reduction;
+        NSUInteger chunkReduction = inputElementCount;
+        if (!chunkReduction || chunkReduction > 512 ||
+            reductionStart > reduction - chunkReduction)
+            return reject(diagnostics, @"H13 matmul reduction slice is invalid",
+                operation, @"h13.invalid-slice");
+        NSUInteger physicalReduction = chunkReduction <= 256 ? 256 : 512;
         NSUInteger outputColumn = outputElementOffset % columns;
         NSUInteger outputElements = MIN((NSUInteger)512, columns - outputColumn);
         NSMutableData *paddedWeights =
@@ -447,12 +505,12 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         if (transposeY) {
             for (NSUInteger row = 0; row < outputElements; ++row)
                 std::memcpy(destination + row * physicalReduction * 2,
-                    source + ((outputColumn + row) * reduction) * 2,
-                    reduction * 2);
+                    source + ((outputColumn + row) * reduction + reductionStart) * 2,
+                    chunkReduction * 2);
         } else {
-            for (NSUInteger row = 0; row < reduction; ++row)
+            for (NSUInteger row = 0; row < chunkReduction; ++row)
                 std::memcpy(destination + row * 512 * 2,
-                    source + (row * columns + outputColumn) * 2,
+                    source + ((reductionStart + row) * columns + outputColumn) * 2,
                     outputElements * 2);
         }
         program = ane::h13::encodeMatvec(
@@ -537,6 +595,15 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         [NSMutableDictionary dictionary];
     NSMutableDictionary<NSString *, NSData *> *synthesizedConstants =
         [NSMutableDictionary dictionary];
+    NSMutableDictionary<NSString *, NSData *> *resolvedConstants =
+        [NSMutableDictionary dictionary];
+    NSMapTable<ANEGraphOperation *, NSNumber *> *reductionOffsets =
+        [NSMapTable strongToStrongObjectsMapTable];
+    NSMapTable<ANEGraphOperation *, NSNumber *> *reductionCounts =
+        [NSMapTable strongToStrongObjectsMapTable];
+    NSMapTable<ANEGraphOperation *, NSNumber *> *outputBaseOffsets =
+        [NSMapTable strongToStrongObjectsMapTable];
+    NSMutableSet<NSString *> *chunkedAccumulations = [NSMutableSet set];
     NSMapTable<ANEGraphValue *, ANEGraphValue *> *loweredValues =
         [NSMapTable strongToStrongObjectsMapTable];
     for (ANEGraphOperation *candidate in sourceOperations) {
@@ -624,6 +691,197 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 result, candidate.range)];
             [manifestValues addObject:low];
             [manifestValues addObject:result];
+        } else if ([name isEqualToString:@"matmul"] ||
+                   [name isEqualToString:@"linear"]) {
+            BOOL linear = [name isEqualToString:@"linear"];
+            ANEGraphValue *weight = linear ? arguments[@"weight"].value
+                                           : arguments[@"y"].value;
+            ANEGraphValue *bias = linear ? arguments[@"bias"].value : nil;
+            if (linear && (!weight || !constantValue(weight)))
+                return reject(diagnostics,
+                    @"H13 linear requires a constant weight tensor", candidate,
+                    @"h13.linear-nonconstant-weight");
+            if (linear && bias && !constantValue(bias))
+                return reject(diagnostics,
+                    @"H13 linear requires a constant bias tensor", candidate,
+                    @"h13.linear-nonconstant-bias");
+
+            NSUInteger reduction = 0, rows = 0, columns = 0;
+            BOOL transposeX = linear ? NO : boolean(arguments[@"transpose_x"], YES);
+            BOOL geometry = matmulGeometry(x, result, transposeX,
+                                           &reduction, &rows, &columns);
+            if (linear && (candidate.arguments.count < 2 ||
+                           candidate.arguments.count > 3 || !geometry ||
+                           !tensor(weight, @[@(columns), @(reduction)])))
+                return reject(diagnostics,
+                    @"H13 linear requires positive fp16 x rows, constant [N,K] weight, optional constant [N] bias, and a matching output shape",
+                    candidate, @"h13.invalid-linear");
+
+            if (linear && bias && rows > 1) {
+                NSData *biasData = linearBiasData(bias, columns, modelRoot,
+                    diagnostics, resolvedConstants);
+                if (!biasData) return NO;
+                ANEValueType *rowInputType = [[ANEValueType alloc]
+                    initWithKind:ANEValueTypeKindTensor
+                    elementType:ANEElementTypeFP16 shape:@[@1, @(reduction)]];
+                ANEValueType *rowOutputType = [[ANEValueType alloc]
+                    initWithKind:ANEValueTypeKindTensor
+                    elementType:ANEElementTypeFP16 shape:@[@1, @(columns)]];
+                for (NSUInteger row = 0; row < rows; ++row) {
+                    ANEGraphValue *rowInput = [[ANEGraphValue alloc]
+                        initWithName:x.name type:rowInputType];
+                    NSDictionary *matmulArguments = @{
+                        @"x": valueArgument(rowInput, candidate.range),
+                        @"y": valueArgument(weight, candidate.range),
+                        @"transpose_x": booleanArgument(NO, candidate.range),
+                        @"transpose_y": booleanArgument(YES, candidate.range),
+                    };
+                    NSString *prefix = [NSString stringWithFormat:@"%@.row%lu",
+                        result.name, (unsigned long)row];
+                    NSString *matrixName = [NSString stringWithFormat:@"$h13.%@.linear",
+                        prefix];
+                    ANEGraphValue *matrix = [[ANEGraphValue alloc]
+                        initWithName:matrixName type:rowOutputType];
+                    if (reduction > 512) {
+                        NSUInteger chunks = (reduction - 1) / 512 + 1;
+                        NSMutableArray<ANEGraphValue *> *partials =
+                            [NSMutableArray arrayWithCapacity:chunks];
+                        for (NSUInteger chunk = 0; chunk < chunks; ++chunk) {
+                            NSString *partialName = [NSString stringWithFormat:
+                                @"$h13.%@.partial%lu", prefix,
+                                (unsigned long)chunk];
+                            ANEGraphValue *partial = [[ANEGraphValue alloc]
+                                initWithName:partialName type:rowOutputType];
+                            ANEGraphOperation *partialOperation = [[ANEGraphOperation alloc]
+                                initWithOperationName:@"matmul" result:partial
+                                arguments:matmulArguments attributes:@{}
+                                range:candidate.range];
+                            [reductionOffsets setObject:@(row * reduction + chunk * 512)
+                                                 forKey:partialOperation];
+                            [reductionCounts setObject:@(MIN((NSUInteger)512,
+                                reduction - chunk * 512)) forKey:partialOperation];
+                            [operations addObject:partialOperation];
+                            [manifestValues addObject:partial];
+                            [partials addObject:partial];
+                        }
+                        ANEGraphValue *accumulator = partials[0];
+                        for (NSUInteger chunk = 1; chunk < chunks; ++chunk) {
+                            BOOL final = chunk + 1 == chunks;
+                            NSString *sumName = [NSString stringWithFormat:
+                                @"$h13.%@.accum%lu", prefix,
+                                (unsigned long)chunk];
+                            ANEGraphValue *sum = final ? matrix : [[ANEGraphValue alloc]
+                                initWithName:sumName type:rowOutputType];
+                            [operations addObject:binaryOperation(@"add", accumulator,
+                                partials[chunk], sum, candidate.range)];
+                            [manifestValues addObject:sum];
+                            accumulator = sum;
+                        }
+                        [chunkedAccumulations addObject:matrix.name];
+                    } else {
+                        ANEGraphOperation *matmulOperation = [[ANEGraphOperation alloc]
+                            initWithOperationName:@"matmul" result:matrix
+                            arguments:matmulArguments attributes:@{}
+                            range:candidate.range];
+                        [reductionOffsets setObject:@(row * reduction)
+                                             forKey:matmulOperation];
+                        [operations addObject:matmulOperation];
+                        [manifestValues addObject:matrix];
+                    }
+                    NSString *biasName = [NSString stringWithFormat:@"$h13.%@.bias",
+                        prefix];
+                    ANEGraphValue *expandedBias = [[ANEGraphValue alloc]
+                        initWithName:biasName type:rowOutputType];
+                    synthesizedConstants[biasName] = biasData;
+                    ANEGraphValue *rowOutput = [[ANEGraphValue alloc]
+                        initWithName:result.name type:rowOutputType];
+                    ANEGraphOperation *add = binaryOperation(@"add", matrix,
+                        expandedBias, rowOutput, candidate.range);
+                    [outputBaseOffsets setObject:@(row * columns) forKey:add];
+                    [operations addObject:add];
+                }
+                [manifestValues addObject:result];
+                [loweredValues setObject:result forKey:candidate.result];
+                continue;
+            }
+
+            ANEGraphValue *matmulResult = result;
+            if (linear && bias) {
+                NSString *name = [NSString stringWithFormat:@"$h13.%@.linear",
+                    result.name];
+                matmulResult = [[ANEGraphValue alloc]
+                    initWithName:name type:result.type];
+            }
+            NSDictionary<NSString *, ANEGraphArgument *> *matmulArguments = arguments;
+            if (linear)
+                matmulArguments = @{
+                    @"x": valueArgument(x, candidate.range),
+                    @"y": valueArgument(weight, candidate.range),
+                    @"transpose_x": booleanArgument(NO, candidate.range),
+                    @"transpose_y": booleanArgument(YES, candidate.range),
+                };
+            if (geometry && reduction > 512) {
+                NSUInteger chunks = (reduction - 1) / 512 + 1;
+                NSMutableArray<ANEGraphValue *> *partials =
+                    [NSMutableArray arrayWithCapacity:chunks];
+                for (NSUInteger chunk = 0; chunk < chunks; ++chunk) {
+                    NSString *partialName = [NSString stringWithFormat:
+                        @"$h13.%@.partial%lu", result.name, (unsigned long)chunk];
+                    ANEGraphValue *partial = [[ANEGraphValue alloc]
+                        initWithName:partialName type:matmulResult.type];
+                    ANEGraphOperation *partialOperation = [[ANEGraphOperation alloc]
+                        initWithOperationName:@"matmul" result:partial
+                        arguments:matmulArguments attributes:@{} range:candidate.range];
+                    [reductionOffsets setObject:@(chunk * 512)
+                                         forKey:partialOperation];
+                    [reductionCounts setObject:@(MIN((NSUInteger)512,
+                        reduction - chunk * 512)) forKey:partialOperation];
+                    [operations addObject:partialOperation];
+                    [manifestValues addObject:partial];
+                    [partials addObject:partial];
+                }
+                ANEGraphValue *accumulator = partials[0];
+                for (NSUInteger chunk = 1; chunk < chunks; ++chunk) {
+                    BOOL final = chunk + 1 == chunks;
+                    NSString *sumName = [NSString stringWithFormat:
+                        @"$h13.%@.accum%lu", result.name, (unsigned long)chunk];
+                    ANEGraphValue *sum = final ? matmulResult : [[ANEGraphValue alloc]
+                        initWithName:sumName type:matmulResult.type];
+                    [operations addObject:binaryOperation(@"add", accumulator,
+                        partials[chunk], sum, candidate.range)];
+                    [manifestValues addObject:sum];
+                    accumulator = sum;
+                }
+                [chunkedAccumulations addObject:matmulResult.name];
+            } else {
+                ANEGraphOperation *matmulOperation = [[ANEGraphOperation alloc]
+                    initWithOperationName:@"matmul" result:matmulResult
+                    arguments:matmulArguments attributes:@{} range:candidate.range];
+                [operations addObject:matmulOperation];
+                [manifestValues addObject:matmulResult];
+            }
+
+            if (linear && bias) {
+                NSData *biasData = linearBiasData(bias, columns, modelRoot,
+                    diagnostics, resolvedConstants);
+                if (!biasData) return NO;
+                if (rows * columns > NSUIntegerMax / 2)
+                    return reject(diagnostics, @"H13 linear output size overflows",
+                        candidate, @"h13.invalid-linear-bias");
+                NSMutableData *expanded =
+                    [NSMutableData dataWithLength:rows * columns * 2];
+                for (NSUInteger row = 0; row < rows; ++row)
+                    std::memcpy(static_cast<uint8_t *>(expanded.mutableBytes) +
+                        row * columns * 2, biasData.bytes, columns * 2);
+                NSString *biasName = [NSString stringWithFormat:@"$h13.%@.bias",
+                    result.name];
+                ANEGraphValue *expandedBias = [[ANEGraphValue alloc]
+                    initWithName:biasName type:result.type];
+                synthesizedConstants[biasName] = expanded;
+                [operations addObject:binaryOperation(@"add", matmulResult,
+                    expandedBias, result, candidate.range)];
+                [manifestValues addObject:result];
+            }
         } else {
             [operations addObject:[[ANEGraphOperation alloc]
                 initWithOperationName:name result:result arguments:arguments
@@ -671,8 +929,6 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         [NSMutableDictionary dictionary];
     for (ANEGraphValue *input in function.inputs)
         recordTensor(tensors, input, input.type.shape, @"input");
-    NSMutableDictionary<NSString *, NSData *> *resolvedConstants =
-        [NSMutableDictionary dictionary];
     NSArray<NSString *> *binaryNames =
         @[@"add", @"mul", @"maximum", @"minimum", @"sub", @"real_div"];
     ANEGraphOperation *operation = nil;
@@ -698,8 +954,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                         return reject(diagnostics, @"H13 matmul program count overflows",
                             operation);
                     sliceCount = rows * outputChunks;
-                    inputSliceElements = reduction;
-                    inputPhysicalElements = reduction <= 256 ? 256 : 512;
+                    NSNumber *count = [reductionCounts objectForKey:operation];
+                    inputSliceElements = count ? count.unsignedIntegerValue : reduction;
+                    inputPhysicalElements = inputSliceElements <= 256 ? 256 : 512;
                     outputPhysicalElements = 512;
                 }
                 ANEGraphValue *weights = operation.operands[@"y"].value;
@@ -710,15 +967,21 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             for (NSUInteger sliceIndex = 0; sliceIndex < sliceCount; ++sliceIndex) {
                 NSUInteger inputOffset = 0, outputOffset = 0;
                 if (matmul) {
-                    NSUInteger reduction = inputSliceElements;
+                    NSUInteger reduction = 0, rows = 0, geometryColumns = 0;
+                    BOOL transposeX = boolean(operation.arguments[@"transpose_x"], YES);
+                    matmulGeometry(operation.operands[@"x"].value, operation.result,
+                                   transposeX, &reduction, &rows, &geometryColumns);
                     NSUInteger columns = operation.result.type.shape.lastObject.unsignedIntegerValue;
                     NSUInteger row = sliceIndex / outputChunks;
                     NSUInteger chunk = sliceIndex % outputChunks;
-                    inputOffset = row * reduction;
+                    NSNumber *reductionOffset = [reductionOffsets objectForKey:operation];
+                    inputOffset = row * reduction + reductionOffset.unsignedIntegerValue;
                     outputOffset = row * columns + chunk * 512;
                     outputSliceElements = MIN((NSUInteger)512, columns - chunk * 512);
                 } else {
-                    inputOffset = outputOffset = sliceIndex * 64;
+                    inputOffset = sliceIndex * 64;
+                    outputOffset = inputOffset +
+                        [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
                     NSUInteger elements = 0;
                     if (tensorElementCount(operation.result, &elements))
                         inputSliceElements = outputSliceElements =
@@ -731,8 +994,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 NSString *manifestOperation = nil;
                 if (!lowerOperation(operation, modelRoot, diagnostics,
                                     synthesizedConstants, resolvedConstants,
-                                    inputOffset, outputOffset, program, &inputs,
-                                    &constantInput, &constantData, &manifestOperation))
+                                    inputOffset, inputSliceElements, outputOffset,
+                                    program, &inputs, &constantInput, &constantData,
+                                    &manifestOperation))
                     return NO;
                 std::vector<std::uint8_t> anec = ane::h13::encodeANEC(program);
                 NSMutableArray *inputRecords =
@@ -865,6 +1129,14 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 return reject(diagnostics,
                     @"H13 intermediate consumer physical range exceeds producer writes",
                     lastOperation, chainCode);
+        }
+    }
+
+    for (NSString *name in chunkedAccumulations) {
+        NSMutableDictionary *record = [tensors[name] mutableCopy];
+        if (record) {
+            record[@"accumulation"] = @"chunked-fp16";
+            tensors[name] = record;
         }
     }
 

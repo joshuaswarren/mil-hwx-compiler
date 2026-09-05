@@ -38,7 +38,8 @@ tensors may use any positive static size:
 | clip | One fp16 input and matching output with any positive static shape, plus finite fp32 scalar `alpha` and `beta` attributes that are exactly representable in fp16 and satisfy `alpha <= beta`. Lowers each slice to `minimum(maximum(x, alpha), beta)` as two operation-major program groups. |
 | sub | One fp16 input `x` and a same-shape fp16 const tensor `y`. The host negates each constant slice and emits the verified add descriptor. Two runtime inputs and `const - input` are rejected. |
 | real_div | One fp16 input `x` and a same-shape fp16 const tensor `y`. Every constant element must be a finite, nonzero power of two with an fp16-exact reciprocal. The host stores each reciprocal slice and emits the verified multiply descriptor. |
-| matmul | With `transpose_x=false`, fp16 x has shape `[..., K]`, `1 <= K <= 512`, and the product of the leading dimensions is the row count M. With `transpose_x=true`, only one logical row is accepted. W is a constant rank-2 tensor `[K,N]` with `transpose_y=false` or `[N,K]` with `transpose_y=true`, and the output is `[..., N]`. K is zero-extended to the 256- or 512-lane descriptor. N is emitted in 512-output programs with the last program zero-padded. K above 512 fails with `h13.reduction-too-large`. |
+| matmul | With `transpose_x=false`, fp16 x has shape `[..., K]`, `K >= 1`, and the product of the leading dimensions is the row count M. With `transpose_x=true`, only one logical row is accepted. W is a constant rank-2 tensor `[K,N]` with `transpose_y=false` or `[N,K]` with `transpose_y=true`, and the output is `[..., N]`. N is emitted in 512-output programs with the last program zero-padded. Each reduction of at most 512 elements is zero-extended to the 256- or 512-lane descriptor. Larger reductions emit one matvec per 512-element reduction chunk and sum the partial tensors with 64-lane add programs. The final tensor records `"accumulation": "chunked-fp16"`. Chunked results are not bit-identical to one unbroken accumulation because each partial sum adds one fp16 rounding step. |
+| linear | fp16 x has shape `[..., K]`, constant weight has shape `[N,K]`, and the output is `[..., N]`. The compiler lowers `linear(x, weight)` to `matmul(x, weight, transpose_y=true)`. An optional constant fp16 bias vector `[N]`, encoded as an inline list or BLOBFILE, adds one folded 64-lane add group after the matmul. |
 | reshape, squeeze, expand_dims | Positive static fp16 input and result shapes with equal element counts. The operation emits no program: its result aliases the input's underlying tensor with a new logical shape. Shape and axes inputs must be constants. Returning an alias of a function input fails with `h13.returned-input-alias` because no program produces an output. |
 
 The MIL contracts follow coremltools commit
@@ -49,8 +50,13 @@ preserves values and element count, its
 [`expand_dims` definition](https://github.com/apple/coremltools/blob/9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4/coremltools/converters/mil/mil/ops/defs/iOS15/tensor_transformation.py#L77-L129)
 inserts singleton dimensions, and its
 [`squeeze` definition](https://github.com/apple/coremltools/blob/9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4/coremltools/converters/mil/mil/ops/defs/iOS15/tensor_transformation.py#L877-L935)
-removes singleton dimensions. The same commit's matmul definition broadcasts
-the operands' leading dimensions before appending the matrix dimensions.
+removes singleton dimensions. The same commit's
+[`matmul` definition](https://github.com/apple/coremltools/blob/9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4/coremltools/converters/mil/mil/ops/defs/iOS15/linear.py)
+broadcasts the operands' leading dimensions before appending the matrix
+dimensions. Its
+[`linear` definition](https://github.com/apple/coremltools/blob/9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4/coremltools/converters/mil/mil/ops/defs/iOS15/linear.py)
+defines `linear(x, weight, bias)` as `x * weight^T + bias`, requires constant
+weight and bias inputs, and gives bias the shape `[N]`.
 
 Exactly one function and at least one encoded operation are required. The
 compiler lowers operations in their verified MIL order; it does not re-sort
