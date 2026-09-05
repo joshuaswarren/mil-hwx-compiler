@@ -130,6 +130,49 @@ def matmul_source(reduction, x_shape=None, output_shape=None, transpose_x=False,
 }}
 '''
 
+def linear_source(reduction, columns, bias=None, x_shape=None, output_shape=None,
+                  runtime_weight=False, runtime_bias=False):
+    x_shape = (1, reduction) if x_shape is None else x_shape
+    output_shape = (*x_shape[:-1], columns) if output_shape is None else output_shape
+    x_type = tensor_type(x_shape)
+    weight_type = tensor_type((columns, reduction))
+    output_type = tensor_type(output_shape)
+    parameters = [f'{x_type} x']
+    body = []
+    if runtime_weight:
+        parameters.append(f'{weight_type} W')
+    else:
+        body.append(
+            f'    {weight_type} W = const()[name = string("W"), val = '
+            f'{weight_type}(BLOBFILE(path = string("@model_path/weights.bin"), '
+            'offset = uint64(64)))];')
+    arguments = ['x = x', 'weight = W']
+    if bias is not None:
+        bias_type = tensor_type((columns,))
+        if runtime_bias:
+            parameters.append(f'{bias_type} bias')
+        elif bias == 'blob':
+            body.append(
+                f'    {bias_type} bias = const()[name = string("bias"), val = '
+                f'{bias_type}(BLOBFILE(path = string("@model_path/bias.bin"), '
+                'offset = uint64(64)))];')
+        else:
+            values = ', '.join(f'fp16({value})' for value in bias)
+            body.append(
+                f'    {bias_type} bias = const()[name = string("bias"), val = '
+                f'{bias_type}([{values}])];')
+        arguments.append('bias = bias')
+    return f'''program(1.3)
+[buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>({', '.join(parameters)}) {{
+{chr(10).join(body)}
+    {output_type} y = linear({', '.join(arguments)})[name = string("projection")];
+  }} -> (y);
+}}
+'''
+
+
 def matmul_activation_chain_source(reduction=256, columns=512):
     x_type = tensor_type((1, reduction))
     value_type = tensor_type((1, columns))
@@ -759,8 +802,138 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         (wide_projection / 'program-1.anec').read_bytes()
     assert json.loads(inspect(wide_projection))['manifest'] == wide_manifest
 
-    compile_text(matmul_source(600), 'reduction-600', False,
-                 'h13.reduction-too-large')
+    reduction_weights = b''.join(
+        struct.pack('<H', (row * 17 + column * 31) & 0x3bff)
+        for row in range(512) for column in range(1024))
+    reduction_blob = bytearray(128 + len(reduction_weights))
+    struct.pack_into('<IIQQ', reduction_blob, 64, 0xDEADBEEF, 1,
+                     len(reduction_weights), 128)
+    reduction_blob[128:] = reduction_weights
+    (root / 'weights.bin').write_bytes(reduction_blob)
+    wide_reduction = compile_text(matmul_source(1024), 'reduction-1024')
+    wide_reduction_manifest = json.loads(
+        (wide_reduction / 'manifest.json').read_text())
+    assert [program['operation'] for program in wide_reduction_manifest['programs']] == \
+        ['matmul', 'matmul'] + ['add'] * 8
+    assert [program['inputs'][0]['slice'] for program in
+            wide_reduction_manifest['programs'][:2]] == [
+        {'tensor': 'x', 'elementOffset': 0, 'elementCount': 512},
+        {'tensor': 'x', 'elementOffset': 512, 'elementCount': 512}]
+    assert wide_reduction_manifest['tensors']['y']['accumulation'] == 'chunked-fp16'
+    assert [program['outputs'][0]['name'] for program in
+            wide_reduction_manifest['programs'][:2]] == [
+        '$h13.y.partial0', '$h13.y.partial1']
+    assert all((wide_reduction / program['file']).read_bytes() == data
+               for program in wide_reduction_manifest['programs'][2:])
+    multirow_reduction = compile_text(
+        matmul_source(1024, x_shape=(2, 1024), output_shape=(2, 512)),
+        'reduction-1024-multirow')
+    multirow_reduction_manifest = json.loads(
+        (multirow_reduction / 'manifest.json').read_text())
+    assert [program['inputs'][0]['slice']['elementOffset'] for program in
+            multirow_reduction_manifest['programs'][:4]] == [0, 1024, 512, 1536]
+    assert json.loads(inspect(multirow_reduction))['manifest'] == \
+        multirow_reduction_manifest
+    for chunk in range(2):
+        block = b''.join(
+            reduction_weights[(row * 1024 + chunk * 512) * 2:
+                              (row * 1024 + (chunk + 1) * 512) * 2]
+            for row in range(512))
+        canonical_blob = bytearray(128 + len(block))
+        struct.pack_into('<IIQQ', canonical_blob, 64, 0xDEADBEEF, 1,
+                         len(block), 128)
+        canonical_blob[128:] = block
+        (root / 'weights.bin').write_bytes(canonical_blob)
+        canonical = compile_text(matmul_source(512), f'reduction-1024-chunk-{chunk}')
+        assert (wide_reduction / f'program-{chunk}.anec').read_bytes() == \
+            (canonical / 'program-0.anec').read_bytes()
+    assert json.loads(inspect(wide_reduction))['manifest'] == wide_reduction_manifest
+    wide_reduction_path = wide_reduction / 'manifest.json'
+    invalid_accumulation = json.loads(json.dumps(wide_reduction_manifest))
+    invalid_accumulation['tensors']['y']['accumulation'] = 'fp32'
+    wide_reduction_path.write_text(json.dumps(invalid_accumulation))
+    inspect(wide_reduction, success=False)
+    wide_reduction_path.write_text(json.dumps(wide_reduction_manifest))
+
+    tail_values = b''.join(struct.pack('<H', index & 0x3bff) for index in range(700))
+    tail_blob = bytearray(128 + len(tail_values))
+    struct.pack_into('<IIQQ', tail_blob, 64, 0xDEADBEEF, 1, len(tail_values), 128)
+    tail_blob[128:] = tail_values
+    (root / 'weights.bin').write_bytes(tail_blob)
+    tail_reduction = compile_text(
+        matmul_source(700, output_shape=(1, 1), weight_shape=(1, 700)),
+        'reduction-700')
+    tail_manifest = json.loads((tail_reduction / 'manifest.json').read_text())
+    assert tail_manifest['programs'][1]['inputs'][0]['slice'] == {
+        'tensor': 'x', 'elementOffset': 512, 'elementCount': 188,
+        'physicalElements': 256}
+    tail_canonical_values = tail_values[1024:]
+    tail_canonical_blob = bytearray(128 + len(tail_canonical_values))
+    struct.pack_into('<IIQQ', tail_canonical_blob, 64, 0xDEADBEEF, 1,
+                     len(tail_canonical_values), 128)
+    tail_canonical_blob[128:] = tail_canonical_values
+    (root / 'weights.bin').write_bytes(tail_canonical_blob)
+    tail_canonical = compile_text(
+        matmul_source(188, output_shape=(1, 1), weight_shape=(1, 188)),
+        'reduction-700-tail-reference')
+    assert (tail_reduction / 'program-1.anec').read_bytes() == \
+        (tail_canonical / 'program-0.anec').read_bytes()
+    assert json.loads(inspect(tail_reduction))['manifest'] == tail_manifest
+
+    linear_weight_values = b''.join(
+        struct.pack('<H', (row * 13 + column * 7) & 0x3bff)
+        for row in range(300) for column in range(256))
+    linear_weights = bytearray(128 + len(linear_weight_values))
+    struct.pack_into('<IIQQ', linear_weights, 64, 0xDEADBEEF, 1,
+                     len(linear_weight_values), 128)
+    linear_weights[128:] = linear_weight_values
+    (root / 'weights.bin').write_bytes(linear_weights)
+    bias_values = tuple(float(index % 16) for index in range(300))
+    linear = compile_text(linear_source(256, 300, bias_values), 'linear-bias')
+    linear_manifest = json.loads((linear / 'manifest.json').read_text())
+    assert [program['operation'] for program in linear_manifest['programs']] == \
+        ['matmul'] + ['add'] * 5
+    expected_bias = b''.join(struct.pack('<e', value) for value in bias_values)
+    assert b''.join(bytes.fromhex(program['constantInputs']['$h13.y.bias'])[
+                        :program['inputs'][1]['logicalBytes']]
+                    for program in linear_manifest['programs'][1:]) == expected_bias
+    direct = compile_text(
+        matmul_source(256, output_shape=(1, 300), weight_shape=(300, 256)),
+        'linear-direct-reference')
+    assert (linear / 'program-0.anec').read_bytes() == \
+        (direct / 'program-0.anec').read_bytes()
+    assert json.loads(inspect(linear))['manifest'] == linear_manifest
+
+    linear_without_bias = compile_text(linear_source(256, 300), 'linear-no-bias')
+    assert len(json.loads((linear_without_bias / 'manifest.json').read_text())[
+        'programs']) == 1
+    assert (linear_without_bias / 'program-0.anec').read_bytes() == \
+        (direct / 'program-0.anec').read_bytes()
+    bias_blob = bytearray(128 + len(expected_bias))
+    struct.pack_into('<IIQQ', bias_blob, 64, 0xDEADBEEF, 1, len(expected_bias), 128)
+    bias_blob[128:] = expected_bias
+    (root / 'bias.bin').write_bytes(bias_blob)
+    linear_blob_bias = compile_text(linear_source(256, 300, 'blob'),
+                                    'linear-blob-bias')
+    linear_blob_manifest = json.loads((linear_blob_bias / 'manifest.json').read_text())
+    assert [program['constantInputs'] for program in linear_blob_manifest['programs'][1:]] == \
+        [program['constantInputs'] for program in linear_manifest['programs'][1:]]
+    assert json.loads(inspect(linear_blob_bias))['manifest'] == linear_blob_manifest
+    batched_linear = compile_text(
+        linear_source(256, 300, 'blob', x_shape=(2, 256)),
+        'linear-batched-bias')
+    batched_linear_manifest = json.loads(
+        (batched_linear / 'manifest.json').read_text())
+    assert [program['operation'] for program in batched_linear_manifest['programs']] == \
+        (['matmul'] + ['add'] * 5) * 2
+    assert [program['inputs'][0]['slice']['elementOffset'] for program in
+            batched_linear_manifest['programs'] if program['operation'] == 'matmul'] == \
+        [0, 256]
+    assert json.loads(inspect(batched_linear))['manifest'] == batched_linear_manifest
+    compile_text(linear_source(256, 300, runtime_weight=True),
+                 'linear-runtime-weight', False, 'h13.linear-nonconstant-weight')
+    compile_text(linear_source(256, 300, (), runtime_bias=True),
+                 'linear-runtime-bias', False, 'h13.linear-nonconstant-bias')
     for reduction, physical in ((1, 256), (257, 512)):
         boundary_weights = bytearray(128 + reduction * 2)
         struct.pack_into('<IIQQ', boundary_weights, 64, 0xDEADBEEF, 1,

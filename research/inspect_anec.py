@@ -37,8 +37,12 @@ def check_tensor(name, tensor):
     require(isinstance(name, str) and name, 'tensor needs a non-empty name')
     fields = set(tensor) if isinstance(tensor, dict) else set()
     require(fields in ({'shape', 'logicalBytes', 'role'},
-                       {'shape', 'logicalBytes', 'role', 'aliasOf'}),
+                       {'shape', 'logicalBytes', 'role', 'aliasOf'},
+                       {'shape', 'logicalBytes', 'role', 'accumulation'}),
             'tensor record has incorrect fields')
+    require('accumulation' not in tensor or
+            tensor['accumulation'] == 'chunked-fp16',
+            'unsupported tensor accumulation')
     shape = tensor.get('shape')
     require(isinstance(shape, list) and shape and
             all(type(n) is int and n > 0 for n in shape),
@@ -226,7 +230,7 @@ def validate_program(directory, program, tensors):
 
 def load_package(directory):
     directory = Path(directory).resolve()
-    manifest = json.loads(local_file(directory, 'manifest.json', 65536))
+    manifest = json.loads(local_file(directory, 'manifest.json', 64 << 20))
     require(isinstance(manifest, dict), 'manifest must be an object')
     require(manifest.get('schema') == 'mil-hwxc.h13-anec-package.v1',
             'unsupported package schema')
