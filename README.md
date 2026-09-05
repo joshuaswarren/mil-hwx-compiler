@@ -127,7 +127,33 @@ When several bindings reference it, packing writes one
 unpacking reads the same directory form and reassembles one dense output file.
 Inspection reports encoded command, input, and output allocation totals,
 excluding driver and runtime overhead. It does not validate task instructions
-or establish device safety. No device dispatcher is implemented here.
+or establish device safety. Device dispatch is handled by the validated runner below.
+
+### H13 reference and Linux dispatch
+
+`tools/h13_reference.py` evaluates the accepted H13 MIL subset without NumPy.
+It reads and writes dense little-endian fp16 files. Matmul accumulates in
+float32 and rounds once to fp16. Reductions larger than 512 elements on H13
+instead round each chunk before the add chain, so their device results can
+differ by the extra fp16 rounding.
+
+```bash
+python3 tools/h13_reference.py model.mil --model-root models \
+  --input x=input.fp16 --output y=reference.fp16
+python3 tools/h13_run_linux.py build/h13-package --mil model.mil \
+  --model-root models --input x=input.fp16 --output y=device.fp16 --dry-run
+```
+
+The Linux runner imports `research/inspect_anec.py` and validates the complete
+package before it opens libane. Dry-run mode performs package, input, reference,
+binding, and dispatch-plan checks without loading libane or writing an output. A
+hardware run uses the `omarchy` branch Python binding library from
+`~/src/omarchy-ane`, forwards intermediate slices as raw physical buffers, and
+compares elementwise output at exact fp16 equality. A tensor marked
+`chunked-fp16` uses
+`abs(device-reference) <= 0.03125 + 0.01 * abs(reference)` to allow the extra
+partial-sum rounding. Override the binding path with `--libane-library`. Run the
+host-only reference and dry-run checks with `make test-h13-reference`.
 
 Before hardware use, qualify the matching driver, BAR/kernel binding contract,
 and DMA spans on an ANE-enabled base M1. Compilation on an M1 Ultra host is
