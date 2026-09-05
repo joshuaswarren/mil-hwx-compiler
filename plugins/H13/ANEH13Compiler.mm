@@ -31,16 +31,18 @@ static BOOL tensor(ANEGraphValue *value, NSArray<NSNumber *> *shape) {
     return fp16Tensor(value) && [value.type.shape isEqualToArray:shape];
 }
 
-static BOOL tensorElements(ANEGraphValue *value, NSUInteger expected) {
+static BOOL tensorElementCount(ANEGraphValue *value, NSUInteger *count) {
     if (!fp16Tensor(value)) return NO;
     NSUInteger elements = 1;
     for (NSNumber *number in value.type.shape) {
         NSUInteger dimension = number.unsignedIntegerValue;
-        if (!dimension || dimension > expected / elements) return NO;
+        if (!dimension || elements > NSUIntegerMax / dimension) return NO;
         elements *= dimension;
     }
-    return elements == expected;
+    *count = elements;
+    return YES;
 }
+
 
 static uint64_t roundToNearestEven(double value) {
     double lower = std::floor(value);
@@ -157,26 +159,37 @@ static BOOL boolean(ANEGraphArgument *argument, BOOL expected) {
         [argument.text isEqualToString:expected ? @"true" : @"false"];
 }
 
-static BOOL singleVectorMatmul(ANEGraphValue *x, ANEGraphValue *result,
-                               BOOL transposeX, NSUInteger *reduction) {
+static BOOL matmulGeometry(ANEGraphValue *x, ANEGraphValue *result,
+                           BOOL transposeX, NSUInteger *reduction,
+                           NSUInteger *rows) {
+    if (!fp16Tensor(x) || !fp16Tensor(result)) return NO;
     NSArray<NSNumber *> *inputShape = x.type.shape;
     NSArray<NSNumber *> *outputShape = result.type.shape;
     NSUInteger rank = inputShape.count;
-    if (!fp16Tensor(x) || !fp16Tensor(result) || outputShape.count != rank ||
-        (!transposeX && rank == 0) || (transposeX && rank < 2)) return NO;
+    if (outputShape.count != rank || (!transposeX && rank == 0) ||
+        (transposeX && rank < 2)) return NO;
 
     NSUInteger leading = rank - (transposeX ? 2 : 1);
-    for (NSUInteger index = 0; index < leading; ++index)
-        if (inputShape[index].unsignedIntegerValue != 1 ||
-            outputShape[index].unsignedIntegerValue != 1) return NO;
-
+    NSUInteger rowCount = 1;
+    for (NSUInteger index = 0; index < leading; ++index) {
+        NSUInteger dimension = inputShape[index].unsignedIntegerValue;
+        if (!dimension || outputShape[index].unsignedIntegerValue != dimension ||
+            rowCount > NSUIntegerMax / dimension) return NO;
+        rowCount *= dimension;
+    }
     NSUInteger candidate = inputShape[rank - (transposeX ? 2 : 1)].unsignedIntegerValue;
-    if ((candidate != 256 && candidate != 512) ||
-        outputShape[rank - (transposeX ? 2 : 1)].unsignedIntegerValue !=
-            (transposeX ? 1 : 512)) return NO;
-    if (transposeX && (inputShape[rank - 1].unsignedIntegerValue != 1 ||
-                       outputShape[rank - 1].unsignedIntegerValue != 512)) return NO;
+    if (candidate != 256 && candidate != 512) return NO;
+    if (transposeX) {
+        NSUInteger rowDimension = inputShape[rank - 1].unsignedIntegerValue;
+        if (!rowDimension || outputShape[rank - 2].unsignedIntegerValue != rowDimension ||
+            outputShape[rank - 1].unsignedIntegerValue != 512 ||
+            rowCount > NSUIntegerMax / rowDimension) return NO;
+        rowCount *= rowDimension;
+    } else if (outputShape[rank - 1].unsignedIntegerValue != 512) {
+        return NO;
+    }
     *reduction = candidate;
+    *rows = rowCount;
     return YES;
 }
 
@@ -194,6 +207,22 @@ static NSDictionary *binding(ANEGraphValue *value,
         @"allocationBytes": @(layout.allocationBytes)};
 }
 
+static void recordTensor(NSMutableDictionary<NSString *, NSDictionary *> *tensors,
+                         ANEGraphValue *value, NSArray<NSNumber *> *shape,
+                         NSString *role) {
+    if (tensors[value.name]) return;
+    NSUInteger elements = 1;
+    for (NSNumber *dimension in shape) elements *= dimension.unsignedIntegerValue;
+    tensors[value.name] = @{@"shape": shape, @"logicalBytes": @(elements * 2),
+                            @"role": role};
+}
+
+static void addSlice(NSMutableDictionary *record, ANEGraphValue *value,
+                     NSUInteger offset, NSUInteger count) {
+    record[@"slice"] = @{@"tensor": value.name, @"elementOffset": @(offset),
+                          @"elementCount": @(count)};
+}
+
 static BOOL constantValue(ANEGraphValue *value) {
     return [value.producer.operationName isEqualToString:@"const"];
 }
@@ -201,7 +230,8 @@ static BOOL constantValue(ANEGraphValue *value) {
 static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                            ANEDiagnosticEngine *diagnostics,
                            NSDictionary<NSString *, NSData *> *synthesizedConstants,
-                           ane::h13::Program &program,
+                           NSMutableDictionary<NSString *, NSData *> *resolvedConstants,
+                           NSUInteger elementOffset, ane::h13::Program &program,
                            NSArray<ANEGraphValue *> *__autoreleasing *inputsOut,
                            ANEGraphValue *__autoreleasing *constantInputOut,
                            NSData *__autoreleasing *constantDataOut,
@@ -223,15 +253,21 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 @"H13 binary operations require x and y value operands", operation);
         BOOL xIsConstant = synthesizedConstants[x.name] || constantValue(x);
         BOOL yIsConstant = synthesizedConstants[y.name] || constantValue(y);
+        NSUInteger elements = 0;
         if (!xIsConstant && !yIsConstant) {
             if (binaryIndex >= 4)
                 return reject(diagnostics, [NSString stringWithFormat:
                     @"H13 '%@' with two runtime inputs cannot lower exactly through the verified binary modes", name],
                     operation, @"h13.nonfoldable-binary");
-            if (x == y || !tensorElements(x, 64) || !tensor(y, x.type.shape) ||
-                !tensor(operation.result, x.type.shape))
+            if (x == y || !tensorElementCount(x, &elements) ||
+                !tensor(y, x.type.shape) || !tensor(operation.result, x.type.shape))
                 return reject(diagnostics,
-                    @"H13 binary operations require two distinct fp16 inputs with the same positive static shape containing exactly 64 elements", operation);
+                    @"H13 binary operations require two distinct fp16 inputs with the same positive static shape",
+                    operation);
+            if (elements % 64)
+                return reject(diagnostics,
+                    @"H13 elementwise tensor element counts must be a multiple of 64",
+                    operation, @"h13.elementwise-not-multiple-of-64");
             inputs = @[x, y];
         } else {
             if (xIsConstant == yIsConstant || (binaryIndex >= 4 && xIsConstant)) {
@@ -243,19 +279,26 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             }
             ANEGraphValue *runtimeInput = xIsConstant ? y : x;
             constantInput = xIsConstant ? x : y;
-            if (!tensorElements(runtimeInput, 64) ||
+            if (!tensorElementCount(runtimeInput, &elements) ||
                 !tensor(operation.result, runtimeInput.type.shape))
                 return reject(diagnostics,
-                    @"H13 folded binary operations require one fp16 input and output with the same positive static shape containing exactly 64 elements",
+                    @"H13 folded binary operations require one fp16 input and output with the same positive static shape",
                     operation, @"h13.invalid-constant-input");
+            if (elements % 64)
+                return reject(diagnostics,
+                    @"H13 elementwise tensor element counts must be a multiple of 64",
+                    operation, @"h13.elementwise-not-multiple-of-64");
+            if (elementOffset > elements - 64)
+                return reject(diagnostics, @"H13 elementwise slice exceeds its tensor",
+                    operation, @"h13.invalid-slice");
 
-            NSData *synthesizedData = synthesizedConstants[constantInput.name];
-            if (synthesizedData) {
-                if (!tensor(constantInput, runtimeInput.type.shape))
+            NSData *wholeData = synthesizedConstants[constantInput.name];
+            BOOL repeatedConstant = wholeData != nil;
+            if (wholeData) {
+                if (!tensor(constantInput, runtimeInput.type.shape) || wholeData.length != 128)
                     return reject(diagnostics,
                         @"H13 synthesized constants must match the runtime fp16 tensor shape",
                         operation, @"h13.invalid-constant-input");
-                constantData = synthesizedData;
             } else {
                 ANEGraphOperation *producer = constantInput.producer;
                 BOOL scalar = constantInput.type.kind == ANEValueTypeKindScalar &&
@@ -263,48 +306,65 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 if ((!tensor(constantInput, runtimeInput.type.shape) && !scalar) ||
                     (scalar && binaryIndex != 1) || producer.arguments.count)
                     return reject(diagnostics,
-                        @"H13 constants must be a matching 64-element fp16 tensor; only mul accepts an inline fp16 scalar broadcast",
+                        @"H13 constants must be a matching fp16 tensor; only mul accepts an inline fp16 scalar broadcast",
                         producer, @"h13.invalid-constant-input");
 
                 ANEGraphArgument *literal = producer.attributes[@"val"];
                 if (scalar) {
                     uint16_t bits = 0;
                     if (!fp16Scalar(literal, &bits))
-                        return reject(diagnostics, @"H13 scalar mul requires one finite inline fp16 value",
+                        return reject(diagnostics,
+                            @"H13 scalar mul requires one finite inline fp16 value",
                             producer, @"h13.invalid-constant-payload");
-                    constantData = splatFP16(bits);
+                    wholeData = splatFP16(bits);
+                    repeatedConstant = YES;
                 } else {
-                    if (literal.kind != ANEGraphArgumentKindCall ||
-                        ![literal.calleeValueType isEqualToValueType:constantInput.type] ||
-                        literal.callArguments.count != 1)
-                        return reject(diagnostics,
-                            @"H13 tensor constants require a matching typed inline list or BLOBFILE payload",
-                            producer, @"h13.invalid-constant-payload");
-                    ANEGraphArgument *payload = literal.callArguments[0].value;
-                    if (payload.kind == ANEGraphArgumentKindList && payload.elements.count == 64) {
-                        NSMutableData *dense = [NSMutableData dataWithLength:128];
-                        uint16_t *words = static_cast<uint16_t *>(dense.mutableBytes);
-                        for (NSUInteger index = 0; index < 64; ++index)
-                            if (!fp16Scalar(payload.elements[index], &words[index]))
-                                return reject(diagnostics,
-                                    @"H13 inline tensor constants require exactly 64 finite fp16 elements",
-                                    producer, @"h13.invalid-constant-payload");
-                        constantData = dense;
-                    } else if (payload.kind == ANEGraphArgumentKindCall &&
-                               [payload.calleeName isEqualToString:@"BLOBFILE"]) {
-                        constantData = [ANEBlobResolver loadConstantForOperation:producer
-                            expectedBytes:128 modelRoot:modelRoot diagnostics:diagnostics];
-                        if (!constantData)
-                            return reject(diagnostics, @"H13 could not load the constant BLOBFILE payload",
+                    wholeData = resolvedConstants[constantInput.name];
+                    if (!wholeData) {
+                        if (literal.kind != ANEGraphArgumentKindCall ||
+                            ![literal.calleeValueType isEqualToValueType:constantInput.type] ||
+                            literal.callArguments.count != 1)
+                            return reject(diagnostics,
+                                @"H13 tensor constants require a matching typed inline list or BLOBFILE payload",
                                 producer, @"h13.invalid-constant-payload");
-                    } else {
-                        return reject(diagnostics,
-                            @"H13 inline tensor constants require exactly 64 finite fp16 elements",
-                            producer, @"h13.invalid-constant-payload");
+                        ANEGraphArgument *payload = literal.callArguments[0].value;
+                        if (payload.kind == ANEGraphArgumentKindList &&
+                            payload.elements.count == elements) {
+                            NSMutableData *dense = [NSMutableData dataWithLength:elements * 2];
+                            uint16_t *words = static_cast<uint16_t *>(dense.mutableBytes);
+                            for (NSUInteger index = 0; index < elements; ++index)
+                                if (!fp16Scalar(payload.elements[index], &words[index]))
+                                    return reject(diagnostics,
+                                        @"H13 inline tensor constants require finite fp16 elements matching the tensor shape",
+                                        producer, @"h13.invalid-constant-payload");
+                            wholeData = dense;
+                        } else if (payload.kind == ANEGraphArgumentKindCall &&
+                                   [payload.calleeName isEqualToString:@"BLOBFILE"]) {
+                            wholeData = [ANEBlobResolver loadConstantForOperation:producer
+                                expectedBytes:elements * 2 modelRoot:modelRoot
+                                diagnostics:diagnostics];
+                            if (!wholeData)
+                                return reject(diagnostics,
+                                    @"H13 could not load the constant BLOBFILE payload",
+                                    producer, @"h13.invalid-constant-payload");
+                        } else {
+                            return reject(diagnostics,
+                                @"H13 inline tensor constants require finite fp16 elements matching the tensor shape",
+                                producer, @"h13.invalid-constant-payload");
+                        }
+                        resolvedConstants[constantInput.name] = wholeData;
                     }
                 }
             }
 
+            if (repeatedConstant) {
+                constantData = wholeData;
+            } else {
+                if (wholeData.length != elements * 2)
+                    return reject(diagnostics, @"H13 constant payload has the wrong size",
+                        operation, @"h13.invalid-constant-payload");
+                constantData = [wholeData subdataWithRange:NSMakeRange(elementOffset * 2, 128)];
+            }
             NSMutableData *folded = [constantData mutableCopy];
             uint16_t *words = static_cast<uint16_t *>(folded.mutableBytes);
             if (binaryIndex == 4) {
@@ -338,17 +398,22 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             ane::h13::BinaryOperation::Add, ane::h13::BinaryOperation::Multiply};
         program = ane::h13::encodeBinary(operations[binaryIndex]);
     } else if ([name isEqualToString:@"matmul"]) {
-        NSUInteger reduction = 0;
+        NSUInteger reduction = 0, rows = 0;
         BOOL transposeX = boolean(operation.arguments[@"transpose_x"], YES);
         BOOL transposeY = boolean(operation.arguments[@"transpose_y"], YES);
         if (operation.arguments.count != 4 || constantValue(x) ||
             (!transposeX && !boolean(operation.arguments[@"transpose_x"], NO)) ||
             (!transposeY && !boolean(operation.arguments[@"transpose_y"], NO)) ||
-            !singleVectorMatmul(x, operation.result, transposeX, &reduction) ||
+            !matmulGeometry(x, operation.result, transposeX, &reduction, &rows) ||
             !tensor(y, transposeY ? @[@512, @(reduction)] : @[@(reduction), @512]) ||
             !constantValue(y))
             return reject(diagnostics,
-                @"H13 matmul requires one fp16 logical vector with K=256 or 512, constant rank-2 W, and matching explicit transpose flags and output shape", operation);
+                @"H13 matmul requires fp16 x rows with K=256 or 512, constant rank-2 W, matching explicit transpose flags, and a 512-column output",
+                operation);
+        if (transposeX && rows > 1)
+            return reject(diagnostics,
+                @"H13 transpose_x=true matmul supports exactly one logical row",
+                operation, @"h13.transpose-x-multirow");
         ANEGraphArgument *value = y.producer.attributes[@"val"];
         if (y.producer.arguments.count || value.kind != ANEGraphArgumentKindCall ||
             ![value.calleeValueType isEqualToValueType:y.type] ||
@@ -357,9 +422,13 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             return reject(diagnostics,
                 @"H13 weights require a matching tensor value with one BLOBFILE payload", y.producer);
         NSUInteger count = 512 * reduction;
-        NSData *weights = [ANEBlobResolver loadConstantForOperation:y.producer
-            expectedBytes:count * 2 modelRoot:modelRoot diagnostics:diagnostics];
-        if (!weights) return NO;
+        NSData *weights = resolvedConstants[y.name];
+        if (!weights) {
+            weights = [ANEBlobResolver loadConstantForOperation:y.producer
+                expectedBytes:count * 2 modelRoot:modelRoot diagnostics:diagnostics];
+            if (!weights) return NO;
+            resolvedConstants[y.name] = weights;
+        }
         program = ane::h13::encodeMatvec(static_cast<std::uint32_t>(reduction),
             static_cast<const std::uint8_t *>(weights.bytes), weights.length, transposeY);
         inputs = @[x];
@@ -496,25 +565,6 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             return reject(diagnostics,
                 @"H13 chains require each intermediate to be consumed exactly once by the next operation",
                 operations[index], chainCode);
-        ANEGraphOperation *consumerOperation = operations[index + 1];
-        NSArray<NSString *> *binaryNames =
-            @[@"add", @"mul", @"maximum", @"minimum", @"sub", @"real_div"];
-        if ([binaryNames containsObject:consumerOperation.operationName] &&
-            !tensorElements(intermediate, 64))
-            return reject(diagnostics,
-                @"H13 binary chain inputs must contain exactly 64 fp16 elements",
-                consumerOperation, chainCode);
-        if ([consumerOperation.operationName isEqualToString:@"matmul"]) {
-            NSUInteger reduction = 0;
-            BOOL transposeX = boolean(consumerOperation.arguments[@"transpose_x"], YES);
-            if (consumerOperation.operands[@"x"].value != intermediate ||
-                (!transposeX && !boolean(consumerOperation.arguments[@"transpose_x"], NO)) ||
-                !singleVectorMatmul(intermediate, consumerOperation.result,
-                                    transposeX, &reduction))
-                return reject(diagnostics,
-                    @"H13 matmul chain inputs must satisfy the supported vector geometry",
-                    consumerOperation, chainCode);
-        }
     }
     for (ANEGraphValue *input in function.inputs) {
         BOOL used = NO;
@@ -536,53 +586,100 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     NSMutableArray<NSDictionary *> *programRecords = [NSMutableArray array];
     NSMutableArray<NSData *> *payloads = [NSMutableArray array];
     NSMutableArray<NSNumber *> *dispatchPlan = [NSMutableArray array];
+    NSMutableDictionary<NSString *, NSDictionary *> *tensors =
+        [NSMutableDictionary dictionary];
+    NSMutableDictionary<NSString *, NSData *> *resolvedConstants =
+        [NSMutableDictionary dictionary];
+    NSArray<NSString *> *binaryNames =
+        @[@"add", @"mul", @"maximum", @"minimum", @"sub", @"real_div"];
     ANEGraphOperation *operation = nil;
     try {
-        for (NSUInteger programIndex = 0; programIndex < operations.count; ++programIndex) {
-            operation = operations[programIndex];
-            ane::h13::Program program;
-            NSArray<ANEGraphValue *> *inputs = nil;
-            ANEGraphValue *constantInput = nil;
-            NSData *constantData = nil;
-            NSString *manifestOperation = nil;
-            if (!lowerOperation(operation, modelRoot, diagnostics, synthesizedConstants,
-                                program, &inputs, &constantInput, &constantData,
-                                &manifestOperation))
-                return NO;
-            std::vector<std::uint8_t> anec = ane::h13::encodeANEC(program);
-            NSMutableArray *inputRecords = [NSMutableArray arrayWithCapacity:inputs.count];
-            NSMutableDictionary *constantInputs = [NSMutableDictionary dictionary];
-            for (NSUInteger index = 0; index < inputs.count; ++index) {
-                ANEGraphValue *input = inputs[index];
-                NSArray<NSNumber *> *shape = input == constantInput
-                    ? operation.result.type.shape : input.type.shape;
-                NSMutableDictionary *record =
-                    [binding(input, shape, program.inputs.at(index)) mutableCopy];
-                if (input == constantInput) {
-                    record[@"binding"] = @"constant";
-                    constantInputs[input.name] = hexData(constantData);
-                } else if ([intermediateValues containsObject:input]) {
-                    record[@"role"] = @"intermediate";
+        for (operation in operations) {
+            NSUInteger sliceCount = 1, inputSliceElements = 0, outputSliceElements = 0;
+            if ([binaryNames containsObject:operation.operationName]) {
+                NSUInteger elements = 0;
+                if (tensorElementCount(operation.result, &elements) && !(elements % 64)) {
+                    sliceCount = elements / 64;
+                    inputSliceElements = outputSliceElements = 64;
                 }
-                [inputRecords addObject:record];
+            } else if ([operation.operationName isEqualToString:@"matmul"]) {
+                NSUInteger reduction = 0, rows = 0;
+                BOOL transposeX = boolean(operation.arguments[@"transpose_x"], YES);
+                if (matmulGeometry(operation.operands[@"x"].value, operation.result,
+                                   transposeX, &reduction, &rows)) {
+                    sliceCount = rows;
+                    inputSliceElements = reduction;
+                    outputSliceElements = 512;
+                }
+                ANEGraphValue *weights = operation.operands[@"y"].value;
+                if (fp16Tensor(weights))
+                    recordTensor(tensors, weights, weights.type.shape, @"constant");
             }
-            NSMutableDictionary *outputRecord =
-                [binding(operation.result, operation.result.type.shape, program.output) mutableCopy];
-            if ([intermediateValues containsObject:operation.result])
-                outputRecord[@"role"] = @"intermediate";
-            NSString *file = [NSString stringWithFormat:@"program-%lu.anec",
-                (unsigned long)programIndex];
-            NSDictionary *record = @{
-                @"file": file, @"bytes": @(anec.size()),
-                @"taskDescriptors": @1, @"operation": manifestOperation,
-                @"inputs": inputRecords, @"constantInputs": constantInputs,
-                @"outputs": @[outputRecord],
-                @"constantOffset": @(ane::h13::constantOffset),
-                @"constantBytes": @(program.constants.size()),
-            };
-            [programRecords addObject:record];
-            [payloads addObject:[NSData dataWithBytes:anec.data() length:anec.size()]];
-            [dispatchPlan addObject:@(programIndex)];
+
+            for (NSUInteger sliceIndex = 0; sliceIndex < sliceCount; ++sliceIndex) {
+                NSUInteger inputOffset = sliceIndex * inputSliceElements;
+                NSUInteger outputOffset = sliceIndex * outputSliceElements;
+                ane::h13::Program program;
+                NSArray<ANEGraphValue *> *inputs = nil;
+                ANEGraphValue *constantInput = nil;
+                NSData *constantData = nil;
+                NSString *manifestOperation = nil;
+                if (!lowerOperation(operation, modelRoot, diagnostics,
+                                    synthesizedConstants, resolvedConstants,
+                                    inputOffset, program, &inputs, &constantInput,
+                                    &constantData, &manifestOperation))
+                    return NO;
+                std::vector<std::uint8_t> anec = ane::h13::encodeANEC(program);
+                NSMutableArray *inputRecords =
+                    [NSMutableArray arrayWithCapacity:inputs.count];
+                NSMutableDictionary *constantInputs = [NSMutableDictionary dictionary];
+                for (NSUInteger index = 0; index < inputs.count; ++index) {
+                    ANEGraphValue *input = inputs[index];
+                    NSArray<NSNumber *> *fullShape = input == constantInput
+                        ? operation.result.type.shape : input.type.shape;
+                    NSString *role = input == constantInput ? @"constant"
+                        : ([intermediateValues containsObject:input] ? @"intermediate" : @"input");
+                    recordTensor(tensors, input, fullShape, role);
+                    NSArray<NSNumber *> *logicalShape = sliceCount > 1
+                        ? @[@(inputSliceElements)] : fullShape;
+                    NSMutableDictionary *record =
+                        [binding(input, logicalShape, program.inputs.at(index)) mutableCopy];
+                    if (sliceCount > 1)
+                        addSlice(record, input, inputOffset, inputSliceElements);
+                    if (input == constantInput) {
+                        record[@"binding"] = @"constant";
+                        constantInputs[input.name] = hexData(constantData);
+                    } else if ([intermediateValues containsObject:input]) {
+                        record[@"role"] = @"intermediate";
+                    }
+                    [inputRecords addObject:record];
+                }
+                NSString *outputRole = [intermediateValues containsObject:operation.result]
+                    ? @"intermediate" : @"output";
+                recordTensor(tensors, operation.result, operation.result.type.shape, outputRole);
+                NSArray<NSNumber *> *outputShape = sliceCount > 1
+                    ? @[@(outputSliceElements)] : operation.result.type.shape;
+                NSMutableDictionary *outputRecord =
+                    [binding(operation.result, outputShape, program.output) mutableCopy];
+                if (sliceCount > 1)
+                    addSlice(outputRecord, operation.result, outputOffset, outputSliceElements);
+                if ([intermediateValues containsObject:operation.result])
+                    outputRecord[@"role"] = @"intermediate";
+                NSUInteger programIndex = programRecords.count;
+                NSString *file = [NSString stringWithFormat:@"program-%lu.anec",
+                    (unsigned long)programIndex];
+                NSDictionary *record = @{
+                    @"file": file, @"bytes": @(anec.size()),
+                    @"taskDescriptors": @1, @"operation": manifestOperation,
+                    @"inputs": inputRecords, @"constantInputs": constantInputs,
+                    @"outputs": @[outputRecord],
+                    @"constantOffset": @(ane::h13::constantOffset),
+                    @"constantBytes": @(program.constants.size()),
+                };
+                [programRecords addObject:record];
+                [payloads addObject:[NSData dataWithBytes:anec.data() length:anec.size()]];
+                [dispatchPlan addObject:@(programIndex)];
+            }
         }
     } catch (const std::exception &exception) {
         return reject(diagnostics, [NSString stringWithUTF8String:exception.what()], operation);
@@ -592,7 +689,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         @"schema": @"mil-hwxc.h13-anec-package.v1",
         @"target": @"H13", @"artifactFormat": @"anec",
         @"programs": programRecords, @"dispatchPlan": dispatchPlan,
-        @"intermediates": intermediateNames,
+        @"intermediates": intermediateNames, @"tensors": tensors,
     } mutableCopy];
     if (programRecords.count == 1)
         [manifest addEntriesFromDictionary:programRecords[0]];

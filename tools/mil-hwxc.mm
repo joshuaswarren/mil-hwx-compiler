@@ -86,8 +86,12 @@ int main(int argc, const char *argv[]) {
                     error.description.UTF8String);
                 return error ? 74 : 65;
             }
-            printf("compiled target=H13 artifacts=1 format=anec output=%s\n",
-                output.UTF8String);
+            NSUInteger artifacts = 0;
+            for (NSString *name in [NSFileManager.defaultManager
+                     contentsOfDirectoryAtPath:output error:nil])
+                artifacts += [name hasPrefix:@"program-"] && [name hasSuffix:@".anec"];
+            printf("compiled target=H13 artifacts=%lu format=anec output=%s\n",
+                (unsigned long)artifacts, output.UTF8String);
             return 0;
         }
         ANECompiler *compiler = [[ANECompiler alloc] init];
