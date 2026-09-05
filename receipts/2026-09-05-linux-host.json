@@ -1,0 +1,20 @@
+{
+  "source_commit": "d38225c",
+  "host": "Linux x86_64",
+  "target": "H16G",
+  "verification": [
+    {"command": "CXX=/usr/bin/clang++-14 GNUSTEP_PREFIX=/tmp/mil-hwx-bootstrap-proof-prefix scripts/verify-linux-compiler.sh all", "result": "build, operation graph, HWX writer, program composition, fresh emission and source hygiene passed"},
+    {"command": "CXX=/opt/custom/clang++ make -s --no-print-directory --eval='print-cxx:;@echo $(CXX)' print-cxx GNUSTEP_PREFIX=/tmp/mil-hwx-bootstrap-proof-prefix", "result": "/opt/custom/clang++", "scope": "Make variable selection only; no nonexistent compiler was executed"}
+  ],
+  "artifacts": {
+    "conv_relu_sha256": "991aa7a3ec28f5603beb090f2ca244921370d4081948bea30ad5074499ca1266",
+    "w8a8_sha256": "4c910f1e62475061fb58adfcf218862e396426f1e5d503a314761159dd04314d"
+  },
+  "independent_review": {
+    "agent": "ReviewLinuxCompiler",
+    "binary16": "390477 comparisons against Python binary16 encoding; zero mismatches reported",
+    "abi": "Added disk structures checked against LLVM 14 Mach-O declarations",
+    "finding": "Caller CXX override was lost; corrected in d38225c"
+  },
+  "not_established": ["M1/H13 code generation", "Linux ANE device execution", "M1 numerical or performance qualification"]
+}
