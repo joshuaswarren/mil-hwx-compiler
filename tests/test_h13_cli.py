@@ -17,14 +17,44 @@ def inspect(package, *args, success=True):
     return result.stdout
 
 
-def source(op='add', channels=64, extra=''):
-    shape = f'tensor<fp16, [1, {channels}, 1, 1]>'
+def tensor_type(shape):
+    return f"tensor<fp16, [{', '.join(map(str, shape))}]>"
+
+
+def source(op='add', shape=(1, 64, 1, 1), y_shape=None, output_shape=None, extra=''):
+    x_type = tensor_type(shape)
+    y_type = tensor_type(shape if y_shape is None else y_shape)
+    output_type = tensor_type(shape if output_shape is None else output_shape)
     return f'''program(1.3)
 [buildInfo = dict<string, string>({{}})]
 {{
-  func main<ios18>({shape} a, {shape} b) {{
-    {shape} y = {op}(x = a, y = b)[name = string("binary")];
+  func main<ios18>({x_type} a, {y_type} b) {{
+    {output_type} y = {op}(x = a, y = b)[name = string("binary")];
     {extra}
+  }} -> (y);
+}}
+'''
+
+
+def matmul_source(reduction, x_shape=None, output_shape=None, transpose_x=False,
+                  transpose_y=True, weight_shape=None):
+    x_shape = (1, reduction) if x_shape is None else x_shape
+    output_shape = (1, 512) if output_shape is None else output_shape
+    if weight_shape is None:
+        weight_shape = (512, reduction) if transpose_y else (reduction, 512)
+    tx = 't' if transpose_x else 'f'
+    ty = 't' if transpose_y else 'f'
+    x_type = tensor_type(x_shape)
+    weight_type = tensor_type(weight_shape)
+    output_type = tensor_type(output_shape)
+    return f'''program(1.3)
+[buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>({x_type} x) {{
+    bool f = const()[name = string("f"), val = bool(false)];
+    bool t = const()[name = string("t"), val = bool(true)];
+    {weight_type} W = const()[name = string("W"), val = {weight_type}(BLOBFILE(path = string("@model_path/weights.bin"), offset = uint64(64)))];
+    {output_type} y = matmul(x = x, y = W, transpose_x = {tx}, transpose_y = {ty})[name = string("projection")];
   }} -> (y);
 }}
 '''
@@ -61,7 +91,9 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     size, td_size, count, task_size, kernel_size, inputs, outputs = struct.unpack_from('<QIIQQII', data)
     assert len(data) == 4096 + size
     assert (td_size, count, task_size, inputs, outputs) == (0x274, 1, 0x274, 2, 1)
-    assert json.loads(inspect(first))["manifest"] == manifest
+    inspection = json.loads(inspect(first))
+    assert inspection["manifest"] == manifest
+    assert inspection["bufferAllocation"]["totalBytes"] == 65536
     dense = bytes(range(128))
     raw, padded, unpacked = root / "input.fp16", root / "input.buffer", root / "output.fp16"
     raw.write_bytes(dense)
@@ -82,13 +114,25 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     manifest["inputs"][0]["index"] = 4
     (repeated / "manifest.json").write_text(json.dumps(manifest))
     inspect(repeated, success=False)
-    multiply = compile_text(source('mul'), 'mul')
-    assert (multiply / 'program-0.anec').read_bytes() != data
+    for op in ('add', 'mul', 'maximum', 'minimum'):
+        canonical = first if op == 'add' else compile_text(source(op), f'{op}-canonical')
+        canonical_data = (canonical / 'program-0.anec').read_bytes()
+        for shape in ((64,), (1, 64), (2, 4, 8)):
+            logical = compile_text(source(op, shape), f'{op}-{len(shape)}d')
+            assert (logical / 'program-0.anec').read_bytes() == canonical_data
+            logical_manifest = json.loads((logical / 'manifest.json').read_text())
+            assert logical_manifest['inputs'][0]['shape'] == list(shape)
+            assert logical_manifest['inputs'][1]['shape'] == list(shape)
+            assert logical_manifest['outputs'][0]['shape'] == list(shape)
+    assert (root / 'mul-canonical' / 'program-0.anec').read_bytes() != data
+    compile_text(source(shape=(0, 64)), 'zero-binary-shape', False)
+    compile_text(source(shape=(1, 64), y_shape=(64,), output_shape=(1, 64)),
+                 'broadcast-binary-shape', False)
     compile_text(source().replace("program(1.3)", "@program(1.3)"),
                  "lexical-error", False, "mil.lex.")
     (root / "empty-output").mkdir()
     compile_text(source(), "empty-output")
-    compile_text(source(channels=128), 'unsupported-shape', False)
+    compile_text(source(shape=(1, 128, 1, 1)), 'unsupported-shape', False)
     compile_text(source('sub'), 'unsupported-op', False)
     compile_text(source(extra='tensor<fp16, [1, 64, 1, 1]> z = relu(x = y)[name = string("z")];'),
                  'multiple-ops', False)
@@ -110,17 +154,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         struct.pack_into('<H', weights, 128, 0x3C00)
         struct.pack_into("<H", weights, 128 + (7 * reduction + 13) * 2, 0x4200)
         (root / 'weights.bin').write_bytes(weights)
-        matmul = f'''program(1.3)
-[buildInfo = dict<string, string>({{}})]
-{{
-  func main<ios18>(tensor<fp16, [1, {reduction}]> x) {{
-    bool f = const()[name = string("f"), val = bool(false)];
-    bool t = const()[name = string("t"), val = bool(true)];
-    tensor<fp16, [512, {reduction}]> W = const()[name = string("W"), val = tensor<fp16, [512, {reduction}]>(BLOBFILE(path = string("@model_path/weights.bin"), offset = uint64(64)))];
-    tensor<fp16, [1, 512]> y = matmul(x = x, y = W, transpose_x = f, transpose_y = t)[name = string("projection")];
-  }} -> (y);
-}}
-'''
+        matmul = matmul_source(reduction)
         projection = compile_text(matmul, f'projection-{reduction}')
         payload = (projection / 'program-0.anec').read_bytes()
         assert struct.unpack_from('<H', payload, 4096 + 0x280)[0] == 0x3C00
@@ -130,7 +164,9 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         assert struct.unpack_from('<Q', payload, 24)[0] == record['constantBytes']
         assert record["constantBytes"] == 0x80000
         assert struct.unpack_from("<I", payload, 40)[0] == 33
-        assert json.loads(inspect(projection))["manifest"] == record
+        inspection = json.loads(inspect(projection))
+        assert inspection["manifest"] == record
+        assert inspection["bufferAllocation"]["totalBytes"] == 573440 + reduction * 64
         unrelated = matmul.replace(
             f"val = tensor<fp16, [512, {reduction}]>",
             "val = fp16(1.0), debug_payload = tensor<fp16, [512, " + str(reduction) + "]>")
@@ -140,8 +176,30 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             'debug_payload = BLOBFILE(path = string("@model_path/not-a-weight.bin"), offset = uint64(64)), val = tensor<')
         unchanged = compile_text(metadata, f"metadata-{reduction}")
         assert (unchanged / "program-0.anec").read_bytes() == payload
-        compile_text(matmul.replace("transpose_x = f", "transpose_x = t"),
-                     f"wrong-input-transpose-{reduction}", False)
+        for case, x_shape, output_shape, transpose_x in (
+                ('vector', (reduction,), (512,), False),
+                ('singleton-batches', (1, 1, reduction), (1, 1, 512), False),
+                ('transposed', (reduction, 1), (1, 512), True),
+                ('transposed-batches', (1, 1, reduction, 1), (1, 1, 1, 512), True)):
+            logical = compile_text(
+                matmul_source(reduction, x_shape, output_shape, transpose_x),
+                f'{case}-{reduction}')
+            assert (logical / 'program-0.anec').read_bytes() == payload
+            logical_manifest = json.loads((logical / 'manifest.json').read_text())
+            assert logical_manifest['inputs'][0]['shape'] == list(x_shape)
+            assert logical_manifest['outputs'][0]['shape'] == list(output_shape)
+        compile_text(matmul_source(reduction, (reduction,), (512,), True),
+                     f'rank-one-transpose-{reduction}', False)
+        compile_text(matmul_source(reduction, (2, reduction), (2, 512)),
+                     f'multirow-{reduction}', False)
+        compile_text(matmul_source(reduction, (reduction, 2), (2, 512), True),
+                     f'transposed-multirow-{reduction}', False)
+        compile_text(matmul_source(reduction, (2, 1, reduction), (2, 1, 512)),
+                     f'broadcast-batch-{reduction}', False)
+        compile_text(matmul_source(reduction, (0, 1, reduction), (0, 1, 512)),
+                     f'zero-batch-{reduction}', False)
+        compile_text(matmul_source(reduction, weight_shape=(1, 512, reduction)),
+                     f'rank-three-weight-{reduction}', False)
         normal_weights = bytearray(weights)
         for row in range(512):
             for column in range(reduction):

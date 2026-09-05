@@ -18,10 +18,24 @@ static BOOL reject(ANEDiagnosticEngine *diagnostics, NSString *message,
     return NO;
 }
 
-static BOOL tensor(ANEGraphValue *value, NSArray<NSNumber *> *shape) {
+static BOOL fp16Tensor(ANEGraphValue *value) {
     return value.type.kind == ANEValueTypeKindTensor &&
-        value.type.elementType == ANEElementTypeFP16 &&
-        [value.type.shape isEqualToArray:shape];
+        value.type.elementType == ANEElementTypeFP16;
+}
+
+static BOOL tensor(ANEGraphValue *value, NSArray<NSNumber *> *shape) {
+    return fp16Tensor(value) && [value.type.shape isEqualToArray:shape];
+}
+
+static BOOL tensorElements(ANEGraphValue *value, NSUInteger expected) {
+    if (!fp16Tensor(value)) return NO;
+    NSUInteger elements = 1;
+    for (NSNumber *number in value.type.shape) {
+        NSUInteger dimension = number.unsignedIntegerValue;
+        if (!dimension || dimension > expected / elements) return NO;
+        elements *= dimension;
+    }
+    return elements == expected;
 }
 
 static BOOL boolean(ANEGraphArgument *argument, BOOL expected) {
@@ -38,6 +52,29 @@ static BOOL boolean(ANEGraphArgument *argument, BOOL expected) {
         argument = argument.callArguments[0].value;
     return argument.kind == ANEGraphArgumentKindBoolean &&
         [argument.text isEqualToString:expected ? @"true" : @"false"];
+}
+
+static BOOL singleVectorMatmul(ANEGraphValue *x, ANEGraphValue *result,
+                               BOOL transposeX, NSUInteger *reduction) {
+    NSArray<NSNumber *> *inputShape = x.type.shape;
+    NSArray<NSNumber *> *outputShape = result.type.shape;
+    NSUInteger rank = inputShape.count;
+    if (!fp16Tensor(x) || !fp16Tensor(result) || outputShape.count != rank ||
+        (!transposeX && rank == 0) || (transposeX && rank < 2)) return NO;
+
+    NSUInteger leading = rank - (transposeX ? 2 : 1);
+    for (NSUInteger index = 0; index < leading; ++index)
+        if (inputShape[index].unsignedIntegerValue != 1 ||
+            outputShape[index].unsignedIntegerValue != 1) return NO;
+
+    NSUInteger candidate = inputShape[rank - (transposeX ? 2 : 1)].unsignedIntegerValue;
+    if ((candidate != 256 && candidate != 512) ||
+        outputShape[rank - (transposeX ? 2 : 1)].unsignedIntegerValue !=
+            (transposeX ? 1 : 512)) return NO;
+    if (transposeX && (inputShape[rank - 1].unsignedIntegerValue != 1 ||
+                       outputShape[rank - 1].unsignedIntegerValue != 512)) return NO;
+    *reduction = candidate;
+    return YES;
 }
 
 static NSDictionary *binding(ANEGraphValue *value,
@@ -95,30 +132,28 @@ static NSDictionary *binding(ANEGraphValue *value,
         if (binaryIndex != NSNotFound) {
             if (operation.arguments.count != 2 || function.inputs.count != 2 ||
                 x == y || ![function.inputs containsObject:x] ||
-                ![function.inputs containsObject:y] ||
-                !tensor(x, @[@1, @64, @1, @1]) ||
+                ![function.inputs containsObject:y] || !tensorElements(x, 64) ||
                 !tensor(y, x.type.shape) || !tensor(operation.result, x.type.shape))
                 return reject(diagnostics,
-                    @"H13 binary operations require two distinct fp16 [1,64,1,1] inputs and the same output shape", operation);
+                    @"H13 binary operations require two distinct fp16 inputs with the same positive static shape containing exactly 64 elements", operation);
             const ane::h13::BinaryOperation operations[] = {
                 ane::h13::BinaryOperation::Add, ane::h13::BinaryOperation::Multiply,
                 ane::h13::BinaryOperation::Maximum, ane::h13::BinaryOperation::Minimum};
             program = ane::h13::encodeBinary(operations[binaryIndex]);
             inputs = @[x, y];
         } else if ([name isEqualToString:@"matmul"]) {
-            NSUInteger reduction = x.type.shape.count == 2
-                ? x.type.shape[1].unsignedIntegerValue : 0;
+            NSUInteger reduction = 0;
+            BOOL transposeX = boolean(operation.arguments[@"transpose_x"], YES);
             BOOL transposeY = boolean(operation.arguments[@"transpose_y"], YES);
             if (operation.arguments.count != 4 || function.inputs.count != 1 ||
-                function.inputs[0] != x || (reduction != 256 && reduction != 512) ||
-                !tensor(x, @[@1, @(reduction)]) ||
+                function.inputs[0] != x ||
+                (!transposeX && !boolean(operation.arguments[@"transpose_x"], NO)) ||
+                (!transposeY && !boolean(operation.arguments[@"transpose_y"], NO)) ||
+                !singleVectorMatmul(x, operation.result, transposeX, &reduction) ||
                 !tensor(y, transposeY ? @[@512, @(reduction)] : @[@(reduction), @512]) ||
-                !tensor(operation.result, @[@1, @512]) ||
-                ![y.producer.operationName isEqualToString:@"const"] ||
-                !boolean(operation.arguments[@"transpose_x"], NO) ||
-                (!transposeY && !boolean(operation.arguments[@"transpose_y"], NO)))
+                ![y.producer.operationName isEqualToString:@"const"])
                 return reject(diagnostics,
-                    @"H13 matmul requires fp16 x[1,K], K=256 or 512, constant W, transpose_x=false, and a matching transpose_y weight shape", operation);
+                    @"H13 matmul requires one fp16 logical vector with K=256 or 512, constant rank-2 W, and matching explicit transpose flags and output shape", operation);
             ANEGraphArgument *value = y.producer.attributes[@"val"];
             if (y.producer.arguments.count || value.kind != ANEGraphArgumentKindCall ||
                 ![value.calleeValueType isEqualToValueType:y.type] ||

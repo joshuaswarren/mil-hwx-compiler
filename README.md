@@ -32,8 +32,8 @@ or invoke Apple's compiler. The currently encoded shapes are deliberately narrow
 
 | Operation | MIL contract |
 | --- | --- |
-| add, mul, maximum, minimum | Two distinct fp16 inputs and output, each [1,64,1,1] |
-| matmul | fp16 x[1,K], K=256 or 512; constant W[K,512] with transpose_y=false or W[512,K] with transpose_y=true; transpose_x=false; output [1,512] |
+| add, mul, maximum, minimum | Two distinct fp16 inputs and output with one identical positive static shape containing exactly 64 elements, such as [1,64,1,1], [64], [1,64], or [2,4,8] |
+| matmul | fp16 x with K=256 or 512 as [K], [...,1,K] with singleton leading dimensions, or transpose_x=true [...,K,1]; constant rank-2 W[K,512] with transpose_y=false or W[512,K] with transpose_y=true; output [512], [...,1,512] |
 
 Exactly one function, one non-constant operation, and its single returned result
 are required. Other operations, geometry, and multi-operation graphs fail with
@@ -72,8 +72,9 @@ python3 research/inspect_anec.py build/h13-add --unpack-output y output.buffer -
 ```
 
 Conversion refuses incorrect byte counts and existing output files. Inspection
-does not validate task instructions or establish device safety. No device
-dispatcher is implemented here.
+reports encoded command, input, and output allocation totals, excluding driver
+and runtime overhead. It does not validate task instructions or establish
+device safety. No device dispatcher is implemented here.
 
 Before hardware use, qualify the matching driver, BAR/kernel binding contract,
 and DMA spans on an ANE-enabled base M1. Compilation on an M1 Ultra host is
@@ -83,6 +84,12 @@ The 512-wide encoder omits 512 KiB of unreachable coefficient padding:
 the sixteen KDMA ranges address only 512 KiB. Both reductions therefore
 emit 529,024-byte ANEC files, with 33 command tiles.
 This is a file-size/allocation reduction, not a measured device speedup.
+
+`python3 research/inspect_hwx.py FILE.hwx` identifies H14/M2 (ISA 11) and
+H16G/M4 (ISA 17) from their headers. H14 task-stream inspection checks the
+published register ranges and record lengths. Its tests use synthetic,
+source-derived records, not a real H14 artifact; this is not an H14 emitter
+or a claim of M2 execution support. Run `make test-hwx-inspection`.
 
 ## macOS build and hardware tests
 
@@ -334,6 +341,10 @@ H13 register-field evidence comes from allbilly/ane revision
 and [GEMM](https://github.com/allbilly/ane/blob/e159e2d18ce6cea100e8f19bb27a7f07acaa9c24/examples/gemm.py)
 examples. That source revision has no LICENSE file; these are attributed
 register-layout facts, not an imported dependency or relicensed source files.
+
+H14 inspection follows the [register map](https://github.com/freedomtan/coreml_to_ane_hwx/blob/ce54664e787976b646c450ceabed1731b506a4cd/hwx_dump/h14_register_map.md)
+and parser at freedomtan/coreml_to_ane_hwx revision
+`ce54664e787976b646c450ceabed1731b506a4cd`.
 
 See [DISCLAIMER.md](DISCLAIMER.md) for the full scope and private-API notes.
 

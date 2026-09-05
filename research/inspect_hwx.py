@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Inspect and validate H14 or H16G HWX object structure."""
+from __future__ import annotations
 
 import struct
 import sys

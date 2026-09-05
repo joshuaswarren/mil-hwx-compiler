@@ -29,16 +29,18 @@ def local_file(directory, name, limit):
     return path.read_bytes()
 
 
-def check_binding(binding, index, shape, tiles, layouts):
+def check_binding(binding, index, channels, tiles, layouts):
     require(isinstance(binding, dict), 'binding must be an object')
     require(isinstance(binding.get('name'), str) and binding['name'],
             'binding needs a non-empty name')
     require(binding.get('dtype') == 'float16', 'binding must use float16')
-    require(binding.get('shape') == shape and
-            all(type(n) is int for n in binding['shape']), 'incorrect logical shape')
-    require(type(binding.get('index')) is int and binding['index'] == index,
-            'binding index does not match ANEC channel')
-    channels = math.prod(shape)
+    shape = binding.get("shape")
+    require(isinstance(shape, list) and shape and
+            all(type(n) is int and 0 < n <= channels for n in shape),
+            "logical shape must have positive static dimensions")
+    require(math.prod(shape) == channels, "incorrect logical element count")
+    require(type(binding.get("index")) is int and binding["index"] == index,
+            "binding index does not match ANEC channel")
     layout = [1, channels, 1, 1, 64, 64]
     require(binding.get('nchw') == layout and
             all(type(n) is int for n in binding['nchw']), 'incorrect physical layout')
@@ -97,14 +99,18 @@ def load_package(directory):
             if index != 0:
                 require(tiles[index] == 0, 'unexpected channel allocation')
     if matmul:
-        require(isinstance(inputs[0], dict) and inputs[0].get('shape') in
-                ([1, 256], [1, 512]), 'unsupported matvec input shape')
-        input_shape, output_shape = inputs[0]['shape'], [1, 512]
+        require(isinstance(inputs[0], dict) and
+                inputs[0].get("logicalBytes") in (512, 1024),
+                "unsupported matvec input size")
+        input_channels, output_channels = inputs[0]["logicalBytes"] // 2, 512
     else:
-        input_shape = output_shape = [1, 64, 1, 1]
+        input_channels = output_channels = 64
     for index, binding in enumerate(inputs, start=5):
-        check_binding(binding, index, input_shape, tiles, layouts)
-    check_binding(outputs[0], 4, output_shape, tiles, layouts)
+        check_binding(binding, index, input_channels, tiles, layouts)
+    check_binding(outputs[0], 4, output_channels, tiles, layouts)
+    if not matmul:
+        require(inputs[0]["shape"] == inputs[1]["shape"] == outputs[0]["shape"],
+                "binary operation shapes must match")
     names = [binding['name'] for binding in inputs + outputs]
     require(len(set(names)) == len(names), 'binding names must be unique')
     return manifest
@@ -148,8 +154,20 @@ def main():
                 destination.write(data)
             print(f'wrote {len(data)} bytes to {args.output}; no device execution')
         else:
-            print(json.dumps({'validation': 'container and binding consistency only',
-                              'manifest': manifest}, indent=2, sort_keys=True))
+            command_bytes = ((manifest["bytes"] - HEADER_BYTES + TILE_BYTES - 1)
+                             // TILE_BYTES) * TILE_BYTES
+            input_bytes = sum(binding["allocationBytes"] for binding in manifest["inputs"])
+            output_bytes = sum(binding["allocationBytes"] for binding in manifest["outputs"])
+            print(json.dumps({
+                "validation": "container and binding consistency only",
+                "manifest": manifest,
+                "bufferAllocation": {
+                    "commandAndConstantsBytes": command_bytes,
+                    "inputBytes": input_bytes, "outputBytes": output_bytes,
+                    "totalBytes": command_bytes + input_bytes + output_bytes,
+                    "scope": "encoded buffers only; excludes driver and runtime overhead",
+                },
+            }, indent=2, sort_keys=True))
     except (OSError, ValueError, struct.error) as error:
         parser.exit(1, f'ANEC package error: {error}\n')
 
