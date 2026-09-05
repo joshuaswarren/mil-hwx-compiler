@@ -186,6 +186,17 @@ cache directory is not writable.
 tests/run_h13_hardware.sh model.mil models x=input.fp16
 ```
 
+On an aarch64 Linux host with `ane.ko` loaded and the `omarchy` branch of
+`joshuaswarren/omarchy-ane` built (libane and `bindings/python/dylib`), the
+Linux gate compiles the ANEC package and dispatches it through
+`tools/h13_run_linux.py`, comparing every output with the same reference.
+It refuses to run until the device node, library, branch, and ANEC header
+contract all check out.
+
+```bash
+ANE_CHECKOUT=~/src/omarchy-ane tests/run_h13_linux_hardware.sh model.mil models x=input.fp16
+```
+
 Elementwise outputs must match the reference bit for bit. A tensor marked
 `chunked-fp16` uses
 `abs(device-reference) <= 0.02 + 0.02 * abs(reference)` because partial
