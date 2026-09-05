@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Device-free checks for source-backed H14 and existing H16G inspection."""
+from __future__ import annotations
 
 import struct
 import subprocess

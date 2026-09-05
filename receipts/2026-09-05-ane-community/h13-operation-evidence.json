@@ -1,0 +1,275 @@
+{
+  "receipt_type": "source-analysis",
+  "date": "2026-09-05",
+  "scope": {
+    "target": "H13 native operation expansion beyond the existing add/mul/max/min and fixed matvec descriptors",
+    "constraints": [
+      "Source-only investigation; no ANE device, driver, GPU, CPU benchmark, Apple compiler, or ane-linux-experiments module was executed.",
+      "This receipt separates algebraic lowering from unverified H13 device behavior."
+    ],
+    "production_files_modified": []
+  },
+  "methodology": {
+    "lsp": {
+      "server": "clangd-19 using this repository's compile_commands.json",
+      "symbols": [
+        {
+          "symbol": "binaryTask",
+          "definition": "plugins/H13/H13Program.cpp:143",
+          "references": [
+            "plugins/H13/H13Program.cpp:143",
+            "plugins/H13/H13Program.cpp:313"
+          ],
+          "hover": "std::vector<std::uint8_t> binaryTask(std::uint32_t operation)"
+        },
+        {
+          "symbol": "matvecTask",
+          "definition": "plugins/H13/H13Program.cpp:215",
+          "references": [
+            "plugins/H13/H13Program.cpp:215",
+            "plugins/H13/H13Program.cpp:327"
+          ],
+          "hover": "std::vector<std::uint8_t> matvecTask()"
+        }
+      ]
+    },
+    "source_inputs": [
+      {
+        "id": "allbilly-elementwise",
+        "url": "https://raw.githubusercontent.com/allbilly/ane/e159e2d18ce6cea100e8f19bb27a7f07acaa9c24/examples/elementwise.py",
+        "pinned_commit": "e159e2d18ce6cea100e8f19bb27a7f07acaa9c24"
+      },
+      {
+        "id": "allbilly-gemm",
+        "url": "https://raw.githubusercontent.com/allbilly/ane/e159e2d18ce6cea100e8f19bb27a7f07acaa9c24/examples/gemm.py",
+        "pinned_commit": "e159e2d18ce6cea100e8f19bb27a7f07acaa9c24"
+      },
+      {
+        "id": "local-h13",
+        "path": "plugins/H13/H13Program.cpp"
+      },
+      {
+        "id": "local-h13-header",
+        "path": "plugins/H13/H13Program.h"
+      },
+      {
+        "id": "local-h13-descriptor-test",
+        "path": "tests/test_h13_encoding.cpp"
+      },
+      {
+        "id": "local-static-hwx-notes",
+        "path": "/home/joshuawarren/src/mlx-omarchy-qual-llvmpipe/docs/ane-hwx-format-notes.md"
+      }
+    ]
+  },
+  "explicit_field_evidence": {
+    "elementwise": {
+      "descriptor": {
+        "PE_Config": {
+          "offset": "0x22c",
+          "value": "(2 << 18) | (operation << 2)",
+          "external_semantics": "elementwise source labels (2 << 18) as second_source=2 (L2 result); its concrete descriptor is add mode",
+          "citations": [
+            "allbilly-elementwise:244-245",
+            "local-h13:197-198"
+          ]
+        },
+        "BiasScale": {
+          "offset": "0x230",
+          "value": "0x3c000000",
+          "external_semantics": "comment: bias=0, scale=fp16(1.0)",
+          "citation": "allbilly-elementwise:246"
+        },
+        "PreScale": {
+          "offset": "0x234",
+          "value": "0x3c000000",
+          "external_semantics": "comment: pre_scale=0; the example does not specify the other packed half-field",
+          "citation": "allbilly-elementwise:247"
+        },
+        "FinalScale": {
+          "offset": "0x238",
+          "value": "0x3f800000",
+          "external_semantics": "comment: fp32(1.0)",
+          "citation": "allbilly-elementwise:248"
+        },
+        "KernelCfg": {
+          "offset": "0x240",
+          "value": "0x00000000",
+          "external_semantics": "concrete elementwise descriptor",
+          "citation": "allbilly-elementwise:250-252"
+        },
+        "MACCfg": {
+          "offset": "0x244",
+          "values": {
+            "add": "0x00000000",
+            "multiply": "0x00000030"
+          },
+          "external_semantics": "source comment explicitly calls 0 add mode and 0x30 mul mode",
+          "citation": "allbilly-elementwise:252"
+        },
+        "MatrixVectorBias": {
+          "offset": "0x248",
+          "value": "0x00000000",
+          "external_semantics": "only a zero concrete value is supplied",
+          "citation": "allbilly-elementwise:253"
+        },
+        "AccBias": {
+          "offset": "0x24c",
+          "value": "0x00000000",
+          "external_semantics": "only a zero concrete value is supplied",
+          "citation": "allbilly-elementwise:254"
+        },
+        "PostScale": {
+          "offset": "0x250",
+          "value": "0x00000000",
+          "external_semantics": "only a zero concrete value is supplied",
+          "citation": "allbilly-elementwise:255"
+        }
+      },
+      "layout": {
+        "inputs": "two separate tile bindings, indices 5 and 6; output index 4",
+        "current_compiler_citation": "plugins/H13/H13Program.cpp:313-316",
+        "physical_shape": "each binary binding is {1, 64, 1, 1, 64, 64}; binaryTask fixes Cin=Cout=64",
+        "physical_shape_citations": [
+          "plugins/H13/H13Program.cpp:138-141",
+          "plugins/H13/H13Program.cpp:151-156"
+        ]
+      }
+    },
+    "gemm": {
+      "descriptor": {
+        "Common": {
+          "fields": {
+            "Cin": "512",
+            "Cout": "512",
+            "ConvCfg": "0x5000b421",
+            "GroupConvCfg": "0x00010001",
+            "PipelineCfg": "0x00244405",
+            "TaskInfo": "0x00100000"
+          },
+          "citation": "allbilly-gemm:169-187"
+        },
+        "PE": {
+          "fields": {
+            "PE_Config": "0x00000000",
+            "BiasScale": "0x00000000",
+            "PreScale": "0x00000000",
+            "FinalScale": "0x00000000"
+          },
+          "citation": "allbilly-gemm:242-248"
+        },
+        "NE": {
+          "fields": {
+            "KernelCfg": "0x00000082",
+            "MACCfg": "0x00101c00",
+            "MatrixVectorBias": "0x00000000",
+            "AccBias": "0x00000000",
+            "PostScale": "0x00003c00"
+          },
+          "comments": {
+            "KernelCfg": "NE enable + exp mode",
+            "MACCfg": "gemm exp MAC op",
+            "PostScale": "fp16(1.0) as post-scale"
+          },
+          "citation": "allbilly-gemm:250-255"
+        },
+        "weights": {
+          "offset": "0x274",
+          "bytes": "524288",
+          "value": "fp16 0.5 repeated in the example",
+          "citation": "allbilly-gemm:118-125"
+        }
+      },
+      "current_compiler": {
+        "supported_reductions": [
+          256,
+          512
+        ],
+        "output_rows": 512,
+        "weight_contract": "512 * reduction fp16 bytes",
+        "citation": "plugins/H13/H13Program.cpp:319-330"
+      }
+    }
+  },
+  "assessment": {
+    "subtraction": {
+      "status": "source-backed portable lowering candidate; no new H13 arithmetic opcode asserted",
+      "candidate": "materialize a full second fp16 tile containing -1.0, emit existing multiply(x, minus_one_tile), then existing add(x, neg_y) for subtract; negate is the multiply stage alone.",
+      "why_source_backed": [
+        "The pinned elementwise descriptor explicitly identifies MACCfg 0x30 as multiplication and 0 as addition.",
+        "The current H13 binary descriptor has exactly two input tile bindings and implements Multiply as operation code 1, then writes MACCfg 0x30.",
+        "The current binary program returns no constants, so the -1.0 tensor must be materialized/bound by the graph or staging layer; it cannot be placed in the existing Program.constants field without adding a binding contract."
+      ],
+      "required_exact_layout": "The materialized -1.0 operand must use the existing index-6 binary input layout {1,64,1,1,64,64} and tileBytes 0x4000; scalar broadcast is not evidenced.",
+      "citations": [
+        "allbilly-elementwise:252",
+        "plugins/H13/H13Program.cpp:197-203",
+        "plugins/H13/H13Program.cpp:313-316",
+        "plugins/H13/H13Program.h:10-33"
+      ],
+      "device_claim": "Only the already-described add/multiply device modes are used. Correct sequencing, constant binding, and runtime results are not hardware-verified by this investigation."
+    },
+    "relu": {
+      "status": "not implementable from the available explicit semantics",
+      "missing_semantics": [
+        "No pinned example writes a nonzero activation/clamp/LUT field or labels a ReLU mode.",
+        "PE_Config is only annotated for second_source/add mode; MACCfg is only annotated for add and multiply.",
+        "No concrete source-produced descriptor maps a field value to max(x, 0) or describes a zero-constant broadcast path."
+      ],
+      "citations": [
+        "allbilly-elementwise:244-255",
+        "plugins/H13/H13Program.cpp:197-203"
+      ]
+    },
+    "linear_or_conv_bias": {
+      "status": "not implementable from the available explicit semantics",
+      "missing_semantics": [
+        "BiasScale, PreScale, MatrixVectorBias, and AccBias have names, but the external examples only set them to zero or unity-scale defaults; they provide neither a nonzero bias descriptor nor a bias-buffer addressing/layout contract.",
+        "The gemm example provides only a weight payload at 0x274. It does not show where a bias payload resides, its physical ordering, or which field enables/addresses it.",
+        "The current native matvec descriptor is fixed to reductions 256/512 and 512 output rows; there is no source-produced descriptor for general convolution geometry, groups, strides, padding, or a bias-bearing linear/conv task."
+      ],
+      "citations": [
+        "allbilly-elementwise:246-255",
+        "allbilly-gemm:118-125",
+        "allbilly-gemm:242-255",
+        "plugins/H13/H13Program.cpp:319-330"
+      ]
+    },
+    "broader_physical_channels": {
+      "status": "not implementable from the available explicit semantics",
+      "missing_semantics": [
+        "The repository contains no physicalChannels/physical_channels/physical channels symbol.",
+        "binaryTask hard-codes Cin=Cout=64 and the binary TensorLayout hard-codes 64 channels; no descriptor supplies a mapping or legality rule for another physical channel count.",
+        "The local static HWX notes document H13 stream-header encoding, not operation-specific channel semantics."
+      ],
+      "citations": [
+        "plugins/H13/H13Program.cpp:138-141",
+        "plugins/H13/H13Program.cpp:151-156",
+        "local-static-hwx-notes:63-69"
+      ]
+    }
+  },
+  "verification": {
+    "performed": [
+      "Fetched and read the two pinned source files at the requested commit without executing their device-facing code.",
+      "Resolved H13 task symbols with clangd-19 using the repository compile database.",
+      "Read the local static HWX notes and the structural H13 encoding test."
+    ],
+    "not_performed": [
+      "No compiler source was changed.",
+      "No device, driver, benchmark, Apple compiler, or ane-linux-experiments code was run.",
+      "No H13 arithmetic or runtime execution was verified."
+    ],
+    "structural_test_scope": "tests/test_h13_encoding.cpp asserts byte-for-byte descriptor construction for Add, Multiply, Maximum, and Minimum; it is not a hardware arithmetic pass.",
+    "structural_test_citation": "tests/test_h13_encoding.cpp:213-220"
+  },
+  "conclusion": {
+    "next_safe_candidate": "Implement IR-level negate/subtract lowering only after its full -1.0 tensor materialization and two-task sequencing are represented by the existing graph/staging path. It introduces no unverified opcode or register value.",
+    "do_not_implement_yet": [
+      "native ReLU",
+      "nonzero conv/linear bias",
+      "channel-count expansion"
+    ],
+    "reason": "Each needs an explicit source-produced nondefault descriptor and field/buffer semantics absent from the requested evidence set."
+  }
+}
