@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import math
 import struct
 import subprocess
 import sys
@@ -59,9 +60,9 @@ def constant_source(op, value, const_first=False, blob=None, shape=(1, 64, 1, 1)
 
 
 
-def chain_source(return_values='result', middle='product'):
-    value_type = tensor_type((1, 64, 1, 1))
-    constants = ', '.join('fp16(1.0)' for _ in range(64))
+def chain_source(return_values='result', middle='product', shape=(1, 64, 1, 1)):
+    value_type = tensor_type(shape)
+    constants = ', '.join('fp16(1.0)' for _ in range(math.prod(shape)))
     return f'''program(1.3)
 [buildInfo = dict<string, string>({{}})]
 {{
@@ -129,10 +130,10 @@ def matmul_source(reduction, x_shape=None, output_shape=None, transpose_x=False,
 }}
 '''
 
-def matmul_activation_chain_source():
-    x_type = tensor_type((1, 256))
-    value_type = tensor_type((1, 512))
-    weight_type = tensor_type((512, 256))
+def matmul_activation_chain_source(reduction=256, columns=512):
+    x_type = tensor_type((1, reduction))
+    value_type = tensor_type((1, columns))
+    weight_type = tensor_type((columns, reduction))
     return f'''program(1.3)
 [buildInfo = dict<string, string>({{}})]
 {{
@@ -149,9 +150,10 @@ def matmul_activation_chain_source():
 '''
 
 
-def binary_matmul_chain_source():
-    value_type = tensor_type((512,))
-    weight_type = tensor_type((512, 512))
+def binary_matmul_chain_source(reduction=512):
+    value_type = tensor_type((reduction,))
+    output_type = tensor_type((512,))
+    weight_type = tensor_type((512, reduction))
     return f'''program(1.3)
 [buildInfo = dict<string, string>({{}})]
 {{
@@ -160,7 +162,7 @@ def binary_matmul_chain_source():
     bool t = const()[name = string("t"), val = bool(true)];
     {weight_type} W = const()[name = string("W"), val = {weight_type}(BLOBFILE(path = string("@model_path/weights.bin"), offset = uint64(64)))];
     {value_type} sum = add(x = a, y = b)[name = string("sum")];
-    {value_type} result = matmul(x = sum, y = W, transpose_x = f, transpose_y = t)[name = string("result")];
+    {output_type} result = matmul(x = sum, y = W, transpose_x = f, transpose_y = t)[name = string("result")];
   }} -> (result);
 }}
 '''
@@ -287,6 +289,53 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     tiled_unpacked = root / 'tiled-output.fp16'
     inspect(tiled_add, '--unpack-output', 'y', tiled_outputs, '--output', tiled_unpacked)
     assert tiled_unpacked.read_bytes() == tiled_dense
+    padded_add = compile_text(source(shape=(96,)), 'padded-add')
+    padded_manifest = json.loads((padded_add / 'manifest.json').read_text())
+    assert padded_manifest['dispatchPlan'] == [0, 1]
+    assert all((padded_add / program['file']).read_bytes() == data
+               for program in padded_manifest['programs'])
+    assert [item['slice'] for item in
+            padded_manifest['programs'][1]['inputs'] +
+            padded_manifest['programs'][1]['outputs']] == [
+                {'tensor': name, 'elementOffset': 64, 'elementCount': 32,
+                 'physicalElements': 64}
+                for name in ('a', 'b', 'y')]
+    assert json.loads(inspect(padded_add))['manifest'] == padded_manifest
+    padded_manifest_path = padded_add / 'manifest.json'
+    invalid_padded_manifest = json.loads(json.dumps(padded_manifest))
+    del invalid_padded_manifest['programs'][1]['inputs'][0]['slice']['physicalElements']
+    padded_manifest_path.write_text(json.dumps(invalid_padded_manifest))
+    inspect(padded_add, success=False)
+    padded_manifest_path.write_text(json.dumps(padded_manifest))
+
+    padded_dense = bytes(range(192))
+    padded_raw = root / 'padded-input.fp16'
+    padded_raw.write_bytes(padded_dense)
+    padded_buffers = root / 'padded-input-buffers'
+    inspect(padded_add, '--pack-input', 'a', padded_raw, '--output', padded_buffers)
+    expected_tail = bytearray(16384)
+    for element in range(32):
+        expected_tail[element * 64:element * 64 + 2] = \
+            padded_dense[128 + element * 2:130 + element * 2]
+    assert (padded_buffers / 'program-1.a.buffer').read_bytes() == expected_tail
+    padded_outputs = root / 'padded-output-buffers'
+    padded_outputs.mkdir()
+    for index in range(2):
+        (padded_outputs / f'program-{index}.y.buffer').write_bytes(
+            (padded_buffers / f'program-{index}.a.buffer').read_bytes())
+    padded_unpacked = root / 'padded-output.fp16'
+    inspect(padded_add, '--unpack-output', 'y', padded_outputs,
+            '--output', padded_unpacked)
+    assert padded_unpacked.read_bytes() == padded_dense
+
+    values96 = tuple(float(index % 8 + 1) for index in range(96))
+    padded_constant = compile_text(
+        constant_source('add', values96, shape=(96,)), 'padded-constant')
+    padded_constant_manifest = json.loads(
+        (padded_constant / 'manifest.json').read_text())
+    assert bytes.fromhex(
+        padded_constant_manifest['programs'][1]['constantInputs']['c']) == \
+        b''.join(struct.pack('<e', value) for value in values96[64:]) + bytes(64)
 
     values128 = tuple(float(index + 1) for index in range(128))
     constant128 = bytearray(128 + 256)
@@ -401,6 +450,14 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     for channel in range(64):
         expected_chain_constant[channel * 64:channel * 64 + 2] = struct.pack('<e', -1.0)
     assert chain_constant.read_bytes() == expected_chain_constant
+    padded_chain = compile_text(chain_source(shape=(96,)), 'padded-chain')
+    padded_chain_manifest = json.loads((padded_chain / 'manifest.json').read_text())
+    assert [program['operation'] for program in padded_chain_manifest['programs']] == \
+        ['add', 'add', 'mul', 'mul', 'add', 'add']
+    assert padded_chain_manifest['programs'][1]['outputs'][0]['slice'] == \
+        padded_chain_manifest['programs'][3]['inputs'][0]['slice']
+    assert json.loads(inspect(padded_chain))['manifest'] == padded_chain_manifest
+
     invalid_chain = compile_text(chain_source(), 'invalid-chain-manifest')
     invalid_chain_manifest = json.loads((invalid_chain / 'manifest.json').read_text())
     invalid_chain_manifest['dispatchPlan'] = [1, 0, 2]
@@ -494,8 +551,6 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
                  "lexical-error", False, "mil.lex.")
     (root / "empty-output").mkdir()
     compile_text(source(), "empty-output")
-    compile_text(source(shape=(96,)), 'unsupported-shape', False,
-                 'h13.elementwise-not-multiple-of-64')
     compile_text(source('sub'), 'two-input-sub', False, 'h13.nonfoldable-binary')
     compile_text(source('real_div'), 'two-input-real-div', False,
                  'h13.nonfoldable-binary')
@@ -509,6 +564,112 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
                              capture_output=True, text=True, timeout=15, check=False)
     assert blocked.returncode == 74, blocked.stderr
     assert preserved == {p.name: p.read_bytes() for p in first.iterdir()}
+    small_weights = bytearray(128 + 200 * 300 * 2)
+    struct.pack_into('<IIQQ', small_weights, 64, 0xDEADBEEF, 1, 200 * 300 * 2, 128)
+    for row, column, bits in ((0, 0, 0x3c00), (7, 13, 0x4000),
+                              (199, 299, 0x4200)):
+        struct.pack_into('<H', small_weights, 128 + (row * 300 + column) * 2, bits)
+    (root / 'weights.bin').write_bytes(small_weights)
+    small_projection = compile_text(
+        matmul_source(200, output_shape=(1, 300), transpose_y=False,
+                      weight_shape=(200, 300)), 'projection-200x300')
+    small_manifest = json.loads((small_projection / 'manifest.json').read_text())
+    assert small_manifest['inputs'][0]['slice'] == {
+        'tensor': 'x', 'elementOffset': 0, 'elementCount': 200,
+        'physicalElements': 256}
+    assert small_manifest['outputs'][0]['slice'] == {
+        'tensor': 'y', 'elementOffset': 0, 'elementCount': 300,
+        'physicalElements': 512}
+    assert json.loads(inspect(small_projection))['manifest'] == small_manifest
+
+    reference_weights = bytearray(128 + 256 * 512 * 2)
+    struct.pack_into('<IIQQ', reference_weights, 64, 0xDEADBEEF, 1,
+                     256 * 512 * 2, 128)
+    for row in range(200):
+        source_offset = 128 + row * 300 * 2
+        destination_offset = 128 + row * 512 * 2
+        reference_weights[destination_offset:destination_offset + 600] = \
+            small_weights[source_offset:source_offset + 600]
+    (root / 'weights.bin').write_bytes(reference_weights)
+    reference_projection = compile_text(
+        matmul_source(256, transpose_y=False, weight_shape=(256, 512)),
+        'projection-200x300-reference')
+    assert (small_projection / 'program-0.anec').read_bytes() == \
+        (reference_projection / 'program-0.anec').read_bytes()
+    transposed_weights = bytearray(128 + 300 * 200 * 2)
+    struct.pack_into('<IIQQ', transposed_weights, 64, 0xDEADBEEF, 1,
+                     300 * 200 * 2, 128)
+    for row in range(200):
+        for column in range(300):
+            source_offset = 128 + (row * 300 + column) * 2
+            destination_offset = 128 + (column * 200 + row) * 2
+            transposed_weights[destination_offset:destination_offset + 2] = \
+                small_weights[source_offset:source_offset + 2]
+    (root / 'weights.bin').write_bytes(transposed_weights)
+    transposed_projection = compile_text(
+        matmul_source(200, output_shape=(1, 300), weight_shape=(300, 200)),
+        'projection-200x300-transposed')
+    assert (transposed_projection / 'program-0.anec').read_bytes() == \
+        (small_projection / 'program-0.anec').read_bytes()
+    bias_blob = bytearray(128 + 300 * 2)
+    struct.pack_into('<IIQQ', bias_blob, 64, 0xDEADBEEF, 1, 300 * 2, 128)
+    (root / 'bias.bin').write_bytes(bias_blob)
+    odd_chain = compile_text(matmul_activation_chain_source(200, 300),
+                             'matmul-add-relu-odd')
+    odd_manifest_path = odd_chain / 'manifest.json'
+    odd_manifest = json.loads(odd_manifest_path.read_text())
+    assert [program['operation'] for program in odd_manifest['programs']] == (
+        ['matmul'] + ['add'] * 5 + ['maximum'] * 5)
+    assert odd_manifest['dispatchPlan'] == list(range(11))
+    assert odd_manifest['programs'][0]['outputs'][0]['slice'] == {
+        'tensor': 'projection', 'elementOffset': 0, 'elementCount': 300,
+        'physicalElements': 512}
+    assert json.loads(inspect(odd_chain))['manifest'] == odd_manifest
+    invalid_odd_manifest = json.loads(json.dumps(odd_manifest))
+    invalid_odd_manifest['dispatchPlan'][:2] = [1, 0]
+    odd_manifest_path.write_text(json.dumps(invalid_odd_manifest))
+    inspect(odd_chain, success=False)
+    odd_manifest_path.write_text(json.dumps(odd_manifest))
+    wide_weights = bytearray(128 + 256 * 1000 * 2)
+    struct.pack_into('<IIQQ', wide_weights, 64, 0xDEADBEEF, 1, 256 * 1000 * 2, 128)
+    for row, column, bits in ((0, 0, 0x3c00), (7, 700, 0x4000),
+                              (255, 999, 0x4200)):
+        struct.pack_into('<H', wide_weights, 128 + (row * 1000 + column) * 2, bits)
+    (root / 'weights.bin').write_bytes(wide_weights)
+    wide_projection = compile_text(
+        matmul_source(256, output_shape=(1, 1000), transpose_y=False,
+                      weight_shape=(256, 1000)), 'projection-256x1000')
+    wide_manifest = json.loads((wide_projection / 'manifest.json').read_text())
+    assert len(wide_manifest['programs']) == 2
+    assert [program['outputs'][0]['slice'] for program in wide_manifest['programs']] == [
+        {'tensor': 'y', 'elementOffset': 0, 'elementCount': 512},
+        {'tensor': 'y', 'elementOffset': 512, 'elementCount': 488,
+         'physicalElements': 512}]
+    assert (wide_projection / 'program-0.anec').read_bytes() != \
+        (wide_projection / 'program-1.anec').read_bytes()
+    assert json.loads(inspect(wide_projection))['manifest'] == wide_manifest
+
+    compile_text(matmul_source(600), 'reduction-600', False,
+                 'h13.reduction-too-large')
+    for reduction, physical in ((1, 256), (257, 512)):
+        boundary_weights = bytearray(128 + reduction * 2)
+        struct.pack_into('<IIQQ', boundary_weights, 64, 0xDEADBEEF, 1,
+                         reduction * 2, 128)
+        (root / 'weights.bin').write_bytes(boundary_weights)
+        boundary = compile_text(
+            matmul_source(reduction, output_shape=(1, 1), weight_shape=(1, reduction)),
+            f'projection-boundary-{reduction}')
+        boundary_manifest = json.loads((boundary / 'manifest.json').read_text())
+        assert boundary_manifest['inputs'][0]['slice']['physicalElements'] == physical
+        assert boundary_manifest['outputs'][0]['slice']['physicalElements'] == 512
+        assert json.loads(inspect(boundary))['manifest'] == boundary_manifest
+
+    padded_chain_weights = bytearray(128 + 512 * 96 * 2)
+    struct.pack_into('<IIQQ', padded_chain_weights, 64, 0xDEADBEEF, 1,
+                     512 * 96 * 2, 128)
+    (root / 'weights.bin').write_bytes(padded_chain_weights)
+    compile_text(binary_matmul_chain_source(96), 'padded-binary-matmul', False,
+                 'h13.unsupported-chain')
 
     for reduction in (256, 512):
         weights = bytearray(128 + 512 * reduction * 2)

@@ -1,0 +1,3 @@
+compiled target=H13 artifacts=11 format=anec output=/tmp/h13-odd.xpCpIc
+programs 11
+[('matmul', {'elementCount': 300, 'elementOffset': 0, 'physicalElements': 512, 'tensor': 'h'}), ('add', {'elementCount': 64, 'elementOffset': 0, 'tensor': 's'}), ('add', {'elementCount': 64, 'elementOffset': 64, 'tensor': 's'})]

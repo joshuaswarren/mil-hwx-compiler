@@ -57,59 +57,70 @@ def binding_interval(binding, tensors):
         require(binding['shape'] == tensor['shape'] and
                 binding['logicalBytes'] == tensor['logicalBytes'],
                 'whole-tensor binding differs from its tensor')
-        return tensor_name, 0, tensor['logicalBytes'] // 2
-    require(isinstance(slice_record, dict) and
-            set(slice_record) == {'tensor', 'elementOffset', 'elementCount'},
-            'slice has incorrect fields')
+        count = tensor['logicalBytes'] // 2
+        return tensor_name, 0, count, count
+    fields = set(slice_record) if isinstance(slice_record, dict) else set()
+    require(fields in ({'tensor', 'elementOffset', 'elementCount'},
+                       {'tensor', 'elementOffset', 'elementCount',
+                        'physicalElements'}), 'slice has incorrect fields')
     tensor_name = slice_record.get('tensor')
     offset, count = slice_record.get('elementOffset'), slice_record.get('elementCount')
+    physical = slice_record.get('physicalElements', count)
     require(tensor_name == binding['name'] and tensor_name in tensors,
             'slice references an unknown or mismatched tensor')
-    require(type(offset) is int and type(count) is int and offset >= 0 and count > 0,
-            'slice offsets and counts must be nonnegative integers')
+    require(type(offset) is int and type(count) is int and
+            type(physical) is int and offset >= 0 and count > 0 and physical >= count,
+            'slice offsets, counts, and physical elements must be valid integers')
     elements = tensors[tensor_name]['logicalBytes'] // 2
     require(count == binding['logicalBytes'] // 2 and offset <= elements - count,
             'slice exceeds its tensor or differs from its binding')
-    return tensor_name, offset, count
+    return tensor_name, offset, count, physical
 
 
-def exact_tiling(bindings, tensors, message):
-    intervals = sorted(binding_interval(item, tensors)[1:] for _, item in bindings)
+def exact_tiling(bindings, tensors, message, allow_repeats=False):
+    intervals = [binding_interval(item, tensors)[1:3] for _, item in bindings]
+    if allow_repeats:
+        intervals = set(intervals)
+    intervals = sorted(intervals)
     cursor = 0
     for offset, count in intervals:
         require(offset == cursor, message)
         cursor += count
-    require(bindings and cursor == tensors[binding_interval(bindings[0][1], tensors)[0]]['logicalBytes'] // 2,
+    require(bindings and
+            cursor == tensors[binding_interval(bindings[0][1], tensors)[0]]['logicalBytes'] // 2,
             message)
 
 
-def check_binding(binding, index, channels, tiles, layouts, tensors):
+def check_binding(binding, index, physical_elements, tiles, layouts, tensors):
     require(isinstance(binding, dict), 'binding must be an object')
     require(isinstance(binding.get('name'), str) and binding['name'],
             'binding needs a non-empty name')
     require(binding.get('dtype') == 'float16', 'binding must use float16')
     shape = binding.get('shape')
     require(isinstance(shape, list) and shape and
-            all(type(n) is int and 0 < n <= channels for n in shape),
-            'logical shape must have positive static dimensions')
-    require(math.prod(shape) == channels, 'incorrect logical element count')
+            all(type(n) is int and 0 < n <= physical_elements for n in shape),
+            'logical shape must have positive static dimensions within its layout')
+    logical_elements = math.prod(shape)
     require(type(binding.get('index')) is int and binding['index'] == index,
             'binding index does not match ANEC channel')
-    layout = [1, channels, 1, 1, 64, 64]
+    layout = [1, physical_elements, 1, 1, 64, 64]
     require(binding.get('nchw') == layout and
             all(type(n) is int for n in binding['nchw']), 'incorrect physical layout')
     require(list(layouts[index * 6:(index + 1) * 6]) == layout,
             'manifest layout differs from ANEC header')
     require(type(binding.get('logicalBytes')) is int and
-            binding['logicalBytes'] == channels * 2, 'incorrect logical byte count')
-    allocation = TILE_BYTES if channels <= 256 else 2 * TILE_BYTES
+            binding['logicalBytes'] == logical_elements * 2,
+            'incorrect logical byte count')
+    allocation = TILE_BYTES if physical_elements <= 256 else 2 * TILE_BYTES
     require(type(binding.get('allocationBytes')) is int and
             binding['allocationBytes'] == allocation, 'incorrect allocation size')
     require(tiles[index] * TILE_BYTES == allocation,
             'allocation differs from ANEC header')
     require(binding.get('role') in (None, 'intermediate'),
             'unsupported binding role')
-    binding_interval(binding, tensors)
+    _, _, count, physical = binding_interval(binding, tensors)
+    require(count == logical_elements and physical == physical_elements,
+            'slice physical elements differ from its binding layout')
 
 
 def validate_program(directory, program, tensors):
@@ -152,10 +163,11 @@ def validate_program(directory, program, tensors):
             if index != 0:
                 require(tiles[index] == 0, 'unexpected channel allocation')
     if matmul:
-        require(isinstance(inputs[0], dict) and
-                inputs[0].get('logicalBytes') in (512, 1024),
-                'unsupported matvec input size')
-        input_channels, output_channels = inputs[0]['logicalBytes'] // 2, 512
+        require(isinstance(inputs[0], dict), 'unsupported matvec input size')
+        input_channels = binding_interval(inputs[0], tensors)[3]
+        output_channels = binding_interval(outputs[0], tensors)[3]
+        require(input_channels in (256, 512) and output_channels == 512,
+                'unsupported matvec physical size')
     else:
         input_channels = output_channels = 64
     for index, item in enumerate(inputs, start=5):
@@ -178,9 +190,13 @@ def validate_program(directory, program, tensors):
         if item['name'] not in marked_constants:
             continue
         encoded = constant_inputs[item['name']]
-        require(isinstance(encoded, str) and len(encoded) == item['logicalBytes'] * 2 and
+        physical_elements = binding_interval(item, tensors)[3]
+        require(isinstance(encoded, str) and len(encoded) == physical_elements * 4 and
                 all(character in '0123456789abcdefABCDEF' for character in encoded),
-                'constant input must be dense hexadecimal fp16 bytes')
+                'constant input must be physical hexadecimal fp16 bytes')
+        payload = bytes.fromhex(encoded)
+        require(not any(payload[item['logicalBytes']:]),
+                'constant input padding must be zero')
     command_bytes = ((program['bytes'] - HEADER_BYTES + TILE_BYTES - 1)
                      // TILE_BYTES) * TILE_BYTES
     input_bytes = sum(item['allocationBytes'] for item in inputs)
@@ -190,11 +206,6 @@ def validate_program(directory, program, tensors):
         'inputBytes': input_bytes, 'outputBytes': output_bytes,
         'totalBytes': command_bytes + input_bytes + output_bytes,
     }
-
-
-def binding_layout(item):
-    return tuple(item[key] if not isinstance(item[key], list) else tuple(item[key])
-                 for key in ('dtype', 'shape', 'logicalBytes', 'nchw', 'allocationBytes'))
 
 
 def load_package(directory):
@@ -244,7 +255,7 @@ def load_package(directory):
     referenced = set()
     for program_index, program in enumerate(programs):
         for item in program['outputs']:
-            name, _, _ = binding_interval(item, tensors)
+            name, _, _, _ = binding_interval(item, tensors)
             referenced.add(name)
             role = tensors[name]['role']
             if role == 'intermediate':
@@ -256,7 +267,7 @@ def load_package(directory):
                         'non-intermediate output must have output tensor role')
                 output_tensors[name].append((program_index, item))
         for item in program['inputs']:
-            name, _, _ = binding_interval(item, tensors)
+            name, _, _, _ = binding_interval(item, tensors)
             referenced.add(name)
             role = tensors[name]['role']
             if role == 'intermediate':
@@ -279,16 +290,33 @@ def load_package(directory):
         exact_tiling(producers[name], tensors,
                      'intermediate producer slices must exactly tile the tensor')
         exact_tiling(consumers[name], tensors,
-                     'intermediate consumer slices must exactly tile the tensor')
-        for producer_index, produced in producers[name]:
-            _, produced_offset, produced_count = binding_interval(produced, tensors)
-            produced_end = produced_offset + produced_count
-            for consumer_index, consumed in consumers[name]:
-                _, consumed_offset, consumed_count = binding_interval(consumed, tensors)
-                if produced_offset < consumed_offset + consumed_count and \
-                        consumed_offset < produced_end:
+                     'intermediate consumer slices must exactly tile the tensor', True)
+        produced_ranges = sorted(
+            (offset, offset + physical, program_index)
+            for program_index, item in producers[name]
+            for _, offset, _, physical in [binding_interval(item, tensors)])
+        previous_end = 0
+        for start, end, _ in produced_ranges:
+            require(start >= previous_end,
+                    'intermediate producer physical writes overlap')
+            previous_end = end
+        for consumer_index, consumed in consumers[name]:
+            _, consumed_offset, _, consumed_physical = binding_interval(consumed, tensors)
+            consumed_end = consumed_offset + consumed_physical
+            cursor = consumed_offset
+            for produced_offset, produced_end, producer_index in produced_ranges:
+                if produced_end <= cursor:
+                    continue
+                if produced_offset > cursor:
+                    break
+                if produced_offset < consumed_end and consumed_offset < produced_end:
                     require(positions[producer_index] < positions[consumer_index],
                             'dispatchPlan violates an intermediate dependency')
+                cursor = max(cursor, produced_end)
+                if cursor >= consumed_end:
+                    break
+            require(cursor >= consumed_end,
+                    'intermediate consumer physical range exceeds producer writes')
     for name, bindings in output_tensors.items():
         exact_tiling(bindings, tensors, 'output slices must exactly tile the tensor')
     return manifest, allocations
@@ -298,7 +326,7 @@ def find_bindings(manifest, name, direction, constants=False):
     matches = []
     for program_index, program in enumerate(manifest['programs']):
         for item in program[direction]:
-            tensor_name, _, _ = binding_interval(item, manifest['tensors'])
+            tensor_name, _, _, _ = binding_interval(item, manifest['tensors'])
             if tensor_name != name:
                 continue
             if constants != (item.get('binding') == 'constant'):
@@ -323,7 +351,7 @@ def convert_tensor(binding, data, pack):
 
 
 def dense_slice(data, binding, tensors):
-    name, offset, count = binding_interval(binding, tensors)
+    name, offset, count, _ = binding_interval(binding, tensors)
     require(len(data) == tensors[name]['logicalBytes'], 'incorrect dense tensor byte count')
     return data[offset * 2:(offset + count) * 2]
 
@@ -358,7 +386,8 @@ def main():
                 require(len(encoded) == 1,
                         'constant name has inconsistent payloads across programs')
                 source = bytes.fromhex(encoded.pop())
-                data = convert_tensor(matches[0][2], source, True)
+                item = matches[0][2]
+                data = convert_tensor(item, source[:item['logicalBytes']], True)
                 with args.output.open('xb') as destination:
                     destination.write(data)
                 written = len(data)
@@ -396,7 +425,7 @@ def main():
                                               binding_buffer_name(program_index, item),
                                               item['allocationBytes'])
                         dense = convert_tensor(item, physical, False)
-                        _, offset, count = binding_interval(item, manifest['tensors'])
+                        _, offset, count, _ = binding_interval(item, manifest['tensors'])
                         data[offset * 2:(offset + count) * 2] = dense
                 with args.output.open('xb') as destination:
                     destination.write(data)
@@ -408,12 +437,14 @@ def main():
             output_bindings = {}
             for program in manifest['programs']:
                 for item in program['inputs']:
-                    name, offset, count = binding_interval(item, manifest['tensors'])
+                    name, offset, count, physical = binding_interval(
+                        item, manifest['tensors'])
                     if manifest['tensors'][name]['role'] != 'intermediate':
-                        input_bindings.setdefault((name, offset, count), item)
+                        input_bindings.setdefault((name, offset, count, physical), item)
                 for item in program['outputs']:
-                    name, offset, count = binding_interval(item, manifest['tensors'])
-                    output_bindings.setdefault((name, offset, count), item)
+                    name, offset, count, physical = binding_interval(
+                        item, manifest['tensors'])
+                    output_bindings.setdefault((name, offset, count, physical), item)
             input_bytes = sum(item['allocationBytes'] for item in input_bindings.values())
             output_bytes = sum(item['allocationBytes'] for item in output_bindings.values())
             print(json.dumps({
