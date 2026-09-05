@@ -1,0 +1,11 @@
+compiled target=H13 artifacts=17 format=hwx output=/tmp/h13-hwx-smoke.P1FbkA
+manifest.json
+program-0.hwx
+program-1.hwx
+architecture subtype=0x0004 name=H13 isa=7
+command[0] offset=0x20 cmd=0x19 size=0x48 kind=1095786335
+command[1] offset=0x68 cmd=0x19 size=0x98 kind=1447452511
+__FVMLIB/__const addr=0x30000000 size=0x4000 offset=0x0 reloff=0x0 nreloc=0
+hwx->anec round trip: identical
+H13 hardware test cannot provision the aned cache: /Library/Caches/com.apple.aned/25G83/InMemoryModelCache/h13_exec is not writable
+gate_exit=

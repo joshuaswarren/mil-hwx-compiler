@@ -10,7 +10,7 @@
 static void printUsage(const char *program) {
     fprintf(stderr,
         "usage: %s --mil FILE --model-root DIR "
-        "--output DIR [--target H16G|H13]\n", program);
+        "--output DIR [--target H16G|H13] [--format anec|hwx]\n", program);
 }
 
 static NSString *severityName(ANEDiagnosticSeverity severity) {
@@ -53,8 +53,10 @@ int main(int argc, const char *argv[]) {
         NSString *modelRoot = arguments[@"--model-root"];
         NSString *output = arguments[@"--output"];
         NSString *target = arguments[@"--target"] ?: @"H16G";
+        NSString *requestedFormat = arguments[@"--format"];
+        NSString *format = requestedFormat ?: @"anec";
         NSSet<NSString *> *accepted = [NSSet setWithArray:@[
-            @"--mil", @"--model-root", @"--output", @"--target",
+            @"--mil", @"--model-root", @"--output", @"--target", @"--format",
         ]];
         for (NSString *key in arguments) {
             if (![accepted containsObject:key]) {
@@ -78,6 +80,7 @@ int main(int argc, const char *argv[]) {
             NSError *error = nil;
             BOOL success = [ANEH13Compiler compileMILData:milData
                 modelRoot:[NSURL fileURLWithPath:modelRoot isDirectory:YES]
+                format:format
                 outputDirectory:[NSURL fileURLWithPath:output isDirectory:YES]
                 diagnostics:diagnostics error:&error];
             printDiagnostics(diagnostics);
@@ -87,11 +90,12 @@ int main(int argc, const char *argv[]) {
                 return error ? 74 : 65;
             }
             NSUInteger artifacts = 0;
+            NSString *suffix = [@"." stringByAppendingString:format];
             for (NSString *name in [NSFileManager.defaultManager
                      contentsOfDirectoryAtPath:output error:nil])
-                artifacts += [name hasPrefix:@"program-"] && [name hasSuffix:@".anec"];
-            printf("compiled target=H13 artifacts=%lu format=anec output=%s\n",
-                (unsigned long)artifacts, output.UTF8String);
+                artifacts += [name hasPrefix:@"program-"] && [name hasSuffix:suffix];
+            printf("compiled target=H13 artifacts=%lu format=%s output=%s\n",
+                (unsigned long)artifacts, format.UTF8String, output.UTF8String);
             return 0;
         }
         ANECompiler *compiler = [[ANECompiler alloc] init];

@@ -9,6 +9,7 @@ from pathlib import Path
 
 compiler = str(Path(sys.argv[1] if len(sys.argv) > 1 else 'build/mil-hwxc').resolve())
 inspector = str(Path(__file__).resolve().parents[1] / "research" / "inspect_anec.py")
+hwx_inspector = str(Path(__file__).resolve().parents[1] / "research" / "inspect_hwx.py")
 
 
 def inspect(package, *args, success=True):
@@ -281,12 +282,15 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     root = Path(directory)
     mil = root / 'model.mil'
 
-    def compile_text(text, name, success=True, diagnostic="h13."):
+    def compile_text(text, name, success=True, diagnostic="h13.", format=None):
         mil.write_text(text)
         out = root / name
-        run = subprocess.run([compiler, '--mil', str(mil), '--model-root', str(root),
-                              '--target', 'H13', '--output', str(out)],
-                             capture_output=True, text=True, check=False, timeout=15)
+        command = [compiler, '--mil', str(mil), '--model-root', str(root),
+                   '--target', 'H13', '--output', str(out)]
+        if format is not None:
+            command += ['--format', format]
+        run = subprocess.run(command, capture_output=True, text=True, check=False,
+                             timeout=15)
         assert (run.returncode == 0) == success, run.stdout + run.stderr
         if not success:
             assert diagnostic in run.stderr, run.stderr
@@ -1099,4 +1103,73 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         assert struct.unpack_from('<H', (changed / 'program-0.anec').read_bytes(),
                                   4096 + 0x280)[0] == 0x4000
 
-print('H13 MIL-to-ANEC CLI: PASS (device-free)')
+    compile_text(source(), 'unsupported-format', False,
+                 'h13.unsupported-format', format='bogus')
+    explicit_anec = compile_text(source(), 'explicit-anec', format='anec')
+    hwx = compile_text(source(), 'add-hwx', format='hwx')
+    hwx_manifest = json.loads((hwx / 'manifest.json').read_text())
+    assert hwx_manifest['schema'] == manifest['schema']
+    assert hwx_manifest['artifactFormat'] == 'hwx'
+    assert [program['file'] for program in hwx_manifest['programs']] == ['program-0.hwx']
+    assert hwx_manifest['programs'][0]['bytes'] == (hwx / 'program-0.hwx').stat().st_size
+    comparable_hwx = json.loads(json.dumps(hwx_manifest))
+    comparable_anec = json.loads((explicit_anec / 'manifest.json').read_text())
+    comparable_hwx['artifactFormat'] = 'anec'
+    for hwx_program, anec_program in zip(comparable_hwx['programs'],
+                                         comparable_anec['programs']):
+        hwx_program['file'] = anec_program['file']
+        hwx_program['bytes'] = anec_program['bytes']
+    if 'file' in comparable_hwx:
+        comparable_hwx['file'] = comparable_anec['file']
+        comparable_hwx['bytes'] = comparable_anec['bytes']
+    assert comparable_hwx == comparable_anec
+    extracted = root / 'extracted.anec'
+    extraction = subprocess.run(
+        [sys.executable, hwx_inspector, '--extract-anec',
+         str(hwx / 'program-0.hwx'), str(extracted)],
+        capture_output=True, text=True, timeout=15, check=False)
+    assert extraction.returncode == 0, extraction.stdout + extraction.stderr
+    assert extracted.read_bytes() == (explicit_anec / 'program-0.anec').read_bytes()
+    inspected_hwx = subprocess.run(
+        [sys.executable, hwx_inspector, str(hwx / 'program-0.hwx')],
+        capture_output=True, text=True, timeout=15, check=False)
+    assert inspected_hwx.returncode == 0, inspected_hwx.stdout + inspected_hwx.stderr
+    assert 'architecture subtype=0x0004 name=H13 isa=7' in inspected_hwx.stdout
+    assert 'h13_anec_content' in inspected_hwx.stdout
+
+    assert '__TEXT/__text' in inspected_hwx.stdout
+    assert 'size=0x274 offset=0x4000' in inspected_hwx.stdout
+    assert 'h13_program_descriptor code=0x21a' in inspected_hwx.stdout
+    assert 'task_words_minus_one=156 task_count=1 max_binding=65535' in inspected_hwx.stdout
+    assert 'field850=0x11' in inspected_hwx.stdout
+    assert 'field858=4' in inspected_hwx.stdout
+    assert "field860=1 field868=9 field86c=8 name='net'" in inspected_hwx.stdout
+    assert 'tensor_descriptor binding=1 element=5' in inspected_hwx.stdout
+
+    relocation_weights = bytearray(128 + 512 * 256 * 2)
+    struct.pack_into('<IIQQ', relocation_weights, 64, 0xDEADBEEF, 1,
+                     512 * 256 * 2, 128)
+    (root / 'weights.bin').write_bytes(relocation_weights)
+    relocation_anec = compile_text(matmul_source(256), 'matmul-relocations-anec')
+    relocation_hwx = compile_text(
+        matmul_source(256), 'matmul-relocations-hwx', format='hwx')
+    relocation_inspection = subprocess.run(
+        [sys.executable, hwx_inspector,
+         str(relocation_hwx / 'program-0.hwx')],
+        capture_output=True, text=True, timeout=15, check=False)
+    assert relocation_inspection.returncode == 0, (
+        relocation_inspection.stdout + relocation_inspection.stderr)
+    assert relocation_inspection.stdout.count('relocation[') == 16
+    assert 'address=0x74 info=0x05000004' in relocation_inspection.stdout
+    assert 'address=0xb0 info=0x05000004' in relocation_inspection.stdout
+    relocation_extracted = root / 'matmul-relocations.anec'
+    relocation_result = subprocess.run(
+        [sys.executable, hwx_inspector, '--extract-anec',
+         str(relocation_hwx / 'program-0.hwx'), str(relocation_extracted)],
+        capture_output=True, text=True, timeout=15, check=False)
+    assert relocation_result.returncode == 0, (
+        relocation_result.stdout + relocation_result.stderr)
+    assert relocation_extracted.read_bytes() == \
+        (relocation_anec / 'program-0.anec').read_bytes()
+
+print('H13 MIL-to-ANEC/HWX CLI: PASS (device-free)')

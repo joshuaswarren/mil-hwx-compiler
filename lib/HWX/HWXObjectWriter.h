@@ -60,6 +60,11 @@ typedef NS_ENUM(NSUInteger, HWXProgramDescriptorLayout) {
                   descriptorLayout:(HWXProgramDescriptorLayout)descriptorLayout;
 @end
 
+typedef NS_ENUM(NSUInteger, HWXObjectArchitecture) {
+    HWXObjectArchitectureH13 = 4,
+    HWXObjectArchitectureH16G = 7,
+};
+
 @interface HWXObjectWriter : NSObject
 + (nullable NSData *)buildObjectWithTaskDescriptor:(NSData *)taskDescriptor
                                      constantRegion:(NSData *)constantRegion
@@ -76,6 +81,13 @@ typedef NS_ENUM(NSUInteger, HWXProgramDescriptorLayout) {
                                      constantRegion:(NSData *)constantRegion
                                             bindings:(NSArray<HWXObjectBinding *> *)bindings
                              kernelRelocationOffsets:(NSArray<NSNumber *> *)kernelRelocationOffsets
+                                         programInfo:(HWXObjectProgramInfo *)programInfo
+                                               error:(NSError **)error;
++ (nullable NSData *)buildObjectForArchitecture:(HWXObjectArchitecture)architecture
+                                     taskDescriptor:(NSData *)taskDescriptor
+                                      constantRegion:(NSData *)constantRegion
+                                             bindings:(NSArray<HWXObjectBinding *> *)bindings
+                              kernelRelocationOffsets:(NSArray<NSNumber *> *)kernelRelocationOffsets
                                          programInfo:(HWXObjectProgramInfo *)programInfo
                                                error:(NSError **)error;
 @end

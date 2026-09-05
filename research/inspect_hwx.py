@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect and validate H14 or H16G HWX object structure."""
+"""Inspect and validate H13, H14, or H16G HWX object structure."""
 from __future__ import annotations
 
 import struct
@@ -8,6 +8,7 @@ import sys
 HWX_MAGIC = 0xBEEFFACE
 ARCHITECTURES = {
     5: ("H14", 11),
+    4: ("H13", 7),
     7: ("H16G", 17),
 }
 H14_BLOCKS = (
@@ -171,7 +172,94 @@ def inspect_segment(data: bytes, cursor: int, command_size: int, subtype: int) -
         section_cursor += 80
 
 
-def main(path: str) -> None:
+def h13_anec(data: bytes) -> tuple[bytes, dict[str, int]]:
+    _, _, _, _, command_count, command_bytes, _, _ = unpack_from(
+        "<8I", data, 0, "Mach-O header")
+    cursor = 32
+    command_end = cursor + command_bytes
+    sections: dict[tuple[str, str], dict[str, int]] = {}
+    surfaces: list[tuple[str, int]] = []
+    tensors: list[tuple[tuple[int, ...], tuple[int, ...], int]] = []
+    for command_index in range(command_count):
+        command, command_size = unpack_from(
+            "<2I", data, cursor, f"load command[{command_index}]")
+        if command_size < 8 or command_size > command_end - cursor:
+            raise ValueError(f"invalid H13 load command[{command_index}]")
+        kind = unpack_from("<I", data, cursor + 8, "load command kind")[0] \
+            if command_size >= 12 else None
+        if command == 0x19:
+            segment_fields = unpack_from(
+                "<2I16s4Q4I", data, cursor, "H13 segment")
+            segment = cstring(segment_fields[2])
+            section_cursor = cursor + 72
+            for section_index in range(segment_fields[-2]):
+                fields = unpack_from(
+                    "<16s16s2Q8I", data, section_cursor, "H13 section")
+                section = cstring(fields[0])
+                sections[(segment, section)] = {
+                    "address": fields[2], "size": fields[3],
+                    "offset": fields[4], "allocation": segment_fields[4],
+                }
+                if segment == "__FVMLIB":
+                    surfaces.append((section, segment_fields[4]))
+                section_cursor += 80
+        elif command == 4 and kind == 3 and command_size >= 0x80:
+            tensors.append((
+                unpack_from("<4I", data, cursor + 0x28, "H13 tensor shape"),
+                unpack_from("<4Q", data, cursor + 0x50, "H13 tensor strides"),
+                unpack_from("<Q", data, cursor + 0x70, "H13 tensor total")[0],
+                unpack_from("<I", data, cursor + 0x24, "H13 tensor element")[0],
+            ))
+        cursor += command_size
+    if cursor != command_end:
+        raise ValueError("H13 load command table size does not match its header")
+    text = sections.get(("__TEXT", "__text"))
+    constants = sections.get(("__TEXT", "__const"))
+    if not text or not constants or text["size"] != 0x274:
+        raise ValueError("H13 HWX requires a 0x274-byte __TEXT/__text task")
+    if constants["offset"] != text["offset"] + 0x280 or \
+            constants["address"] != text["address"] + 0x280:
+        raise ValueError("H13 __TEXT/__const must begin at task content offset 0x280")
+    if len(tensors) != len(surfaces) or len(tensors) not in (2, 3):
+        raise ValueError("H13 HWX requires one or two inputs followed by one output")
+    if any(name != "__const" for name, _ in surfaces[:-1]) or \
+            surfaces[-1][0] != "__data":
+        raise ValueError("H13 FVMLIB surfaces must list inputs before the output")
+    for index, ((shape, strides, total, element_code), (_, allocation)) in enumerate(
+            zip(tensors, surfaces)):
+        batch, plane, row, element = strides
+        if element_code != 5 or element != 2 or batch != shape[1] * plane or \
+                total != shape[0] * batch or total > allocation:
+            raise ValueError(f"H13 tensor descriptor[{index}] has an invalid layout")
+    content_size = 0x280 + constants["size"]
+    content = data[text["offset"]:text["offset"] + content_size]
+    if len(content) != content_size:
+        raise ValueError("H13 task and constant content is truncated")
+    header = bytearray(0x1000)
+    struct.pack_into("<QIIQQII", header, 0, content_size, 0x274, 1,
+                     0x274, constants["size"], len(tensors) - 1, 1)
+    tiles = [0] * 32
+    tiles[0] = (content_size + 0x3fff) // 0x4000
+    tiles[4] = (surfaces[-1][1] + 0x3fff) // 0x4000
+    for index, (_, allocation) in enumerate(surfaces[:-1], 5):
+        tiles[index] = (allocation + 0x3fff) // 0x4000
+    struct.pack_into("<32I", header, 40, *tiles)
+    layouts = [0] * (32 * 6)
+    ordered = [(4, tensors[-1]), *
+               ((index + 5, tensor) for index, tensor in enumerate(tensors[:-1]))]
+    for channel, (shape, strides, _, _) in ordered:
+        layouts[channel * 6:channel * 6 + 6] = [
+            *shape, strides[1], strides[2]]
+    struct.pack_into("<192Q", header, 0xa8, *layouts)
+    return bytes(header) + content, {
+        "contentOffset": text["offset"], "contentBytes": content_size,
+        "taskBytes": text["size"], "constantOffset": 0x280,
+        "constantBytes": constants["size"],
+        "inputs": len(tensors) - 1, "outputs": 1,
+    }
+
+
+def main(path: str, extract_path: str | None = None) -> None:
     with open(path, "rb") as stream:
         data = stream.read()
     header = unpack_from("<8I", data, 0, "Mach-O header")
@@ -226,6 +314,35 @@ def main(path: str) -> None:
                 f"format=0x{format_code:x} "
                 "text=0x%x text_const=0x%x scratch=0x%x "
                 "slot70=0x%x slot80=0x%x slot90=0x%x" % tuple(addresses))
+        if command == 4 and kind == 1 and command_size >= 0x880:
+            code = unpack_from("<I", data, cursor + 0x0c, "H13 program code")[0]
+            text_address, constant_address = unpack_from(
+                "<2Q", data, cursor + 0x10, "H13 text addresses")
+            resources = unpack_from(
+                "<5Q", data, cursor + 0x30, "H13 resource addresses")
+            task_words = unpack_from(
+                "<I", data, cursor + 0x818, "H13 task words")[0]
+            task_count = unpack_from(
+                "<I", data, cursor + 0x81c, "H13 task count")[0]
+            max_binding = unpack_from(
+                "<I", data, cursor + 0x824, "H13 max binding")[0]
+            name_offset = unpack_from(
+                "<I", data, cursor + 0x83c, "H13 name offset")[0]
+            field_offsets = (0x850, 0x854, 0x858, 0x85c, 0x860, 0x868, 0x86c)
+            fields = tuple(
+                unpack_from("<I", data, cursor + offset, "H13 trailing field")[0]
+                for offset in field_offsets)
+            name = cstring(data[cursor + 0x878:cursor + command_size])
+            print(
+                "  h13_program_descriptor "
+                f"code=0x{code:x} text=0x{text_address:x} "
+                f"text_const=0x{constant_address:x} resources={resources} "
+                f"task_words_minus_one={task_words} task_count={task_count} "
+                f"max_binding={max_binding} name_offset=0x{name_offset:x} "
+                f"field850=0x{fields[0]:x} field854=0x{fields[1]:x} "
+                f"field858={fields[2]} field85c={fields[3]} "
+                f"field860={fields[4]} field868={fields[5]} "
+                f"field86c={fields[6]} name={name!r}")
         if command == 4 and kind == 3 and command_size >= 0x80:
             binding_index = unpack_from(
                 "<I", data, cursor + 0x14, "tensor binding index")[0]
@@ -245,13 +362,27 @@ def main(path: str) -> None:
         raise ValueError(
             f"load commands consume 0x{cursor - 32:x} bytes; "
             f"header declares 0x{command_bytes:x}")
+    if subtype == 4:
+        anec, summary = h13_anec(data)
+        print(
+            "h13_anec_content " + " ".join(
+                f"{key}={hex(value)}" for key, value in summary.items()))
+        if extract_path:
+            with open(extract_path, "wb") as stream:
+                stream.write(anec)
+            print(f"extracted_anec path={extract_path!r} bytes=0x{len(anec):x}")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        raise SystemExit(f"usage: {sys.argv[0]} FILE.hwx")
+    if len(sys.argv) == 2:
+        path, extract_path = sys.argv[1], None
+    elif len(sys.argv) == 4 and sys.argv[1] == "--extract-anec":
+        path, extract_path = sys.argv[2], sys.argv[3]
+    else:
+        raise SystemExit(
+            f"usage: {sys.argv[0]} [--extract-anec FILE.hwx OUTPUT.anec] FILE.hwx")
     try:
-        main(sys.argv[1])
+        main(path, extract_path)
     except (OSError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         raise SystemExit(1)

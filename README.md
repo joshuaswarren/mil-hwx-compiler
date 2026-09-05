@@ -2,7 +2,8 @@
 
 This repository contains a research compiler for the H16G Apple Neural Engine
 in the M4 and an experimental source-native H13/M1 backend. It reads textual
-MIL and emits H16G HWX objects or H13 ANEC packages without Apple's compiler.
+MIL and emits H16G HWX objects or H13 ANEC and HWX packages without Apple's
+compiler.
 
 The project is a canary for the compiler pipeline recovered in *Inside the M4
 Apple Neural Engine*, Part 4b. It shows which parts of that pipeline are
@@ -10,7 +11,9 @@ understood well enough to reproduce in code and verify on hardware.
 
 ## Linux build
 
-This fork builds on Linux with GNUstep Foundation. H16G emits HWX; the experimental H13 backend emits ANEC. H13 hardware execution, numerical correctness, performance, and mlx-omarchy integration remain unqualified.
+This fork builds on Linux with GNUstep Foundation. H16G emits HWX; the
+experimental H13 backend emits ANEC by default and HWX with `--format hwx`.
+H13 performance and mlx-omarchy integration remain unqualified.
 
 Install Clang and LLD, CMake, Ninja, Make, pkg-config, Git, Python 3, and development packages for libffi, libxml2, ICU, OpenSSL, and zlib. Then run:
 
@@ -90,8 +93,9 @@ MIL
 ./build/mil-hwxc --target H13 --mil /tmp/h13-add.mil --model-root /tmp --output build/h13-add
 ```
 
-The output directory must be absent or empty. It receives one
-`program-N.anec` file per operation slice. The v1 manifest always includes a
+The output directory must be absent or empty. By default it receives one
+`program-N.anec` file per operation slice. `--format hwx` instead writes
+`program-N.hwx` with the same task and constant content. The v1 manifest always includes a
 `programs` array, numeric `dispatchPlan`, and `tensors` object. Each stored
 tensor records its full logical shape, byte count, and input, output,
 intermediate, or constant role. A shape-only result has its own tensor record
@@ -154,6 +158,40 @@ compares elementwise output at exact fp16 equality. A tensor marked
 `abs(device-reference) <= 0.03125 + 0.01 * abs(reference)` to allow the extra
 partial-sum rounding. Override the binding path with `--libane-library`. Run the
 host-only reference and dry-run checks with `make test-h13-reference`.
+
+### H13 HWX and macOS aned gate
+
+Pass `--format hwx` to emit a loadable H13 Mach-O object for each program
+instead of an ANEC container. The manifest schema stays
+`mil-hwxc.h13-anec-package.v1` and records `"artifactFormat": "hwx"`.
+`research/inspect_hwx.py` validates the H13 subtype, program descriptor,
+tensor channels, relocations, and embedded task/constant layout. It can also
+reconstruct the matching ANEC bytes:
+
+```bash
+./build/mil-hwxc --target H13 --format hwx --mil model.mil \
+  --model-root models --output build/h13-hwx
+python3 research/inspect_hwx.py build/h13-hwx/program-0.hwx
+python3 research/inspect_hwx.py --extract-anec \
+  build/h13-hwx/program-0.hwx /tmp/program-0.anec
+```
+
+On an arm64 Mac, the hardware gate compiles the package, computes dense fp16
+reference outputs, provisions every HWX object under the current aned
+`InMemoryModelCache/h13_exec` key, and loads and runs each program through
+`ANEProvisionedRuntime`. It stops before compiling or dispatching when that
+cache directory is not writable.
+
+```bash
+tests/run_h13_hardware.sh model.mil models x=input.fp16
+```
+
+Elementwise outputs must match the reference bit for bit. A tensor marked
+`chunked-fp16` uses
+`abs(device-reference) <= 0.02 + 0.02 * abs(reference)` because partial
+matmul results are rounded to fp16 between chunks. The decoded H13 fields and
+the remaining unknown field meanings are listed in
+[`research/h13-hwx-fields.md`](research/h13-hwx-fields.md).
 
 Before hardware use, qualify the matching driver, BAR/kernel binding contract,
 and DMA spans on an ANE-enabled base M1. Compilation on an M1 Ultra host is

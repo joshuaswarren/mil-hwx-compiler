@@ -1,0 +1,15 @@
+build/test_h13_encoding
+H13_ENCODING_OK
+build/test_h13_anec
+python3 tests/test_h13_cli.py build/mil-hwxc
+H13 MIL-to-ANEC/HWX CLI: PASS (device-free)
+python3 tests/test_hwx_inspection.py
+HWX inspection: PASS (H13 validation plus source-derived H14 fixture)
+python3 tests/test_h13_reference.py build/mil-hwxc
+PASS test_blob_matmul_transposes
+PASS test_chunked_accumulation_difference_bound
+PASS test_fp16_rounding_and_ops
+PASS test_intermediate_physical_buffer_composition
+PASS test_linux_runner_dry_run
+PASS test_shape_ops_linear_and_binary_ops
+PASS 6 H13 reference tests
