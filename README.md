@@ -37,9 +37,13 @@ or invoke Apple's compiler. The currently encoded shapes are deliberately narrow
 | real_div | One 64-element fp16 input `x` and a same-shape fp16 const tensor `y` whose elements are finite, nonzero powers of two with fp16-exact reciprocals; the host stores the reciprocals and emits the verified multiply descriptor. |
 | matmul | fp16 x with K=256 or 512 as [K], [...,1,K] with singleton leading dimensions, or transpose_x=true [...,K,1]; constant rank-2 W[K,512] with transpose_y=false or W[512,K] with transpose_y=true; output [512], [...,1,512] |
 
-Exactly one function, one non-constant operation, and its single returned result
-are required. Other operations, geometry, and multi-operation graphs fail with
-diagnostics rather than falling back to CPU execution.
+Exactly one function and at least one non-constant operation are required. A
+straight-line chain is supported when every operation satisfies its row above,
+each non-final result is consumed exactly once by the next operation, and only
+the last result is returned. Intermediate tensors keep the producer's logical
+shape and physical layout. A 512-element matvec result therefore cannot feed a
+64-element binary operation; unsupported chain edges fail with
+`h13.unsupported-chain` rather than falling back to CPU execution.
 
 Run the host-only checks with `make test-h13` (set `GNUSTEP_PREFIX` on Linux).
 They cover encoding, coefficient packing, serialization, and the MIL CLI;
@@ -58,14 +62,22 @@ MIL
 ./build/mil-hwxc --target H13 --mil /tmp/h13-add.mil --model-root /tmp --output build/h13-add
 ```
 
-The output directory must be absent or empty. It receives `program-0.anec`
-and a manifest containing logical shapes, physical strides, buffer indices,
-and allocation sizes. ANEC uses a 0x1000-byte header, a 0x274-byte descriptor,
-and constants at content offset 0x280. Older libane readers expecting a
-0x800-byte header cannot consume this format. The manifest schema is
-`mil-hwxc.h13-anec-package.v1`, not an `ANEExecutableBundle` or an mlx-omarchy
-bundle. The device-free reader validates container/binding consistency and
-converts dense little-endian fp16 bytes to and from the physical channel layout:
+The output directory must be absent or empty. It receives one
+`program-N.anec` file per operation. The v1 manifest always includes a
+`programs` array and numeric `dispatchPlan`; `intermediates` names the shared
+tensors between programs. A single-program package also keeps the original
+top-level program fields for existing readers. Multi-program packages keep only
+`schema`, `target`, `artifactFormat`, `programs`, `dispatchPlan`, and
+`intermediates` at the top level. Each program record contains logical shapes,
+physical strides, buffer indices, allocation sizes, and constant bindings.
+ANEC uses a 0x1000-byte header, a 0x274-byte descriptor, and constants at
+content offset 0x280. Older libane readers expecting a 0x800-byte header cannot
+consume this format. The schema remains `mil-hwxc.h13-anec-package.v1`, not an
+`ANEExecutableBundle` or an mlx-omarchy bundle. The device-free reader validates
+every container and binding, exact intermediate producer/consumer ownership,
+and dependency-respecting dispatch order. Packing and unpacking resolve binding
+names across all programs and convert dense little-endian fp16 bytes to and from
+the physical channel layout:
 
 ```bash
 python3 research/inspect_anec.py build/h13-add
@@ -81,7 +93,7 @@ device safety. No device dispatcher is implemented here.
 Before hardware use, qualify the matching driver, BAR/kernel binding contract,
 and DMA spans on an ANE-enabled base M1. Compilation on an M1 Ultra host is
 not proof that the emitted program executes on a base M1. General model
-coverage, scheduling/fusion, and device latency optimization remain unfinished.
+coverage, program fusion, and device latency optimization remain unfinished.
 The 512-wide encoder omits 512 KiB of unreachable coefficient padding:
 the sixteen KDMA ranges address only 512 KiB. Both reductions therefore
 emit 529,024-byte ANEC files, with 33 command tiles.

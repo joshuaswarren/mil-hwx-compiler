@@ -59,6 +59,23 @@ def constant_source(op, value, const_first=False, blob=None):
 '''
 
 
+
+def chain_source(return_values='result', middle='product'):
+    value_type = tensor_type((1, 64, 1, 1))
+    constants = ', '.join('fp16(1.0)' for _ in range(64))
+    return f'''program(1.3)
+[buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>({value_type} a, {value_type} b) {{
+    {value_type} c = const()[name = string("c"), val = {value_type}([{constants}])];
+    {value_type} sum = add(x = a, y = b)[name = string("sum")];
+    {value_type} product = mul(x = sum, y = b)[name = string("product")];
+    {value_type} result = sub(x = {middle}, y = c)[name = string("result")];
+  }} -> ({return_values});
+}}
+'''
+
+
 def matmul_source(reduction, x_shape=None, output_shape=None, transpose_x=False,
                   transpose_y=True, weight_shape=None):
     x_shape = (1, reduction) if x_shape is None else x_shape
@@ -107,6 +124,11 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     assert manifest['target'] == 'H13'
     assert manifest['artifactFormat'] == 'anec'
     assert manifest["schema"] == "mil-hwxc.h13-anec-package.v1"
+    assert manifest['dispatchPlan'] == [0]
+    assert manifest['intermediates'] == []
+    assert manifest['programs'] == [{key: manifest[key] for key in (
+        'file', 'bytes', 'taskDescriptors', 'operation', 'inputs', 'constantInputs',
+        'outputs', 'constantOffset', 'constantBytes')}]
     assert manifest['inputs'][0]['name'] == 'a'
     assert manifest['inputs'][1]['name'] == 'b'
     assert manifest['outputs'][0]['name'] == 'y'
@@ -148,6 +170,52 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             assert logical_manifest['inputs'][1]['shape'] == list(shape)
             assert logical_manifest['outputs'][0]['shape'] == list(shape)
     assert (root / 'mul-canonical' / 'program-0.anec').read_bytes() != data
+    chain = compile_text(chain_source(), 'chain')
+    chain_manifest = json.loads((chain / 'manifest.json').read_text())
+    assert set(chain_manifest) == {
+        'schema', 'target', 'artifactFormat', 'programs', 'dispatchPlan', 'intermediates'}
+    assert chain_manifest['dispatchPlan'] == [0, 1, 2]
+    assert chain_manifest['intermediates'] == ['sum', 'product']
+    assert [program['file'] for program in chain_manifest['programs']] == [
+        'program-0.anec', 'program-1.anec', 'program-2.anec']
+    assert [program['operation'] for program in chain_manifest['programs']] == [
+        'add', 'mul', 'add']
+    assert (chain / 'program-0.anec').read_bytes() == data
+    assert (chain / 'program-1.anec').read_bytes() == \
+        (root / 'mul-canonical' / 'program-0.anec').read_bytes()
+    assert (chain / 'program-2.anec').read_bytes() == data
+    assert chain_manifest['programs'][0]['outputs'][0]['role'] == 'intermediate'
+    assert chain_manifest['programs'][1]['inputs'][0]['role'] == 'intermediate'
+    assert chain_manifest['programs'][1]['outputs'][0]['role'] == 'intermediate'
+    assert chain_manifest['programs'][2]['inputs'][0]['role'] == 'intermediate'
+    assert bytes.fromhex(chain_manifest['programs'][2]['constantInputs']['c']) == \
+        struct.pack('<e', -1.0) * 64
+    chain_inspection = json.loads(inspect(chain))
+    assert chain_inspection['manifest'] == chain_manifest
+    assert chain_inspection['bufferAllocation']['programs'][0]['totalBytes'] == 65536
+    assert chain_inspection['bufferAllocation']['totalBytes'] == 147456
+    chain_raw, chain_buffer, chain_output = (
+        root / 'chain-input.fp16', root / 'chain-input.buffer', root / 'chain-output.fp16')
+    chain_raw.write_bytes(dense)
+    inspect(chain, '--pack-input', 'b', chain_raw, '--output', chain_buffer)
+    assert chain_buffer.read_bytes() == expected
+    inspect(chain, '--unpack-output', 'result', chain_buffer, '--output', chain_output)
+    assert chain_output.read_bytes() == dense
+    chain_constant = root / 'chain-constant.buffer'
+    inspect(chain, '--pack-constant', 'c', '--output', chain_constant)
+    expected_chain_constant = bytearray(16384)
+    for channel in range(64):
+        expected_chain_constant[channel * 64:channel * 64 + 2] = struct.pack('<e', -1.0)
+    assert chain_constant.read_bytes() == expected_chain_constant
+    invalid_chain = compile_text(chain_source(), 'invalid-chain-manifest')
+    invalid_chain_manifest = json.loads((invalid_chain / 'manifest.json').read_text())
+    invalid_chain_manifest['dispatchPlan'] = [1, 0, 2]
+    (invalid_chain / 'manifest.json').write_text(json.dumps(invalid_chain_manifest))
+    inspect(invalid_chain, success=False)
+    compile_text(chain_source('sum, result'), 'early-intermediate-return', False,
+                 'h13.unsupported-chain')
+    compile_text(chain_source(middle='a'), 'unused-intermediate', False,
+                 'h13.unsupported-chain')
     values = tuple(1.0 + (index % 8) * 0.125 for index in range(64))
     unchanged_constants = b''.join(struct.pack('<e', value) for value in values)
     for op in ('add', 'mul', 'maximum', 'minimum'):
@@ -257,6 +325,12 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         struct.pack_into("<H", weights, 128 + (7 * reduction + 13) * 2, 0x4200)
         (root / 'weights.bin').write_bytes(weights)
         matmul = matmul_source(reduction)
+        matmul_binary = matmul.replace(
+            '  } -> (y);',
+            '    tensor<fp16, [1, 512]> z = add(x = y, y = y)[name = string("z")];\n'
+            '  } -> (z);')
+        compile_text(matmul_binary, f'matmul-binary-{reduction}', False,
+                     'h13.unsupported-chain')
         projection = compile_text(matmul, f'projection-{reduction}')
         payload = (projection / 'program-0.anec').read_bytes()
         assert struct.unpack_from('<H', payload, 4096 + 0x280)[0] == 0x3C00
