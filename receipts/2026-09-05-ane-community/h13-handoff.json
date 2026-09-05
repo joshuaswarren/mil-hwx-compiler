@@ -1,23 +1,24 @@
 {
   "schema": "h13-hardware-handoff.v1",
   "purpose": "Everything the base-M1 owner needs to run the compiler's H13 packages once the ANE-enabled boot and driver are confirmed. Artifact readiness is not permission to submit.",
-  "source_revision": "6d8796c on joshuaswarren/mil-hwx-compiler feat/h13-m1",
+  "source_revision": "0d139d8 on joshuaswarren/mil-hwx-compiler feat/h13-m1",
   "host_verification": [
-    "receipts/2026-09-05-ane-community/h13-chains-linux.log",
-    "receipts/2026-09-05-ane-community/h13-chains-macos.log"
+    "receipts/2026-09-05-ane-community/h13-wide-linux.log",
+    "receipts/2026-09-05-ane-community/h13-wide-macos.log",
+    "receipts/2026-09-05-ane-community/h13-mlp-block-smoke.log"
   ],
   "package": {
     "schema": "mil-hwxc.h13-anec-package.v1",
     "files": "program-N.anec per operation plus manifest.json",
     "anec_layout": "0x1000-byte header, 0x274-byte task descriptor at 0x1000, constants at content offset 0x280, 0x4000-byte tiles",
-    "manifest": "programs[], dispatchPlan[], intermediates[]; per-program inputs/outputs carry logical shape, ANEC channel index, physical nchw layout, logicalBytes, allocationBytes; folded constants appear as constantInputs hex plus binding=constant",
-    "buffer_conversion": "python3 research/inspect_anec.py PACKAGE --pack-input NAME dense.fp16 --output physical.buffer | --pack-constant NAME --output physical.buffer | --unpack-output NAME physical.buffer --output dense.fp16"
+    "manifest": "tensors{}, programs[], dispatchPlan[], intermediates[]; bindings carry logical shape, ANEC channel index, physical nchw layout, logicalBytes, allocationBytes, and optional slice {tensor, elementOffset, elementCount, physicalElements}; folded constants appear as constantInputs hex plus binding=constant; shape-only aliases carry aliasOf; chunked matmul results carry accumulation=chunked-fp16",
+    "buffer_conversion": "python3 research/inspect_anec.py PACKAGE --pack-input NAME dense.fp16 --output PATH | --pack-constant NAME --output PATH | --unpack-output NAME PATH --output dense.fp16 (PATH is a directory of program-<i>.<binding>.buffer files when a tensor is sliced across programs; padded lanes are zero-filled and dropped)"
   },
   "supported_now": [
-    "add, mul, maximum, minimum on any identical 64-element fp16 shape with two runtime inputs",
-    "add, mul, maximum, minimum, sub, real_div with one runtime input and one 64-element fp16 constant (sub negates; real_div needs exact fp16 reciprocals)",
-    "matmul x[K] with K in {256, 512} against constant W[K,512] or W[512,K]^T producing 512 outputs, including rank-1, singleton-batch, and transposed single-vector forms",
-    "straight-line chains of the above, one program per operation"
+    "add, mul, maximum, minimum, sub, real_div, relu, clip on any positive static fp16 shape (64-lane programs, zero-padded tail); constants folded on the host, sub via negation, real_div via exact reciprocals",
+    "matmul and linear with any K and any N: 512-wide reduction chunks summed with add (chunked-fp16), 512-output chunks, zero padding, multiple rows as one program per row",
+    "DAGs with fan-out (residuals, mul(x,x)); reshape, squeeze, expand_dims as zero-program aliases",
+    "example: a 768->1024->768 MLP block with relu and residual compiles to 92 programs (8 matvec, 84 elementwise)"
   ],
   "first_hardware_checks": [
     "add with a=index*0.125 patterns and b=index*0.25 patterns; expect exact fp16 sums (same oracle as tests/hardware/run_alu.mm)",
