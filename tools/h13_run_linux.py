@@ -18,15 +18,15 @@ sys.path.insert(0, str(ROOT / "tools"))
 from research import inspect_anec
 from h13_reference import decode_fp16, evaluate
 
-CHUNKED_ATOL = 0.03125
-CHUNKED_RTOL = 0.01
+CHUNKED_ATOL = 0.02
+CHUNKED_RTOL = 0.02
 CHECKOUT_LIBANE = Path.home() / "src/omarchy-ane/bindings/python/dylib/libane_python.so"
 DEFAULT_LIBANE = CHECKOUT_LIBANE if CHECKOUT_LIBANE.is_file() else Path("/usr/lib/libane_python.so")
 
 
 def chunked_close(reference, actual):
-    """Allow the documented chunked-fp16 matmul rounding envelope."""
-    return math.isclose(reference, actual, rel_tol=CHUNKED_RTOL, abs_tol=CHUNKED_ATOL)
+    """The documented chunked-fp16 envelope: |device - reference| <= 0.02 + 0.02 * |reference|."""
+    return math.isfinite(actual) and abs(actual - reference) <= CHUNKED_ATOL + CHUNKED_RTOL * abs(reference)
 
 
 def compare_fp16(actual, expected, chunked=False):

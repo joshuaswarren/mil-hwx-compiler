@@ -35,12 +35,18 @@ static NSDictionary *sliceRecord(NSDictionary *binding) {
                        @"elementCount": @([binding[@"logicalBytes"] unsignedIntegerValue] / 2) };
 }
 
+// Bindings are keyed by tensor name and ANEC channel: mul(x, x) binds one
+// tensor to channels 5 and 6, and runtime identifiers must be unique.
+static NSString *bindingIdentifier(NSDictionary *binding) {
+    return [NSString stringWithFormat:@"%@#%@", binding[@"name"], binding[@"index"]];
+}
+
 static ANEHWXBinding *runtimeBinding(NSDictionary *binding, ANESurfaceRole role) {
     NSArray *nchw = binding[@"nchw"];
     NSUInteger plane = [nchw[4] unsignedIntegerValue];
     NSUInteger batch = [nchw[1] unsignedIntegerValue] * plane;
     return [[ANEHWXBinding alloc]
-        initWithIdentifier:binding[@"name"] role:role
+        initWithIdentifier:bindingIdentifier(binding) role:role
         logicalByteLength:[binding[@"logicalBytes"] unsignedIntegerValue]
         allocationByteLength:[binding[@"allocationBytes"] unsignedIntegerValue]
         ioSurfaceIndex:[binding[@"index"] integerValue]
@@ -230,7 +236,7 @@ int main(int argc, const char *argv[]) {
                 NSString *name = binding[@"name"];
                 BOOL isConstant = constants[name] != nil;
                 NSData *source = isConstant ? decodeHex(constants[name]) : dense[name];
-                if (!source || !writePhysical(bufferNamed(inputs, name), source,
+                if (!source || !writePhysical(bufferNamed(inputs, bindingIdentifier(binding)), source,
                                               binding, isConstant, &error))
                     return fail(error.localizedDescription ?: @"failed to pack an input IOSurface");
             }
@@ -246,7 +252,7 @@ int main(int argc, const char *argv[]) {
                         (unsigned long)programIndex, valid,
                         error ? error.description.UTF8String : "(none)");
                     for (NSDictionary *binding in program[@"outputs"])
-                        valid = valid && readPhysical(bufferNamed(outputs, binding[@"name"]),
+                        valid = valid && readPhysical(bufferNamed(outputs, bindingIdentifier(binding)),
                                                       dense[binding[@"name"]], binding);
                 } else valid = NO;
             } @finally {
