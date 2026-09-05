@@ -1,0 +1,32 @@
+{
+  "schema": "h13-hardware-handoff.v1",
+  "purpose": "Everything the base-M1 owner needs to run the compiler's H13 packages once the ANE-enabled boot and driver are confirmed. Artifact readiness is not permission to submit.",
+  "source_revision": "6d8796c on joshuaswarren/mil-hwx-compiler feat/h13-m1",
+  "host_verification": [
+    "receipts/2026-09-05-ane-community/h13-chains-linux.log",
+    "receipts/2026-09-05-ane-community/h13-chains-macos.log"
+  ],
+  "package": {
+    "schema": "mil-hwxc.h13-anec-package.v1",
+    "files": "program-N.anec per operation plus manifest.json",
+    "anec_layout": "0x1000-byte header, 0x274-byte task descriptor at 0x1000, constants at content offset 0x280, 0x4000-byte tiles",
+    "manifest": "programs[], dispatchPlan[], intermediates[]; per-program inputs/outputs carry logical shape, ANEC channel index, physical nchw layout, logicalBytes, allocationBytes; folded constants appear as constantInputs hex plus binding=constant",
+    "buffer_conversion": "python3 research/inspect_anec.py PACKAGE --pack-input NAME dense.fp16 --output physical.buffer | --pack-constant NAME --output physical.buffer | --unpack-output NAME physical.buffer --output dense.fp16"
+  },
+  "supported_now": [
+    "add, mul, maximum, minimum on any identical 64-element fp16 shape with two runtime inputs",
+    "add, mul, maximum, minimum, sub, real_div with one runtime input and one 64-element fp16 constant (sub negates; real_div needs exact fp16 reciprocals)",
+    "matmul x[K] with K in {256, 512} against constant W[K,512] or W[512,K]^T producing 512 outputs, including rank-1, singleton-batch, and transposed single-vector forms",
+    "straight-line chains of the above, one program per operation"
+  ],
+  "first_hardware_checks": [
+    "add with a=index*0.125 patterns and b=index*0.25 patterns; expect exact fp16 sums (same oracle as tests/hardware/run_alu.mm)",
+    "matvec K=256 with the dense test weights from tests/test_h13_cli.py; compare against a CPU fp32-accumulated fp16 reference",
+    "a two-program chain add->mul; the intermediate buffer is the first program's output channel 4 and the second program's input channel 5"
+  ],
+  "prerequisites_from_peer": [
+    "Verified ANE-enabled Linux boot with the device-tree node present",
+    "Exact driver and libane identities, and confirmation that the loader accepts the 0x1000-byte ANEC header and the channel 4/5/6 binding contract",
+    "Explicit hardware handoff for this session"
+  ]
+}
