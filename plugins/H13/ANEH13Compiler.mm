@@ -84,6 +84,55 @@ static BOOL fp16Scalar(ANEGraphArgument *argument, uint16_t *bits) {
     return (*bits & 0x7c00u) != 0x7c00u;
 }
 
+static BOOL exactFP16Attribute(ANEGraphArgument *argument, uint16_t *bits,
+                               double *valueOut) {
+    if (argument.kind != ANEGraphArgumentKindCall ||
+        ![argument.calleeName isEqualToString:@"fp32"] ||
+        argument.callArguments.count != 1) return NO;
+    argument = argument.callArguments[0].value;
+    if (argument.kind != ANEGraphArgumentKindFloatingPoint &&
+        argument.kind != ANEGraphArgumentKindInteger) return NO;
+    const char *text = argument.text.UTF8String;
+    if (!text) return NO;
+    char *end = nullptr;
+    double parsed = std::strtod(text, &end);
+    float value = static_cast<float>(parsed);
+    if (end == text || *end || !std::isfinite(value)) return NO;
+    *bits = fp16Bits(value);
+    uint16_t exponent = (*bits >> 10) & 0x1fu;
+    uint16_t fraction = *bits & 0x03ffu;
+    double magnitude = exponent
+        ? std::ldexp(1024.0 + fraction, exponent - 25)
+        : std::ldexp(static_cast<double>(fraction), -24);
+    double decoded = (*bits & 0x8000u) ? -magnitude : magnitude;
+    if (static_cast<double>(value) != decoded) return NO;
+    *valueOut = value;
+    return YES;
+}
+
+static NSData *splatFP16(uint16_t bits) {
+    NSMutableData *data = [NSMutableData dataWithLength:128];
+    uint16_t *words = static_cast<uint16_t *>(data.mutableBytes);
+    for (NSUInteger index = 0; index < 64; ++index) words[index] = bits;
+    return data;
+}
+
+static ANEGraphArgument *valueArgument(ANEGraphValue *value,
+                                       ANESourceRange range) {
+    return [[ANEGraphArgument alloc] initWithKind:ANEGraphArgumentKindValue
+        text:nil value:value calleeName:nil calleeValueType:nil
+        callArguments:@[] elements:@[] range:range];
+}
+
+static ANEGraphOperation *binaryOperation(NSString *name, ANEGraphValue *x,
+                                          ANEGraphValue *y,
+                                          ANEGraphValue *result,
+                                          ANESourceRange range) {
+    return [[ANEGraphOperation alloc] initWithOperationName:name result:result
+        arguments:@{@"x": valueArgument(x, range), @"y": valueArgument(y, range)}
+        attributes:@{} range:range];
+}
+
 static NSString *hexData(NSData *data) {
     const uint8_t *bytes = static_cast<const uint8_t *>(data.bytes);
     NSMutableString *hex = [NSMutableString stringWithCapacity:data.length * 2];
@@ -151,6 +200,7 @@ static BOOL constantValue(ANEGraphValue *value) {
 
 static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                            ANEDiagnosticEngine *diagnostics,
+                           NSDictionary<NSString *, NSData *> *synthesizedConstants,
                            ane::h13::Program &program,
                            NSArray<ANEGraphValue *> *__autoreleasing *inputsOut,
                            ANEGraphValue *__autoreleasing *constantInputOut,
@@ -171,8 +221,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         if (operation.arguments.count != 2 || !x || !y)
             return reject(diagnostics,
                 @"H13 binary operations require x and y value operands", operation);
-        BOOL xIsConstant = constantValue(x);
-        BOOL yIsConstant = constantValue(y);
+        BOOL xIsConstant = synthesizedConstants[x.name] || constantValue(x);
+        BOOL yIsConstant = synthesizedConstants[y.name] || constantValue(y);
         if (!xIsConstant && !yIsConstant) {
             if (binaryIndex >= 4)
                 return reject(diagnostics, [NSString stringWithFormat:
@@ -199,53 +249,59 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     @"H13 folded binary operations require one fp16 input and output with the same positive static shape containing exactly 64 elements",
                     operation, @"h13.invalid-constant-input");
 
-            ANEGraphOperation *producer = constantInput.producer;
-            BOOL scalar = constantInput.type.kind == ANEValueTypeKindScalar &&
-                constantInput.type.elementType == ANEElementTypeFP16;
-            if ((!tensor(constantInput, runtimeInput.type.shape) && !scalar) ||
-                (scalar && binaryIndex != 1) || producer.arguments.count)
-                return reject(diagnostics,
-                    @"H13 constants must be a matching 64-element fp16 tensor; only mul accepts an inline fp16 scalar broadcast",
-                    producer, @"h13.invalid-constant-input");
-
-            ANEGraphArgument *literal = producer.attributes[@"val"];
-            if (scalar) {
-                uint16_t bits = 0;
-                if (!fp16Scalar(literal, &bits))
-                    return reject(diagnostics, @"H13 scalar mul requires one finite inline fp16 value",
-                        producer, @"h13.invalid-constant-payload");
-                NSMutableData *expanded = [NSMutableData dataWithLength:128];
-                uint16_t *words = static_cast<uint16_t *>(expanded.mutableBytes);
-                for (NSUInteger index = 0; index < 64; ++index) words[index] = bits;
-                constantData = expanded;
+            NSData *synthesizedData = synthesizedConstants[constantInput.name];
+            if (synthesizedData) {
+                if (!tensor(constantInput, runtimeInput.type.shape))
+                    return reject(diagnostics,
+                        @"H13 synthesized constants must match the runtime fp16 tensor shape",
+                        operation, @"h13.invalid-constant-input");
+                constantData = synthesizedData;
             } else {
-                if (literal.kind != ANEGraphArgumentKindCall ||
-                    ![literal.calleeValueType isEqualToValueType:constantInput.type] ||
-                    literal.callArguments.count != 1)
+                ANEGraphOperation *producer = constantInput.producer;
+                BOOL scalar = constantInput.type.kind == ANEValueTypeKindScalar &&
+                    constantInput.type.elementType == ANEElementTypeFP16;
+                if ((!tensor(constantInput, runtimeInput.type.shape) && !scalar) ||
+                    (scalar && binaryIndex != 1) || producer.arguments.count)
                     return reject(diagnostics,
-                        @"H13 tensor constants require a matching typed inline list or BLOBFILE payload",
-                        producer, @"h13.invalid-constant-payload");
-                ANEGraphArgument *payload = literal.callArguments[0].value;
-                if (payload.kind == ANEGraphArgumentKindList && payload.elements.count == 64) {
-                    NSMutableData *dense = [NSMutableData dataWithLength:128];
-                    uint16_t *words = static_cast<uint16_t *>(dense.mutableBytes);
-                    for (NSUInteger index = 0; index < 64; ++index)
-                        if (!fp16Scalar(payload.elements[index], &words[index]))
-                            return reject(diagnostics,
-                                @"H13 inline tensor constants require exactly 64 finite fp16 elements",
-                                producer, @"h13.invalid-constant-payload");
-                    constantData = dense;
-                } else if (payload.kind == ANEGraphArgumentKindCall &&
-                           [payload.calleeName isEqualToString:@"BLOBFILE"]) {
-                    constantData = [ANEBlobResolver loadConstantForOperation:producer
-                        expectedBytes:128 modelRoot:modelRoot diagnostics:diagnostics];
-                    if (!constantData)
-                        return reject(diagnostics, @"H13 could not load the constant BLOBFILE payload",
+                        @"H13 constants must be a matching 64-element fp16 tensor; only mul accepts an inline fp16 scalar broadcast",
+                        producer, @"h13.invalid-constant-input");
+
+                ANEGraphArgument *literal = producer.attributes[@"val"];
+                if (scalar) {
+                    uint16_t bits = 0;
+                    if (!fp16Scalar(literal, &bits))
+                        return reject(diagnostics, @"H13 scalar mul requires one finite inline fp16 value",
                             producer, @"h13.invalid-constant-payload");
+                    constantData = splatFP16(bits);
                 } else {
-                    return reject(diagnostics,
-                        @"H13 inline tensor constants require exactly 64 finite fp16 elements",
-                        producer, @"h13.invalid-constant-payload");
+                    if (literal.kind != ANEGraphArgumentKindCall ||
+                        ![literal.calleeValueType isEqualToValueType:constantInput.type] ||
+                        literal.callArguments.count != 1)
+                        return reject(diagnostics,
+                            @"H13 tensor constants require a matching typed inline list or BLOBFILE payload",
+                            producer, @"h13.invalid-constant-payload");
+                    ANEGraphArgument *payload = literal.callArguments[0].value;
+                    if (payload.kind == ANEGraphArgumentKindList && payload.elements.count == 64) {
+                        NSMutableData *dense = [NSMutableData dataWithLength:128];
+                        uint16_t *words = static_cast<uint16_t *>(dense.mutableBytes);
+                        for (NSUInteger index = 0; index < 64; ++index)
+                            if (!fp16Scalar(payload.elements[index], &words[index]))
+                                return reject(diagnostics,
+                                    @"H13 inline tensor constants require exactly 64 finite fp16 elements",
+                                    producer, @"h13.invalid-constant-payload");
+                        constantData = dense;
+                    } else if (payload.kind == ANEGraphArgumentKindCall &&
+                               [payload.calleeName isEqualToString:@"BLOBFILE"]) {
+                        constantData = [ANEBlobResolver loadConstantForOperation:producer
+                            expectedBytes:128 modelRoot:modelRoot diagnostics:diagnostics];
+                        if (!constantData)
+                            return reject(diagnostics, @"H13 could not load the constant BLOBFILE payload",
+                                producer, @"h13.invalid-constant-payload");
+                    } else {
+                        return reject(diagnostics,
+                            @"H13 inline tensor constants require exactly 64 finite fp16 elements",
+                            producer, @"h13.invalid-constant-payload");
+                    }
                 }
             }
 
@@ -339,17 +395,85 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     if (module.functions.count != 1)
         return reject(diagnostics, @"H13 requires exactly one function");
     ANEGraphFunction *function = module.functions[0];
-    NSMutableArray<ANEGraphOperation *> *operations = [NSMutableArray array];
+    NSMutableArray<ANEGraphOperation *> *sourceOperations = [NSMutableArray array];
     for (ANEGraphOperation *candidate in function.operations)
         if (![candidate.operationName isEqualToString:@"const"])
-            [operations addObject:candidate];
+            [sourceOperations addObject:candidate];
+    NSMutableArray<ANEGraphOperation *> *operations = [NSMutableArray array];
+    NSMutableDictionary<NSString *, NSData *> *synthesizedConstants =
+        [NSMutableDictionary dictionary];
+    NSMapTable<ANEGraphValue *, ANEGraphValue *> *loweredValues =
+        [NSMapTable strongToStrongObjectsMapTable];
+    for (ANEGraphOperation *candidate in sourceOperations) {
+        NSMutableDictionary<NSString *, ANEGraphArgument *> *arguments =
+            [candidate.arguments mutableCopy];
+        for (NSString *key in candidate.operands) {
+            ANEGraphValue *value = candidate.operands[key].value;
+            ANEGraphValue *lowered = [loweredValues objectForKey:value];
+            if (lowered) arguments[key] = valueArgument(lowered, candidate.range);
+        }
+        NSString *name = candidate.operationName;
+        ANEGraphValue *x = arguments[@"x"].value;
+        ANEGraphValue *result = [[ANEGraphValue alloc]
+            initWithName:candidate.result.name type:candidate.result.type];
+        if ([name isEqualToString:@"relu"]) {
+            if (candidate.arguments.count != 1 || !x)
+                return reject(diagnostics, @"H13 relu requires one x value operand",
+                    candidate);
+            NSString *zeroName = [NSString stringWithFormat:@"$h13.%@.zero",
+                result.name];
+            ANEGraphValue *zero = [[ANEGraphValue alloc]
+                initWithName:zeroName type:x.type];
+            synthesizedConstants[zeroName] = splatFP16(0);
+            [operations addObject:binaryOperation(@"maximum", x, zero,
+                result, candidate.range)];
+        } else if ([name isEqualToString:@"clip"]) {
+            if (candidate.arguments.count != 3 || !x)
+                return reject(diagnostics,
+                    @"H13 clip requires x, alpha, and beta arguments", candidate);
+            uint16_t alphaBits = 0, betaBits = 0;
+            double alpha = 0.0, beta = 0.0;
+            if (!exactFP16Attribute(arguments[@"alpha"], &alphaBits, &alpha) ||
+                !exactFP16Attribute(arguments[@"beta"], &betaBits, &beta))
+                return reject(diagnostics,
+                    @"H13 clip alpha and beta must be finite fp32 scalars exactly representable in fp16",
+                    candidate, @"h13.inexact-constant");
+            if (alpha > beta)
+                return reject(diagnostics,
+                    @"H13 clip requires alpha less than or equal to beta",
+                    candidate, @"h13.invalid-clip-range");
+            NSString *prefix = [NSString stringWithFormat:@"$h13.%@", result.name];
+            NSString *alphaName = [prefix stringByAppendingString:@".alpha"];
+            NSString *betaName = [prefix stringByAppendingString:@".beta"];
+            NSString *lowName = [prefix stringByAppendingString:@".clipped-low"];
+            ANEGraphValue *alphaValue = [[ANEGraphValue alloc]
+                initWithName:alphaName type:x.type];
+            ANEGraphValue *low = [[ANEGraphValue alloc]
+                initWithName:lowName type:result.type];
+            ANEGraphValue *betaValue = [[ANEGraphValue alloc]
+                initWithName:betaName type:result.type];
+            synthesizedConstants[alphaName] = splatFP16(alphaBits);
+            synthesizedConstants[betaName] = splatFP16(betaBits);
+            [operations addObject:binaryOperation(@"maximum", x, alphaValue,
+                low, candidate.range)];
+            [operations addObject:binaryOperation(@"minimum", low, betaValue,
+                result, candidate.range)];
+        } else {
+            [operations addObject:[[ANEGraphOperation alloc]
+                initWithOperationName:name result:result arguments:arguments
+                attributes:candidate.attributes range:candidate.range]];
+        }
+        [loweredValues setObject:result forKey:candidate.result];
+    }
     if (!operations.count)
         return reject(diagnostics, @"H13 requires at least one operation");
 
     BOOL chain = operations.count > 1;
     NSString *chainCode = @"h13.unsupported-chain";
     ANEGraphOperation *lastOperation = operations.lastObject;
-    if (function.returnValues.count != 1 || function.returnValues[0] != lastOperation.result)
+    ANEGraphValue *returned = function.returnValues.count == 1
+        ? [loweredValues objectForKey:function.returnValues[0]] : nil;
+    if (!returned || returned != lastOperation.result)
         return reject(diagnostics,
             chain ? @"H13 chains must return only the last operation result"
                   : @"H13 requires one operation with its result returned",
@@ -421,8 +545,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             ANEGraphValue *constantInput = nil;
             NSData *constantData = nil;
             NSString *manifestOperation = nil;
-            if (!lowerOperation(operation, modelRoot, diagnostics, program, &inputs,
-                                &constantInput, &constantData, &manifestOperation))
+            if (!lowerOperation(operation, modelRoot, diagnostics, synthesizedConstants,
+                                program, &inputs, &constantInput, &constantData,
+                                &manifestOperation))
                 return NO;
             std::vector<std::uint8_t> anec = ane::h13::encodeANEC(program);
             NSMutableArray *inputRecords = [NSMutableArray arrayWithCapacity:inputs.count];
