@@ -1,7 +1,7 @@
 {
   "schema": "h13-hardware-handoff.v1",
   "purpose": "Everything the base-M1 owner needs to run the compiler's H13 packages once the ANE-enabled boot and driver are confirmed. Artifact readiness is not permission to submit.",
-  "source_revision": "0d139d8 on joshuaswarren/mil-hwx-compiler feat/h13-m1",
+  "source_revision": "6d39ef5+ on joshuaswarren/mil-hwx-compiler feat/h13-m1",
   "host_verification": [
     "receipts/2026-09-05-ane-community/h13-wide-linux.log",
     "receipts/2026-09-05-ane-community/h13-wide-macos.log",
@@ -29,5 +29,18 @@
     "Verified ANE-enabled Linux boot with the device-tree node present",
     "Exact driver and libane identities, and confirmation that the loader accepts the 0x1000-byte ANEC header and the channel 4/5/6 binding contract",
     "Explicit hardware handoff for this session"
-  ]
+  ],
+  "linux_run": {
+    "command": "ANE_CHECKOUT=~/src/omarchy-ane bash tests/run_h13_linux_hardware.sh MIL MODEL_ROOT x=input.fp16",
+    "prerequisites": [
+      "~/src/omarchy-ane on branch omarchy (f8df7bc: ANEC payload at 0x1000), libane/libane.a and bindings/python/dylib/libane_python.so built",
+      "ane.ko loaded with /dev/accel/accel0 accessible",
+      "verified ANE-enabled boot per homelab-infra docs/jw-m1.md bring-up ladder"
+    ],
+    "first_run": "a 64-element add (tests/test_h13_cli.py source()) before any matmul; the runner compares every output with tools/h13_reference.py and fails closed on any manifest or size mismatch before submission"
+  },
+  "macos_run": {
+    "command": "bash tests/run_h13_hardware.sh MIL MODEL_ROOT x=input.fp16 (or make test-h13-hardware ...)",
+    "prerequisite": "an arm64 Mac whose /Library/Caches/com.apple.aned/<build>/InMemoryModelCache is writable by root; on macOS 26.6 (25G83) that requires SIP disabled from Recovery, an owner decision. HWX container fields derived from the H13 fixture are listed with their unknowns in research/h13-hwx-fields.md"
+  }
 }
