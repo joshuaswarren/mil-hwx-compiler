@@ -1,0 +1,61 @@
+{
+  "date": "2026-09-05",
+  "branch": "feat/h13-m1",
+  "base_commit": "29c954fa94aa667a99fb7bace7115444cc5d30f2",
+  "source_commit": "d0d9c0f745462c1fe656d2184d4fc644a6f02171",
+  "delivery_status": "incomplete: native H13 host compilation implemented; base-M1 runtime, numerical correctness, MLX integration and performance qualification blocked",
+  "implementation": {
+    "entry": "build/mil-hwxc --target H13 --mil FILE --model-root DIR --output DIR",
+    "output_schema": "mil-hwxc.h13-anec-package.v1",
+    "output_files": ["program-0.anec", "manifest.json"],
+    "binary_operations": ["add", "mul", "maximum", "minimum"],
+    "binary_shape": [1, 64, 1, 1],
+    "matmul_contract": "fp16 x[1,K] @ constant W[512,K].T, K=256 or 512",
+    "scope": "One function, one non-constant operation, one returned result; unsupported programs rejected",
+    "runtime_boundary": "Raw ANEC targets the patched Linux 0x1000-header contract. Not an H16G executable bundle, not a macOS HWX, and not an mlx-omarchy provenance bundle. No manifest loader or device dispatcher added."
+  },
+  "verification": [
+    {
+      "host": "Linux x86_64, Clang 14 and GNUstep",
+      "command": "GNUSTEP_PREFIX=/tmp/mil-hwx-bootstrap-proof-prefix scripts/verify-linux-compiler.sh all",
+      "result": "PASS: build, software checks including H13 CLI, H16G emission, source hygiene",
+      "log": "linux-verification.log"
+    },
+    {
+      "host": "macstudio, Apple M1 Ultra, macOS",
+      "command": "make test -j4",
+      "result": "PASS: complete repository software suite including H13 CLI; no ANE execution",
+      "log": "macos-verification.log"
+    },
+    {
+      "host": "Linux x86_64, GCC",
+      "command": "g++ -O2 -std=c++17 -Wall -Wextra -Werror plugins/H13/H13Program.cpp tests/test_h13_encoding.cpp -o /tmp/test-h13-final-gcc && /tmp/test-h13-final-gcc",
+      "result": "H13_ENCODING_OK"
+    }
+  ],
+  "optimizations": {
+    "coefficient_region": "Removed an unreachable 524288-byte zero tail for K=512. Descriptor has sixteen 32768-byte KDMA ranges; both reductions now emit 529024-byte ANEC files with 33 command tiles. Regression failed before removal and passed afterward.",
+    "copies": "Pack canonical little-endian weight bytes directly; removed temporary uint16 weight array and final NSData payload copy.",
+    "host_compilation": "Enabled -O2 on macOS. Prior paired host compiler benchmark produced identical H16G artifacts, with median DeltaNet compile latency 36.8673955 ms versus 34.4398545 ms. This is not an M1 ANE execution speedup.",
+    "host_benchmark": "compiler-optimization.json"
+  },
+  "review_fixes": [
+    "Stop on lexer/parser diagnostics instead of writing an artifact after input errors",
+    "Require matching tensor-valued BLOBFILE weights for H13",
+    "Resolve constant payload from val, or quantized_data for constexpr_affine_dequantize, never unrelated metadata",
+    "Use the working GNUstep path enumeration API; accept existing empty output directories and preserve non-empty outputs",
+    "Track H13 headers as CLI build prerequisites",
+    "Use a distinct package schema rather than claiming executable-bundle formatVersion 1",
+    "Remove unreachable coefficient padding and brittle exception-wording assertions"
+  ],
+  "review_limits": "Runtime reviewer stopped after a documentation lookup used a non-OpenAI provider. Its report was source-backed but explicitly partial; no hardware qualification was supplied by either reviewer.",
+  "hardware_blocker": "hardware-blocker.txt",
+  "remaining": [
+    "Explicit release of jwm1 by the MLX peer session",
+    "Verified ANE-enabled base-M1 boot and matching driver/libane identity",
+    "Qualified command/kernel BAR and DMA-span behavior on hardware",
+    "Numerical comparisons and repeated device-latency measurements",
+    "mlx-omarchy runtime integration, broader operations, scheduling and fusion"
+  ],
+  "publication": "Source commit pushed to joshuaswarren/mil-hwx-compiler on feat/h13-m1. Evidence follows in a separate progress commit. No upstream push or PR performed."
+}

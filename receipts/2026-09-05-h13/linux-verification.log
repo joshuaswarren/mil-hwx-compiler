@@ -1,0 +1,97 @@
+make: Entering directory '/home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler'
+mkdir -p build
+/usr/bin/clang++-14 -std=c++17 -fobjc-arc -MMD -MP -I/tmp/mil-hwx-bootstrap-proof-prefix/include -DGNUSTEP -DGNUSTEP_BASE_LIBRARY=1 -DGNUSTEP_RUNTIME=1 -D_NONFRAGILE_ABI=1 -DGNUSTEP_BASE_LIBRARY=1 -fno-strict-aliasing -fexceptions -fobjc-exceptions -D_NATIVE_OBJC_EXCEPTIONS -pthread -fPIC -Wall -DGSWARN -DGSDIAGNOSE -Wno-import -g -O2 -fobjc-runtime=gnustep-2.0 -fblocks -fconstant-string-class=NSConstantString -I. -I/home/joshuawarren/GNUstep/Library/Headers -I/tmp/mil-hwx-bootstrap-proof-prefix/include -I/tmp/mil-hwx-bootstrap-proof-prefix/include -Wall -Wextra -Werror -Iinclude -Ilib/MIL -Ilib/IR -Ilib/Transform -Ilib/Planning -Ilib/Driver -Ilib/HWX -Ilib/Model -Ilib/Runtime -Iplugins/H16G -Iplugins/H16G/Encoding -Iplugins/H13 tools/mil-hwxc.mm lib/Support/ANEDiagnostic.mm lib/MIL/MILLexer.mm lib/MIL/MILSyntax.mm lib/MIL/MILParser.mm lib/MIL/MILPrinter.mm lib/IR/ANEGraphIR.mm lib/IR/ANEGraphVerifier.mm lib/MIL/MILGraphImporter.mm lib/IR/ANEOperationGraph.mm lib/Transform/ANENormalizePass.mm lib/Transform/ANEDecomposePass.mm lib/Transform/ANEFusionPass.mm plugins/H16G/H16GTarget.mm lib/Transform/ANEH16GLegalizePass.mm lib/IR/ANEScheduledGraph.mm lib/Planning/ANETilePlanner.mm lib/Planning/ANEMemoryPlanner.mm lib/Planning/ANEComposedRegionPlanner.mm lib/Planning/ANEProgramPartition.mm lib/Planning/ANETaskScheduler.mm plugins/H16G/Encoding/H16GTDWriter.mm plugins/H16G/Encoding/H16GConvEncoder.mm plugins/H16G/Encoding/H16GConvChainEncoder.mm plugins/H16G/Encoding/H16GDepthwiseEncoder.mm plugins/H16G/Encoding/H16GRegularConvEncoder.mm plugins/H16G/Encoding/H16GMatmulEncoder.mm plugins/H16G/Encoding/H16GALUEncoder.mm plugins/H16G/Encoding/H16GBroadcastALUEncoder.mm plugins/H16G/Encoding/H16GMatrixRowDivisionEncoder.mm plugins/H16G/Encoding/H16GLUTEncoder.mm plugins/H16G/Encoding/H16GReduceEncoder.mm plugins/H16G/Encoding/H16GSRAMChainEncoder.mm plugins/H16G/Encoding/H16GLayoutEncoder.mm plugins/H16G/Encoding/H16GLayoutConvChainEncoder.mm plugins/H16G/Encoding/H16GDecodedFormValidator.mm plugins/H16G/Encoding/H16GMixedTaskEncoder.mm lib/HWX/HWXObjectWriter.mm plugins/H16G/Encoding/H16GConstantPacker.mm lib/Driver/ANEStagedCompiler.mm plugins/H16G/Encoding/H16GProgramEncoder.mm plugins/H16G/Encoding/H16GProgramAssembler.mm plugins/H16G/Encoding/H16GEncodedTask.mm plugins/H16G/Encoding/H16GTaskEncoder.mm plugins/H16G/Encoding/H16GTaskComposer.mm lib/Driver/ANECompiler.mm lib/Model/ANEBlobResolver.mm lib/HWX/ANEHWXArtifact.mm lib/HWX/HWXImage.mm lib/Runtime/ANEExecutableBundle.mm plugins/H13/ANEH13Compiler.mm plugins/H13/H13Program.cpp plugins/H13/H13ANEC.cpp -L/tmp/mil-hwx-bootstrap-proof-prefix/lib -Wl,-rpath,/tmp/mil-hwx-bootstrap-proof-prefix/lib -fuse-ld=lld-14 -pthread -fexceptions -rdynamic -fobjc-runtime=gnustep-2.0 -fblocks -L/home/joshuawarren/GNUstep/Library/Libraries -L/tmp/mil-hwx-bootstrap-proof-prefix/lib -L/tmp/mil-hwx-bootstrap-proof-prefix/lib -lgnustep-base -lpthread -lobjc -lm -o build/mil-hwxc
+make: Leaving directory '/home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler'
+	linux-vdso.so.1 (0x000071bb5478f000)
+	libgnustep-base.so.1.31 => /tmp/mil-hwx-bootstrap-proof-prefix/lib/libgnustep-base.so.1.31 (0x000071bb540c2000)
+	libobjc.so => /tmp/mil-hwx-bootstrap-proof-prefix/lib/libobjc.so (0x000071bb5408a000)
+	libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x000071bb53f9d000)
+	libstdc++.so.6 => /lib/x86_64-linux-gnu/libstdc++.so.6 (0x000071bb53d83000)
+	libgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x000071bb53d63000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x000071bb53b7f000)
+	libxml2.so.2 => /lib/x86_64-linux-gnu/libxml2.so.2 (0x000071bb539d3000)
+	libffi.so.8 => /lib/x86_64-linux-gnu/libffi.so.8 (0x000071bb539c7000)
+	libz.so.1 => /lib/x86_64-linux-gnu/libz.so.1 (0x000071bb539a8000)
+	libatomic.so.1 => /lib/x86_64-linux-gnu/libatomic.so.1 (0x000071bb5399e000)
+	libresolv.so.2 => /lib/x86_64-linux-gnu/libresolv.so.2 (0x000071bb5398d000)
+	libicui18n.so.72 => /lib/x86_64-linux-gnu/libicui18n.so.72 (0x000071bb53661000)
+	libicuuc.so.72 => /lib/x86_64-linux-gnu/libicuuc.so.72 (0x000071bb53463000)
+	libicudata.so.72 => /lib/x86_64-linux-gnu/libicudata.so.72 (0x000071bb51691000)
+	/lib64/ld-linux-x86-64.so.2 (0x000071bb54791000)
+	liblzma.so.5 => /lib/x86_64-linux-gnu/liblzma.so.5 (0x000071bb51662000)
+make: Entering directory '/home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler'
+mkdir -p build
+/usr/bin/clang++-14 -std=c++17 -fobjc-arc -MMD -MP -I/tmp/mil-hwx-bootstrap-proof-prefix/include -DGNUSTEP -DGNUSTEP_BASE_LIBRARY=1 -DGNUSTEP_RUNTIME=1 -D_NONFRAGILE_ABI=1 -DGNUSTEP_BASE_LIBRARY=1 -fno-strict-aliasing -fexceptions -fobjc-exceptions -D_NATIVE_OBJC_EXCEPTIONS -pthread -fPIC -Wall -DGSWARN -DGSDIAGNOSE -Wno-import -g -O2 -fobjc-runtime=gnustep-2.0 -fblocks -fconstant-string-class=NSConstantString -I. -I/home/joshuawarren/GNUstep/Library/Headers -I/tmp/mil-hwx-bootstrap-proof-prefix/include -I/tmp/mil-hwx-bootstrap-proof-prefix/include -Wall -Wextra -Werror -Iinclude -Ilib/IR tests/test_operation_graph.mm lib/Support/ANEDiagnostic.mm lib/IR/ANEGraphIR.mm lib/IR/ANEOperationGraph.mm -L/tmp/mil-hwx-bootstrap-proof-prefix/lib -Wl,-rpath,/tmp/mil-hwx-bootstrap-proof-prefix/lib -fuse-ld=lld-14 -pthread -fexceptions -rdynamic -fobjc-runtime=gnustep-2.0 -fblocks -L/home/joshuawarren/GNUstep/Library/Libraries -L/tmp/mil-hwx-bootstrap-proof-prefix/lib -L/tmp/mil-hwx-bootstrap-proof-prefix/lib -lgnustep-base -lpthread -lobjc -lm -lcrypto -o build/test_operation_graph
+/usr/bin/clang++-14 -std=c++17 -fobjc-arc -MMD -MP -I/tmp/mil-hwx-bootstrap-proof-prefix/include -DGNUSTEP -DGNUSTEP_BASE_LIBRARY=1 -DGNUSTEP_RUNTIME=1 -D_NONFRAGILE_ABI=1 -DGNUSTEP_BASE_LIBRARY=1 -fno-strict-aliasing -fexceptions -fobjc-exceptions -D_NATIVE_OBJC_EXCEPTIONS -pthread -fPIC -Wall -DGSWARN -DGSDIAGNOSE -Wno-import -g -O2 -fobjc-runtime=gnustep-2.0 -fblocks -fconstant-string-class=NSConstantString -I. -I/home/joshuawarren/GNUstep/Library/Headers -I/tmp/mil-hwx-bootstrap-proof-prefix/include -I/tmp/mil-hwx-bootstrap-proof-prefix/include -Wall -Wextra -Werror -Iinclude -Ilib/HWX -Ilib/IR -Iplugins/H16G/Encoding tests/test_hwx_object_writer.mm lib/HWX/HWXImage.mm lib/HWX/HWXObjectWriter.mm plugins/H16G/Encoding/H16GTDWriter.mm plugins/H16G/Encoding/H16GConvEncoder.mm plugins/H16G/Encoding/H16GConvChainEncoder.mm plugins/H16G/Encoding/H16GDepthwiseEncoder.mm plugins/H16G/Encoding/H16GRegularConvEncoder.mm plugins/H16G/Encoding/H16GMatmulEncoder.mm plugins/H16G/Encoding/H16GALUEncoder.mm plugins/H16G/Encoding/H16GBroadcastALUEncoder.mm plugins/H16G/Encoding/H16GMatrixRowDivisionEncoder.mm plugins/H16G/Encoding/H16GLUTEncoder.mm plugins/H16G/Encoding/H16GReduceEncoder.mm plugins/H16G/Encoding/H16GSRAMChainEncoder.mm plugins/H16G/Encoding/H16GLayoutEncoder.mm plugins/H16G/Encoding/H16GLayoutConvChainEncoder.mm plugins/H16G/Encoding/H16GDecodedFormValidator.mm plugins/H16G/Encoding/H16GMixedTaskEncoder.mm -L/tmp/mil-hwx-bootstrap-proof-prefix/lib -Wl,-rpath,/tmp/mil-hwx-bootstrap-proof-prefix/lib -fuse-ld=lld-14 -pthread -fexceptions -rdynamic -fobjc-runtime=gnustep-2.0 -fblocks -L/home/joshuawarren/GNUstep/Library/Libraries -L/tmp/mil-hwx-bootstrap-proof-prefix/lib -L/tmp/mil-hwx-bootstrap-proof-prefix/lib -lgnustep-base -lpthread -lobjc -lm -lcrypto -o build/test_hwx_object_writer
+/usr/bin/clang++-14 -std=c++17 -fobjc-arc -MMD -MP -I/tmp/mil-hwx-bootstrap-proof-prefix/include -DGNUSTEP -DGNUSTEP_BASE_LIBRARY=1 -DGNUSTEP_RUNTIME=1 -D_NONFRAGILE_ABI=1 -DGNUSTEP_BASE_LIBRARY=1 -fno-strict-aliasing -fexceptions -fobjc-exceptions -D_NATIVE_OBJC_EXCEPTIONS -pthread -fPIC -Wall -DGSWARN -DGSDIAGNOSE -Wno-import -g -O2 -fobjc-runtime=gnustep-2.0 -fblocks -fconstant-string-class=NSConstantString -I. -I/home/joshuawarren/GNUstep/Library/Headers -I/tmp/mil-hwx-bootstrap-proof-prefix/include -I/tmp/mil-hwx-bootstrap-proof-prefix/include -Wall -Wextra -Werror -Iinclude -Ilib/IR -Iplugins/H16G -Iplugins/H16G/Encoding tests/test_program_composition.mm plugins/H16G/H16GTarget.mm plugins/H16G/Encoding/H16GTDWriter.mm plugins/H16G/Encoding/H16GConvEncoder.mm plugins/H16G/Encoding/H16GConvChainEncoder.mm plugins/H16G/Encoding/H16GDepthwiseEncoder.mm plugins/H16G/Encoding/H16GRegularConvEncoder.mm plugins/H16G/Encoding/H16GMatmulEncoder.mm plugins/H16G/Encoding/H16GALUEncoder.mm plugins/H16G/Encoding/H16GBroadcastALUEncoder.mm plugins/H16G/Encoding/H16GMatrixRowDivisionEncoder.mm plugins/H16G/Encoding/H16GLUTEncoder.mm plugins/H16G/Encoding/H16GReduceEncoder.mm plugins/H16G/Encoding/H16GSRAMChainEncoder.mm plugins/H16G/Encoding/H16GLayoutEncoder.mm plugins/H16G/Encoding/H16GLayoutConvChainEncoder.mm plugins/H16G/Encoding/H16GDecodedFormValidator.mm plugins/H16G/Encoding/H16GMixedTaskEncoder.mm plugins/H16G/Encoding/H16GEncodedTask.mm plugins/H16G/Encoding/H16GTaskEncoder.mm plugins/H16G/Encoding/H16GTaskComposer.mm -L/tmp/mil-hwx-bootstrap-proof-prefix/lib -Wl,-rpath,/tmp/mil-hwx-bootstrap-proof-prefix/lib -fuse-ld=lld-14 -pthread -fexceptions -rdynamic -fobjc-runtime=gnustep-2.0 -fblocks -L/home/joshuawarren/GNUstep/Library/Libraries -L/tmp/mil-hwx-bootstrap-proof-prefix/lib -L/tmp/mil-hwx-bootstrap-proof-prefix/lib -lgnustep-base -lpthread -lobjc -lm -lcrypto -o build/test_program_composition
+make: Leaving directory '/home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler'
+operation graph: PASS
+HWX object writer: PASS
+program composition: PASS
+make: Entering directory '/home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler'
+build/test_h13_encoding
+H13_ENCODING_OK
+build/test_h13_anec
+python3 tests/test_h13_cli.py build/mil-hwxc
+H13 MIL-to-ANEC CLI: PASS (device-free)
+make: Leaving directory '/home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler'
+make: Entering directory '/home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler'
+make: 'build/mil-hwxc' is up to date.
+make: Leaving directory '/home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler'
+compiled target=H16G artifacts=1 output=/home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler/build/linux-compiler-smoke/conv_relu
+compiled target=H16G artifacts=1 output=/home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler/build/linux-compiler-smoke/w8a8
+command[0] offset=0x20 cmd=0x19 size=0x48 kind=1095786335
+command[1] offset=0x68 cmd=0x19 size=0x98 kind=1447452511
+__FVMLIB/__const addr=0x30000000 size=0x80000 offset=0x0 reloff=0x0 nreloc=0
+command[2] offset=0x100 cmd=0x19 size=0x98 kind=1447452511
+__FVMLIB/__data addr=0x30080000 size=0x80000 offset=0x0 reloff=0x0 nreloc=0
+command[3] offset=0x198 cmd=0x19 size=0xe8 kind=1163157343
+__TEXT/__text addr=0x30100000 size=0x1d8 offset=0x4000 reloff=0x2730 nreloc=1
+  relocation[0] address=0x1a8 info=0x07000005
+__TEXT/__const addr=0x30100200 size=0x4000 offset=0x4200 reloff=0x0 nreloc=0
+command[4] offset=0x280 cmd=0x19 size=0x98 kind=1162567519
+__KERN_0/__kern_0 addr=0x30108000 size=0x2000 offset=0xc000 reloff=0x0 nreloc=0
+command[5] offset=0x318 cmd=0x40 size=0x20 kind=24
+  buffer_reference address=0x30000000 name='x'
+command[6] offset=0x338 cmd=0x40 size=0x20 kind=24
+  buffer_reference address=0x30080000 name='y'
+command[7] offset=0x358 cmd=0x4 size=0x8a0 kind=4
+  program_descriptor tasks=1 records=16 format=0xf text=0x30100000 text_const=0x30100200 scratch=0x0 slot70=0x30000000 slot80=0x30080000 slot90=0x30108000
+command[8] offset=0xbf8 cmd=0x4 size=0xd48 kind=3
+  tensor_descriptor binding=1 element=5 shape=(1, 64, 64, 64) strides=(524288, 8192, 128, 2) total=524288
+command[9] offset=0x1940 cmd=0x4 size=0xd48 kind=3
+  tensor_descriptor binding=2 element=5 shape=(1, 64, 64, 64) strides=(524288, 8192, 128, 2) total=524288
+command[10] offset=0x2688 cmd=0x8 size=0x48 kind=1128615489
+command[11] offset=0x26d0 cmd=0x2 size=0x18 kind=9960
+command[0] offset=0x20 cmd=0x19 size=0x48 kind=1095786335
+command[1] offset=0x68 cmd=0x19 size=0x98 kind=1447452511
+__FVMLIB/__data addr=0x30000000 size=0x80000 offset=0x0 reloff=0x0 nreloc=0
+command[2] offset=0x100 cmd=0x19 size=0x98 kind=1447452511
+__FVMLIB/__const addr=0x30080000 size=0x80000 offset=0x0 reloff=0x0 nreloc=0
+command[3] offset=0x198 cmd=0x19 size=0xe8 kind=1163157343
+__TEXT/__text addr=0x30100000 size=0x630 offset=0x8000 reloff=0x2798 nreloc=4
+  relocation[0] address=0x18c info=0x07000005
+  relocation[1] address=0x30c info=0x07000005
+  relocation[2] address=0x480 info=0x07000005
+  relocation[3] address=0x614 info=0x07000005
+__TEXT/__const addr=0x30100640 size=0x4000 offset=0x8640 reloff=0x0 nreloc=0
+command[4] offset=0x280 cmd=0x19 size=0x98 kind=1162567519
+__KERN_0/__kern_0 addr=0x30108000 size=0x4000 offset=0x10000 reloff=0x0 nreloc=0
+command[5] offset=0x318 cmd=0x40 size=0x20 kind=24
+  buffer_reference address=0x30000000 name='c3'
+command[6] offset=0x338 cmd=0x40 size=0x20 kind=24
+  buffer_reference address=0x30080000 name='x'
+command[7] offset=0x358 cmd=0x4 size=0x8a0 kind=4
+  program_descriptor tasks=4 records=59 format=0x7 text=0x30100000 text_const=0x30100640 scratch=0x0 slot70=0x30000000 slot80=0x30080000 slot90=0x30108000
+command[8] offset=0xbf8 cmd=0x4 size=0xd48 kind=3
+  tensor_descriptor binding=1 element=5 shape=(1, 64, 64, 64) strides=(524288, 8192, 128, 2) total=524288
+command[9] offset=0x1940 cmd=0x4 size=0xd50 kind=3
+  tensor_descriptor binding=2 element=5 shape=(1, 64, 64, 64) strides=(524288, 8192, 128, 2) total=524288
+command[10] offset=0x2690 cmd=0x8 size=0x48 kind=1128615489
+command[11] offset=0x26d8 cmd=0x2 size=0x18 kind=9968
+991aa7a3ec28f5603beb090f2ca244921370d4081948bea30ad5074499ca1266  /home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler/build/linux-compiler-smoke/conv_relu/program-0.hwx
+4c910f1e62475061fb58adfcf218862e396426f1e5d503a314761159dd04314d  /home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler/build/linux-compiler-smoke/w8a8/program-0.hwx
+linux compiler build: PASS
+linux compiler software tests: PASS
+linux compiler emission: PASS
+linux compiler hygiene: PASS

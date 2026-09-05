@@ -1,0 +1,11 @@
+H13 hardware qualification status, 2026-09-05
+
+The parallel MLX session retains exclusive ownership of the base-M1 test machine. Its 60-run MLX comparison finished, but ownership returned only to that session's coordinator. No hardware handoff to this compiler session was granted.
+
+The peer reports that the last observed Linux boot lacked the ANE device-tree node. No ANE-enabled boot has since been restored or verified. This compiler session performed no commands on the reserved machine, no driver or boot changes, and no ANE submissions.
+
+Completion requires an explicit hardware handoff, a verified ANE-enabled boot, the actual driver and loaded libane identities, and confirmation of the 0x1000-byte ANEC header and task/kernel BAR contract. Numerical correctness and device performance must then be measured; host compilation is not a substitute.
+
+The current source-native compiler package is separate from an MLX-provenance bundle. Broader operation coverage, runtime integration, scheduling, fusion and device optimization remain unfinished.
+
+This public receipt omits private addresses, SSH commands and unrelated host diagnostics from the local peer-coordination record.
