@@ -1,0 +1,23 @@
+{
+  "schema": "ane-hardware-blocker.v1",
+  "host": "macstudio (Mac13,2, Apple M1 Ultra, macOS 26.6.2 build 25G83)",
+  "goal": "Numerically check compiler output on available Apple silicon without a GPU or CPU speed requirement.",
+  "device_presence": "ioreg lists ane0@84000000 with ane-type 0x60 and H11ANEIn/H11ANEInterface classes.",
+  "attempt": {
+    "artifact": "H16G add N=128 bundle compiled on the host by build/prepare_alu; program-0.hwx sha256 231f54c28ea6b14a2867fac78eac1a2cb22aa3b0eeaa28113ed03c520b83a1d3",
+    "provision_command": "sudo -n mkdir -p /Library/Caches/com.apple.aned/25G83/InMemoryModelCache/alu_exec/<model_key>",
+    "result": "mkdir: /Library/Caches/com.apple.aned: Operation not permitted",
+    "diagnosis": "sudo works, but root cannot stat, list, or create entries in /Library/Caches/com.apple.aned or com.apple.aneuserd even though /Library/Caches is drwxrwxrwt. SIP is enabled and the directories behave like macOS data vaults; com.apple.amsengagementd.classicdatavault beside them fails identically. The repository provisioning path was recorded on macOS 26.3 build 25D125.",
+    "runtime_without_cache": "build/alu_exec reports ANERuntimeErrorCacheMiss (code 4); no model load or evaluation occurred (h16g-alu-add-m1ultra.log)."
+  },
+  "not_claimed": [
+    "No ANE program executed on the M1 Ultra.",
+    "No conclusion about H16G descriptor compatibility with the M1 Ultra ANE.",
+    "No H13 ANEC execution; the ANEC container targets the Linux driver path, not this macOS runtime."
+  ],
+  "source_investigation": "InvestigateCacheFreeLoad (source only) found no AppleNeuralEngine load path that accepts already-compiled HWX bytes without the provisioned cache. The _ANEInMemoryModelDescriptor path used by exo PR 2041 and tests/hardware/ANEAppleBaselineRuntime.mm takes MIL text plus weights and calls compileWithQoS, so it would delegate compilation to Apple.",
+  "next_steps": [
+    "Numerical checks of compiler HWX on owned Macs need a macOS build whose aned in-memory cache is provisionable by root (recorded on 26.3 25D125) or a newly evidenced in-memory load API that accepts compiled HWX; neither exists on the 26.6.x hosts surveyed (macstudio, laptop, jw14m2, 16m1mbp).",
+    "H13 numerical qualification still needs the base-M1 Linux driver host held by the peer session."
+  ]
+}

@@ -32,7 +32,9 @@ or invoke Apple's compiler. The currently encoded shapes are deliberately narrow
 
 | Operation | MIL contract |
 | --- | --- |
-| add, mul, maximum, minimum | Two distinct fp16 inputs and output with one identical positive static shape containing exactly 64 elements, such as [1,64,1,1], [64], [1,64], or [2,4,8] |
+| add, mul, maximum, minimum | Two distinct fp16 inputs, or one fp16 input plus a same-shape 64-element fp16 const tensor on either side. `mul` also expands one inline fp16 scalar to 64 elements. Input, output, and tensor-constant shapes must match and contain exactly 64 elements. |
+| sub | One 64-element fp16 input `x` and a same-shape fp16 const tensor `y`; the host negates the constant and emits the verified add descriptor. Two runtime inputs and `const - input` are rejected. |
+| real_div | One 64-element fp16 input `x` and a same-shape fp16 const tensor `y` whose elements are finite, nonzero powers of two with fp16-exact reciprocals; the host stores the reciprocals and emits the verified multiply descriptor. |
 | matmul | fp16 x with K=256 or 512 as [K], [...,1,K] with singleton leading dimensions, or transpose_x=true [...,K,1]; constant rank-2 W[K,512] with transpose_y=false or W[512,K] with transpose_y=true; output [512], [...,1,512] |
 
 Exactly one function, one non-constant operation, and its single returned result

@@ -69,6 +69,8 @@ def load_package(directory):
     inputs, outputs = manifest.get('inputs'), manifest.get('outputs')
     require(isinstance(inputs, list) and isinstance(outputs, list),
             'input and output bindings must be arrays')
+    constant_inputs = manifest.get('constantInputs')
+    require(isinstance(constant_inputs, dict), 'constantInputs must be an object')
     matmul = operation == 'matmul'
     require(len(inputs) == (1 if matmul else 2) and len(outputs) == 1,
             'incorrect input/output count')
@@ -113,6 +115,19 @@ def load_package(directory):
                 "binary operation shapes must match")
     names = [binding['name'] for binding in inputs + outputs]
     require(len(set(names)) == len(names), 'binding names must be unique')
+    marked_constants = {binding['name'] for binding in inputs
+                        if binding.get('binding') == 'constant'}
+    require(all(binding.get('binding') in (None, 'constant') for binding in inputs),
+            'unsupported input binding kind')
+    require(set(constant_inputs) == marked_constants,
+            'constantInputs must match constant bindings')
+    for binding in inputs:
+        if binding['name'] not in marked_constants:
+            continue
+        encoded = constant_inputs[binding['name']]
+        require(isinstance(encoded, str) and len(encoded) == binding['logicalBytes'] * 2 and
+                all(character in '0123456789abcdefABCDEF' for character in encoded),
+                'constant input must be dense hexadecimal fp16 bytes')
     return manifest
 
 
@@ -138,18 +153,27 @@ def main():
     parser.add_argument('package', type=Path)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--pack-input', nargs=2, metavar=('NAME', 'RAW_FP16'))
+    mode.add_argument('--pack-constant', metavar='NAME')
     mode.add_argument('--unpack-output', nargs=2, metavar=('NAME', 'PHYSICAL_BUFFER'))
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
-    conversion = args.pack_input or args.unpack_output
+    conversion = args.pack_input or args.pack_constant or args.unpack_output
     if bool(conversion) != bool(args.output):
         parser.error('a conversion and --output must be supplied together')
     try:
         manifest = load_package(args.package)
         if conversion:
-            name, source = conversion
-            data = convert_tensor(manifest, name, Path(source).read_bytes(),
-                                  args.pack_input is not None)
+            if args.pack_constant:
+                name = args.pack_constant
+                encoded = manifest['constantInputs'].get(name)
+                if encoded is None:
+                    raise ValueError('no such constant input')
+                source = bytes.fromhex(encoded)
+                data = convert_tensor(manifest, name, source, True)
+            else:
+                name, source = conversion
+                data = convert_tensor(manifest, name, Path(source).read_bytes(),
+                                      args.pack_input is not None)
             with args.output.open('xb') as destination:
                 destination.write(data)
             print(f'wrote {len(data)} bytes to {args.output}; no device execution')
