@@ -76,6 +76,7 @@ run_software_tests() {
     "$repo/build/test_operation_graph"
     "$repo/build/test_hwx_object_writer"
     "$repo/build/test_program_composition"
+    make -C "$repo" test-h13 GNUSTEP_PREFIX="$prefix" GNUSTEP_CONFIG="$config"
 }
 
 check_hygiene() {

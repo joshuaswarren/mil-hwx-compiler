@@ -96,11 +96,9 @@ static NSData *loadBlob(ANEGraphArgument *blob, NSUInteger expectedBytes,
                         expectedBytes:(NSUInteger)expectedBytes
                              modelRoot:(NSURL *)modelRoot
                            diagnostics:(ANEDiagnosticEngine *)diagnostics {
-    ANEGraphArgument *blob = nil;
-    for (ANEGraphArgument *argument in operation.attributes.allValues) {
-        blob = findCall(argument, @"BLOBFILE");
-        if (blob) break;
-    }
+    NSString *payload = [operation.operationName isEqualToString:@"constexpr_affine_dequantize"]
+        ? @"quantized_data" : @"val";
+    ANEGraphArgument *blob = findCall(operation.attributes[payload], @"BLOBFILE");
     if (!blob) {
         emitError(diagnostics, @"ane.model.missing-blob-reference",
                   @"constant has no BLOBFILE payload", operation.range);

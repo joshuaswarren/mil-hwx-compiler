@@ -1,7 +1,7 @@
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 CXX := clang++
-CXXFLAGS := -std=c++17 -fobjc-arc -Wall -Wextra -Werror -Iinclude
+CXXFLAGS := -O2 -std=c++17 -fobjc-arc -Wall -Wextra -Werror -Iinclude
 FRAMEWORKS := -framework Foundation
 else
 GNUSTEP_PREFIX ?= $(HOME)/.local/mil-hwx-gnustep
@@ -37,6 +37,7 @@ RUNTIME_SOURCES := lib/Runtime/ANEProvisionedRuntime.mm
 RUNTIME_BUNDLE_SOURCES := lib/HWX/ANEHWXArtifact.mm lib/HWX/HWXImage.mm lib/IR/ANEGraphIR.mm lib/Runtime/ANEExecutableBundle.mm $(RUNTIME_SOURCES)
 RUNTIME_INCLUDES := -Ilib/IR -Ilib/HWX -Ilib/Runtime
 BENCHMARK_STATS_SOURCES := lib/Runtime/ANEBenchmarkStats.cpp
+H13_SOURCES := plugins/H13/ANEH13Compiler.mm plugins/H13/H13Program.cpp plugins/H13/H13ANEC.cpp
 
 .PHONY: all test clean test-cli test-no-pattern-shortcuts
 
@@ -201,8 +202,8 @@ $(BUILD)/prepare_staged_attention: tests/hardware/prepare_staged_attention.mm $(
 $(BUILD)/test_compiler_e2e: tests/test_compiler_e2e.mm $(PRODUCTION_COMPILER_SOURCES) | $(BUILD)
 	$(CXX) $(CXXFLAGS) -Ilib/MIL -Ilib/IR -Ilib/Transform -Ilib/Planning -Ilib/Driver -Ilib/HWX -Ilib/Model -Ilib/Runtime -Iplugins/H16G -Iplugins/H16G/Encoding $^ $(FRAMEWORKS) -o $@
 
-$(BUILD)/mil-hwxc: tools/mil-hwxc.mm $(PRODUCTION_COMPILER_SOURCES) | $(BUILD)
-	$(CXX) $(CXXFLAGS) -Ilib/MIL -Ilib/IR -Ilib/Transform -Ilib/Planning -Ilib/Driver -Ilib/HWX -Ilib/Model -Ilib/Runtime -Iplugins/H16G -Iplugins/H16G/Encoding $^ $(FRAMEWORKS) -o $@
+$(BUILD)/mil-hwxc: tools/mil-hwxc.mm $(PRODUCTION_COMPILER_SOURCES) $(H13_SOURCES) plugins/H13/ANEH13Compiler.h plugins/H13/H13Program.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) -Ilib/MIL -Ilib/IR -Ilib/Transform -Ilib/Planning -Ilib/Driver -Ilib/HWX -Ilib/Model -Ilib/Runtime -Iplugins/H16G -Iplugins/H16G/Encoding -Iplugins/H13 $(filter %.mm %.cpp,$^) $(FRAMEWORKS) -o $@
 
 test-cli: $(BUILD)/mil-hwxc
 	bash tests/test_cli.sh
@@ -235,6 +236,20 @@ test: $(BUILD)/test_diagnostics $(BUILD)/test_benchmark_stats $(BUILD)/test_mil_
 	$(BUILD)/test_compiler_e2e
 	$(BUILD)/test_runtime_contract
 	bash tests/test_release_hygiene.sh
+
+.PHONY: test-h13
+test-h13: $(BUILD)/test_h13_encoding $(BUILD)/test_h13_anec $(BUILD)/mil-hwxc
+	$(BUILD)/test_h13_encoding
+	$(BUILD)/test_h13_anec
+	python3 tests/test_h13_cli.py $(BUILD)/mil-hwxc
+
+$(BUILD)/test_h13_encoding: plugins/H13/H13Program.cpp tests/test_h13_encoding.cpp plugins/H13/H13Program.h | $(BUILD)
+	$(CXX) -O2 -std=c++17 -Wall -Wextra -Werror $(filter %.cpp,$^) -o $@
+
+$(BUILD)/test_h13_anec: plugins/H13/H13ANEC.cpp tests/test_h13_anec.cpp plugins/H13/H13Program.h | $(BUILD)
+	$(CXX) -O2 -std=c++17 -Wall -Wextra -Werror $(filter %.cpp,$^) -o $@
+
+test: test-h13
 
 clean:
 	rm -rf $(BUILD)
