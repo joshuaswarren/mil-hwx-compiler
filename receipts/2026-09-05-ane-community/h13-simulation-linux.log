@@ -1,0 +1,2 @@
+OK matmul K=1024 N=1000 programs=20 chunked=True
+ALL SIM CHECKS PASSED
