@@ -1,0 +1,41 @@
+{
+  "schema": "ane-community-decisions.v1",
+  "goal": "Working source-native ANE compiler coverage across models and chips; no GPU or CPU speedup requirement.",
+  "research": ["omlx.json", "mlx.json", "ecosystem-m2.json"],
+  "implemented_h13_commit": "13315f4",
+  "implemented_h13": [
+    "Compile ordinary x[1,K] @ W[K,512] and transposed-weight x[1,K] @ W[512,K]^T without a full-weight transpose allocation.",
+    "Validate ANEC package container and binding consistency before dense fp16 buffer conversion.",
+    "Pack and unpack physical channel-strided buffers with exact byte-count checks and output overwrite refusal."
+  ],
+  "verification": {
+    "h13_linux": "h13-linux.log",
+    "h13_macos_m1_ultra_host": "h13-macos.log",
+    "orientation_review": "ReviewH13Orientation reported no proven bug; dense asymmetric coefficient data was added to strengthen complete-artifact equality coverage.",
+    "hardware_execution": false,
+    "smoke": "Compiler emitted a 4736-byte add package; inspect_anec.py read matching logical shapes, 128-byte logical tensors, and 16384-byte physical allocations."
+  },
+  "research_applications": [
+    {
+      "source": "https://github.com/jundot/omlx/pull/2904",
+      "decision": "Keep compilation, container inspection, and device execution distinct. Neither inspector asserts that the device executed anything."
+    },
+    {
+      "source": "https://github.com/jundot/omlx/pull/2933",
+      "decision": "Derive encoded command/input/output allocation totals from existing verified metadata; do not label them SRAM usage or total process memory."
+    },
+    {
+      "source": "https://github.com/jundot/omlx/pull/3133",
+      "decision": "Do not infer recurrent-state correctness from layer cosine similarity or introduce approximate INT8 lowering before a numerical contract is established."
+    },
+    {
+      "source": "https://github.com/freedomtan/coreml_to_ane_hwx/blob/ce54664e787976b646c450ceabed1731b506a4cd/hwx_dump/h14_register_map.md",
+      "decision": "Use subtype-5 ISA-11 register evidence for read-only H14 inspection. A register table alone does not establish an executable H14 compiler or M2 runtime."
+    }
+  ],
+  "runtime_prerequisites": [
+    "Peer retains the base-M1 reservation; last reported boot lacks the ANE device-tree node.",
+    "A hardware handoff must identify the live driver/libane revision and the accepted ANEC header and BAR/kernel binding contract.",
+    "M2 runtime needs chip-specific firmware, device matching, task-manager and DART evidence plus valid-input numerical verification."
+  ]
+}

@@ -1,0 +1,5 @@
+build/test_h13_encoding
+H13_ENCODING_OK
+build/test_h13_anec
+python3 tests/test_h13_cli.py build/mil-hwxc
+H13 MIL-to-ANEC CLI: PASS (device-free)

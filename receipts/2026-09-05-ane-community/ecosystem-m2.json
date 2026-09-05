@@ -1,0 +1,522 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-09-05T00:00:00Z",
+  "research_question": "What source and discussion evidence exists in popular MLX-serving projects and linked ANE projects for an M2/H14 source-native ANE descriptor, firmware, and runtime path?",
+  "actual_model_identity": "openai-codex/gpt-5.6-sol",
+  "scope": {
+    "repositories_requested": [
+      "exo-explore/exo",
+      "waybarrios/vllm-mlx",
+      "lmstudio-ai/mlx-engine",
+      "ml-explore/mlx-swift"
+    ],
+    "canonical_vllm_mlx_repository": "waybarrios/vllm-mlx",
+    "constraints_observed": [
+      "Primary GitHub repository source, issue, pull-request, review, and comment pages were used; search-result summaries were not treated as evidence.",
+      "No binaries were reversed, no exploitation was attempted, and no hardware command or experiment module was executed.",
+      "No command was run on jwm1.",
+      "No compiler or serving source was edited; this receipt is the only written file."
+    ]
+  },
+  "method": {
+    "source_snapshot_date": "2026-09-05",
+    "repository_tree_method": "GitHub REST repository metadata and recursive git-tree API, followed by commit-pinned raw source reads.",
+    "discussion_method": "GitHub issue/PR HTML search for ANE, exact phrase Neural Engine, H14, M2, CoreML, Neural, and NPU; matching issue/PR pages and comment/review APIs were then read directly.",
+    "search_limitation": "GitHub code/issues search API quota was exhausted. GitHub HTML issue search was bounded and may omit unindexed or deleted content. Zero matches mean no indexed result at research time, not proof that a phrase never appeared.",
+    "review_check": "For exo PR 2041, issue comments, submitted reviews, and inline review comments were queried directly; all three collections were empty."
+  },
+  "executive_findings": [
+    "None of the four inspected MLX-facing projects has an ANE execution backend in its pinned source tree.",
+    "exo PR 2041 is the only substantive indexed ANE change found in those projects. It is open, unreviewed, and adds private-framework profiling, not an inference backend.",
+    "The strongest M2/H14 layout evidence is freedomtan/coreml_to_ane_hwx: subtype 5, ISA v11, packed dimensions, exact register-block offsets and counts, and H14-specific fields. It is a parser/analyzer and layout oracle, not a source-native H14 emitter.",
+    "Asahi documents M2 Neural Engine support as out of tree, but the linked eiln/ane driver matches only t8103 and t6000. The current linked source therefore does not establish T8112/M2 driver compatibility.",
+    "An H14 emitter plus read-only validator can be implemented now without M2 hardware. Direct-runtime and firmware claims require M2-specific source work and valid-input hardware verification."
+  ],
+  "repositories": [
+    {
+      "repository": "exo-explore/exo",
+      "url": "https://github.com/exo-explore/exo",
+      "metadata_observed": {
+        "stars": 47265,
+        "license": "Apache-2.0",
+        "default_branch": "main",
+        "created_at": "2024-06-24T18:36:22Z",
+        "pushed_at": "2026-08-25T18:59:53Z",
+        "archived": false
+      },
+      "source_commit": "21a54c5ea0230a3bec1e1a786d200126c7e34ec6",
+      "tree": {
+        "truncated": false,
+        "path_count": 1111
+      },
+      "current_backend_contract": {
+        "fact": "Backend enum contains MlxMetal, MlxCpu, MlxCuda, and Vllm only.",
+        "citation": "https://github.com/exo-explore/exo/blob/21a54c5ea0230a3bec1e1a786d200126c7e34ec6/src/exo/shared/types/backends.py#L4-L8"
+      },
+      "dependency_contract": {
+        "fact": "The MLX extra uses mlx 0.32.0, mlx-lm, and mlx-vlm; no ANE or CoreML runtime dependency is declared.",
+        "citation": "https://github.com/exo-explore/exo/blob/21a54c5ea0230a3bec1e1a786d200126c7e34ec6/pyproject.toml#L49-L53"
+      },
+      "relevant_discussion": [
+        {
+          "type": "pull_request",
+          "number": 2041,
+          "title": "Add ANE power and profiling",
+          "url": "https://github.com/exo-explore/exo/pull/2041",
+          "status": "open",
+          "created_at": "2026-05-03T18:57:04Z",
+          "updated_at": "2026-05-03T19:47:56Z",
+          "merged": false,
+          "head_commit": "1a08f699bb6e850ebb122d159d3d0fa335c2eed8",
+          "scope_observed": "Adds power sampling and a 1,513-line ane_profiler.py that builds MIL, calls private AppleNeuralEngine.framework classes, binds IOSurface buffers, and times evaluateWithQoS. It does not add ANE to exo's serving Backend enum.",
+          "implementation_citations": [
+            "https://github.com/exo-explore/exo/blob/1a08f699bb6e850ebb122d159d3d0fa335c2eed8/src/exo/utils/profilers/ane_profiler.py#L1-L12",
+            "https://github.com/exo-explore/exo/blob/1a08f699bb6e850ebb122d159d3d0fa335c2eed8/src/exo/utils/profilers/ane_profiler.py#L592-L644",
+            "https://github.com/exo-explore/exo/blob/1a08f699bb6e850ebb122d159d3d0fa335c2eed8/src/exo/utils/profilers/ane_profiler.py#L997-L1002"
+          ],
+          "performance_claim": "The PR author reports approximately 6.36-6.75 TFLOPS and 68-72 GB/s on named cluster nodes. These are author-claimed results; they were not reproduced in this research.",
+          "review_state": {
+            "issue_comments": 0,
+            "submitted_reviews": 0,
+            "inline_review_comments": 0,
+            "accepted_design": false
+          }
+        },
+        {
+          "type": "issue_comment",
+          "issue": 2258,
+          "issue_status": "open",
+          "issue_url": "https://github.com/exo-explore/exo/issues/2258",
+          "comment_url": "https://github.com/exo-explore/exo/issues/2258#issuecomment-5342422871",
+          "author": "zizip60",
+          "created_at": "2026-08-19T18:09:14Z",
+          "claim": "The commenter says jundot/omlx clustering gained ANE acceleration.",
+          "classification": "community claim; followed to source separately, not accepted as implementation proof"
+        }
+      ],
+      "indexed_search_coverage": {
+        "queries": [
+          "ANE",
+          "\"Neural Engine\"",
+          "H14",
+          "M2",
+          "CoreML",
+          "Neural",
+          "NPU"
+        ],
+        "relevant_hits": [
+          2041,
+          2258
+        ],
+        "note": "Other M2 matches were ordinary Apple-device reports; they did not identify H14/ANE support."
+      }
+    },
+    {
+      "repository": "waybarrios/vllm-mlx",
+      "url": "https://github.com/waybarrios/vllm-mlx",
+      "role": "Canonical vllm-mlx repository found from GitHub repository metadata/search.",
+      "metadata_observed": {
+        "stars": 1558,
+        "license": "Apache-2.0",
+        "default_branch": "main",
+        "created_at": "2025-12-06T18:26:08Z",
+        "pushed_at": "2026-09-05T17:05:42Z",
+        "archived": false
+      },
+      "source_commit": "ec8e4932615acbcdd1dcefccbf095ff49b5b7b1e",
+      "tree": {
+        "truncated": false,
+        "path_count": 455
+      },
+      "facts": [
+        {
+          "fact": "Package identifies itself as vllm-mlx 0.4.1 and depends on mlx, mlx-lm, and mlx-vlm; it declares no ANE/CoreML runtime.",
+          "citation": "https://github.com/waybarrios/vllm-mlx/blob/ec8e4932615acbcdd1dcefccbf095ff49b5b7b1e/pyproject.toml#L6-L8"
+        },
+        {
+          "fact": "The simple inference engine imports mlx.core directly.",
+          "citation": "https://github.com/waybarrios/vllm-mlx/blob/ec8e4932615acbcdd1dcefccbf095ff49b5b7b1e/vllm_mlx/engine/simple.py#L28-L35"
+        },
+        {
+          "fact": "The batched engine imports mlx.core and configures an MLX Metal retained-buffer cache.",
+          "citation": "https://github.com/waybarrios/vllm-mlx/blob/ec8e4932615acbcdd1dcefccbf095ff49b5b7b1e/vllm_mlx/engine/batched.py#L20-L61"
+        }
+      ],
+      "indexed_search_coverage": {
+        "queries": [
+          "ANE",
+          "\"Neural Engine\"",
+          "H14",
+          "M2",
+          "CoreML",
+          "Neural",
+          "NPU"
+        ],
+        "exact_ane_or_h14_hits": 0,
+        "note": "Neural matched an unrelated embeddings PR and M2 matched ordinary device reports."
+      },
+      "conclusion": "No source or indexed discussion evidence of an ANE serving backend."
+    },
+    {
+      "repository": "lmstudio-ai/mlx-engine",
+      "url": "https://github.com/lmstudio-ai/mlx-engine",
+      "metadata_observed": {
+        "stars": 1176,
+        "license": "MIT",
+        "default_branch": "main",
+        "created_at": "2024-10-07T19:32:25Z",
+        "pushed_at": "2026-08-24T15:37:57Z",
+        "archived": false
+      },
+      "source_commit": "08f0c0758a804168e258c4cfb80891a8fc9eccb1",
+      "tree": {
+        "truncated": false,
+        "path_count": 151
+      },
+      "facts": [
+        {
+          "fact": "requirements.txt pins mlx-lm commit 2c008fd0252b2c569227d12568356ab88ab0560a and mlx-metal 0.32.0; it declares no ANE/CoreML runtime.",
+          "citation": "https://github.com/lmstudio-ai/mlx-engine/blob/08f0c0758a804168e258c4cfb80891a8fc9eccb1/requirements.txt#L29-L30"
+        },
+        {
+          "fact": "Generation delegates to mlx-lm and mlx-vlm APIs.",
+          "citation": "https://github.com/lmstudio-ai/mlx-engine/blob/08f0c0758a804168e258c4cfb80891a8fc9eccb1/mlx_engine/generate.py#L20-L23"
+        }
+      ],
+      "indexed_search_coverage": {
+        "queries": [
+          "ANE",
+          "\"Neural Engine\"",
+          "H14",
+          "M2",
+          "CoreML",
+          "Neural",
+          "NPU"
+        ],
+        "exact_ane_or_h14_hits": 0,
+        "note": "NPU matched an unrelated BitNet issue."
+      },
+      "conclusion": "No source or indexed discussion evidence of an ANE serving backend."
+    },
+    {
+      "repository": "ml-explore/mlx-swift",
+      "url": "https://github.com/ml-explore/mlx-swift",
+      "relevance": "Not a serving server, but it exposes the public MLX device contract in Swift.",
+      "metadata_observed": {
+        "stars": 2013,
+        "license": "MIT",
+        "default_branch": "main",
+        "created_at": "2023-12-12T19:58:52Z",
+        "pushed_at": "2026-09-03T21:22:46Z",
+        "archived": false
+      },
+      "source_commit": "ab924c82ead3b970caaa1c0ac11171de23f0305a",
+      "tree": {
+        "truncated": false,
+        "path_count": 877
+      },
+      "facts": [
+        {
+          "fact": "DeviceType exposes cpu and gpu only, and maps them to MLX_CPU and MLX_GPU.",
+          "citation": "https://github.com/ml-explore/mlx-swift/blob/ab924c82ead3b970caaa1c0ac11171de23f0305a/Source/MLX/Device.swift#L9-L12"
+        },
+        {
+          "fact": "The initializer switch maps only CPU and GPU device constants.",
+          "citation": "https://github.com/ml-explore/mlx-swift/blob/ab924c82ead3b970caaa1c0ac11171de23f0305a/Source/MLX/Device.swift#L46-L59"
+        },
+        {
+          "fact": "The macOS package path links Metal and enumerates Metal backend sources.",
+          "citation": "https://github.com/ml-explore/mlx-swift/blob/ab924c82ead3b970caaa1c0ac11171de23f0305a/Package.swift#L204-L235"
+        }
+      ],
+      "indexed_search_coverage": {
+        "queries": [
+          "ANE",
+          "\"Neural Engine\"",
+          "H14",
+          "M2",
+          "CoreML",
+          "Neural",
+          "NPU"
+        ],
+        "exact_ane_or_h14_hits": 0,
+        "note": "CoreML and Neural matches were unrelated issue discussions."
+      },
+      "conclusion": "The public binding has no ANE device value; adding ANE serving requires a separate execution/partition seam rather than an enum toggle."
+    }
+  ],
+  "linked_primary_evidence": [
+    {
+      "project": "freedomtan/coreml_to_ane_hwx",
+      "url": "https://github.com/freedomtan/coreml_to_ane_hwx",
+      "source_commit": "ce54664e787976b646c450ceabed1731b506a4cd",
+      "tree": {
+        "truncated": false,
+        "path_count": 42
+      },
+      "evidence_class": "source-observed layout/parser evidence",
+      "facts": [
+        {
+          "fact": "README describes HWX as a proprietary modified Mach-O passed to AppleH11ANEInterface, and states the tools generate/analyze H14-H18 HWX.",
+          "citation": "https://github.com/freedomtan/coreml_to_ane_hwx/blob/ce54664e787976b646c450ceabed1731b506a4cd/README.md#L8-L8"
+        },
+        {
+          "fact": "H14 uses packed 15-bit W/H fields, unlike H16+, and the register map lists concrete ZinAneTd<11u> object-block offsets, counts, and old/new hardware addresses.",
+          "citation": "https://github.com/freedomtan/coreml_to_ane_hwx/blob/ce54664e787976b646c450ceabed1731b506a4cd/hwx_dump/h14_register_map.md#L3-L35"
+        },
+        {
+          "fact": "Non-Common H14 blocks use a +0x3C00 hardware-address translation; the document says offsets were checked against ZinAneTd<11u>::InitializeTdToDefaults.",
+          "citation": "https://github.com/freedomtan/coreml_to_ane_hwx/blob/ce54664e787976b646c450ceabed1731b506a4cd/hwx_dump/h14_register_map.md#L26-L35"
+        },
+        {
+          "fact": "H14 introduces DataSet ID fields across DMA blocks and a SparseKernelBlockSize field.",
+          "citation": "https://github.com/freedomtan/coreml_to_ane_hwx/blob/ce54664e787976b646c450ceabed1731b506a4cd/hwx_dump/h14_register_map.md#L353-L361"
+        },
+        {
+          "fact": "The source maps architecture traits 11u and CPU subtype 0x0005 to H14/A15/M2.",
+          "citation": "https://github.com/freedomtan/coreml_to_ane_hwx/blob/ce54664e787976b646c450ceabed1731b506a4cd/hwx_dump/h14_register_map.md#L363-L404"
+        },
+        {
+          "fact": "The parser defines H14 subtype 5, ISA v11 ranges/counts, selects H14 ranges for subtype 5, and dispatches H14 decoders.",
+          "citation": "https://github.com/freedomtan/coreml_to_ane_hwx/blob/ce54664e787976b646c450ceabed1731b506a4cd/hwx_dump/hwx_parsing.py#L23-L38"
+        },
+        {
+          "fact": "Parser display maps subtype 5 to H14 (A15/M2).",
+          "citation": "https://github.com/freedomtan/coreml_to_ane_hwx/blob/ce54664e787976b646c450ceabed1731b506a4cd/hwx_dump/hwx_parsing.py#L462-L472"
+        }
+      ],
+      "limit": "This repository provides a converter, analyzer, and layout reference. The inspected source does not establish a reusable source-native H14 descriptor emitter or a direct M2 firmware/runtime driver."
+    },
+    {
+      "project": "mdaiter/ane",
+      "url": "https://github.com/mdaiter/ane",
+      "source_commit": "e13f45818cbc8edeb6627d86a547f6e10d3883a6",
+      "tree": {
+        "truncated": false,
+        "path_count": 19
+      },
+      "evidence_class": "source-observed private-runtime probing",
+      "facts": [
+        {
+          "fact": "README maps H14 to A15/M2 in its chip-specific model bundle discussion.",
+          "citation": "https://github.com/mdaiter/ane/blob/e13f45818cbc8edeb6627d86a547f6e10d3883a6/README.md#L1128-L1136"
+        },
+        {
+          "fact": "The project reports high-level CoreML execution working, while direct private compile/load/evaluate and device-controller calls are blocked or return nil without required entitlements.",
+          "citation": "https://github.com/mdaiter/ane/blob/e13f45818cbc8edeb6627d86a547f6e10d3883a6/README.md#L577-L591"
+        },
+        {
+          "fact": "device.py probes _ANEDeviceInfo selectors such as hasANE, numANEs, and numCores.",
+          "citation": "https://github.com/mdaiter/ane/blob/e13f45818cbc8edeb6627d86a547f6e10d3883a6/device.py#L241-L248"
+        }
+      ],
+      "limit": "The documented concrete hardware observation is not an M2 validation receipt. API discovery and family labels do not prove M2 descriptor or firmware compatibility."
+    },
+    {
+      "project": "tinygrad/tinygrad historical ANE work",
+      "current_tree_commit": "ac40497945e44696bd81ea78e56a06f1bf61ade3",
+      "current_tree_path_count": 2021,
+      "current_tree_ane_source_paths": 0,
+      "evidence_class": "merged historical source plus maintainer comments",
+      "facts": [
+        {
+          "fact": "PR 130, Support for Apple Neural Engine, merged on 2020-12-03 at merge commit 1dcaecacc476ca6369b427961c578dddf2eb9f35; the author explicitly said it was not ready.",
+          "citation": "https://github.com/tinygrad/tinygrad/pull/130"
+        },
+        {
+          "fact": "The maintainer said the change could build plists into HWX and run HWX.",
+          "citation": "https://github.com/tinygrad/tinygrad/pull/130#issuecomment-732285993"
+        },
+        {
+          "fact": "In 2023 the maintainer said the ANE backend did not work and direct calls required disabling CSR because of added security.",
+          "citation": "https://github.com/tinygrad/tinygrad/issues/598#issuecomment-1444984990"
+        }
+      ],
+      "conclusion": "This is H11ANE/M1-era historical work, not current H14/M2 support. The current recursive source tree contains no ANE backend path."
+    },
+    {
+      "project": "AsahiLinux/m1n1",
+      "url": "https://github.com/AsahiLinux/m1n1",
+      "source_commit": "940439b9a407fbfc499bea933269219f3f62d4c7",
+      "tree": {
+        "truncated": false,
+        "path_count": 557
+      },
+      "evidence_class": "source-observed experimental direct-hardware machinery",
+      "facts": [
+        {
+          "fact": "m1n1 powers /arm-io/ane, initializes DART translation tables, allocates firmware request FIFO/task/kernel buffers, and maps BARs.",
+          "citation": "https://github.com/AsahiLinux/m1n1/blob/940439b9a407fbfc499bea933269219f3f62d4c7/proxyclient/m1n1/fw/ane.py#L18-L54"
+        },
+        {
+          "fact": "The experiment converts add.hwx, powers the ANE, sends valid fp16 input values, enqueues a task, executes it, and reads output.",
+          "citation": "https://github.com/AsahiLinux/m1n1/blob/940439b9a407fbfc499bea933269219f3f62d4c7/proxyclient/experiments/ane.py"
+        }
+      ],
+      "incompatibility": "The inspected ANE experiment has no T8112/H14 chip selection or compatibility guard. Static addresses and task contracts must not be assumed portable to M2."
+    },
+    {
+      "project": "Asahi M2 support documentation plus linked eiln/ane driver",
+      "evidence_class": "official status page plus commit-pinned linked source",
+      "facts": [
+        {
+          "fact": "Asahi's M2 feature table identifies base M2 as T8112 and marks Neural Engine support out of tree for both M2 and M2 Pro/Max/Ultra.",
+          "citation": "https://asahilinux.org/docs/platform/feature-support/m2/"
+        },
+        {
+          "fact": "The page links eiln/ane as the out-of-tree kernel module.",
+          "citation": "https://asahilinux.org/docs/platform/feature-support/m2/"
+        },
+        {
+          "fact": "The linked driver at commit 0dcea9976fae0b500a236a62fca69cd4d39f0809 matches only apple,t8103-ane and apple,t6000-ane.",
+          "citation": "https://github.com/eiln/ane/blob/0dcea9976fae0b500a236a62fca69cd4d39f0809/ane/src/ane_drv.c#L631-L652"
+        },
+        {
+          "fact": "Asahi Linux t8112.dtsi at commit 77cb8f24c2381a8abb7272d7bbdec548d6426a8a defines an ANE system PMP report entry and ps_ane_sys power domain, disabled by default.",
+          "citation": "https://github.com/AsahiLinux/linux/blob/77cb8f24c2381a8abb7272d7bbdec548d6426a8a/arch/arm64/boot/dts/apple/t8112.dtsi#L1103-L1110"
+        },
+        {
+          "fact": "Asahi's accelerator documentation says accelerator firmware comes from preboot and notes that straightforward im4p extraction for ANE/AVE/ADT was not working in the documented flow.",
+          "citation": "https://asahilinux.org/docs/hw/soc/accelerators/"
+        }
+      ],
+      "contradiction": "The official M2 page links an out-of-tree module, but the linked module's current device table does not explicitly match T8112 or T602x. The documentation status is not a source-level M2 compatibility proof."
+    }
+  ],
+  "compatibility_matrix": [
+    {
+      "area": "H14 HWX identification",
+      "status": "compatible evidence",
+      "evidence": "Subtype 5 / ISA v11 maps to H14 A15/M2 in the commit-pinned parser."
+    },
+    {
+      "area": "H14 descriptor register layout",
+      "status": "compatible evidence",
+      "evidence": "Packed dimensions, block offsets/counts, +0x3C00 remap, DataSet IDs, and sparse block size are documented and decoded."
+    },
+    {
+      "area": "Existing H13 emitter reused unchanged on H14",
+      "status": "incompatible",
+      "evidence": "H14 adds/remaps fields and addresses; H13 and H14 layouts must not be mixed."
+    },
+    {
+      "area": "MLX public device API",
+      "status": "incompatible",
+      "evidence": "Inspected MLX Swift binding exposes CPU/GPU only; exo serving backends expose MLX Metal/CPU/CUDA and vLLM only."
+    },
+    {
+      "area": "exo private-framework profiling",
+      "status": "partially compatible",
+      "evidence": "Shows a macOS private-framework compile/load/evaluate path, but adds no serving dispatch and has no review acceptance."
+    },
+    {
+      "area": "tinygrad current ANE backend",
+      "status": "incompatible",
+      "evidence": "Historical implementation was described as non-working; current tree has no ANE backend source path."
+    },
+    {
+      "area": "m1n1 direct runtime on M2",
+      "status": "unknown and unsafe to assume",
+      "evidence": "Direct machinery exists, but inspected source lacks T8112/H14 selection and validation."
+    },
+    {
+      "area": "eiln/ane Linux driver on base M2",
+      "status": "not established",
+      "evidence": "Device table lacks apple,t8112-ane; t8112.dtsi only establishes an ANE-related power-domain node."
+    },
+    {
+      "area": "M2 firmware acquisition and boot contract",
+      "status": "unresolved prerequisite",
+      "evidence": "Official docs describe preboot firmware and extraction difficulty; no pinned source here establishes a valid M2 ANE firmware load path."
+    }
+  ],
+  "concrete_m2_work_possible_now": [
+    {
+      "priority": 1,
+      "work": "Implement an H14 source-native descriptor emitter beside the existing H13 emitter.",
+      "grounded_inputs": [
+        "CPU subtype 5",
+        "ISA v11",
+        "ZinAneTd<11u> block offsets/counts",
+        "+0x3C00 non-Common address remap",
+        "packed 15-bit W/H fields",
+        "H14 DataSet ID and SparseKernelBlockSize fields"
+      ],
+      "completion_boundary": "Emit deterministic H14 object sections and container metadata; do not claim runtime compatibility until a valid-input M2 run succeeds."
+    },
+    {
+      "priority": 2,
+      "work": "Add a read-only H14 parser/validator and cross-check emitted objects against the commit-pinned h14 register map.",
+      "grounded_inputs": [
+        "hwx_parsing.py subtype/range tables",
+        "per-block decoder dispatch",
+        "explicit H14/H13/H16 layout distinctions"
+      ],
+      "completion_boundary": "Reject mixed-generation layouts and malformed block lengths without invoking ANE hardware."
+    },
+    {
+      "priority": 3,
+      "work": "Create a macOS runtime adapter around the private in-memory descriptor/model path demonstrated by exo PR 2041.",
+      "grounded_inputs": [
+        "_ANEInMemoryModelDescriptor",
+        "_ANEInMemoryModel",
+        "MIL text and weights",
+        "IOSurface",
+        "evaluateWithQoS"
+      ],
+      "completion_boundary": "Keep this separate from the source-native emitter and label OS/entitlement compatibility explicitly; later verify only with valid tensors on owned M2 hardware."
+    },
+    {
+      "priority": 4,
+      "work": "Design an explicit serving partition/dispatch seam rather than adding a cosmetic ANE enum value.",
+      "grounded_inputs": [
+        "MLX CPU/GPU device contract",
+        "exo Metal/CPU/CUDA/vLLM backend contract",
+        "tensor transfer boundaries between MLX and ANE"
+      ],
+      "completion_boundary": "Start with a narrow supported-op partition and named fallback policy; no claim of end-to-end serving until exercised."
+    },
+    {
+      "priority": 5,
+      "work": "Prepare M2 Linux enablement as a source audit, not a driver port claim.",
+      "grounded_inputs": [
+        "t8112 ps_ane_sys power-domain evidence",
+        "eiln device-table gap",
+        "m1n1 DART/FIFO/task-manager structure"
+      ],
+      "completion_boundary": "Identify T8112/T602x compatibles, MMIO/DART/task-manager deltas, firmware source, and FIFO/task ABI before any hardware execution."
+    }
+  ],
+  "unresolved_prerequisites": [
+    "A source-backed T8112/T602x ANE device match and register/task-manager map.",
+    "A lawful and reproducible M2 ANE firmware/ADT acquisition and boot procedure.",
+    "Confirmation that H14 task descriptor sizes, FIFO contracts, DART mappings, and BAR layout match or differ from the M1-era m1n1/eiln code.",
+    "Private-framework entitlement and macOS-version behavior for direct compile/load/evaluate.",
+    "Owned M2 hardware with an ANE node for controlled, valid-input verification.",
+    "A serving graph partition policy and tensor-transfer contract for MLX-to-ANE execution."
+  ],
+  "claims_not_made": [
+    "No claim that exo PR 2041 is merged, reviewed, or a serving backend.",
+    "No claim that freedomtan/coreml_to_ane_hwx contains a complete H14 source-native emitter or M2 runtime.",
+    "No claim that the historical tinygrad ANE code works on M2 or remains in current tinygrad.",
+    "No claim that Asahi's linked out-of-tree driver currently supports T8112/M2.",
+    "No claim that any reported benchmark was reproduced.",
+    "No claim of hardware verification."
+  ],
+  "verification": {
+    "intended_check": "Parse this file as JSON and assert the four requested repositories, the M2/H14 layout source commit, the Asahi Linux t8112 commit, and the actual model identity are present.",
+    "hardware_commands_run": 0,
+    "project_tests_run": 0,
+    "reason": "This is a source/discussion research receipt with no behavioral code change.",
+    "command": "python3 -c 'import json,pathlib; p=pathlib.Path(\"receipts/2026-09-05-ane-community/ecosystem-m2.json\"); d=json.loads(p.read_text()); assert len(d[\"repositories\"]) == 4; assert d[\"actual_model_identity\"] == \"openai-codex/gpt-5.6-sol\"; assert d[\"linked_primary_evidence\"][0][\"source_commit\"] == \"ce54664e787976b646c450ceabed1731b506a4cd\"; assert \"77cb8f24c2381a8abb7272d7bbdec548d6426a8a\" in p.read_text(); print(json.dumps({\"path\":str(p),\"repositories\":len(d[\"repositories\"]),\"model\":d[\"actual_model_identity\"],\"work_items\":len(d[\"concrete_m2_work_possible_now\"]),\"hardware_commands_run\":d[\"verification\"][\"hardware_commands_run\"]}))'",
+    "checks": [
+      "valid JSON",
+      "four requested repository records",
+      "OpenAI model identity",
+      "commit-pinned H14 source",
+      "commit-pinned Asahi T8112 source",
+      "five concrete work items",
+      "zero hardware commands"
+    ]
+  }
+}

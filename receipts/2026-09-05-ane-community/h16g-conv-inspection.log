@@ -1,0 +1,24 @@
+architecture subtype=0x0007 name=H16G isa=17
+command[0] offset=0x20 cmd=0x19 size=0x48 kind=1095786335
+command[1] offset=0x68 cmd=0x19 size=0x98 kind=1447452511
+__FVMLIB/__const addr=0x30000000 size=0x80000 offset=0x0 reloff=0x0 nreloc=0
+command[2] offset=0x100 cmd=0x19 size=0x98 kind=1447452511
+__FVMLIB/__data addr=0x30080000 size=0x80000 offset=0x0 reloff=0x0 nreloc=0
+command[3] offset=0x198 cmd=0x19 size=0xe8 kind=1163157343
+__TEXT/__text addr=0x30100000 size=0x1d8 offset=0x4000 reloff=0x2730 nreloc=1
+  relocation[0] address=0x1a8 info=0x07000005
+__TEXT/__const addr=0x30100200 size=0x4000 offset=0x4200 reloff=0x0 nreloc=0
+command[4] offset=0x280 cmd=0x19 size=0x98 kind=1162567519
+__KERN_0/__kern_0 addr=0x30108000 size=0x2000 offset=0xc000 reloff=0x0 nreloc=0
+command[5] offset=0x318 cmd=0x40 size=0x20 kind=24
+  buffer_reference address=0x30000000 name='x'
+command[6] offset=0x338 cmd=0x40 size=0x20 kind=24
+  buffer_reference address=0x30080000 name='y'
+command[7] offset=0x358 cmd=0x4 size=0x8a0 kind=4
+  program_descriptor tasks=1 records=16 format=0xf text=0x30100000 text_const=0x30100200 scratch=0x0 slot70=0x30000000 slot80=0x30080000 slot90=0x30108000
+command[8] offset=0xbf8 cmd=0x4 size=0xd48 kind=3
+  tensor_descriptor binding=1 element=5 shape=(1, 64, 64, 64) strides=(524288, 8192, 128, 2) total=524288
+command[9] offset=0x1940 cmd=0x4 size=0xd48 kind=3
+  tensor_descriptor binding=2 element=5 shape=(1, 64, 64, 64) strides=(524288, 8192, 128, 2) total=524288
+command[10] offset=0x2688 cmd=0x8 size=0x48 kind=1128615489
+command[11] offset=0x26d0 cmd=0x2 size=0x18 kind=9960

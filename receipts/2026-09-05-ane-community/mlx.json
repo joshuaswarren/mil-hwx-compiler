@@ -1,0 +1,230 @@
+{
+  "researched_at": "2026-09-05",
+  "scope": [
+    "ml-explore/mlx",
+    "ml-explore/mlx-lm",
+    "ml-explore/mlx-examples"
+  ],
+  "methodology": {
+    "transport": "direct GitHub REST and raw-content HTTP with a 15-second AbortSignal timeout; no GitHub search-summary claim is used as a finding",
+    "primary_material": "issue/PR bodies, every returned issue comment for the three seeds, targeted related issue comment threads, upstream branch-list responses, and repository README raw files",
+    "status_note": "Statuses and timestamps are GitHub API fields observed during this research. Query discovery returned several HTTP 403 responses for repeated type:pr search terms; the covered query list records those gaps rather than treating them as no-result searches."
+  },
+  "query_coverage": [
+    {
+      "query": "ANE repo:ml-explore/mlx",
+      "endpoint": "https://api.github.com/search/issues?q=ANE%20repo%3Aml-explore%2Fmlx&per_page=100",
+      "status": 200,
+      "use": "candidate discovery only; each cited finding was read from its issue or comment URL"
+    },
+    {
+      "query": "\"Neural Engine\" repo:ml-explore/mlx",
+      "endpoint": "https://api.github.com/search/issues?q=%22Neural%20Engine%22%20repo%3Aml-explore%2Fmlx&per_page=100",
+      "status": 200,
+      "use": "candidate discovery only"
+    },
+    {
+      "query": "CoreML repo:ml-explore/mlx",
+      "endpoint": "https://api.github.com/search/issues?q=CoreML%20repo%3Aml-explore%2Fmlx&per_page=100",
+      "status": 200,
+      "use": "candidate discovery only"
+    },
+    {
+      "query": "ANE / \"Neural Engine\" / CoreML in mlx-lm",
+      "endpoints": [
+        "https://api.github.com/search/issues?q=ANE%20repo%3Aml-explore%2Fmlx-lm&per_page=100",
+        "https://api.github.com/search/issues?q=%22Neural%20Engine%22%20repo%3Aml-explore%2Fmlx-lm&per_page=100",
+        "https://api.github.com/search/issues?q=CoreML%20repo%3Aml-explore%2Fmlx-lm&per_page=100"
+      ],
+      "status": "first discovery query returned 200; repeated searches returned HTTP 403",
+      "use": "no uncited conclusion from search summaries"
+    },
+    {
+      "query": "ANE / \"Neural Engine\" / CoreML in mlx-examples",
+      "endpoints": [
+        "https://api.github.com/search/issues?q=ANE%20repo%3Aml-explore%2Fmlx-examples&per_page=100",
+        "https://api.github.com/search/issues?q=%22Neural%20Engine%22%20repo%3Aml-explore%2Fmlx-examples&per_page=100",
+        "https://api.github.com/search/issues?q=CoreML%20repo%3Aml-explore%2Fmlx-examples&per_page=100"
+      ],
+      "status": "ANE and Neural Engine discovery queries returned 200; repeated CoreML/type:pr searches returned HTTP 403",
+      "use": "no uncited conclusion from search summaries"
+    },
+    {
+      "query": "upstream visible heads",
+      "endpoints": [
+        "https://api.github.com/repos/ml-explore/mlx/branches?per_page=100",
+        "https://api.github.com/repos/ml-explore/mlx-lm/branches?per_page=100",
+        "https://api.github.com/repos/ml-explore/mlx-examples/branches?per_page=100"
+      ],
+      "status": 200,
+      "use": "direct check for an upstream experimental ANE branch"
+    },
+    {
+      "query": "documented MLX targets",
+      "endpoints": [
+        "https://raw.githubusercontent.com/ml-explore/mlx/main/README.md",
+        "https://raw.githubusercontent.com/ml-explore/mlx-lm/main/README.md",
+        "https://raw.githubusercontent.com/ml-explore/mlx-examples/main/README.md"
+      ],
+      "status": 200,
+      "use": "direct source check separating documented CPU/GPU execution from ANE"
+    }
+  ],
+  "maintainer_position": [
+    {
+      "date": "2023-12-08T03:22:14Z",
+      "status": "closed",
+      "source": "https://github.com/ml-explore/mlx/issues/18#issuecomment-1846492294",
+      "author": "awni",
+      "classification": "maintainer statement",
+      "finding": "MLX had no ANE-support plan because the API was closed source; it would add ANE if that changed."
+    },
+    {
+      "date": "2024-01-03T14:08:03Z",
+      "status": "closed",
+      "source": "https://github.com/ml-explore/mlx-examples/issues/217#issuecomment-1875429080",
+      "author": "awni",
+      "classification": "maintainer statement",
+      "finding": "MLX Examples has no ANE example because MLX does not support ANE; it links the MLX #18 rationale."
+    },
+    {
+      "date": "2024-01-07T14:02:53Z",
+      "status": "closed",
+      "source": "https://github.com/ml-explore/mlx/issues/393#issuecomment-1880068510",
+      "author": "awni",
+      "classification": "maintainer statement",
+      "finding": "The report that MLX did not run on ANE was closed by referring to #18, not by fixing an ANE backend."
+    },
+    {
+      "date": "2024-06-25T14:39:55Z",
+      "status": "closed",
+      "source": "https://github.com/ml-explore/mlx/issues/1229#issuecomment-2189147989",
+      "author": "awni",
+      "classification": "maintainer statement",
+      "finding": "No ANE support currently; the answer again directs readers to #18."
+    }
+  ],
+  "related_primary_findings": [
+    {
+      "date": "2024-03-29T15:47:05Z",
+      "status": "closed",
+      "source": "https://github.com/ml-explore/mlx/issues/928#issuecomment-2027406762",
+      "author": "awni",
+      "classification": "maintainer statement about Metal GPU",
+      "finding": "FP8 is not in the Metal specification. This is a Metal/GPU statement, not evidence of ANE capability."
+    },
+    {
+      "date": "2025-04-28T14:21:58Z",
+      "status": "open",
+      "source": "https://github.com/ml-explore/mlx/issues/1670#issuecomment-2835424938",
+      "author": "awni",
+      "classification": "maintainer statement about MLX/MLX-LM GPU-side optimization",
+      "finding": "MLX-LM already has KV-cache quantization; a fused quantized SDPA could be faster. The comment concerns MLX operations, not an ANE dispatch path."
+    },
+    {
+      "date": "2025-04-28T14:34:58Z",
+      "status": "open",
+      "source": "https://github.com/ml-explore/mlx/issues/1670#issuecomment-2835464825",
+      "author": "awni",
+      "classification": "maintainer statement",
+      "finding": "Quantized activation ops were not considered useful for MLX at that point; this is not an ANE-support commitment."
+    },
+    {
+      "date": "2025-09-05T13:16:48Z",
+      "status": "open",
+      "source": "https://github.com/ml-explore/mlx/issues/1670#issuecomment-3258325532",
+      "author": "awni",
+      "classification": "maintainer statement",
+      "finding": "FP8 was likely for CUDA when the right model appeared. This is CUDA-backend work, not Apple Neural Engine work."
+    }
+  ],
+  "user_speculation_and_external_references": [
+    {
+      "date": "2023-12-07T22:11:10Z",
+      "source": "https://github.com/ml-explore/mlx/issues/18#issuecomment-1846188238",
+      "author": "vade",
+      "classification": "user speculation, explicitly introduced as such",
+      "claim": "ANE is inference-oriented, FP16-oriented, OS-scheduled, and exposed through Core ML/Swift. Do not promote this as an MLX maintainer or hardware-source fact."
+    },
+    {
+      "date": "2023-12-07T22:14:08Z",
+      "source": "https://github.com/ml-explore/mlx/issues/18#issuecomment-1846191659",
+      "author": "vade",
+      "classification": "user proposal",
+      "claim": "Use MLX preprocessing/custom layers around a Core ML ANE model and IOSurface-backed FP16 buffers. This is an architectural idea, not an accepted MLX plan."
+    },
+    {
+      "date": "2024-02-21T00:19:01Z",
+      "source": "https://github.com/ml-explore/mlx/issues/18#issuecomment-1955478482",
+      "author": "fakerybakery",
+      "classification": "user external pointers",
+      "claim": "Links Apple ml-ane-transformers and tinygrad's reverse-engineered ANE path; neither is an MLX experimental backend branch."
+    },
+    {
+      "date": "2024-02-21T15:38:44Z",
+      "source": "https://github.com/ml-explore/mlx/issues/18#issuecomment-1956984529",
+      "author": "vade",
+      "classification": "user opinion",
+      "claim": "Describes the Apple project as inference-only and tinygrad's path as private/reverse-engineered. Treat as commentary, not an MLX maintainer position."
+    }
+  ],
+  "backend_branch_check": {
+    "result": "No ANE-named or ANE-targeting branch appeared in the direct upstream branch-list responses for mlx, mlx-lm, or mlx-examples. This is limited to visible upstream heads returned by the API; it does not prove no fork or deleted branch has ever existed.",
+    "repositories": [
+      {
+        "repo": "ml-explore/mlx",
+        "endpoint": "https://api.github.com/repos/ml-explore/mlx/branches?per_page=100",
+        "main_commit": "2d27ab05fb7dcda69bb3c57abd74c0b3bc9a5a99",
+        "ane_branches": []
+      },
+      {
+        "repo": "ml-explore/mlx-lm",
+        "endpoint": "https://api.github.com/repos/ml-explore/mlx-lm/branches?per_page=100",
+        "main_commit": "6d21ce4b065a2e163fa6de76a9936c61aeb5784a",
+        "ane_branches": []
+      },
+      {
+        "repo": "ml-explore/mlx-examples",
+        "endpoint": "https://api.github.com/repos/ml-explore/mlx-examples/branches?per_page=100",
+        "main_commit": "796f5b53cab69a3d48a44233ce21aae889e94a08",
+        "ane_branches": []
+      }
+    ]
+  },
+  "device_distinctions": {
+    "documented_mlx_targets": {
+      "source": "https://raw.githubusercontent.com/ml-explore/mlx/main/README.md",
+      "finding": "README states current device support is CPU and GPU. It does not list ANE."
+    },
+    "gpu_metal": "MLX #928 and #1670 discussion about Metal, CUDA, quantization, or fused SDPA must not be counted as ANE evidence.",
+    "cpu_amx": "No primary source in the covered MLX discussions establishes a CPU AMX backend or equates CPU AMX with ANE. Do not infer ANE execution from CPU execution or AMX terminology.",
+    "ane": "The repeated maintainer position is that upstream MLX has no ANE device/backend; Core ML use described by users is outside an MLX ANE backend."
+  },
+  "compiler_opportunities": [
+    {
+      "opportunity": "Keep a source-native ANE/MIL compiler as an external target rather than an MLX backend integration.",
+      "basis": "Upstream maintainer statements repeatedly close ANE requests without a backend plan; no visible upstream ANE branch was found.",
+      "scope": "Do not claim MLX support or create an MLX adapter absent a public supported device API."
+    },
+    {
+      "opportunity": "Prioritize inference-only, FP16 binary and static-shape graph lowering with explicit unsupported-op diagnostics.",
+      "basis": "This matches the user-proposed Core ML/ANE boundary in #18, but the hardware properties are user speculation rather than an upstream commitment.",
+      "scope": "Validate only against real ANE/Core ML behavior before describing it as capability."
+    },
+    {
+      "opportunity": "Design a narrow interop boundary for exported/partitioned inference graphs, not a fake device selection in MLX.",
+      "basis": "#18 community proposal puts MLX-side work around Core ML execution; upstream does not endorse an MLX-native ANE path.",
+      "scope": "A future integration needs a reproducible MLX graph-export contract and an explicit ownership/lifetime contract for shared buffers."
+    },
+    {
+      "opportunity": "Keep GPU/CUDA quantization and SDPA optimization separate from ANE lowering.",
+      "basis": "Maintainer #1670 comments identify MLX-LM KV-cache and possible fused-SDPA work, while the later FP8 comment names CUDA.",
+      "scope": "Do not use their performance claims as ANE benchmarks or ANE feature requirements."
+    }
+  ],
+  "limitations": [
+    "No hardware access, experiment-module execution, GPU, CPU-AMX, or ANE benchmarking was performed.",
+    "Direct GitHub search was rate/abuse limited for some repeated queries; primary seed and targeted related material was fetched directly and all missed search coverage is recorded.",
+    "No assertion is made about private, deleted, fork-only, or unindexed experimental branches."
+  ]
+}

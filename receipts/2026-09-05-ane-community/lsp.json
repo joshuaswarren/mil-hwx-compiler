@@ -1,0 +1,30 @@
+{
+  "schema": "ane-lsp-verification.v1",
+  "server": "/usr/bin/clangd-19",
+  "version": "Debian clangd version 19.1.7 (3~deb12u1)",
+  "configuration": "~/.omp/agent/lsp.json",
+  "reload": "lsp reload file=* succeeded; status listed clangd ready",
+  "build": {
+    "command": "GNUSTEP_PREFIX=/tmp/mil-hwx-bootstrap-proof-prefix LD_LIBRARY_PATH=/tmp/mil-hwx-bootstrap-proof-prefix/lib uvx --from compiledb compiledb -f make -B build/mil-hwxc build/test_h13_encoding build/test_h13_anec",
+    "log": "/tmp/ane-lsp-build.log",
+    "completed": true,
+    "compiler": "/usr/bin/clang++-14",
+    "database": "compile_commands.json",
+    "entries": 57,
+    "unique_translation_units": 55,
+    "normalization": "compiledb retained only the final input as file for each multi-source compile/link invocation. Expand each captured invocation into one entry for each existing .mm/.cpp input, removing only its sibling source operands. Preserve compiler, all selected GNUstep/ARC/C++17 flags, per-target includes, libraries, and output arguments unchanged.",
+    "local_only": "compile_commands.json and .cache/clangd/ are ignored because their paths are machine-specific.",
+    "concurrency": "pgrep found no make, clang, or clang++-14 process before build capture; no process was interrupted."
+  },
+  "checks": [
+    {"action": "diagnostics", "file": "plugins/H13/ANEH13Compiler.mm", "result": "OK"},
+    {"action": "diagnostics", "file": "plugins/H13/H13Program.cpp", "result": "OK"},
+    {"action": "diagnostics", "file": "tests/test_h13_encoding.cpp", "result": "OK"},
+    {"action": "definition", "from": "plugins/H13/ANEH13Compiler.mm:133 encodeMatvec", "to": "plugins/H13/H13Program.cpp:319"},
+    {"action": "definition", "from": "plugins/H13/H13Program.cpp:138 TensorLayout", "to": "plugins/H13/H13Program.h:16"},
+    {"action": "references", "symbol": "encodeMatvec", "count": 7, "scope": "header declaration, C++ definition, Objective-C++ production call, four C++ test calls"},
+    {"action": "hover", "files": ["plugins/H13/ANEH13Compiler.mm", "plugins/H13/H13Program.cpp"], "result": "Program encodeMatvec(uint32_t reduction, const uint8_t *weights, size_t weightBytes, bool transposeY)"}
+  ],
+  "configuration_errors": "No missing-header or configuration diagnostics remained in the exercised translation units.",
+  "workflow": "Use configured LSP definitions, references, hover and diagnostics during compiler work; obtain references before changing shared symbols."
+}

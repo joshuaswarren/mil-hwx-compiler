@@ -1,0 +1,4796 @@
+{
+  "schema": "ane-community-research.v1",
+  "generated_at": "2026-09-05T17:29:57.527Z",
+  "researcher_model": "openai-codex/gpt-5.6-sol",
+  "scope": {
+    "repository": "jundot/omlx",
+    "repository_url": "https://github.com/jundot/omlx",
+    "repository_default_branch": "main",
+    "repository_head": {
+      "sha": "e467261edc786efd33b1e9023d5c4a827f8aa1c1",
+      "url": "https://github.com/jundot/omlx/commit/e467261edc786efd33b1e9023d5c4a827f8aa1c1"
+    },
+    "local_compiler": {
+      "repository": "joshuaswarren/mil-hwx-compiler",
+      "commit": "28129e496541f8b76f487ef55779ee70d1665de4",
+      "source_files": [
+        "plugins/H13/ANEH13Compiler.mm",
+        "plugins/H13/H13Program.h"
+      ]
+    },
+    "no_device_execution": true,
+    "no_hardware_claims_from_this_run": true
+  },
+  "method": {
+    "transport": "GitHub GraphQL and REST through authenticated gh API; primary issue, PR, comment, review, commit, and file records only",
+    "queries": [
+      {
+        "query": "repo:jundot/omlx ANE in:title,body,comments",
+        "total_count": 145,
+        "pages": 2,
+        "complete": true,
+        "incomplete_results": false
+      },
+      {
+        "query": "repo:jundot/omlx \"neural engine\" in:title,body,comments",
+        "total_count": 14,
+        "pages": 1,
+        "complete": true,
+        "incomplete_results": false
+      },
+      {
+        "query": "repo:jundot/omlx ane_prefill in:title,body,comments",
+        "total_count": 3,
+        "pages": 1,
+        "complete": true,
+        "incomplete_results": false
+      },
+      {
+        "query": "repo:jundot/omlx M1 ANE in:title,body,comments",
+        "label": "M1+ANE",
+        "total_count": 12,
+        "pages": 1,
+        "complete": true,
+        "incomplete_results": false,
+        "numbers": [
+          3340,
+          3124,
+          2968,
+          3097,
+          2971,
+          3080,
+          3317,
+          2935,
+          2892,
+          2975,
+          3044,
+          2781
+        ]
+      },
+      {
+        "query": "repo:jundot/omlx M2 ANE in:title,body,comments",
+        "label": "M2+ANE",
+        "total_count": 15,
+        "pages": 1,
+        "complete": true,
+        "incomplete_results": false,
+        "numbers": [
+          2986,
+          3069,
+          2841,
+          2968,
+          2973,
+          3117,
+          3070,
+          2933,
+          3102,
+          3044,
+          2935,
+          2975,
+          2892,
+          2781,
+          2876
+        ]
+      },
+      {
+        "query": "repo:jundot/omlx FP16 ANE in:title,body,comments",
+        "label": "FP16+ANE",
+        "total_count": 27,
+        "pages": 1,
+        "complete": true,
+        "incomplete_results": false,
+        "numbers": [
+          3104,
+          3364,
+          3117,
+          2968,
+          2841,
+          3124,
+          2986,
+          3250,
+          3025,
+          3069,
+          3305,
+          2971,
+          3298,
+          3241,
+          3251,
+          3059,
+          2892,
+          2935,
+          2853,
+          3044,
+          2933,
+          2965,
+          3233,
+          2966,
+          3381,
+          2876,
+          3242
+        ]
+      },
+      {
+        "query": "repo:jundot/omlx INT8 ANE in:title,body,comments",
+        "label": "INT8+ANE",
+        "total_count": 15,
+        "pages": 1,
+        "complete": true,
+        "incomplete_results": false,
+        "numbers": [
+          3069,
+          2803,
+          2986,
+          3117,
+          2937,
+          3045,
+          3097,
+          3284,
+          3133,
+          3059,
+          2760,
+          2965,
+          2966,
+          2756,
+          2777
+        ]
+      },
+      {
+        "query": "repo:jundot/omlx batch ANE in:title,body,comments",
+        "label": "batch+ANE",
+        "total_count": 37,
+        "pages": 1,
+        "complete": true,
+        "incomplete_results": false,
+        "numbers": [
+          3058,
+          2937,
+          3117,
+          2931,
+          3045,
+          2914,
+          3115,
+          2970,
+          3258,
+          3384,
+          3070,
+          3241,
+          3114,
+          3133,
+          3279,
+          3246,
+          2965,
+          2795,
+          3233,
+          2595,
+          2781,
+          2978,
+          3324,
+          3283,
+          3169,
+          3381,
+          2777,
+          3244,
+          3343,
+          3118,
+          3295,
+          3242,
+          3314,
+          3349,
+          2972,
+          2689,
+          1080
+        ]
+      },
+      {
+        "query": "repo:jundot/omlx SRAM in:title,body,comments",
+        "label": "SRAM",
+        "total_count": 0,
+        "pages": 0,
+        "complete": true,
+        "incomplete_results": false,
+        "numbers": []
+      },
+      {
+        "query": "repo:jundot/omlx unsupported ANE in:title,body,comments",
+        "label": "unsupported+ANE",
+        "total_count": 14,
+        "pages": 1,
+        "complete": true,
+        "incomplete_results": false,
+        "numbers": [
+          3115,
+          2971,
+          3384,
+          3298,
+          3251,
+          2756,
+          3059,
+          2935,
+          2966,
+          3241,
+          2853,
+          2823,
+          3244,
+          3118
+        ]
+      }
+    ],
+    "coverage": {
+      "deduplicated_threads": 147,
+      "issues": 78,
+      "pull_requests": 69,
+      "all_discussion_comments_loaded": 448,
+      "directly_relevant_threads": 88,
+      "direct_issues": 40,
+      "direct_pull_requests": 48,
+      "direct_discussion_comments_loaded": 290,
+      "formal_reviews_found": 0,
+      "inline_review_comments_found": 0,
+      "max_thread_comment_count": 44,
+      "discussion_pagination_complete": true,
+      "review_pagination_complete": true,
+      "rest_review_endpoint_cross_check": {
+        "pull_requests_checked": 34,
+        "formal_reviews_found": 0,
+        "inline_review_comments_found": 0
+      }
+    },
+    "classification": "The 147-item union preserves every exact search hit. The 88-item direct set selects titles explicitly about ANE, Neural Engine, ANE prefill, or Qwen prefill. Tangential matches remain in thread_inventory.",
+    "limitations": [
+      "GitHub search is lexical and can include a thread only because an ANE term appears in a comment.",
+      "No issue or PR exceeded the 100-comment page fetched; the maximum was 44.",
+      "No formal PR reviews or inline review comments existed in the fetched corpus; PR conversation was in issue-style discussion comments.",
+      "PR #3118 had more than 100 commits/files, but it was tangential and its discussion was complete.",
+      "No Apple device or ANE runtime was used in this research run."
+    ]
+  },
+  "priority_threads": [
+    {
+      "number": 1107,
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/1107",
+      "finding": "A proposal for GPU decode plus background ANE prefill and KV warmup. It contains no implementation, benchmark, hardware result, or compatibility proof. Its only comment links ANEMLL.",
+      "actionable_read": "Treat same-model branch warmup as the first bounded experiment. Cross-model KV reuse needs an explicit compatibility proof and must not be assumed from unified memory."
+    },
+    {
+      "number": 2824,
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2824",
+      "finding": "oMLX 0.6.2 accepted ANE enabled on an oQ8e checkpoint while the then-current gate/up eligibility was 4-bit, produced no INFO/WARNING signal, and exposed no API status. The reporter observed a 3.0 s load versus a claimed 27–29 s ANE eager-compile signal; that timing was an indirect diagnosis, not an ANE measurement.",
+      "resolution": {
+        "pull_request": 2904,
+        "url": "https://github.com/jundot/omlx/pull/2904",
+        "implementation_commit": "6c37c0df84425f97aecae791dcfa0d1255be9492",
+        "merge_commit": "0e7292889ea41fe4c013a27f7d877c4e65868096",
+        "change": "Warnings for dispatch/no-eligible/zero-compiled exits plus an /api/status ane_prefill block."
+      },
+      "remaining_caveat": "The maintainer noted at merge that VLM engines used _vlm_model and were skipped by the status aggregation, and that available meant patch importability rather than hardware availability."
+    }
+  ],
+  "linked_external_sources": [
+    {
+      "source": "ANEMLL",
+      "url": "https://github.com/Anemll/Anemll",
+      "linked_from": "https://github.com/jundot/omlx/issues/1107#issuecomment-4399265622",
+      "readme_blob_sha": "b6e680070e49ce184cb99d61b90b6877577603a8",
+      "observed_contracts": [
+        "CoreML conversion and inference pipeline rather than oMLX private-runtime procedure banks",
+        "coremltools>=9.0, Xcode Command Line Tools/CoreML compiler, Python 3.9-3.11",
+        "Apple Neural Engine FP16 range is ±65,504; ANEMLL ships FP16 preflight/scaling guidance",
+        "M1/A14 non-uniform state-shape restriction is documented for Gemma 3 monolithic models",
+        "README says LUT4 quality remains weak without block quantization"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "topic": "fixed_shape_and_tiling",
+      "status": "merged implementation plus measured community data",
+      "finding": "The foundational path compiles one exact flattened token count, normally 2,048. Wider inputs can tile onto that shape; tails need GPU fallback or local intermediate padding. The delivered scheduler chunk must be at least the compiled ANE tile or the bank compiles and never dispatches.",
+      "sources": [
+        "https://github.com/jundot/omlx/pull/2756",
+        "https://github.com/jundot/omlx/pull/2890",
+        "https://github.com/jundot/omlx/pull/2966"
+      ],
+      "implementation_commits": [
+        "edb729007ed95920f4d61266af976a556d8b27c5",
+        "d75d9995897645fbe35c7fb8e3b2bc0b095904e3",
+        "740e6d379ee17441d28cc0125fd5c32e71be94c3"
+      ],
+      "details": [
+        "#2890 hardware-checked 4,096 rows as two 2,048 tiles and 4,608 rows as two tiles plus a 512-row tail on M3 Ultra.",
+        "#2966 pads only intermediate MLP/GDN activation rows, slices before recurrence or later layers, and derives the profitable tail threshold as floor(S*G/H)+1.",
+        "Synthetic prompt tokens are not safe padding because they change positions, KV, logits, and recurrent state."
+      ]
+    },
+    {
+      "id": "F2",
+      "topic": "procedure_banks_and_handle_budget",
+      "status": "merged implementation; measured on M3 Ultra",
+      "finding": "oMLX packs 64 MLP plus 48 GDN procedures into two instance-pinned programs because the private runtime accepted about 121 resident handles in testing. One program per layer would exhaust that budget.",
+      "sources": [
+        "https://github.com/jundot/omlx/pull/2756"
+      ],
+      "details": [
+        "The combined 112-procedure bank was reported to take about 37–44 s to compile on the reference M3 Ultra.",
+        "A single unpinned 55% MLP slice measured 57.90 ms versus 41.51 ms for two instance-pinned calls.",
+        "This is a report from one hardware/configuration, not a portable H13 constant."
+      ]
+    },
+    {
+      "id": "F3",
+      "topic": "precision_and_quantization",
+      "status": "mixed merged and open",
+      "finding": "The shipped oMLX path requantizes selected source weights to per-output-channel INT8 for ANE. Q5, affine Q6, and affine Q8 support landed, while BF16 checkpoint support remains an open request for mixed BF16 GPU plus FP16 ANE execution.",
+      "sources": [
+        "https://github.com/jundot/omlx/pull/2756",
+        "https://github.com/jundot/omlx/pull/2833",
+        "https://github.com/jundot/omlx/pull/2889",
+        "https://github.com/jundot/omlx/issues/3104"
+      ],
+      "details": [
+        "#2833 supports Q6 GDN at affine group sizes 64 and 128 and keeps Q8 GDN b/a projections on stock MLX because packed Q8 failed recurrent-state accuracy checks.",
+        "#2889 maintainer hardware parity on M3 Ultra reported q5 gate/up at gs64 and gs128, single and dual ANE, cosine >=0.999979 against stock MLX.",
+        "#3104 asks to keep the checkpoint BF16, make selected ANE weights FP16, and explicitly convert/merge BF16↔FP16; no implementation is linked."
+      ]
+    },
+    {
+      "id": "F4",
+      "topic": "recurrent_accuracy_boundary",
+      "status": "merged and cross-silicon checked",
+      "finding": "Approximate INT8 errors cannot be allowed into recurrence just because per-layer cosine looks good. #3133 caps GDN ANE work at 6,144 token-local z rows and leaves all 10,240 recurrent qkv rows on checkpoint-precision GPU, making the effective ceiling 37.5%.",
+      "sources": [
+        "https://github.com/jundot/omlx/issues/3069",
+        "https://github.com/jundot/omlx/pull/3133"
+      ],
+      "implementation_commits": [
+        "4c8e43a5b44f2aa877f728315d82188c39454fcf",
+        "b9d3a191141e1281ede7ba6defc264825c2b682c",
+        "c0503a9e9a197410f98ee9f24bfc97c3f7b70c3e"
+      ],
+      "details": [
+        "The PR attributes deterministic 32K failures to recurrent qkv rows on the INT8 path.",
+        "M3 Ultra validation reported recurrent-safe prefill at 588.2 tok/s for 4K and 503.0 tok/s for 32K versus 465.8 and 410.1 GPU-only, without decode-speed regression.",
+        "A NAX tester still found run-to-run variance for restore-at-2K-boundary then ANE-prefill; answers stayed correct. This remains a regression shape worth preserving."
+      ]
+    },
+    {
+      "id": "F5",
+      "topic": "hardware_adaptive_splits_m1_m2",
+      "status": "community measurements; within-run ratios only",
+      "finding": "A universal split is contradicted by M1/M2 results. The same tuner and model produced different winners by part and topology.",
+      "sources": [
+        "https://github.com/jundot/omlx/pull/2892#issuecomment-5356367151",
+        "https://github.com/jundot/omlx/pull/2935#issuecomment-5358349154",
+        "https://github.com/jundot/omlx/pull/3298#issuecomment-5476466661",
+        "https://github.com/jundot/omlx/pull/3298#issuecomment-5465017653"
+      ],
+      "measurements": [
+        {
+          "source_commit": "838a2e1fe1fa7f936b34c0994dc399359311cb11",
+          "topology": "pre-fused tuner v2",
+          "rows": [
+            {
+              "hardware": "M1 Ultra 128 GB",
+              "gpu_pp": 145.75,
+              "best_pp": 137.15,
+              "verdict": "disabled",
+              "delta_percent": -5.9
+            },
+            {
+              "hardware": "M1 Max 64 GB",
+              "gpu_pp": 96.5,
+              "best_pp": 110.7,
+              "verdict": "enabled mlp0.6 gdn0.6",
+              "delta_percent": 14.7
+            },
+            {
+              "hardware": "M2 Max 96 GB",
+              "gpu_pp": 51.6,
+              "best_pp": 72.3,
+              "verdict": "enabled mlp0.4 gdn0.6",
+              "delta_percent": 40.1
+            }
+          ],
+          "caveat": "Reporter says cross-part absolute PP is not comparable because residency and thermal state differed; within-part ratios are the signal."
+        },
+        {
+          "source_commit": "3b4bb6e396ee9be508b74855e7e4d150c5425f76",
+          "topology": "pre-rebase fused path",
+          "rows": [
+            {
+              "hardware": "M1 Ultra 128 GB",
+              "gpu_pp": 150,
+              "best_pp": 202.3,
+              "delta_percent": 34.9
+            },
+            {
+              "hardware": "M1 Max 64 GB",
+              "gpu_pp": 101.1,
+              "best_pp": 149,
+              "delta_percent": 47.4
+            },
+            {
+              "hardware": "M2 Max 96 GB",
+              "gpu_pp": 105.25,
+              "best_pp": 154.4,
+              "delta_percent": 46.7
+            }
+          ],
+          "caveat": "Pre-rebase branch results; M2 baseline changed after memory-guard adjustment."
+        },
+        {
+          "source_commit": "3d3786815162fa6916337793fedbcd1c73a42329",
+          "topology": "closed Qwen4 experimental PR",
+          "rows": [
+            {
+              "hardware": "M1 Ultra 128 GB",
+              "result": "Full-model ANE prefill was 0.83x GPU-only for a 2,259-token prompt; q6 GDN microbench up to 1.492x but q8 shared expert 0.533–0.791x."
+            },
+            {
+              "hardware": "M2 Ultra 128 GB",
+              "result": "Full-model tuner median 457.4→472.5 tok/s (+3.30%); repeated run +3.37%; q4/q5/q6 GDN microbench 1.3562–1.4735x and q8 shared expert 1.0968–1.2513x."
+            }
+          ],
+          "caveat": "PR #3298 was closed unmerged as superseded."
+        }
+      ]
+    },
+    {
+      "id": "F6",
+      "topic": "memory_accounting_not_sram",
+      "status": "merged fixes plus one open draft",
+      "finding": "No searched oMLX issue or PR mentions SRAM. The actionable evidence concerns resident compiled banks, FP16 IOSurfaces, Metal headroom, and kernel neural-ledger memory; do not relabel these as SRAM.",
+      "sources": [
+        "https://github.com/jundot/omlx/issues/2841",
+        "https://github.com/jundot/omlx/pull/2933",
+        "https://github.com/jundot/omlx/pull/3103",
+        "https://github.com/jundot/omlx/pull/3364",
+        "https://github.com/jundot/omlx/pull/3425"
+      ],
+      "details": [
+        "#2933 reserves per-slice FP16 input/output IOSurfaces as (input_dim + ane_output) * sequence_length * 2, doubled for dual-ANE slices, and explicitly calls this a floor because merge scratch is omitted.",
+        "#3364 finds the VLM scheduler snapshots this reserve before ANE bank compilation and adds an after-compile refresh.",
+        "#3103 measured about 13 GB of mapped bank blobs for a 27B mlp0.35/gdn0.45 configuration and adds bank shedding under recurring prefill pressure.",
+        "#3425 is open/draft. It claims a default Qwen3.8-27B compiled bank size of 7.06 GB and proposes pricing from compiled file size because phys_footprint/MLX accounting cannot see the neural ledger."
+      ]
+    },
+    {
+      "id": "F7",
+      "topic": "compile_memory_and_cache",
+      "status": "merged fixes",
+      "finding": "Compilation must be incremental, bounded, cache-keyed by environment, and able to fail open. Blind split retries can stack asynchronous driver cleanup and trigger jetsam.",
+      "sources": [
+        "https://github.com/jundot/omlx/pull/2999",
+        "https://github.com/jundot/omlx/pull/2975",
+        "https://github.com/jundot/omlx/issues/3124"
+      ],
+      "implementation_commits": [
+        "df05710ca79c8223f3bfd1cb4cbb580421298237",
+        "7fb96d3272681fe9e58782b8f0edc6c1d0b1cd36",
+        "0021b81ed9cd1cd092ea1a1064a32edd2fb36edb",
+        "7d77098ed83d7abcafeeaffaa4de1491820021d7"
+      ],
+      "details": [
+        "A maintainer comment reports incremental staging reduced a 27B bank compile spike from 36 GB to 4.7 GB.",
+        "#2999 checks phys_footprint against 70% of total memory before each retry, forces GC, and allows driver cleanup to settle.",
+        "#2975 warm compile-cache hits reduced fresh-process load time by 53–66% on M1 Ultra, M2 Max, and M1 Max, with stable identifiers keyed by OS build, ANE identifier, instance, and MIL.",
+        "#3124 traced macOS 27 Code=10 to setModelURL on _ANEInMemoryModel; commit 7d77098 removed that caller-assigned URL while retaining content-hash reuse."
+      ]
+    },
+    {
+      "id": "F8",
+      "topic": "synchronization_and_failure_contracts",
+      "status": "merged and open fixes",
+      "finding": "ANE/GPU concurrency needs explicit completion ordering, bounded waits, and permanent per-module fallbacks. More asynchrony was not automatically faster.",
+      "sources": [
+        "https://github.com/jundot/omlx/pull/2756",
+        "https://github.com/jundot/omlx/pull/3002",
+        "https://github.com/jundot/omlx/pull/3105",
+        "https://github.com/jundot/omlx/pull/3123",
+        "https://github.com/jundot/omlx/pull/3133"
+      ],
+      "details": [
+        "#2756 reports Metal-callback ANE submission increased a representative layer from about 47.5 ms to 71 ms; the blocking input-pack wait was retained.",
+        "Commit b9d3a191 waits for the GPU suffix before hybrid merge.",
+        "#3002 bounds every ANE evaluation wait and latches timed-out programs.",
+        "#3105 rolls single/dual dispatch back on mid-flight exceptions.",
+        "#3123 routes full tiles to GPU when active Metal memory exceeds 85% of effective wired cap and fixes missing latch checks."
+      ]
+    },
+    {
+      "id": "F9",
+      "topic": "batching_and_concurrent_prefill",
+      "status": "measured issue evidence; unresolved scheduler gap",
+      "finding": "ANE can mitigate GPU contention but does not solve continuous-batching fairness. Shadow prefill competes with active decode unless admission and fair-share policy are explicit.",
+      "sources": [
+        "https://github.com/jundot/omlx/issues/2795#issuecomment-5324671572",
+        "https://github.com/jundot/omlx/issues/3209",
+        "https://github.com/jundot/omlx/issues/1107"
+      ],
+      "details": [
+        "#2795 reports batch 1/2/4/8 decode throughput 42.3/43.0/89.7/157.1 tok/s with ANE on, while prefill throughput fell 212.4→131.2 tok/s.",
+        "#3209 reports a short request retaining only 13–24% of solo decode throughput during a concurrent 60K prefill on M3 Ultra. ANE improved the contended Qwen decoder from 8.9 to 14.7 tok/s, but retention remained 23.4%.",
+        "#1107 has no scheduler implementation or measurement, so it does not establish that background warmup is free."
+      ]
+    },
+    {
+      "id": "F10",
+      "topic": "unsupported_models_shapes_and_tiles",
+      "status": "mixed open and merged",
+      "finding": "Eligibility must encode architecture, dtype, group size, rank, dimensions, tile, scheduler width, OS/runtime ABI, and instance count. Unsupported work must fall back with a named reason.",
+      "sources": [
+        "https://github.com/jundot/omlx/issues/2816",
+        "https://github.com/jundot/omlx/issues/3116",
+        "https://github.com/jundot/omlx/pull/3156",
+        "https://github.com/jundot/omlx/pull/3298",
+        "https://github.com/jundot/omlx/pull/3434"
+      ],
+      "details": [
+        "Dense Qwen MLP was the initial target. Routed MoE rank-3 experts remain GPU-side; #3156 is open and proposes refusing ANE prefill for MoE models.",
+        "#3116 shows a tuner selecting fused_down on single-ANE gs64 although the path required dual ANE plus dense Q4 gs128.",
+        "#3434 reports NAX variant 6 wrong by max absolute error 5–8 at all tested q4/q8 gs64/gs128 shapes; the open PR removes it and keeps variant 0 default.",
+        "#3298 limited experimental Qwen4 to stable dense shared-expert and GDN input projections, excluded routed experts and MTP-only layers, and was later closed as superseded."
+      ]
+    },
+    {
+      "id": "F11",
+      "topic": "dependencies_and_packaging",
+      "status": "documented field failures",
+      "finding": "oMLX ANE support is not just a compiler artifact: it depends on private AppleNeuralEngine runtime symbols, native custom kernels, Metal toolchain output, matching nanobind/MLX ABI, and correct wheel installation.",
+      "sources": [
+        "https://github.com/jundot/omlx/issues/2927",
+        "https://github.com/jundot/omlx/issues/3044",
+        "https://github.com/jundot/omlx/issues/3217",
+        "https://github.com/jundot/omlx/pull/2892#issuecomment-5348793788"
+      ],
+      "details": [
+        "OMLX_WITH_CUSTOM_KERNEL=1 source builds need the separately downloadable Xcode Metal toolchain component.",
+        "A reported nanobind 2.15.0 build imported as ABI-incompatible with MLX; pinned nanobind 2.13.0 worked in that environment.",
+        "uv wheel-cache reuse can install a kernel-less wheel after successfully compiling extensions; --no-cache fixed the reported case.",
+        "M2 Ultra #3044 had the private runtime probe unavailable; #3067 changed tuner behavior to a completed GPU-only result instead of unloading the model."
+      ]
+    },
+    {
+      "id": "F12",
+      "topic": "observability",
+      "status": "merged partial resolution",
+      "finding": "Compilation success, dispatch execution, and hardware availability are different states and must be reported separately. A configured flag is not proof that ANE executed.",
+      "sources": [
+        "https://github.com/jundot/omlx/issues/2824",
+        "https://github.com/jundot/omlx/issues/2828",
+        "https://github.com/jundot/omlx/pull/2829",
+        "https://github.com/jundot/omlx/pull/2904"
+      ],
+      "details": [
+        "#2829 rejects tuner rankings when no ANE operation was observed.",
+        "#2904 adds attempted/configured/layer/program counters and warnings.",
+        "The API needs engine-specific model lookup and a field whose name distinguishes patch importability from hardware/runtime availability."
+      ]
+    }
+  ],
+  "implementable_opportunities": [
+    {
+      "id": "O1",
+      "priority": "P0",
+      "name": "Generalize H13 from matvec to fixed-row FP16 linear tiles",
+      "why": "The local H13 compiler at 28129e4 accepts only fp16 x[1,K], K=256 or 512, constant weights producing [1,512]. oMLX evidence says useful prefill begins with exact fixed-row projection tiles and wider-input tiling.",
+      "minimum_change": [
+        "Keep N=512 and K in {256,512} for the first hardware-qualified step.",
+        "Add compile-time M>1 input/output layouts and encode repeated fixed-row work without adding dynamic shapes.",
+        "Name unsupported M/alignment/dtype errors; do not silently lower to a different shape."
+      ],
+      "acceptance_proof": [
+        "On H13 hardware, compare M-row output against CPU fp16 reference over valid finite inputs.",
+        "Verify M=tile, 2*tile, and tile+tail dispatch; the compiler artifact itself remains exact-shape.",
+        "Record task/constants/allocation bytes and actual ANE execution, not only successful package creation."
+      ],
+      "evidence": [
+        "plugins/H13/ANEH13Compiler.mm:108-135",
+        "https://github.com/jundot/omlx/pull/2890",
+        "https://github.com/jundot/omlx/pull/2966"
+      ]
+    },
+    {
+      "id": "O2",
+      "priority": "P0",
+      "name": "Make eligibility and execution provenance first-class manifest data",
+      "why": "#2824 and #2828 show that configuration, compilation, and execution can disagree silently.",
+      "minimum_change": [
+        "Extend the H13 manifest with requested_shape, compiled_shape, dtype, operation, eligible boolean, and a stable named ineligibility reason.",
+        "At runtime expose attempted, compiled, executed, fallback_reason, and observed operation counts.",
+        "Keep compile errors named; never map runtime unavailable, missing extension, unsupported shape, and zero execution to one message."
+      ],
+      "acceptance_proof": [
+        "A supported matvec reports compiled and executed.",
+        "Each unsupported dtype/shape/transpose reports its distinct existing or new error contract.",
+        "A deliberately unavailable runtime reports fallback without claiming execution."
+      ],
+      "evidence": [
+        "https://github.com/jundot/omlx/issues/2824",
+        "https://github.com/jundot/omlx/pull/2904",
+        "https://github.com/jundot/omlx/pull/2829"
+      ]
+    },
+    {
+      "id": "O3",
+      "priority": "P0",
+      "name": "Emit exact persistent and transient memory metadata",
+      "why": "The H13 package already knows task bytes, constant bytes, tensor allocation bytes, and shapes. oMLX repeatedly failed when bank and IOSurface costs were absent or snapshotted before compile.",
+      "minimum_change": [
+        "Add per-program constant/task bytes and input/output allocation totals to a stable accounting block.",
+        "For a runtime bank, sum compiled artifacts separately from per-request input/output surfaces and temporary merge buffers.",
+        "Refresh the live reservation after compile and clear it when programs are released."
+      ],
+      "acceptance_proof": [
+        "Manifest totals equal emitted file sections and TensorLayout allocationBytes.",
+        "A multi-program aggregate equals the sum of its members without double counting shared constants.",
+        "After release, runtime reservation returns to zero and provenance records the release."
+      ],
+      "evidence": [
+        "plugins/H13/H13Program.h:10-27",
+        "plugins/H13/ANEH13Compiler.mm:144-152",
+        "https://github.com/jundot/omlx/pull/2933",
+        "https://github.com/jundot/omlx/pull/3364",
+        "https://github.com/jundot/omlx/pull/3425"
+      ]
+    },
+    {
+      "id": "O4",
+      "priority": "P1",
+      "name": "Add procedure-bank packaging before full Qwen graph lowering",
+      "why": "oMLX needed 112 layer-specific procedures but only two resident program handles; the local H13 package currently emits exactly one operation/program.",
+      "minimum_change": [
+        "Define a package index that contains multiple independently addressable H13 programs and layer-specific constants.",
+        "Do not add multi-operation fusion yet; preserve one qualified operation per procedure.",
+        "Hash target generation, program bytes, constants, shape, and instance affinity for stable cache identity."
+      ],
+      "acceptance_proof": [
+        "Load and execute at least two procedures with different constants from one package.",
+        "Prove unload releases every program and a warm reload reuses only an exact hash match.",
+        "Reject an OS/target/shape hash mismatch rather than using a stale compiled artifact."
+      ],
+      "evidence": [
+        "plugins/H13/ANEH13Compiler.mm:73-85",
+        "https://github.com/jundot/omlx/pull/2756",
+        "https://github.com/jundot/omlx/pull/2975"
+      ]
+    },
+    {
+      "id": "O5",
+      "priority": "P1",
+      "name": "Implement local activation-tail padding as a runtime transform",
+      "why": "It recovers near-full residual tiles without pretending the compiler supports dynamic shapes or adding learned padding tokens.",
+      "minimum_change": [
+        "Zero-pad only the MLP/linear activation to the compiled row count.",
+        "Slice outputs back before KV, RoPE, recurrence, or any stateful operation.",
+        "Persist a calibrated minimum tail row threshold; below it use GPU/CPU fallback."
+      ],
+      "acceptance_proof": [
+        "Real rows match unpadded execution within the chosen FP16 tolerance.",
+        "Rows added for padding never reach downstream state.",
+        "Threshold boundary selects fallback at threshold-1 and ANE at threshold."
+      ],
+      "evidence": [
+        "https://github.com/jundot/omlx/pull/2965",
+        "https://github.com/jundot/omlx/pull/2966"
+      ]
+    },
+    {
+      "id": "O6",
+      "priority": "P1",
+      "name": "Build a bounded compile and cache lifecycle",
+      "why": "Source-native compilation is only useful in serving if failed retries cannot exhaust memory and valid artifacts can be reused safely.",
+      "minimum_change": [
+        "Stage and release one weight slice at a time.",
+        "Before retries, measure the ledger that governs process termination; bound retries and settle asynchronous teardown.",
+        "Cache by exact target/OS/compiler/program/constant/shape identity with bounded locking and fail-open temporary compilation."
+      ],
+      "acceptance_proof": [
+        "Injected compile failure cannot produce an unbounded retry or leave a live program.",
+        "Two concurrent compiles of one key yield one writer and one bounded waiter.",
+        "A bad cache hit is purged once, recompiled once, and either executes or returns a named failure."
+      ],
+      "evidence": [
+        "https://github.com/jundot/omlx/commit/df05710ca79c8223f3bfd1cb4cbb580421298237",
+        "https://github.com/jundot/omlx/pull/2999",
+        "https://github.com/jundot/omlx/pull/2975",
+        "https://github.com/jundot/omlx/issues/3124"
+      ]
+    },
+    {
+      "id": "O7",
+      "priority": "P2",
+      "name": "Add INT8 lowering only after fixed-row FP16 is hardware-qualified",
+      "why": "oMLX gains come from per-output-channel INT8 ANE weights, but long-context and recurrent-state reports show that local parity is insufficient.",
+      "minimum_change": [
+        "Start with affine per-output-channel INT8 constants for stateless dense linear only.",
+        "Keep recurrent qkv, attention state, and dynamic MoE routing outside the approximate path.",
+        "Preserve original FP16/quantized weights for exact fallback."
+      ],
+      "acceptance_proof": [
+        "Finite-value range checks before conversion; reject NaN/Inf and FP16 overflow.",
+        "Layer output, final logits, top token, and long-context task probes against FP16 baseline.",
+        "Include prefix-restore-at-tile-boundary then re-prefill, with MTP/speculation disabled for determinism."
+      ],
+      "evidence": [
+        "https://github.com/jundot/omlx/pull/2756",
+        "https://github.com/jundot/omlx/pull/3133",
+        "https://github.com/jundot/omlx/issues/3069",
+        "https://github.com/Anemll/Anemll#fp16-compatibility-for-ane"
+      ]
+    },
+    {
+      "id": "O8",
+      "priority": "P2",
+      "name": "Lower fused gated MLP by hidden-channel partition",
+      "why": "#2935 shows the mathematically sound fused topology: each ANE/GPU/CPU branch computes gate, up, SwiGLU, and the matching down-weight columns, then full-width partial outputs are summed.",
+      "minimum_change": [
+        "Require multi-operation H13 scheduling and qualified SwiGLU before attempting this.",
+        "Partition hidden channels, never final output rows.",
+        "Gate on exact dtype, group size, dimensions, instance count, and tile availability; fall back per projection."
+      ],
+      "acceptance_proof": [
+        "Full-width sum matches unfused FP16 reference within tolerance and contains no NaN/Inf.",
+        "Single and dual-instance paths are separately qualified.",
+        "Full-model or representative multi-layer benchmark must beat unfused execution on the target; do not hardcode a split from another SoC."
+      ],
+      "evidence": [
+        "https://github.com/jundot/omlx/pull/2935"
+      ]
+    },
+    {
+      "id": "O9",
+      "priority": "P2",
+      "name": "Prototype same-model shadow prefill with strict admission",
+      "why": "#1107 identifies a real agentic latency pattern, but #3209 shows background prefill can destroy active decode fairness.",
+      "minimum_change": [
+        "Limit the first prototype to the same model, tokenizer, weights, cache format, and exact prompt prefix.",
+        "Use idle-only admission with a cancellable queue and a hard memory reservation.",
+        "Do not claim cross-model KV interoperability; keep warmed caches isolated by model identity and compiler/program hash."
+      ],
+      "acceptance_proof": [
+        "Active decode throughput and latency stay within an explicit measured budget during background work.",
+        "Cancellation releases buffers/program references and cannot leave a worker spinning.",
+        "A cache is consumed only by the exact compatible model/program identity."
+      ],
+      "evidence": [
+        "https://github.com/jundot/omlx/issues/1107",
+        "https://github.com/jundot/omlx/issues/3209",
+        "https://github.com/jundot/omlx/issues/3025"
+      ]
+    }
+  ],
+  "implementation_commit_trace": [
+    {
+      "sha": "edb729007ed95920f4d61266af976a556d8b27c5",
+      "url": "https://github.com/jundot/omlx/commit/edb729007ed95920f4d61266af976a556d8b27c5",
+      "subject": "Added Qwen3.5 architecture ANE Kernel, benchmark options, and model settings.",
+      "authored_at": "2026-08-17T15:10:03Z",
+      "committed_at": "2026-08-17T15:10:03Z",
+      "files_changed": 39
+    },
+    {
+      "sha": "39baf93c3976a5513096dc57406574333d0e3b76",
+      "url": "https://github.com/jundot/omlx/commit/39baf93c3976a5513096dc57406574333d0e3b76",
+      "subject": "feat(qwen35): enable affine q6 and q8 ANE prefill",
+      "authored_at": "2026-08-19T02:01:21Z",
+      "committed_at": "2026-08-19T02:01:21Z",
+      "files_changed": 9
+    },
+    {
+      "sha": "fc6807c477d4d1b5be251e176da13b4a7bab8dc6",
+      "url": "https://github.com/jundot/omlx/commit/fc6807c477d4d1b5be251e176da13b4a7bab8dc6",
+      "subject": "Add Q5 ANE prefill support",
+      "authored_at": "2026-08-19T15:42:14Z",
+      "committed_at": "2026-08-19T16:08:37Z",
+      "files_changed": 3
+    },
+    {
+      "sha": "d75d9995897645fbe35c7fb8e3b2bc0b095904e3",
+      "url": "https://github.com/jundot/omlx/commit/d75d9995897645fbe35c7fb8e3b2bc0b095904e3",
+      "subject": "Support wide prefill blocks with internal ANE tiling",
+      "authored_at": "2026-08-19T15:43:19Z",
+      "committed_at": "2026-08-19T16:09:15Z",
+      "files_changed": 17
+    },
+    {
+      "sha": "d89dff5d9249183c4110d576feff8074c372e2b6",
+      "url": "https://github.com/jundot/omlx/commit/d89dff5d9249183c4110d576feff8074c372e2b6",
+      "subject": "Add CPU sharing for Qwen MLP and GDN prefill",
+      "authored_at": "2026-08-19T15:57:50Z",
+      "committed_at": "2026-08-19T17:04:50Z",
+      "files_changed": 39
+    },
+    {
+      "sha": "ca764d2ed5fd3c52da8344044e352cc19fa3a5af",
+      "url": "https://github.com/jundot/omlx/commit/ca764d2ed5fd3c52da8344044e352cc19fa3a5af",
+      "subject": "Added ANE down projection, migrated to a fused approach which yields more stable and slightly higher results, revamped tuner to support new fused approach & tune worker threads",
+      "authored_at": "2026-08-20T11:45:43Z",
+      "committed_at": "2026-08-20T11:45:43Z",
+      "files_changed": 25
+    },
+    {
+      "sha": "740e6d379ee17441d28cc0125fd5c32e71be94c3",
+      "url": "https://github.com/jundot/omlx/commit/740e6d379ee17441d28cc0125fd5c32e71be94c3",
+      "subject": "Added tail padding",
+      "authored_at": "2026-08-20T19:16:52Z",
+      "committed_at": "2026-08-21T07:23:32Z",
+      "files_changed": 32
+    },
+    {
+      "sha": "0021b81ed9cd1cd092ea1a1064a32edd2fb36edb",
+      "url": "https://github.com/jundot/omlx/commit/0021b81ed9cd1cd092ea1a1064a32edd2fb36edb",
+      "subject": "perf(ane): reuse compiled Qwen programs across loads",
+      "authored_at": "2026-08-21T03:21:33Z",
+      "committed_at": "2026-08-24T13:47:13Z",
+      "files_changed": 2
+    },
+    {
+      "sha": "6c37c0df84425f97aecae791dcfa0d1255be9492",
+      "url": "https://github.com/jundot/omlx/commit/6c37c0df84425f97aecae791dcfa0d1255be9492",
+      "subject": "feat(ane): surface Qwen ANE prefill no-ops in logs and /api/status",
+      "authored_at": "2026-08-19T21:06:28Z",
+      "committed_at": "2026-08-19T21:06:28Z",
+      "files_changed": 3
+    },
+    {
+      "sha": "170dfc36c27a55db92abaa4aa3c0214ee4277d2c",
+      "url": "https://github.com/jundot/omlx/commit/170dfc36c27a55db92abaa4aa3c0214ee4277d2c",
+      "subject": "fix(memory): shed ANE prefill banks under recurring prefill-headroom pressure",
+      "authored_at": "2026-08-24T11:19:41Z",
+      "committed_at": "2026-08-24T11:19:41Z",
+      "files_changed": 6
+    },
+    {
+      "sha": "4c8e43a5b44f2aa877f728315d82188c39454fcf",
+      "url": "https://github.com/jundot/omlx/commit/4c8e43a5b44f2aa877f728315d82188c39454fcf",
+      "subject": "fix(ane): preserve GDN quality with recurrent-safe prefill offload",
+      "authored_at": "2026-08-25T09:35:25Z",
+      "committed_at": "2026-08-25T09:35:25Z",
+      "files_changed": 6
+    },
+    {
+      "sha": "b9d3a191141e1281ede7ba6defc264825c2b682c",
+      "url": "https://github.com/jundot/omlx/commit/b9d3a191141e1281ede7ba6defc264825c2b682c",
+      "subject": "fix(ane): wait for GPU suffix before hybrid merge",
+      "authored_at": "2026-08-25T23:07:52Z",
+      "committed_at": "2026-08-25T23:07:52Z",
+      "files_changed": 2
+    },
+    {
+      "sha": "c0503a9e9a197410f98ee9f24bfc97c3f7b70c3e",
+      "url": "https://github.com/jundot/omlx/commit/c0503a9e9a197410f98ee9f24bfc97c3f7b70c3e",
+      "subject": "fix(ane): schedule tiled GDN projections together (#3117)",
+      "authored_at": "2026-08-26T04:12:50Z",
+      "committed_at": "2026-08-26T04:12:50Z",
+      "files_changed": 2
+    },
+    {
+      "sha": "5f02cb9dafbc1a1fab022978ee211abca58a9062",
+      "url": "https://github.com/jundot/omlx/commit/5f02cb9dafbc1a1fab022978ee211abca58a9062",
+      "subject": "fix(memory): refresh ANE prefill transient reserve after bank compile",
+      "authored_at": "2026-09-01T23:17:13Z",
+      "committed_at": "2026-09-01T23:46:24Z",
+      "files_changed": 4
+    },
+    {
+      "sha": "61e273a9e115a4a4b6cdfa6985e51106c39e0d65",
+      "url": "https://github.com/jundot/omlx/commit/61e273a9e115a4a4b6cdfa6985e51106c39e0d65",
+      "subject": "feat(ane): price prefill banks at admission from the compiled size",
+      "authored_at": "2026-09-04T01:05:42Z",
+      "committed_at": "2026-09-04T02:56:31Z",
+      "files_changed": 7
+    },
+    {
+      "sha": "7d77098ed83d7abcafeeaffaa4de1491820021d7",
+      "url": "https://github.com/jundot/omlx/commit/7d77098ed83d7abcafeeaffaa4de1491820021d7",
+      "subject": "fix: restore ANE compile cache compatibility (#3124)",
+      "authored_at": "2026-08-27T08:11:07Z",
+      "committed_at": "2026-08-27T08:11:07Z",
+      "files_changed": 2
+    },
+    {
+      "sha": "dcb317fe35c1352aec4ea75b4b9b9a7538b8f7c1",
+      "url": "https://github.com/jundot/omlx/commit/dcb317fe35c1352aec4ea75b4b9b9a7538b8f7c1",
+      "subject": "fix: reserve ANE prefill I/O surfaces in admission",
+      "authored_at": "2026-08-20T14:09:58Z",
+      "committed_at": "2026-08-20T14:09:58Z",
+      "files_changed": 5
+    },
+    {
+      "sha": "df05710ca79c8223f3bfd1cb4cbb580421298237",
+      "url": "https://github.com/jundot/omlx/commit/df05710ca79c8223f3bfd1cb4cbb580421298237",
+      "subject": "perf: stage ANE bank weights incrementally at compile (#2781)",
+      "authored_at": "2026-08-20T14:41:19Z",
+      "committed_at": "2026-08-20T14:42:30Z",
+      "files_changed": 6
+    },
+    {
+      "sha": "2a7bac99831bbcab9f95438b4619ed417db00867",
+      "url": "https://github.com/jundot/omlx/commit/2a7bac99831bbcab9f95438b4619ed417db00867",
+      "subject": "fix: harden ANE tuner staging, GDN floor, and memory release",
+      "authored_at": "2026-08-20T14:09:58Z",
+      "committed_at": "2026-08-20T14:09:58Z",
+      "files_changed": 2
+    },
+    {
+      "sha": "7fb96d3272681fe9e58782b8f0edc6c1d0b1cd36",
+      "url": "https://github.com/jundot/omlx/commit/7fb96d3272681fe9e58782b8f0edc6c1d0b1cd36",
+      "subject": "fix(ane): circuit-break the procedure bank compile retry ladder before it OOMs",
+      "authored_at": "2026-08-21T13:48:54Z",
+      "committed_at": "2026-08-21T13:48:54Z",
+      "files_changed": 2
+    }
+  ],
+  "direct_source_index": [
+    {
+      "number": 52,
+      "type": "issue",
+      "title": "Neural engine support?",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/52",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 1107,
+      "type": "issue",
+      "title": "[Feature Request] Heterogeneous “Shadow Prefill” / Background KV Warmup Using ANE + GPU Cooperative Execution",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/1107",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 1531,
+      "type": "issue",
+      "title": "feature request: add apple neural engine (ane) + macos shortcuts to omlx as button to extract text and paste into chat",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/1531",
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2667,
+      "type": "pull_request",
+      "title": "feat(i18n): complete zh/zh-TW for 0.6.2, localize cluster dashboard and GDN/Qwen ANE settings, add parity test",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/2667",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "2a640244ff3a1ddaf490b676972525f507dc6a20",
+          "url": "https://github.com/jundot/omlx/commit/2a640244ff3a1ddaf490b676972525f507dc6a20",
+          "subject": "feat(i18n): complete zh/zh-TW for 0.6.2, localize cluster dashboard a…"
+        },
+        {
+          "sha": "3407f580bcbd12841432aa86ab785dca68198b50",
+          "url": "https://github.com/jundot/omlx/commit/3407f580bcbd12841432aa86ab785dca68198b50",
+          "subject": "Merge commit '2a640244' into rebuild/i18n"
+        },
+        {
+          "sha": "a33604c259b9b61df718e06915c592113a5bb662",
+          "url": "https://github.com/jundot/omlx/commit/a33604c259b9b61df718e06915c592113a5bb662",
+          "subject": "fix(i18n): align GDN precision and DFlash2 text with latest main"
+        },
+        {
+          "sha": "1bd854bf0524df766b00991dab32d711a2b0251a",
+          "url": "https://github.com/jundot/omlx/commit/1bd854bf0524df766b00991dab32d711a2b0251a",
+          "subject": "Merge remote-tracking branch 'origin/main' into HEAD"
+        }
+      ]
+    },
+    {
+      "number": 2756,
+      "type": "pull_request",
+      "title": "feat(qwen3.5): add experimental dual-ANE/GPU prompt processing",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2756",
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-17T16:51:58Z",
+      "merge_commit": {
+        "sha": "fbb98dc2e95988cd69e4a892d799e880aab1e78a",
+        "url": "https://github.com/jundot/omlx/commit/fbb98dc2e95988cd69e4a892d799e880aab1e78a"
+      },
+      "implementation_commits": [
+        {
+          "sha": "edb729007ed95920f4d61266af976a556d8b27c5",
+          "url": "https://github.com/jundot/omlx/commit/edb729007ed95920f4d61266af976a556d8b27c5",
+          "subject": "Added Qwen3.5 architecture ANE Kernel, benchmark options, and model s…"
+        }
+      ]
+    },
+    {
+      "number": 2760,
+      "type": "pull_request",
+      "title": "feat(qwen3.5): extend ANE prefill to oQ4e and harden runtime",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2760",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-17T17:53:25Z",
+      "merge_commit": {
+        "sha": "b2873ed601deeabd4ef3ddb73411ed3f289b51f2",
+        "url": "https://github.com/jundot/omlx/commit/b2873ed601deeabd4ef3ddb73411ed3f289b51f2"
+      },
+      "implementation_commits": [
+        {
+          "sha": "225477e87bac14c34c6fddff62f965ee833eb50f",
+          "url": "https://github.com/jundot/omlx/commit/225477e87bac14c34c6fddff62f965ee833eb50f",
+          "subject": "feat(qwen3.5): extend ANE prefill to oQ4e"
+        },
+        {
+          "sha": "12f2266106a366566ab01bcebce0f08dd3903bd0",
+          "url": "https://github.com/jundot/omlx/commit/12f2266106a366566ab01bcebce0f08dd3903bd0",
+          "subject": "fix(qwen3.5): align ANE prefill scheduler shape"
+        }
+      ]
+    },
+    {
+      "number": 2779,
+      "type": "issue",
+      "title": "ANE prefill regresses on M5 (NAX) hardware; qwen35_ane_prefill doesn't consult is_nax_available()",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2779",
+      "discussion_comments": 13,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2781,
+      "type": "issue",
+      "title": "Qwen ANE Prompt Processing on M3 Max: 16K +13%, 32K +57% prefill — plus GDN/packed-bank caveats",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2781",
+      "discussion_comments": 44,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2795,
+      "type": "issue",
+      "title": "Benchmark: Full context ladder — oMLX (oQ4e/oQ6e/oQ8e, MTP+ANE) vs MTPLX (Speed/Quality) on M3 Max 128GB",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2795",
+      "discussion_comments": 6,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2803,
+      "type": "pull_request",
+      "title": "feat(deepseek): experimental hybrid ANE prompt processing",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/2803",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "0b9edfcf0c38f19b63683881975f1e0aeed5f088",
+          "url": "https://github.com/jundot/omlx/commit/0b9edfcf0c38f19b63683881975f1e0aeed5f088",
+          "subject": "feat(deepseek): add experimental hybrid ANE prompt processing"
+        }
+      ]
+    },
+    {
+      "number": 2814,
+      "type": "pull_request",
+      "title": "Added ANE tuning utility. Modified ANE split to support NAX GPUs.",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2814",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-18T15:54:51Z",
+      "merge_commit": {
+        "sha": "db1423dbf85a09f270d5c3a245e1d9ca20ca1235",
+        "url": "https://github.com/jundot/omlx/commit/db1423dbf85a09f270d5c3a245e1d9ca20ca1235"
+      },
+      "implementation_commits": [
+        {
+          "sha": "ed194384afa365aa0f547e8d5d53948340d84e66",
+          "url": "https://github.com/jundot/omlx/commit/ed194384afa365aa0f547e8d5d53948340d84e66",
+          "subject": "Added ANE tuning utility. Modified ANE split to support NAX GPUs."
+        },
+        {
+          "sha": "06f6376f2938e21ee8c8d6ac41799f4d3ba86384",
+          "url": "https://github.com/jundot/omlx/commit/06f6376f2938e21ee8c8d6ac41799f4d3ba86384",
+          "subject": "Added tuner to web interface and clarified some messaging around opti…"
+        }
+      ]
+    },
+    {
+      "number": 2816,
+      "type": "issue",
+      "title": "Error when using Tune ANE Split on M5 Max - v0.6.2: The ANE candidate loaded, but no eligible Qwen MLP/GDN layers were compiled.",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2816",
+      "discussion_comments": 12,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2824,
+      "type": "issue",
+      "title": "qwen35_ane_prefill_enabled is a silent no-op on non-4bit checkpoints: no warning, no status field, only a load-time delta reveals it",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2824",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2826,
+      "type": "pull_request",
+      "title": "fix(qwen35) ANE tuner early exit results, q6/q8 support, GDN activation path fix",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/2826",
+      "discussion_comments": 6,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "08d4f483b2cdb001f9efe6ca91d2867c5f0f1aff",
+          "url": "https://github.com/jundot/omlx/commit/08d4f483b2cdb001f9efe6ca91d2867c5f0f1aff",
+          "subject": "Added results when tuner exits early"
+        },
+        {
+          "sha": "20cc5cf64e668c0cf365613399d0bb351c1ea9fe",
+          "url": "https://github.com/jundot/omlx/commit/20cc5cf64e668c0cf365613399d0bb351c1ea9fe",
+          "subject": "Added support for q6, q8"
+        },
+        {
+          "sha": "c4a487273969d2df916a2d16961767ea4059735e",
+          "url": "https://github.com/jundot/omlx/commit/c4a487273969d2df916a2d16961767ea4059735e",
+          "subject": "Fixed GDN activation path"
+        }
+      ]
+    },
+    {
+      "number": 2828,
+      "type": "issue",
+      "title": "ANE split tuner can publish a ranking from runs where the ANE never executed",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2828",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2829,
+      "type": "pull_request",
+      "title": "fix(ane): reject tuning candidates whose ANE never executed",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2829",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-19T15:55:59Z",
+      "merge_commit": {
+        "sha": "dde94f76f08a05ee90b74dff6b30641a85c72d07",
+        "url": "https://github.com/jundot/omlx/commit/dde94f76f08a05ee90b74dff6b30641a85c72d07"
+      },
+      "implementation_commits": [
+        {
+          "sha": "78a7981c6fc8311703d8472fd607c2c316bc5fc7",
+          "url": "https://github.com/jundot/omlx/commit/78a7981c6fc8311703d8472fd607c2c316bc5fc7",
+          "subject": "fix(ane): reject tuning candidates whose ANE never executed"
+        },
+        {
+          "sha": "36996aad13526914964326bdfbf6006ca1b14669",
+          "url": "https://github.com/jundot/omlx/commit/36996aad13526914964326bdfbf6006ca1b14669",
+          "subject": "fix(ane): name the effective prefill chunk, not just the configured step"
+        }
+      ]
+    },
+    {
+      "number": 2833,
+      "type": "pull_request",
+      "title": "feat(qwen35): enable affine Q6 and Q8 ANE prefill",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2833",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-19T14:55:56Z",
+      "merge_commit": {
+        "sha": "12841f2dcb71987dd59507365ba9dac54c697f87",
+        "url": "https://github.com/jundot/omlx/commit/12841f2dcb71987dd59507365ba9dac54c697f87"
+      },
+      "implementation_commits": [
+        {
+          "sha": "39baf93c3976a5513096dc57406574333d0e3b76",
+          "url": "https://github.com/jundot/omlx/commit/39baf93c3976a5513096dc57406574333d0e3b76",
+          "subject": "feat(qwen35): enable affine q6 and q8 ANE prefill"
+        }
+      ]
+    },
+    {
+      "number": 2839,
+      "type": "issue",
+      "title": "[Bug] ANE prefill not executing on oQ4e-mtp (v0.6.2): configured_layers=0, ANE duty=0, TG drops 57%",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2839",
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2841,
+      "type": "issue",
+      "title": "ANE prefill triggers hard memory-pressure abort + model eviction (Qwen3.8-27B)",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2841",
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2853,
+      "type": "pull_request",
+      "title": "feat(qwen35) Qwen ANE prefill: FP16 CPU AMX work sharing and performance-aware scheduling",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/2853",
+      "discussion_comments": 19,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "4cf5ed85e8cfd3303fda64ba5ba5832b5df5e9f0",
+          "url": "https://github.com/jundot/omlx/commit/4cf5ed85e8cfd3303fda64ba5ba5832b5df5e9f0",
+          "subject": "Added results when tuner exits early"
+        },
+        {
+          "sha": "b5d81bfcf49383ad76a0fafad4894bcd8693a589",
+          "url": "https://github.com/jundot/omlx/commit/b5d81bfcf49383ad76a0fafad4894bcd8693a589",
+          "subject": "Fixed GDN activation path"
+        },
+        {
+          "sha": "f1e229df80b2b867fe94fbe25b7d6ba02f5e64fa",
+          "url": "https://github.com/jundot/omlx/commit/f1e229df80b2b867fe94fbe25b7d6ba02f5e64fa",
+          "subject": "CPU-AMX Sharing"
+        },
+        {
+          "sha": "8d4309eaf520dfed733c5cbb84328014eeaf06a4",
+          "url": "https://github.com/jundot/omlx/commit/8d4309eaf520dfed733c5cbb84328014eeaf06a4",
+          "subject": "Drastically speed up & improve tuner precision"
+        },
+        {
+          "sha": "d997d04d45f721f3d55976bbadb7dfe6b61a02cc",
+          "url": "https://github.com/jundot/omlx/commit/d997d04d45f721f3d55976bbadb7dfe6b61a02cc",
+          "subject": "Improve settings dialogs to allow arbitrary input, as dropdown is no …"
+        },
+        {
+          "sha": "0726c35f773d4313c827b85d6629e913c068b753",
+          "url": "https://github.com/jundot/omlx/commit/0726c35f773d4313c827b85d6629e913c068b753",
+          "subject": "Added support for CPU GDN offload"
+        },
+        {
+          "sha": "b8e4c152f702daa37528aac0b44c5cbc3f7e8faf",
+          "url": "https://github.com/jundot/omlx/commit/b8e4c152f702daa37528aac0b44c5cbc3f7e8faf",
+          "subject": "Tuner overrides"
+        },
+        {
+          "sha": "3e21de46323fed1cb75fdfe6a9ef408c365a57b7",
+          "url": "https://github.com/jundot/omlx/commit/3e21de46323fed1cb75fdfe6a9ef408c365a57b7",
+          "subject": "Q5+ support"
+        },
+        {
+          "sha": "ee55973363c76d323fc09c81aab3953fedbf6d13",
+          "url": "https://github.com/jundot/omlx/commit/ee55973363c76d323fc09c81aab3953fedbf6d13",
+          "subject": "Implemented +1 option to benchmarks. Restored block width to 4096 and…"
+        },
+        {
+          "sha": "907e330ed8b9dc406cbc74f042b64343b6692093",
+          "url": "https://github.com/jundot/omlx/commit/907e330ed8b9dc406cbc74f042b64343b6692093",
+          "subject": "Removed profitability guard and updated instrumentation to accurately…"
+        },
+        {
+          "sha": "f640390fcc378f50786d959dbfb5ecc3bcd784a6",
+          "url": "https://github.com/jundot/omlx/commit/f640390fcc378f50786d959dbfb5ecc3bcd784a6",
+          "subject": "Fix upstream Q6/Q8 rebase integration"
+        }
+      ]
+    },
+    {
+      "number": 2880,
+      "type": "issue",
+      "title": "qwen3_5 4096 prefill floor (#2751) never delivers with prefix caching on; forcing it regresses M5 Pro",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2880",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2889,
+      "type": "pull_request",
+      "title": "Add Q5 ANE prefill support",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2889",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-19T16:13:45Z",
+      "merge_commit": {
+        "sha": "c7ca2c5823ec5cfcbaf63a2bacbc166948f391b6",
+        "url": "https://github.com/jundot/omlx/commit/c7ca2c5823ec5cfcbaf63a2bacbc166948f391b6"
+      },
+      "implementation_commits": [
+        {
+          "sha": "fc6807c477d4d1b5be251e176da13b4a7bab8dc6",
+          "url": "https://github.com/jundot/omlx/commit/fc6807c477d4d1b5be251e176da13b4a7bab8dc6",
+          "subject": "Add Q5 ANE prefill support"
+        }
+      ]
+    },
+    {
+      "number": 2890,
+      "type": "pull_request",
+      "title": "Add wide GPU prefill blocks, internal ANE tiling, and benchmark fidelity and instrumentation",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2890",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-19T16:46:47Z",
+      "merge_commit": {
+        "sha": "1e03b5e696f5a03c8516a5006b79d87fab4a67da",
+        "url": "https://github.com/jundot/omlx/commit/1e03b5e696f5a03c8516a5006b79d87fab4a67da"
+      },
+      "implementation_commits": [
+        {
+          "sha": "fc6807c477d4d1b5be251e176da13b4a7bab8dc6",
+          "url": "https://github.com/jundot/omlx/commit/fc6807c477d4d1b5be251e176da13b4a7bab8dc6",
+          "subject": "Add Q5 ANE prefill support"
+        },
+        {
+          "sha": "d75d9995897645fbe35c7fb8e3b2bc0b095904e3",
+          "url": "https://github.com/jundot/omlx/commit/d75d9995897645fbe35c7fb8e3b2bc0b095904e3",
+          "subject": "Support wide prefill blocks with internal ANE tiling"
+        },
+        {
+          "sha": "ebccd9227b6491513d90e8797fa97321b83f3eaa",
+          "url": "https://github.com/jundot/omlx/commit/ebccd9227b6491513d90e8797fa97321b83f3eaa",
+          "subject": "Fix wide-prefill pipeline regressions"
+        }
+      ]
+    },
+    {
+      "number": 2891,
+      "type": "pull_request",
+      "title": "Qwen35: ANE Tuner V2",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2891",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-19T16:55:36Z",
+      "merge_commit": {
+        "sha": "166c8f4847774a3f4b040a8e42030a96172652de",
+        "url": "https://github.com/jundot/omlx/commit/166c8f4847774a3f4b040a8e42030a96172652de"
+      },
+      "implementation_commits": [
+        {
+          "sha": "fc6807c477d4d1b5be251e176da13b4a7bab8dc6",
+          "url": "https://github.com/jundot/omlx/commit/fc6807c477d4d1b5be251e176da13b4a7bab8dc6",
+          "subject": "Add Q5 ANE prefill support"
+        },
+        {
+          "sha": "d75d9995897645fbe35c7fb8e3b2bc0b095904e3",
+          "url": "https://github.com/jundot/omlx/commit/d75d9995897645fbe35c7fb8e3b2bc0b095904e3",
+          "subject": "Support wide prefill blocks with internal ANE tiling"
+        },
+        {
+          "sha": "ebccd9227b6491513d90e8797fa97321b83f3eaa",
+          "url": "https://github.com/jundot/omlx/commit/ebccd9227b6491513d90e8797fa97321b83f3eaa",
+          "subject": "Fix wide-prefill pipeline regressions"
+        },
+        {
+          "sha": "149f6521395835f3b00e870d328457615d0b10c5",
+          "url": "https://github.com/jundot/omlx/commit/149f6521395835f3b00e870d328457615d0b10c5",
+          "subject": "Add profile-guided ANE split tuner"
+        },
+        {
+          "sha": "544c47ad1da8c72799b3ad9ea5b29beef0a9053f",
+          "url": "https://github.com/jundot/omlx/commit/544c47ad1da8c72799b3ad9ea5b29beef0a9053f",
+          "subject": "Merge branch 'main' into qwen35-ane-tuner-v2"
+        }
+      ]
+    },
+    {
+      "number": 2892,
+      "type": "pull_request",
+      "title": "Qwen35 ANE: CPU Sharing",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2892",
+      "discussion_comments": 19,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-20T12:38:42Z",
+      "merge_commit": {
+        "sha": "3d8e661cd86adf546eafa3f0aa9c21d769dea955",
+        "url": "https://github.com/jundot/omlx/commit/3d8e661cd86adf546eafa3f0aa9c21d769dea955"
+      },
+      "implementation_commits": [
+        {
+          "sha": "d89dff5d9249183c4110d576feff8074c372e2b6",
+          "url": "https://github.com/jundot/omlx/commit/d89dff5d9249183c4110d576feff8074c372e2b6",
+          "subject": "Add CPU sharing for Qwen MLP and GDN prefill"
+        },
+        {
+          "sha": "e961093214ef013e8aca230ab87d218e688e9cde",
+          "url": "https://github.com/jundot/omlx/commit/e961093214ef013e8aca230ab87d218e688e9cde",
+          "subject": "Harden CPU sharing scheduling and memory safety"
+        },
+        {
+          "sha": "0aa6bf18c034a249dbdec73e467751aa692b1863",
+          "url": "https://github.com/jundot/omlx/commit/0aa6bf18c034a249dbdec73e467751aa692b1863",
+          "subject": "Support single ANE mode in tuner"
+        },
+        {
+          "sha": "062ce8660ec4a66e6bc441e038ccd478769d666f",
+          "url": "https://github.com/jundot/omlx/commit/062ce8660ec4a66e6bc441e038ccd478769d666f",
+          "subject": "Support CPU sharing in single ANE mode"
+        },
+        {
+          "sha": "1e5345bf94588012c6c046d4600be5c2421da6cf",
+          "url": "https://github.com/jundot/omlx/commit/1e5345bf94588012c6c046d4600be5c2421da6cf",
+          "subject": "Remove hardcoded 0 in single"
+        },
+        {
+          "sha": "6b6c65f97b24ab183d0950220f9da441bf5dd9e9",
+          "url": "https://github.com/jundot/omlx/commit/6b6c65f97b24ab183d0950220f9da441bf5dd9e9",
+          "subject": "Fix shared-cluster CPU scheduling ABI"
+        },
+        {
+          "sha": "838a2e1fe1fa7f936b34c0994dc399359311cb11",
+          "url": "https://github.com/jundot/omlx/commit/838a2e1fe1fa7f936b34c0994dc399359311cb11",
+          "subject": "Merge main into CPU sharing branch"
+        }
+      ]
+    },
+    {
+      "number": 2897,
+      "type": "pull_request",
+      "title": "feat(ane): warm compiled procedures at load so the first request measures inference",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/2897",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "211657ce44f625decd01a5505974d30e7cb2720d",
+          "url": "https://github.com/jundot/omlx/commit/211657ce44f625decd01a5505974d30e7cb2720d",
+          "subject": "feat(ane): warm compiled procedures at load so the first request meas…"
+        }
+      ]
+    },
+    {
+      "number": 2898,
+      "type": "pull_request",
+      "title": "feat(ane): warm compiled procedures at load so the first request measures inference",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2898",
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-20T12:28:45Z",
+      "merge_commit": {
+        "sha": "740854c1434dcea7c3fa9eaa3a111fe5f209c675",
+        "url": "https://github.com/jundot/omlx/commit/740854c1434dcea7c3fa9eaa3a111fe5f209c675"
+      },
+      "implementation_commits": [
+        {
+          "sha": "abead6ae594432e6040cfa408d8f389297884909",
+          "url": "https://github.com/jundot/omlx/commit/abead6ae594432e6040cfa408d8f389297884909",
+          "subject": "feat(ane): warm compiled procedures at load so the first request meas…"
+        }
+      ]
+    },
+    {
+      "number": 2899,
+      "type": "issue",
+      "title": "ANE tuner v2 can recommend a gdn_fraction below the structural floor, silently compiling 0 GDN procedures",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2899",
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2904,
+      "type": "pull_request",
+      "title": "feat(ane): surface Qwen ANE prefill no-ops in logs and /api/status",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2904",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-20T12:29:37Z",
+      "merge_commit": {
+        "sha": "0e7292889ea41fe4c013a27f7d877c4e65868096",
+        "url": "https://github.com/jundot/omlx/commit/0e7292889ea41fe4c013a27f7d877c4e65868096"
+      },
+      "implementation_commits": [
+        {
+          "sha": "6c37c0df84425f97aecae791dcfa0d1255be9492",
+          "url": "https://github.com/jundot/omlx/commit/6c37c0df84425f97aecae791dcfa0d1255be9492",
+          "subject": "feat(ane): surface Qwen ANE prefill no-ops in logs and /api/status"
+        }
+      ]
+    },
+    {
+      "number": 2905,
+      "type": "pull_request",
+      "title": "feat(ane): guard the GDN prefill fraction floor and stop silent 0-GDN",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/2905",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "b05687db33e87994f340ac8b16474071992e28f5",
+          "url": "https://github.com/jundot/omlx/commit/b05687db33e87994f340ac8b16474071992e28f5",
+          "subject": "feat(ane): guard the GDN prefill fraction floor and stop silent 0-GDN"
+        }
+      ]
+    },
+    {
+      "number": 2908,
+      "type": "issue",
+      "title": "[Bug] ANE Tuner V2 (v0.6.3rc1) OOMs at Step 11/13 (_VERIFY_SLOT): calibration program banks and base engine retained during verification reload",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2908",
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2914,
+      "type": "issue",
+      "title": "[0.6.3rc1] ANE Tuner crashes: \"Loaded engine does not expose its model\" when the model is loaded via the DFlash engine",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2914",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2927,
+      "type": "issue",
+      "title": "OMLX_WITH_CUSTOM_KERNEL=1: extensions compile but are not installed (wheel-cache hit); surfaces as 'Private ANE runtime unavailable'",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2927",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2932,
+      "type": "pull_request",
+      "title": "[fix] Preserve profile while changing Qwen ANE settings",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2932",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-20T12:30:41Z",
+      "merge_commit": {
+        "sha": "be5aaf5513c320fdfbf868b0802d953cc74596ed",
+        "url": "https://github.com/jundot/omlx/commit/be5aaf5513c320fdfbf868b0802d953cc74596ed"
+      },
+      "implementation_commits": [
+        {
+          "sha": "44b5e7770853a4decbbf90ccecf90f9159f5fee8",
+          "url": "https://github.com/jundot/omlx/commit/44b5e7770853a4decbbf90ccecf90f9159f5fee8",
+          "subject": "fix: preserve Qwen ANE app profile"
+        }
+      ]
+    },
+    {
+      "number": 2933,
+      "type": "pull_request",
+      "title": "feat(ane): reserve ANE prefill transient memory in the preflight",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/2933",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "4b46908cb080b1f2b3352ec5fb1ee091d5b09e7c",
+          "url": "https://github.com/jundot/omlx/commit/4b46908cb080b1f2b3352ec5fb1ee091d5b09e7c",
+          "subject": "feat(ane): reserve ANE prefill transient memory in the preflight (#2841)"
+        }
+      ]
+    },
+    {
+      "number": 2937,
+      "type": "pull_request",
+      "title": "perf: extend Qwen3.5/3.8 prefill acceleration to the DFlash target",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/2937",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "b90e6bd466be93bfbc57d22bed0111e72dbb2a53",
+          "url": "https://github.com/jundot/omlx/commit/b90e6bd466be93bfbc57d22bed0111e72dbb2a53",
+          "subject": "perf: extend Qwen3.5/3.8 prefill acceleration to the DFlash target"
+        }
+      ]
+    },
+    {
+      "number": 2938,
+      "type": "issue",
+      "title": "[Regression] v0.6.3rc1: ANE Prefill Completely Disabled for oQ4e-mtp — TG Drops ~35%",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2938",
+      "discussion_comments": 7,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2940,
+      "type": "issue",
+      "title": "ANE Program Inference error at mlp_fraction 0.40 on main; runtime failure latch does not recover — all requests fail",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2940",
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2946,
+      "type": "pull_request",
+      "title": "fix(ane): latch the owning module when load-time warmup fails, keep warming the rest",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2946",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-20T15:27:29Z",
+      "merge_commit": {
+        "sha": "336e55843721878f379d17ae2746391d9d46e637",
+        "url": "https://github.com/jundot/omlx/commit/336e55843721878f379d17ae2746391d9d46e637"
+      },
+      "implementation_commits": [
+        {
+          "sha": "19d4818606402655ff505ecdb6c0bf89e495a275",
+          "url": "https://github.com/jundot/omlx/commit/19d4818606402655ff505ecdb6c0bf89e495a275",
+          "subject": "fix(ane): latch the owning module when load-time warmup fails, keep w…"
+        }
+      ]
+    },
+    {
+      "number": 2965,
+      "type": "pull_request",
+      "title": "perf(ane): cover the prefill tail with an overlapping fixed-shape tile",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/2965",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "d1a2f75c4a27b91485d26687c8201f318b45c4d9",
+          "url": "https://github.com/jundot/omlx/commit/d1a2f75c4a27b91485d26687c8201f318b45c4d9",
+          "subject": "perf(ane): cover the prefill tail with an overlapping fixed-shape tile"
+        }
+      ]
+    },
+    {
+      "number": 2966,
+      "type": "pull_request",
+      "title": "feat(Qwen35) Add tuner-calibrated intermediate tail padding for Qwen ANE prefill",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2966",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-21T07:23:46Z",
+      "merge_commit": {
+        "sha": "f14796f033ca5bbd2ba091cdb609a2c86a3e950a",
+        "url": "https://github.com/jundot/omlx/commit/f14796f033ca5bbd2ba091cdb609a2c86a3e950a"
+      },
+      "implementation_commits": [
+        {
+          "sha": "740e6d379ee17441d28cc0125fd5c32e71be94c3",
+          "url": "https://github.com/jundot/omlx/commit/740e6d379ee17441d28cc0125fd5c32e71be94c3",
+          "subject": "Added tail padding"
+        }
+      ]
+    },
+    {
+      "number": 2968,
+      "type": "issue",
+      "title": "Loading Qwen3.8-27B-oQ4e-fp16-mtp with ANE stuff takes forever",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2968",
+      "discussion_comments": 5,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2971,
+      "type": "pull_request",
+      "title": "perf(qwen35): select prefill QMM tiles by dtype",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/2971",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "ee83703a2f731ee0f4e3597a159be82d95d4f6f1",
+          "url": "https://github.com/jundot/omlx/commit/ee83703a2f731ee0f4e3597a159be82d95d4f6f1",
+          "subject": "perf(qwen35): select prefill QMM tiles by dtype"
+        }
+      ]
+    },
+    {
+      "number": 2974,
+      "type": "issue",
+      "title": "Hang during ANE prefill: spin-wait on IOSurfaceSharedEvent never signaled in AneLinearModel::Impl::evaluate_and_signal",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2974",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2975,
+      "type": "pull_request",
+      "title": "perf(ane): reuse compiled Qwen programs across loads",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2975",
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-24T17:06:25Z",
+      "merge_commit": {
+        "sha": "85bfb56e857f753db4924ca4985dabee8f79b911",
+        "url": "https://github.com/jundot/omlx/commit/85bfb56e857f753db4924ca4985dabee8f79b911"
+      },
+      "implementation_commits": [
+        {
+          "sha": "0021b81ed9cd1cd092ea1a1064a32edd2fb36edb",
+          "url": "https://github.com/jundot/omlx/commit/0021b81ed9cd1cd092ea1a1064a32edd2fb36edb",
+          "subject": "perf(ane): reuse compiled Qwen programs across loads"
+        },
+        {
+          "sha": "738893b3cfa6056a51768906ff3040731dbf827f",
+          "url": "https://github.com/jundot/omlx/commit/738893b3cfa6056a51768906ff3040731dbf827f",
+          "subject": "perf(ane): bound compile-cache lock acquisition and harden staging de…"
+        },
+        {
+          "sha": "7d518624b317034bcd9889fdf9ff0a473cd10309",
+          "url": "https://github.com/jundot/omlx/commit/7d518624b317034bcd9889fdf9ff0a473cd10309",
+          "subject": "test(ane): assert bounded lock acquisition and symlink-resolved stagi…"
+        },
+        {
+          "sha": "c2d57ebd9a50929601b3eeed47d3d8fa649b9edc",
+          "url": "https://github.com/jundot/omlx/commit/c2d57ebd9a50929601b3eeed47d3d8fa649b9edc",
+          "subject": "Merge main into feat/ane-compile-cache-core"
+        }
+      ]
+    },
+    {
+      "number": 2985,
+      "type": "issue",
+      "title": "ANE evaluation failed",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2985",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2986,
+      "type": "issue",
+      "title": "ANE prefill is silently bypassed when DFlash is enabled — tuner recommends a config serving then ignores (0.6.3rc2, M3 Ultra)",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2986",
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 2999,
+      "type": "pull_request",
+      "title": "fix(ane): circuit-break the procedure bank compile retry ladder before it OOMs",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2999",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-24T16:09:21Z",
+      "merge_commit": {
+        "sha": "1efd3aeb06add13d3a3ef4a351b26225c8d3cb85",
+        "url": "https://github.com/jundot/omlx/commit/1efd3aeb06add13d3a3ef4a351b26225c8d3cb85"
+      },
+      "implementation_commits": [
+        {
+          "sha": "7fb96d3272681fe9e58782b8f0edc6c1d0b1cd36",
+          "url": "https://github.com/jundot/omlx/commit/7fb96d3272681fe9e58782b8f0edc6c1d0b1cd36",
+          "subject": "fix(ane): circuit-break the procedure bank compile retry ladder befor…"
+        },
+        {
+          "sha": "81348e29381f54afc3b561df11d9e5c31f686f47",
+          "url": "https://github.com/jundot/omlx/commit/81348e29381f54afc3b561df11d9e5c31f686f47",
+          "subject": "fix(ane): log measured phys_footprint/total in the compile-skip warning"
+        }
+      ]
+    },
+    {
+      "number": 3002,
+      "type": "pull_request",
+      "title": "fix(ane): bound every wait on the ANE evaluation path and latch timed-out programs",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3002",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-23T08:14:29Z",
+      "merge_commit": {
+        "sha": "be7cac695ae474d7b58c9f60e08c463939966390",
+        "url": "https://github.com/jundot/omlx/commit/be7cac695ae474d7b58c9f60e08c463939966390"
+      },
+      "implementation_commits": [
+        {
+          "sha": "dbbb05985109baee57488e19f0f44b93db3dec52",
+          "url": "https://github.com/jundot/omlx/commit/dbbb05985109baee57488e19f0f44b93db3dec52",
+          "subject": "fix(ane): bound every wait on the ANE evaluation path and latch timed…"
+        },
+        {
+          "sha": "f5b771b9439b6422553b0b5c0d5e815b464b9d03",
+          "url": "https://github.com/jundot/omlx/commit/f5b771b9439b6422553b0b5c0d5e815b464b9d03",
+          "subject": "fix(ane): cancel tickets immediately when the pack command buffer fails"
+        }
+      ]
+    },
+    {
+      "number": 3007,
+      "type": "pull_request",
+      "title": "[fix] Preserve ANE tuning status across App View navigation",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3007",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "c6c9740124efec2868d26bcbc5d050474de488d5",
+          "url": "https://github.com/jundot/omlx/commit/c6c9740124efec2868d26bcbc5d050474de488d5",
+          "subject": "fix(omlx-mac): preserve ANE tuning status"
+        }
+      ]
+    },
+    {
+      "number": 3025,
+      "type": "issue",
+      "title": "oMLX Dual-ANE worker spin after aborted prefill",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3025",
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3026,
+      "type": "issue",
+      "title": "Qwen3.8 head-dim-256 128K prefill OOM with ANE disabled",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3026",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3044,
+      "type": "issue",
+      "title": "ANE tuning crashes model load on M2 Ultra: \"Private ANE procedure-bank compiler is unavailable\" → \"Representative ANE calibration bank could not be loaded\" (no GPU fallback)",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3044",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3045,
+      "type": "issue",
+      "title": "M3 Max: ANE prefill + native MTP (k=3) results — #2978 regression not reproduced, mtplx side-car graft works",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3045",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3058,
+      "type": "pull_request",
+      "title": "Enable Qwen ANE prefill with DFlash2",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3058",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "f411a43438228a5cd5e3e7bb2ab28c1b6b888150",
+          "url": "https://github.com/jundot/omlx/commit/f411a43438228a5cd5e3e7bb2ab28c1b6b888150",
+          "subject": "feat(dflash): enable Qwen ANE prefill"
+        }
+      ]
+    },
+    {
+      "number": 3059,
+      "type": "pull_request",
+      "title": "Add experimental DeepSeek-V4 hybrid ANE prefill and tuning",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/3059",
+      "discussion_comments": 12,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "0d51bce0763caaf561c5208f73fe153cdaeffd86",
+          "url": "https://github.com/jundot/omlx/commit/0d51bce0763caaf561c5208f73fe153cdaeffd86",
+          "subject": "feat(deepseek): add experimental hybrid ANE prompt processing"
+        },
+        {
+          "sha": "939b8ed25ec694a4d7c13a491d441f609b015f10",
+          "url": "https://github.com/jundot/omlx/commit/939b8ed25ec694a4d7c13a491d441f609b015f10",
+          "subject": "feat(deepseek): add CPU-shared ANE offload tuning"
+        },
+        {
+          "sha": "6630d33e69f3550d5b00da8b3f50bd66a04dd36d",
+          "url": "https://github.com/jundot/omlx/commit/6630d33e69f3550d5b00da8b3f50bd66a04dd36d",
+          "subject": "fix(deepseek): guard CPU offload by tile and memory"
+        },
+        {
+          "sha": "f77c2ba117fea62768070bf81fefca31133bfbb4",
+          "url": "https://github.com/jundot/omlx/commit/f77c2ba117fea62768070bf81fefca31133bfbb4",
+          "subject": "feat(deepseek): add bounded ANE offload tuner"
+        },
+        {
+          "sha": "6f8486564291165e139795e1eefa245b86dde069",
+          "url": "https://github.com/jundot/omlx/commit/6f8486564291165e139795e1eefa245b86dde069",
+          "subject": "Combine wq_a, wkv, compressor projections, and sparse indexer project…"
+        },
+        {
+          "sha": "19fdb6562c6a4efd1966802d73cf3dc07992a97d",
+          "url": "https://github.com/jundot/omlx/commit/19fdb6562c6a4efd1966802d73cf3dc07992a97d",
+          "subject": "Chunking fix"
+        },
+        {
+          "sha": "784f0cd299414231d01a14cbe73426625915cdc4",
+          "url": "https://github.com/jundot/omlx/commit/784f0cd299414231d01a14cbe73426625915cdc4",
+          "subject": "Test fixes"
+        },
+        {
+          "sha": "9f08a404d6b3124e56ccc9b9e21f23e5dcae30ab",
+          "url": "https://github.com/jundot/omlx/commit/9f08a404d6b3124e56ccc9b9e21f23e5dcae30ab",
+          "subject": "down_proj, wo_a, grouped packing, affine-q8 suffix, output merging"
+        },
+        {
+          "sha": "13f610485ed83a0a1f60adbc4ebf1c11bbb3a5bf",
+          "url": "https://github.com/jundot/omlx/commit/13f610485ed83a0a1f60adbc4ebf1c11bbb3a5bf",
+          "subject": "Added Qwen-style short-tail padding across shared MLP/down, attention…"
+        },
+        {
+          "sha": "a5f2e856a678dc0fd0fce4438e1ddb5ec296dda9",
+          "url": "https://github.com/jundot/omlx/commit/a5f2e856a678dc0fd0fce4438e1ddb5ec296dda9",
+          "subject": "profiler coverage"
+        },
+        {
+          "sha": "304bb4471bf4911e70e20283b07c08556843dbfa",
+          "url": "https://github.com/jundot/omlx/commit/304bb4471bf4911e70e20283b07c08556843dbfa",
+          "subject": "Tuning changes"
+        }
+      ]
+    },
+    {
+      "number": 3066,
+      "type": "pull_request",
+      "title": "fix(cache): align Qwen GDN boundaries with wide prefill",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3066",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-24T15:42:32Z",
+      "merge_commit": {
+        "sha": "ae06d836c2ad89b7d7553c9061bf878ab40d0c4e",
+        "url": "https://github.com/jundot/omlx/commit/ae06d836c2ad89b7d7553c9061bf878ab40d0c4e"
+      },
+      "implementation_commits": [
+        {
+          "sha": "d569e4921133ec1ef4bb441a95e5cae7710f9750",
+          "url": "https://github.com/jundot/omlx/commit/d569e4921133ec1ef4bb441a95e5cae7710f9750",
+          "subject": "fix(cache): align Qwen GDN boundaries with wide prefill"
+        }
+      ]
+    },
+    {
+      "number": 3067,
+      "type": "pull_request",
+      "title": "fix(ane-tuner): return a completed GPU-only verdict when the ANE compiler is unavailable",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3067",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-24T16:38:06Z",
+      "merge_commit": {
+        "sha": "5c2ee7f72db1e6d519a205c9a38fb1e362a06091",
+        "url": "https://github.com/jundot/omlx/commit/5c2ee7f72db1e6d519a205c9a38fb1e362a06091"
+      },
+      "implementation_commits": [
+        {
+          "sha": "039d71d8219c927497b42c385484d5efc34fbaad",
+          "url": "https://github.com/jundot/omlx/commit/039d71d8219c927497b42c385484d5efc34fbaad",
+          "subject": "fix(ane-tuner): return a completed GPU-only verdict when the ANE comp…"
+        },
+        {
+          "sha": "9022a610c922ad66ca638039cf02bf8021e4e668",
+          "url": "https://github.com/jundot/omlx/commit/9022a610c922ad66ca638039cf02bf8021e4e668",
+          "subject": "test(ane-tuner): stub the compiler preflight in mocked pipeline tests"
+        }
+      ]
+    },
+    {
+      "number": 3069,
+      "type": "issue",
+      "title": "ANE prefill (approximate INT8 path) causes behavioral divergence on out-of-distribution prompts: agent descends into memorized training trajectories (0.6.3rc2)",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3069",
+      "discussion_comments": 9,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3080,
+      "type": "pull_request",
+      "title": "fix(ane): disable SpecPrefill during ANE split tuning",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3080",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-24T16:44:05Z",
+      "merge_commit": {
+        "sha": "216333cccbb194d6e392ee1cb51bd2481eabf055",
+        "url": "https://github.com/jundot/omlx/commit/216333cccbb194d6e392ee1cb51bd2481eabf055"
+      },
+      "implementation_commits": [
+        {
+          "sha": "adbdd7c73ebaff6773e3aa390e97d369f44cf4de",
+          "url": "https://github.com/jundot/omlx/commit/adbdd7c73ebaff6773e3aa390e97d369f44cf4de",
+          "subject": "fix(ane): disable SpecPrefill during ANE split tuning"
+        },
+        {
+          "sha": "1c9e661b35ee4348900db55677b13f43d2d73f1c",
+          "url": "https://github.com/jundot/omlx/commit/1c9e661b35ee4348900db55677b13f43d2d73f1c",
+          "subject": "Merge main into fix/ane-tuner-disable-specprefill"
+        }
+      ]
+    },
+    {
+      "number": 3103,
+      "type": "pull_request",
+      "title": "fix(memory): shed ANE prefill banks under recurring prefill-headroom pressure",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3103",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-24T16:16:00Z",
+      "merge_commit": {
+        "sha": "8d6ddfa208979ad2b5cb713f37527715294b40a0",
+        "url": "https://github.com/jundot/omlx/commit/8d6ddfa208979ad2b5cb713f37527715294b40a0"
+      },
+      "implementation_commits": [
+        {
+          "sha": "170dfc36c27a55db92abaa4aa3c0214ee4277d2c",
+          "url": "https://github.com/jundot/omlx/commit/170dfc36c27a55db92abaa4aa3c0214ee4277d2c",
+          "subject": "fix(memory): shed ANE prefill banks under recurring prefill-headroom …"
+        }
+      ]
+    },
+    {
+      "number": 3104,
+      "type": "issue",
+      "title": "Feature request: support BF16 Qwen checkpoints in ANE Prompt Processing via FP16 ANE execution",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3104",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3105,
+      "type": "pull_request",
+      "title": "fix(ane): roll back single/dual dispatch on mid-flight exceptions (C1)",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3105",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-24T16:12:28Z",
+      "merge_commit": {
+        "sha": "8ce5e38f900f26c655f0cf3859ec48cfa9e3ddc1",
+        "url": "https://github.com/jundot/omlx/commit/8ce5e38f900f26c655f0cf3859ec48cfa9e3ddc1"
+      },
+      "implementation_commits": [
+        {
+          "sha": "5bcd3a97883f4edae0d4e9736aaa2cfabdb40b89",
+          "url": "https://github.com/jundot/omlx/commit/5bcd3a97883f4edae0d4e9736aaa2cfabdb40b89",
+          "subject": "fix(ane): roll back single/dual dispatch on mid-flight exceptions"
+        }
+      ]
+    },
+    {
+      "number": 3110,
+      "type": "pull_request",
+      "title": "fix(ane): slice down matrix before dequantizing, not after",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3110",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-24T16:15:28Z",
+      "merge_commit": {
+        "sha": "cec20e725fcfc39e4ef0803b02297ebe4b35ad2d",
+        "url": "https://github.com/jundot/omlx/commit/cec20e725fcfc39e4ef0803b02297ebe4b35ad2d"
+      },
+      "implementation_commits": [
+        {
+          "sha": "b54b3208e380768212734c04f9fe021c65986a86",
+          "url": "https://github.com/jundot/omlx/commit/b54b3208e380768212734c04f9fe021c65986a86",
+          "subject": "fix(ane): slice down matrix before dequantizing, not after"
+        }
+      ]
+    },
+    {
+      "number": 3116,
+      "type": "issue",
+      "title": "0.6.3rc3 ANE tuner selects ineligible fused_down candidate on single-ANE Mac — verification false-negative aborts run, recommends GPU-only",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3116",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3117,
+      "type": "issue",
+      "title": "Qwen3.8 with ANE enabled produces 0 tokens",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3117",
+      "discussion_comments": 9,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3123,
+      "type": "pull_request",
+      "title": "fix(ane): gate ANE prefill on Metal headroom; harden latch checks",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3123",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "b35293540f22eec27432a7efca51423ea7bf03a3",
+          "url": "https://github.com/jundot/omlx/commit/b35293540f22eec27432a7efca51423ea7bf03a3",
+          "subject": "fix(ane): gate ANE prefill on Metal headroom; harden latch checks"
+        }
+      ]
+    },
+    {
+      "number": 3124,
+      "type": "issue",
+      "title": "[Regression] v0.6.3rc3: ANE tuning fails — 'verifyBundleAtPath: invalid model' (Code=10) at every bank split size",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3124",
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3133,
+      "type": "pull_request",
+      "title": "fix(ane): preserve GDN quality with recurrent-safe prefill offload",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3133",
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-27T07:07:24Z",
+      "merge_commit": {
+        "sha": "d3780f6ea3898069f696e36275a15b2a3e6fef07",
+        "url": "https://github.com/jundot/omlx/commit/d3780f6ea3898069f696e36275a15b2a3e6fef07"
+      },
+      "implementation_commits": [
+        {
+          "sha": "4c8e43a5b44f2aa877f728315d82188c39454fcf",
+          "url": "https://github.com/jundot/omlx/commit/4c8e43a5b44f2aa877f728315d82188c39454fcf",
+          "subject": "fix(ane): preserve GDN quality with recurrent-safe prefill offload"
+        },
+        {
+          "sha": "b9d3a191141e1281ede7ba6defc264825c2b682c",
+          "url": "https://github.com/jundot/omlx/commit/b9d3a191141e1281ede7ba6defc264825c2b682c",
+          "subject": "fix(ane): wait for GPU suffix before hybrid merge"
+        },
+        {
+          "sha": "c0503a9e9a197410f98ee9f24bfc97c3f7b70c3e",
+          "url": "https://github.com/jundot/omlx/commit/c0503a9e9a197410f98ee9f24bfc97c3f7b70c3e",
+          "subject": "fix(ane): schedule tiled GDN projections together (#3117)"
+        }
+      ]
+    },
+    {
+      "number": 3150,
+      "type": "issue",
+      "title": "Bad generation using Qwen3.8-27B-oQ4e-mtp with MTP (w/ or w/o ANE)",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3150",
+      "discussion_comments": 9,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3152,
+      "type": "pull_request",
+      "title": "fix(cluster): gate qwen35_ane_prefill_enabled on distributed deployments",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3152",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "a243a164731d6018758a2565baece905506e1ee9",
+          "url": "https://github.com/jundot/omlx/commit/a243a164731d6018758a2565baece905506e1ee9",
+          "subject": "fix(cluster): gate qwen35_ane_prefill_enabled on distributed deployments"
+        }
+      ]
+    },
+    {
+      "number": 3156,
+      "type": "pull_request",
+      "title": "fix(ane+cache): refuse ANE prefill on MoE models; stamp ANE provenance in SSD cache",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3156",
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "fde146a7737d13802708dd0b3139bac614fbdc64",
+          "url": "https://github.com/jundot/omlx/commit/fde146a7737d13802708dd0b3139bac614fbdc64",
+          "subject": "fix(ane+cache): refuse ANE prefill on MoE models; stamp ANE provenanc…"
+        }
+      ]
+    },
+    {
+      "number": 3157,
+      "type": "pull_request",
+      "title": "fix(ane): release prefill state on engine unload",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3157",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "4754bfacf431989eed78df2b2a5bb664cc7632eb",
+          "url": "https://github.com/jundot/omlx/commit/4754bfacf431989eed78df2b2a5bb664cc7632eb",
+          "subject": "fix(ane): release prefill state on engine unload"
+        }
+      ]
+    },
+    {
+      "number": 3217,
+      "type": "issue",
+      "title": "Private ANE runtime unavailable M4 MAX",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3217",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3233,
+      "type": "issue",
+      "title": "0.6.3: Qwen ANE prefill corrupts context under agentic load (jumbled prompt content, empty init-only completions); clean with ANE off, Lightning MTP on",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3233",
+      "discussion_comments": 10,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3244,
+      "type": "pull_request",
+      "title": "perf(qwen4): flatten exact QSA prefill and accelerate Lightning MTP",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3244",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": "2026-08-29T16:35:24Z",
+      "merge_commit": {
+        "sha": "7467dce8df8030dbb17b79bcf7e2050e01db5df7",
+        "url": "https://github.com/jundot/omlx/commit/7467dce8df8030dbb17b79bcf7e2050e01db5df7"
+      },
+      "implementation_commits": [
+        {
+          "sha": "f9a1623a55afc265a474cd57a60c1a3d12b6165b",
+          "url": "https://github.com/jundot/omlx/commit/f9a1623a55afc265a474cd57a60c1a3d12b6165b",
+          "subject": "perf(qwen4): add exact gathered sparse prefill path"
+        },
+        {
+          "sha": "acf7ac58a093fbda3e3c89531875b72f56aff8c2",
+          "url": "https://github.com/jundot/omlx/commit/acf7ac58a093fbda3e3c89531875b72f56aff8c2",
+          "subject": "perf(qwen4): fuse exact QSA selection and cache state"
+        },
+        {
+          "sha": "1e7055abf8bcab8bf41e716938c28c827fffcba8",
+          "url": "https://github.com/jundot/omlx/commit/1e7055abf8bcab8bf41e716938c28c827fffcba8",
+          "subject": "perf(qwen4): add direct sparse attention and resident PLE"
+        },
+        {
+          "sha": "4ae9ae7ca4e0e17c21528d6455666128c2707c92",
+          "url": "https://github.com/jundot/omlx/commit/4ae9ae7ca4e0e17c21528d6455666128c2707c92",
+          "subject": "perf(qwen4): fuse exact scalar GDN and hyper projections"
+        },
+        {
+          "sha": "aa26e010c8e15f8a0ee42cbee335213e93b12aec",
+          "url": "https://github.com/jundot/omlx/commit/aa26e010c8e15f8a0ee42cbee335213e93b12aec",
+          "subject": "fix(mtp): restore prompt state with prefix cache"
+        },
+        {
+          "sha": "ee1b236c2cfe588e6e116fd2cea3daa2949de251",
+          "url": "https://github.com/jundot/omlx/commit/ee1b236c2cfe588e6e116fd2cea3daa2949de251",
+          "subject": "fix(qwen4): scalarize vision grid repeats"
+        }
+      ]
+    },
+    {
+      "number": 3250,
+      "type": "issue",
+      "title": "feat(ane): extend ANE tuner eligibility to NVFP4-quantized Qwen MLP layers (Qwen3.6-35B-A3B-NVFP4 fails 'No eligible Qwen MLP layer')",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3250",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3283,
+      "type": "pull_request",
+      "title": "fix(qwen4-exp): resolve prefill memory blowup for QSA long-context",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/3283",
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "05a69f5c810684151a526ce4fc295e8d1dee6ed3",
+          "url": "https://github.com/jundot/omlx/commit/05a69f5c810684151a526ce4fc295e8d1dee6ed3",
+          "subject": "chore: port pre-existing sdpa256/turboquant/scheduler/paged-cache pre…"
+        },
+        {
+          "sha": "d043892dc1d464856d7dcb62b24b5357dc047980",
+          "url": "https://github.com/jundot/omlx/commit/d043892dc1d464856d7dcb62b24b5357dc047980",
+          "subject": "fix(qwen4-exp): resolve prefill memory blowup for QSA long-context"
+        },
+        {
+          "sha": "fae1d3d3ee27a611fc7cf1b5b0d97897a0885c0e",
+          "url": "https://github.com/jundot/omlx/commit/fae1d3d3ee27a611fc7cf1b5b0d97897a0885c0e",
+          "subject": "chore: port pre-existing per-instance tiled-prefill registration from…"
+        }
+      ]
+    },
+    {
+      "number": 3289,
+      "type": "issue",
+      "title": "Prefill fails with MTLCommandBufferErrorDomain Code=4 (ANE input pack command buffer ignored) after long-running session, causing chat streaming error",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3289",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3298,
+      "type": "pull_request",
+      "title": "feat(qwen4/ane): Experimental Qwen4 ANE offload",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/3298",
+      "discussion_comments": 6,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "3d3786815162fa6916337793fedbcd1c73a42329",
+          "url": "https://github.com/jundot/omlx/commit/3d3786815162fa6916337793fedbcd1c73a42329",
+          "subject": "Experimental Qwen4 ANE offload"
+        }
+      ]
+    },
+    {
+      "number": 3305,
+      "type": "issue",
+      "title": "Qwen3.8 ANE prefill: GPU timeout on multimodal prefix-cache hit (\"ANE input pack command buffer failed\"), still on 0.6.4",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3305",
+      "discussion_comments": 5,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3340,
+      "type": "pull_request",
+      "title": "fix(ane): clear the per-module state caches when releasing ANE banks",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3340",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "ddd86304ddc1e31ebd34bb37beb0c15c58af7888",
+          "url": "https://github.com/jundot/omlx/commit/ddd86304ddc1e31ebd34bb37beb0c15c58af7888",
+          "subject": "fix(ane): clear the per-module state caches when releasing ANE banks"
+        }
+      ]
+    },
+    {
+      "number": 3349,
+      "type": "issue",
+      "title": "[0.6.4] Qwen3.8-27B (qwen3_5 dense GDN) prefill ~5× slower than 0.6.3rc1 — wide-prefill gate in #3244 likely forces fallback path",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3349",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3364,
+      "type": "pull_request",
+      "title": "fix(memory): refresh ANE prefill transient reserve after bank compile",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3364",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "5f02cb9dafbc1a1fab022978ee211abca58a9062",
+          "url": "https://github.com/jundot/omlx/commit/5f02cb9dafbc1a1fab022978ee211abca58a9062",
+          "subject": "fix(memory): refresh ANE prefill transient reserve after bank compile"
+        }
+      ]
+    },
+    {
+      "number": 3394,
+      "type": "issue",
+      "title": "Source-built oMLX regresses Qwen hd256 128K prefill: #3142 passes, commit 1a7ab338 rejects at 114688",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3394",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3399,
+      "type": "issue",
+      "title": "Qwen3.8 ANE prefill: Metal command buffer timeout on request following a 16K+ tool-call turn (M4 Max, 0.6.4)",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3399",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": []
+    },
+    {
+      "number": 3425,
+      "type": "pull_request",
+      "title": "feat(ane): price prefill banks at admission from the compiled size",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3425",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "61e273a9e115a4a4b6cdfa6985e51106c39e0d65",
+          "url": "https://github.com/jundot/omlx/commit/61e273a9e115a4a4b6cdfa6985e51106c39e0d65",
+          "subject": "feat(ane): price prefill banks at admission from the compiled size"
+        }
+      ]
+    },
+    {
+      "number": 3434,
+      "type": "pull_request",
+      "title": "fix(qwen35_prefill): drop the wrong NAX qmm tile variant 6, add a tile benchmark",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3434",
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0,
+      "merged_at": null,
+      "merge_commit": null,
+      "implementation_commits": [
+        {
+          "sha": "5bae4038c13512347bf1ef1cd1841b7cc0af55a5",
+          "url": "https://github.com/jundot/omlx/commit/5bae4038c13512347bf1ef1cd1841b7cc0af55a5",
+          "subject": "fix(qwen35_prefill): drop the wrong NAX qmm tile variant 6, add a til…"
+        }
+      ]
+    }
+  ],
+  "thread_inventory": [
+    {
+      "number": 52,
+      "type": "issue",
+      "title": "Neural engine support?",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/52",
+      "created_at": "2026-02-27T18:11:52Z",
+      "updated_at": "2026-02-28T17:20:28Z",
+      "closed_at": "2026-02-28T17:20:27Z",
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 353,
+      "type": "issue",
+      "title": "[Bug] Output corruption/gibberish with gemma-3-12b-it-qat-4bit",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/353",
+      "created_at": "2026-03-23T03:46:28Z",
+      "updated_at": "2026-04-04T11:57:56Z",
+      "closed_at": "2026-03-24T21:26:40Z",
+      "merged_at": null,
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 1080,
+      "type": "issue",
+      "title": "DFlash on Apple Silicon: dflash_enabled has no measurable throughput improvement for Qwen3.6-35B-A3B-DFlash on oMLX 0.3.8 / M5 Max",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/1080",
+      "created_at": "2026-05-06T08:56:14Z",
+      "updated_at": "2026-05-06T09:10:56Z",
+      "closed_at": "2026-05-06T09:04:38Z",
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 1107,
+      "type": "issue",
+      "title": "[Feature Request] Heterogeneous “Shadow Prefill” / Background KV Warmup Using ANE + GPU Cooperative Execution",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/1107",
+      "created_at": "2026-05-07T16:26:57Z",
+      "updated_at": "2026-05-07T17:04:14Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 1483,
+      "type": "issue",
+      "title": "Which Model should Mac Studio M3 Ultra to run",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/1483",
+      "created_at": "2026-05-28T03:46:10Z",
+      "updated_at": "2026-05-29T04:06:06Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 7,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 1531,
+      "type": "issue",
+      "title": "feature request: add apple neural engine (ane) + macos shortcuts to omlx as button to extract text and paste into chat",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/1531",
+      "created_at": "2026-05-30T04:36:37Z",
+      "updated_at": "2026-05-30T20:47:15Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2595,
+      "type": "pull_request",
+      "title": "feat(moe): expert offload — stream non-resident experts from the checkpoint",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/2595",
+      "created_at": "2026-08-11T06:41:16Z",
+      "updated_at": "2026-09-03T14:47:38Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 21,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2667,
+      "type": "pull_request",
+      "title": "feat(i18n): complete zh/zh-TW for 0.6.2, localize cluster dashboard and GDN/Qwen ANE settings, add parity test",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/2667",
+      "created_at": "2026-08-15T14:57:33Z",
+      "updated_at": "2026-08-19T16:31:55Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2689,
+      "type": "issue",
+      "title": "Bug: Qwen3.8-27B-oQ8e-mtp decode collapses at 16K context (4-5.5 tok/s); 32K is faster than 16K — reproducible twice on M3 Max",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2689",
+      "created_at": "2026-08-16T03:24:12Z",
+      "updated_at": "2026-08-30T00:38:48Z",
+      "closed_at": "2026-08-30T00:38:48Z",
+      "merged_at": null,
+      "discussion_comments": 21,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2725,
+      "type": "issue",
+      "title": "[BUG] MemoryMonitor unnecessary rejections: estimate uses total layer count instead of KVCache layer count (4x over-estimate on Qwen3.5/3.6/3.8 hybrids)",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2725",
+      "created_at": "2026-08-16T15:47:39Z",
+      "updated_at": "2026-08-20T14:38:08Z",
+      "closed_at": "2026-08-20T14:38:08Z",
+      "merged_at": null,
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2756,
+      "type": "pull_request",
+      "title": "feat(qwen3.5): add experimental dual-ANE/GPU prompt processing",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2756",
+      "created_at": "2026-08-17T15:54:09Z",
+      "updated_at": "2026-08-18T17:37:20Z",
+      "closed_at": "2026-08-17T16:51:58Z",
+      "merged_at": "2026-08-17T16:51:58Z",
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2760,
+      "type": "pull_request",
+      "title": "feat(qwen3.5): extend ANE prefill to oQ4e and harden runtime",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2760",
+      "created_at": "2026-08-17T17:08:43Z",
+      "updated_at": "2026-08-17T17:53:25Z",
+      "closed_at": "2026-08-17T17:53:25Z",
+      "merged_at": "2026-08-17T17:53:25Z",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2777,
+      "type": "issue",
+      "title": "Benchmark: oQ4e vs oQ6e vs oQ8e speed comparison + acceleration options matrix (M3 Max 128GB)",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2777",
+      "created_at": "2026-08-17T22:14:11Z",
+      "updated_at": "2026-08-30T00:39:04Z",
+      "closed_at": "2026-08-30T00:39:04Z",
+      "merged_at": null,
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2779,
+      "type": "issue",
+      "title": "ANE prefill regresses on M5 (NAX) hardware; qwen35_ane_prefill doesn't consult is_nax_available()",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2779",
+      "created_at": "2026-08-17T22:47:58Z",
+      "updated_at": "2026-08-20T08:47:07Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 13,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2781,
+      "type": "issue",
+      "title": "Qwen ANE Prompt Processing on M3 Max: 16K +13%, 32K +57% prefill — plus GDN/packed-bank caveats",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2781",
+      "created_at": "2026-08-17T23:10:52Z",
+      "updated_at": "2026-08-30T16:06:40Z",
+      "closed_at": "2026-08-30T00:39:12Z",
+      "merged_at": null,
+      "discussion_comments": 44,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2795,
+      "type": "issue",
+      "title": "Benchmark: Full context ladder — oMLX (oQ4e/oQ6e/oQ8e, MTP+ANE) vs MTPLX (Speed/Quality) on M3 Max 128GB",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2795",
+      "created_at": "2026-08-18T04:59:13Z",
+      "updated_at": "2026-08-30T00:39:20Z",
+      "closed_at": "2026-08-30T00:39:20Z",
+      "merged_at": null,
+      "discussion_comments": 6,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2803,
+      "type": "pull_request",
+      "title": "feat(deepseek): experimental hybrid ANE prompt processing",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/2803",
+      "created_at": "2026-08-18T09:19:22Z",
+      "updated_at": "2026-08-18T17:53:06Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2814,
+      "type": "pull_request",
+      "title": "Added ANE tuning utility. Modified ANE split to support NAX GPUs.",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2814",
+      "created_at": "2026-08-18T15:24:38Z",
+      "updated_at": "2026-08-18T20:52:22Z",
+      "closed_at": "2026-08-18T15:54:51Z",
+      "merged_at": "2026-08-18T15:54:51Z",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2816,
+      "type": "issue",
+      "title": "Error when using Tune ANE Split on M5 Max - v0.6.2: The ANE candidate loaded, but no eligible Qwen MLP/GDN layers were compiled.",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2816",
+      "created_at": "2026-08-18T17:27:41Z",
+      "updated_at": "2026-08-19T12:47:15Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 12,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2823,
+      "type": "issue",
+      "title": "Admin settings PUT silently discards mtp_num_draft_tokens while returning success:true (file + /admin/api/reload works)",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2823",
+      "created_at": "2026-08-18T19:06:23Z",
+      "updated_at": "2026-08-29T15:08:00Z",
+      "closed_at": "2026-08-29T15:08:00Z",
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2824,
+      "type": "issue",
+      "title": "qwen35_ane_prefill_enabled is a silent no-op on non-4bit checkpoints: no warning, no status field, only a load-time delta reveals it",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2824",
+      "created_at": "2026-08-18T19:06:48Z",
+      "updated_at": "2026-08-20T12:29:38Z",
+      "closed_at": "2026-08-20T12:29:38Z",
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2826,
+      "type": "pull_request",
+      "title": "fix(qwen35) ANE tuner early exit results, q6/q8 support, GDN activation path fix",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/2826",
+      "created_at": "2026-08-18T19:52:34Z",
+      "updated_at": "2026-08-19T15:10:15Z",
+      "closed_at": "2026-08-19T15:10:14Z",
+      "merged_at": null,
+      "discussion_comments": 6,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2828,
+      "type": "issue",
+      "title": "ANE split tuner can publish a ranking from runs where the ANE never executed",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2828",
+      "created_at": "2026-08-18T20:06:17Z",
+      "updated_at": "2026-08-19T15:56:01Z",
+      "closed_at": "2026-08-19T15:56:01Z",
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2829,
+      "type": "pull_request",
+      "title": "fix(ane): reject tuning candidates whose ANE never executed",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2829",
+      "created_at": "2026-08-18T20:06:24Z",
+      "updated_at": "2026-08-19T15:56:00Z",
+      "closed_at": "2026-08-19T15:55:59Z",
+      "merged_at": "2026-08-19T15:55:59Z",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2833,
+      "type": "pull_request",
+      "title": "feat(qwen35): enable affine Q6 and Q8 ANE prefill",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2833",
+      "created_at": "2026-08-18T21:10:42Z",
+      "updated_at": "2026-08-19T15:02:41Z",
+      "closed_at": "2026-08-19T14:55:56Z",
+      "merged_at": "2026-08-19T14:55:56Z",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2839,
+      "type": "issue",
+      "title": "[Bug] ANE prefill not executing on oQ4e-mtp (v0.6.2): configured_layers=0, ANE duty=0, TG drops 57%",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2839",
+      "created_at": "2026-08-18T23:11:29Z",
+      "updated_at": "2026-08-30T00:40:17Z",
+      "closed_at": "2026-08-30T00:40:17Z",
+      "merged_at": null,
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2841,
+      "type": "issue",
+      "title": "ANE prefill triggers hard memory-pressure abort + model eviction (Qwen3.8-27B)",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2841",
+      "created_at": "2026-08-19T03:46:06Z",
+      "updated_at": "2026-08-22T00:44:06Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2853,
+      "type": "pull_request",
+      "title": "feat(qwen35) Qwen ANE prefill: FP16 CPU AMX work sharing and performance-aware scheduling",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/2853",
+      "created_at": "2026-08-19T08:59:31Z",
+      "updated_at": "2026-08-19T18:14:47Z",
+      "closed_at": "2026-08-19T17:26:03Z",
+      "merged_at": null,
+      "discussion_comments": 19,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2874,
+      "type": "issue",
+      "title": "[Final Report] Optimal Configuration for Qwen3.8-27B on M3 Max 128GB",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2874",
+      "created_at": "2026-08-19T11:42:15Z",
+      "updated_at": "2026-08-30T00:41:41Z",
+      "closed_at": "2026-08-30T00:41:41Z",
+      "merged_at": null,
+      "discussion_comments": 6,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2876,
+      "type": "issue",
+      "title": "Paged prefix cache: 33% of shareable tokens lost at reload on PoolingCache models (systematic trailing-block walk-back × 2048-token blocks)",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2876",
+      "created_at": "2026-08-19T12:03:12Z",
+      "updated_at": "2026-08-31T18:34:22Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 9,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2880,
+      "type": "issue",
+      "title": "qwen3_5 4096 prefill floor (#2751) never delivers with prefix caching on; forcing it regresses M5 Pro",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2880",
+      "created_at": "2026-08-19T13:13:59Z",
+      "updated_at": "2026-08-24T15:42:33Z",
+      "closed_at": "2026-08-24T15:42:33Z",
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2889,
+      "type": "pull_request",
+      "title": "Add Q5 ANE prefill support",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2889",
+      "created_at": "2026-08-19T16:05:57Z",
+      "updated_at": "2026-08-19T16:13:45Z",
+      "closed_at": "2026-08-19T16:13:45Z",
+      "merged_at": "2026-08-19T16:13:45Z",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2890,
+      "type": "pull_request",
+      "title": "Add wide GPU prefill blocks, internal ANE tiling, and benchmark fidelity and instrumentation",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2890",
+      "created_at": "2026-08-19T16:07:14Z",
+      "updated_at": "2026-08-19T16:46:47Z",
+      "closed_at": "2026-08-19T16:46:47Z",
+      "merged_at": "2026-08-19T16:46:47Z",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2891,
+      "type": "pull_request",
+      "title": "Qwen35: ANE Tuner V2",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2891",
+      "created_at": "2026-08-19T16:08:57Z",
+      "updated_at": "2026-08-19T16:55:36Z",
+      "closed_at": "2026-08-19T16:55:36Z",
+      "merged_at": "2026-08-19T16:55:36Z",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2892,
+      "type": "pull_request",
+      "title": "Qwen35 ANE: CPU Sharing",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2892",
+      "created_at": "2026-08-19T16:17:29Z",
+      "updated_at": "2026-08-20T21:57:52Z",
+      "closed_at": "2026-08-20T12:38:42Z",
+      "merged_at": "2026-08-20T12:38:42Z",
+      "discussion_comments": 19,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2897,
+      "type": "pull_request",
+      "title": "feat(ane): warm compiled procedures at load so the first request measures inference",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/2897",
+      "created_at": "2026-08-19T18:11:15Z",
+      "updated_at": "2026-08-19T18:14:34Z",
+      "closed_at": "2026-08-19T18:14:34Z",
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2898,
+      "type": "pull_request",
+      "title": "feat(ane): warm compiled procedures at load so the first request measures inference",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2898",
+      "created_at": "2026-08-19T18:14:37Z",
+      "updated_at": "2026-08-20T12:37:24Z",
+      "closed_at": "2026-08-20T12:28:45Z",
+      "merged_at": "2026-08-20T12:28:45Z",
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2899,
+      "type": "issue",
+      "title": "ANE tuner v2 can recommend a gdn_fraction below the structural floor, silently compiling 0 GDN procedures",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2899",
+      "created_at": "2026-08-19T18:40:39Z",
+      "updated_at": "2026-08-20T14:48:20Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2902,
+      "type": "issue",
+      "title": "Bug Report: v0.6.2 Decode Regression + TQ+MTP Conflict + 4 Other Findings",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2902",
+      "created_at": "2026-08-19T20:39:39Z",
+      "updated_at": "2026-08-30T00:39:40Z",
+      "closed_at": "2026-08-30T00:39:40Z",
+      "merged_at": null,
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2904,
+      "type": "pull_request",
+      "title": "feat(ane): surface Qwen ANE prefill no-ops in logs and /api/status",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2904",
+      "created_at": "2026-08-19T21:11:14Z",
+      "updated_at": "2026-08-20T12:29:37Z",
+      "closed_at": "2026-08-20T12:29:37Z",
+      "merged_at": "2026-08-20T12:29:37Z",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2905,
+      "type": "pull_request",
+      "title": "feat(ane): guard the GDN prefill fraction floor and stop silent 0-GDN",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/2905",
+      "created_at": "2026-08-19T21:28:46Z",
+      "updated_at": "2026-08-24T17:17:43Z",
+      "closed_at": "2026-08-24T17:17:43Z",
+      "merged_at": null,
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2908,
+      "type": "issue",
+      "title": "[Bug] ANE Tuner V2 (v0.6.3rc1) OOMs at Step 11/13 (_VERIFY_SLOT): calibration program banks and base engine retained during verification reload",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2908",
+      "created_at": "2026-08-19T23:51:59Z",
+      "updated_at": "2026-08-20T14:12:05Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2911,
+      "type": "issue",
+      "title": "[Bug] Qwen3.8-27B-oQ4e-mtp: repeated 'Runtime settings variant changed' unload/reload loop (~12s cycle, 17-21GB freed each) — looks like MTP eats memory",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2911",
+      "created_at": "2026-08-20T03:46:11Z",
+      "updated_at": "2026-08-20T03:49:17Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2914,
+      "type": "issue",
+      "title": "[0.6.3rc1] ANE Tuner crashes: \"Loaded engine does not expose its model\" when the model is loaded via the DFlash engine",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2914",
+      "created_at": "2026-08-20T05:04:10Z",
+      "updated_at": "2026-08-20T14:12:06Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2927,
+      "type": "issue",
+      "title": "OMLX_WITH_CUSTOM_KERNEL=1: extensions compile but are not installed (wheel-cache hit); surfaces as 'Private ANE runtime unavailable'",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2927",
+      "created_at": "2026-08-20T08:30:10Z",
+      "updated_at": "2026-08-20T08:30:10Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2931,
+      "type": "issue",
+      "title": "[0.6.3rc1] Batched engine loses primed context after late-join handoff — request continues generating with `primed=0` and returns out-of-context output to the wrong conversation",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2931",
+      "created_at": "2026-08-20T09:35:15Z",
+      "updated_at": "2026-08-20T09:35:15Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2932,
+      "type": "pull_request",
+      "title": "[fix] Preserve profile while changing Qwen ANE settings",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2932",
+      "created_at": "2026-08-20T10:32:25Z",
+      "updated_at": "2026-08-26T07:37:22Z",
+      "closed_at": "2026-08-20T12:30:41Z",
+      "merged_at": "2026-08-20T12:30:41Z",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2933,
+      "type": "pull_request",
+      "title": "feat(ane): reserve ANE prefill transient memory in the preflight",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/2933",
+      "created_at": "2026-08-20T10:35:16Z",
+      "updated_at": "2026-08-20T12:41:29Z",
+      "closed_at": "2026-08-20T12:41:29Z",
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2935,
+      "type": "pull_request",
+      "title": "feat(Qwen35) Fused Qwen MLP/down offload and hardware-adaptive tuner",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2935",
+      "created_at": "2026-08-20T12:33:00Z",
+      "updated_at": "2026-08-24T18:55:15Z",
+      "closed_at": "2026-08-21T07:22:27Z",
+      "merged_at": "2026-08-21T07:22:27Z",
+      "discussion_comments": 8,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2937,
+      "type": "pull_request",
+      "title": "perf: extend Qwen3.5/3.8 prefill acceleration to the DFlash target",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/2937",
+      "created_at": "2026-08-20T12:46:29Z",
+      "updated_at": "2026-08-20T15:12:32Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2938,
+      "type": "issue",
+      "title": "[Regression] v0.6.3rc1: ANE Prefill Completely Disabled for oQ4e-mtp — TG Drops ~35%",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2938",
+      "created_at": "2026-08-20T12:47:26Z",
+      "updated_at": "2026-08-30T00:39:49Z",
+      "closed_at": "2026-08-30T00:39:49Z",
+      "merged_at": null,
+      "discussion_comments": 7,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2940,
+      "type": "issue",
+      "title": "ANE Program Inference error at mlp_fraction 0.40 on main; runtime failure latch does not recover — all requests fail",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2940",
+      "created_at": "2026-08-20T14:48:00Z",
+      "updated_at": "2026-08-20T15:56:03Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2946,
+      "type": "pull_request",
+      "title": "fix(ane): latch the owning module when load-time warmup fails, keep warming the rest",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2946",
+      "created_at": "2026-08-20T15:17:27Z",
+      "updated_at": "2026-08-20T15:45:41Z",
+      "closed_at": "2026-08-20T15:27:29Z",
+      "merged_at": "2026-08-20T15:27:29Z",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2965,
+      "type": "pull_request",
+      "title": "perf(ane): cover the prefill tail with an overlapping fixed-shape tile",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/2965",
+      "created_at": "2026-08-20T19:08:44Z",
+      "updated_at": "2026-08-21T05:14:25Z",
+      "closed_at": "2026-08-21T05:14:25Z",
+      "merged_at": null,
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2966,
+      "type": "pull_request",
+      "title": "feat(Qwen35) Add tuner-calibrated intermediate tail padding for Qwen ANE prefill",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2966",
+      "created_at": "2026-08-20T19:32:23Z",
+      "updated_at": "2026-08-21T07:23:46Z",
+      "closed_at": "2026-08-21T07:23:46Z",
+      "merged_at": "2026-08-21T07:23:46Z",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2968,
+      "type": "issue",
+      "title": "Loading Qwen3.8-27B-oQ4e-fp16-mtp with ANE stuff takes forever",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2968",
+      "created_at": "2026-08-20T19:38:51Z",
+      "updated_at": "2026-08-24T17:56:27Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 5,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2970,
+      "type": "pull_request",
+      "title": "feat(cluster): support native MTP on pure tensor-parallel deployments",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/2970",
+      "created_at": "2026-08-20T20:58:44Z",
+      "updated_at": "2026-09-04T12:41:51Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2971,
+      "type": "pull_request",
+      "title": "perf(qwen35): select prefill QMM tiles by dtype",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/2971",
+      "created_at": "2026-08-21T00:16:56Z",
+      "updated_at": "2026-08-21T03:05:19Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2972,
+      "type": "issue",
+      "title": "Process-global Qwen patches contaminate a resident DFlash engine after loading a Lightning MTP model",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2972",
+      "created_at": "2026-08-21T00:19:39Z",
+      "updated_at": "2026-08-29T10:56:06Z",
+      "closed_at": "2026-08-29T10:56:06Z",
+      "merged_at": null,
+      "discussion_comments": 6,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2973,
+      "type": "issue",
+      "title": "Profile settings drift — active_profile_name silently cleared after UI settings save",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2973",
+      "created_at": "2026-08-21T01:03:33Z",
+      "updated_at": "2026-08-21T01:03:33Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2974,
+      "type": "issue",
+      "title": "Hang during ANE prefill: spin-wait on IOSurfaceSharedEvent never signaled in AneLinearModel::Impl::evaluate_and_signal",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2974",
+      "created_at": "2026-08-21T02:56:32Z",
+      "updated_at": "2026-08-23T08:14:30Z",
+      "closed_at": "2026-08-23T08:14:30Z",
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2975,
+      "type": "pull_request",
+      "title": "perf(ane): reuse compiled Qwen programs across loads",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2975",
+      "created_at": "2026-08-21T03:35:47Z",
+      "updated_at": "2026-08-24T17:27:52Z",
+      "closed_at": "2026-08-24T17:06:25Z",
+      "merged_at": "2026-08-24T17:06:25Z",
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2976,
+      "type": "issue",
+      "title": "Sustained real-world generation is 6–11 tok/s while short runs reach 28–32 tok/s on Qwen3.8-27B MTP (M5 Pro 48 GB)",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2976",
+      "created_at": "2026-08-21T03:41:44Z",
+      "updated_at": "2026-08-22T09:19:43Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2978,
+      "type": "issue",
+      "title": "[Regression] v0.6.3rc2: Severe MTP Accept Rate Drop on M3 Max — TG Down 50-70% vs v0.6.2",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/2978",
+      "created_at": "2026-08-21T04:25:05Z",
+      "updated_at": "2026-08-29T11:51:16Z",
+      "closed_at": "2026-08-29T11:50:34Z",
+      "merged_at": null,
+      "discussion_comments": 15,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2985,
+      "type": "issue",
+      "title": "ANE evaluation failed",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2985",
+      "created_at": "2026-08-21T07:04:35Z",
+      "updated_at": "2026-08-21T15:38:46Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2986,
+      "type": "issue",
+      "title": "ANE prefill is silently bypassed when DFlash is enabled — tuner recommends a config serving then ignores (0.6.3rc2, M3 Ultra)",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/2986",
+      "created_at": "2026-08-21T07:33:00Z",
+      "updated_at": "2026-08-24T08:31:26Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2994,
+      "type": "pull_request",
+      "title": "fix: make custom kernel app builds deterministic",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/2994",
+      "created_at": "2026-08-21T12:48:01Z",
+      "updated_at": "2026-08-21T12:57:33Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 2999,
+      "type": "pull_request",
+      "title": "fix(ane): circuit-break the procedure bank compile retry ladder before it OOMs",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/2999",
+      "created_at": "2026-08-21T13:49:16Z",
+      "updated_at": "2026-08-24T16:09:21Z",
+      "closed_at": "2026-08-24T16:09:21Z",
+      "merged_at": "2026-08-24T16:09:21Z",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3002,
+      "type": "pull_request",
+      "title": "fix(ane): bound every wait on the ANE evaluation path and latch timed-out programs",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3002",
+      "created_at": "2026-08-21T14:48:31Z",
+      "updated_at": "2026-08-23T14:53:48Z",
+      "closed_at": "2026-08-23T08:14:29Z",
+      "merged_at": "2026-08-23T08:14:29Z",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3007,
+      "type": "pull_request",
+      "title": "[fix] Preserve ANE tuning status across App View navigation",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3007",
+      "created_at": "2026-08-21T16:16:48Z",
+      "updated_at": "2026-08-31T03:30:04Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3017,
+      "type": "pull_request",
+      "title": "fix(dashboard): render FastAPI 422 detail arrays readably on save paths",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3017",
+      "created_at": "2026-08-21T23:46:52Z",
+      "updated_at": "2026-08-24T03:36:10Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3025,
+      "type": "issue",
+      "title": "oMLX Dual-ANE worker spin after aborted prefill",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3025",
+      "created_at": "2026-08-22T02:24:13Z",
+      "updated_at": "2026-08-22T15:11:41Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3026,
+      "type": "issue",
+      "title": "Qwen3.8 head-dim-256 128K prefill OOM with ANE disabled",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3026",
+      "created_at": "2026-08-22T03:54:30Z",
+      "updated_at": "2026-08-22T04:37:20Z",
+      "closed_at": "2026-08-22T04:37:20Z",
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3044,
+      "type": "issue",
+      "title": "ANE tuning crashes model load on M2 Ultra: \"Private ANE procedure-bank compiler is unavailable\" → \"Representative ANE calibration bank could not be loaded\" (no GPU fallback)",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3044",
+      "created_at": "2026-08-22T19:28:22Z",
+      "updated_at": "2026-08-24T16:38:07Z",
+      "closed_at": "2026-08-24T16:38:07Z",
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3045,
+      "type": "issue",
+      "title": "M3 Max: ANE prefill + native MTP (k=3) results — #2978 regression not reproduced, mtplx side-car graft works",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3045",
+      "created_at": "2026-08-22T21:34:01Z",
+      "updated_at": "2026-08-26T09:20:33Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3058,
+      "type": "pull_request",
+      "title": "Enable Qwen ANE prefill with DFlash2",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3058",
+      "created_at": "2026-08-23T13:31:38Z",
+      "updated_at": "2026-08-23T13:31:38Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3059,
+      "type": "pull_request",
+      "title": "Add experimental DeepSeek-V4 hybrid ANE prefill and tuning",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/3059",
+      "created_at": "2026-08-23T13:44:25Z",
+      "updated_at": "2026-09-01T15:47:17Z",
+      "closed_at": "2026-09-01T15:47:16Z",
+      "merged_at": null,
+      "discussion_comments": 12,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3065,
+      "type": "issue",
+      "title": "0.6.3rc2: watchdog kernel panic — python RSS 146GB past a 125GB ceiling (M5 Max)",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3065",
+      "created_at": "2026-08-23T17:28:53Z",
+      "updated_at": "2026-08-23T17:28:53Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3066,
+      "type": "pull_request",
+      "title": "fix(cache): align Qwen GDN boundaries with wide prefill",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3066",
+      "created_at": "2026-08-23T18:42:33Z",
+      "updated_at": "2026-08-24T16:30:17Z",
+      "closed_at": "2026-08-24T15:42:32Z",
+      "merged_at": "2026-08-24T15:42:32Z",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3067,
+      "type": "pull_request",
+      "title": "fix(ane-tuner): return a completed GPU-only verdict when the ANE compiler is unavailable",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3067",
+      "created_at": "2026-08-23T19:38:29Z",
+      "updated_at": "2026-08-24T18:28:18Z",
+      "closed_at": "2026-08-24T16:38:06Z",
+      "merged_at": "2026-08-24T16:38:06Z",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3069,
+      "type": "issue",
+      "title": "ANE prefill (approximate INT8 path) causes behavioral divergence on out-of-distribution prompts: agent descends into memorized training trajectories (0.6.3rc2)",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3069",
+      "created_at": "2026-08-23T21:43:39Z",
+      "updated_at": "2026-08-29T12:08:19Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 9,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3070,
+      "type": "issue",
+      "title": "Boundary-crossing turns on hybrid GDN models pay a hidden ~5-6 s cost that the cache phase timers do not see (M5 Pro, Qwen3.8-27B)",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3070",
+      "created_at": "2026-08-23T21:45:24Z",
+      "updated_at": "2026-08-23T22:36:47Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3071,
+      "type": "issue",
+      "title": "Distributed deployments silently drop ALL per-model settings — prefixed deployment IDs never match bare-name settings keys",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3071",
+      "created_at": "2026-08-23T21:58:24Z",
+      "updated_at": "2026-08-25T17:22:10Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3080,
+      "type": "pull_request",
+      "title": "fix(ane): disable SpecPrefill during ANE split tuning",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3080",
+      "created_at": "2026-08-24T06:33:05Z",
+      "updated_at": "2026-08-25T04:29:13Z",
+      "closed_at": "2026-08-24T16:44:05Z",
+      "merged_at": "2026-08-24T16:44:05Z",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3082,
+      "type": "pull_request",
+      "title": "fix(scheduler): break the prefill-guard admission bound into loggable terms",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3082",
+      "created_at": "2026-08-24T07:15:00Z",
+      "updated_at": "2026-08-24T16:17:20Z",
+      "closed_at": "2026-08-24T16:17:14Z",
+      "merged_at": "2026-08-24T16:17:13Z",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3097,
+      "type": "issue",
+      "title": "Memory doesn't appear to be released properly",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3097",
+      "created_at": "2026-08-24T09:02:17Z",
+      "updated_at": "2026-08-28T06:57:36Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3102,
+      "type": "issue",
+      "title": "Prefix cache restore miss on rapid consecutive turns: asynchronous boundary registration visibility race",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3102",
+      "created_at": "2026-08-24T10:17:30Z",
+      "updated_at": "2026-08-28T19:31:44Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3103,
+      "type": "pull_request",
+      "title": "fix(memory): shed ANE prefill banks under recurring prefill-headroom pressure",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3103",
+      "created_at": "2026-08-24T11:21:36Z",
+      "updated_at": "2026-08-24T18:28:20Z",
+      "closed_at": "2026-08-24T16:16:00Z",
+      "merged_at": "2026-08-24T16:16:00Z",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3104,
+      "type": "issue",
+      "title": "Feature request: support BF16 Qwen checkpoints in ANE Prompt Processing via FP16 ANE execution",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3104",
+      "created_at": "2026-08-24T12:08:10Z",
+      "updated_at": "2026-08-24T12:08:10Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3105,
+      "type": "pull_request",
+      "title": "fix(ane): roll back single/dual dispatch on mid-flight exceptions (C1)",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3105",
+      "created_at": "2026-08-24T12:12:24Z",
+      "updated_at": "2026-08-24T16:12:29Z",
+      "closed_at": "2026-08-24T16:12:29Z",
+      "merged_at": "2026-08-24T16:12:28Z",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3106,
+      "type": "pull_request",
+      "title": "feat(ds4): add optional kernel-provider capability contract",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3106",
+      "created_at": "2026-08-24T12:13:36Z",
+      "updated_at": "2026-08-24T15:42:41Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3110,
+      "type": "pull_request",
+      "title": "fix(ane): slice down matrix before dequantizing, not after",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3110",
+      "created_at": "2026-08-24T12:55:20Z",
+      "updated_at": "2026-08-24T16:15:29Z",
+      "closed_at": "2026-08-24T16:15:28Z",
+      "merged_at": "2026-08-24T16:15:28Z",
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3114,
+      "type": "issue",
+      "title": "[Benchmark] Comprehensive 12-Test Configuration Optimization Report for Qwen3.8-27B-oQ4e-mtp on M3 Max",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3114",
+      "created_at": "2026-08-24T16:17:46Z",
+      "updated_at": "2026-08-30T00:42:08Z",
+      "closed_at": "2026-08-30T00:42:08Z",
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3115,
+      "type": "pull_request",
+      "title": "Optimize Qwen MTP and long-context inference",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3115",
+      "created_at": "2026-08-24T16:48:33Z",
+      "updated_at": "2026-08-24T22:39:00Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3116,
+      "type": "issue",
+      "title": "0.6.3rc3 ANE tuner selects ineligible fused_down candidate on single-ANE Mac — verification false-negative aborts run, recommends GPU-only",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3116",
+      "created_at": "2026-08-24T21:42:23Z",
+      "updated_at": "2026-08-24T21:44:17Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3117,
+      "type": "issue",
+      "title": "Qwen3.8 with ANE enabled produces 0 tokens",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3117",
+      "created_at": "2026-08-24T22:33:21Z",
+      "updated_at": "2026-08-26T14:05:00Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 9,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3118,
+      "type": "pull_request",
+      "title": "feat(cluster): rebuild distributed inference as Cluster v2 Beta",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3118",
+      "created_at": "2026-08-24T23:45:10Z",
+      "updated_at": "2026-08-28T13:12:48Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 5,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3123,
+      "type": "pull_request",
+      "title": "fix(ane): gate ANE prefill on Metal headroom; harden latch checks",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3123",
+      "created_at": "2026-08-25T04:54:12Z",
+      "updated_at": "2026-08-25T04:54:12Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3124,
+      "type": "issue",
+      "title": "[Regression] v0.6.3rc3: ANE tuning fails — 'verifyBundleAtPath: invalid model' (Code=10) at every bank split size",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3124",
+      "created_at": "2026-08-25T05:27:50Z",
+      "updated_at": "2026-08-27T08:13:08Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3133,
+      "type": "pull_request",
+      "title": "fix(ane): preserve GDN quality with recurrent-safe prefill offload",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3133",
+      "created_at": "2026-08-25T09:36:09Z",
+      "updated_at": "2026-08-28T06:50:59Z",
+      "closed_at": "2026-08-27T07:07:24Z",
+      "merged_at": "2026-08-27T07:07:24Z",
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3150,
+      "type": "issue",
+      "title": "Bad generation using Qwen3.8-27B-oQ4e-mtp with MTP (w/ or w/o ANE)",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3150",
+      "created_at": "2026-08-26T00:14:27Z",
+      "updated_at": "2026-08-31T08:24:23Z",
+      "closed_at": "2026-08-31T08:24:23Z",
+      "merged_at": null,
+      "discussion_comments": 9,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3152,
+      "type": "pull_request",
+      "title": "fix(cluster): gate qwen35_ane_prefill_enabled on distributed deployments",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3152",
+      "created_at": "2026-08-26T06:56:17Z",
+      "updated_at": "2026-08-26T06:56:17Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3154,
+      "type": "pull_request",
+      "title": "feat(admin): detect and reject stale model-settings saves",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3154",
+      "created_at": "2026-08-26T10:33:47Z",
+      "updated_at": "2026-08-26T10:33:47Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3155,
+      "type": "pull_request",
+      "title": "feat(cluster): add trusted discovery and pairing foundation",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3155",
+      "created_at": "2026-08-26T10:56:16Z",
+      "updated_at": "2026-08-28T13:13:26Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3156,
+      "type": "pull_request",
+      "title": "fix(ane+cache): refuse ANE prefill on MoE models; stamp ANE provenance in SSD cache",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3156",
+      "created_at": "2026-08-26T13:39:54Z",
+      "updated_at": "2026-09-04T12:25:03Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3157,
+      "type": "pull_request",
+      "title": "fix(ane): release prefill state on engine unload",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3157",
+      "created_at": "2026-08-26T14:22:40Z",
+      "updated_at": "2026-08-26T14:22:40Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3169,
+      "type": "pull_request",
+      "title": "feat: add native Qwen3.8 Flash Next multimodal support",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3169",
+      "created_at": "2026-08-26T23:41:18Z",
+      "updated_at": "2026-08-27T06:43:15Z",
+      "closed_at": "2026-08-27T06:43:15Z",
+      "merged_at": "2026-08-27T06:43:15Z",
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3209,
+      "type": "issue",
+      "title": "Decode fairness retains only 13–23% of solo generation throughput during concurrent long prefill on oMLX 0.6.3",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3209",
+      "created_at": "2026-08-27T18:39:10Z",
+      "updated_at": "2026-08-28T13:59:12Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3217,
+      "type": "issue",
+      "title": "Private ANE runtime unavailable M4 MAX",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3217",
+      "created_at": "2026-08-27T20:04:49Z",
+      "updated_at": "2026-08-29T11:32:44Z",
+      "closed_at": "2026-08-29T11:32:44Z",
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3233,
+      "type": "issue",
+      "title": "0.6.3: Qwen ANE prefill corrupts context under agentic load (jumbled prompt content, empty init-only completions); clean with ANE off, Lightning MTP on",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3233",
+      "created_at": "2026-08-28T02:55:55Z",
+      "updated_at": "2026-08-29T13:58:01Z",
+      "closed_at": "2026-08-29T13:16:47Z",
+      "merged_at": null,
+      "discussion_comments": 10,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3241,
+      "type": "issue",
+      "title": "SDPA256 prefill safety is load-order and path dependent; add deterministic DFlash integration and a persistent policy",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3241",
+      "created_at": "2026-08-28T04:58:38Z",
+      "updated_at": "2026-08-28T20:12:10Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3242,
+      "type": "issue",
+      "title": "Loading a qwen3_5 MTP model breaks Lightning MTP on a resident qwen4_exp model — qwen35_vlm_runtime clobbers the capture_layer_ids=[] sentinel (one-line fix included)",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3242",
+      "created_at": "2026-08-28T07:26:01Z",
+      "updated_at": "2026-08-29T10:56:06Z",
+      "closed_at": "2026-08-29T10:56:06Z",
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3244,
+      "type": "pull_request",
+      "title": "perf(qwen4): flatten exact QSA prefill and accelerate Lightning MTP",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3244",
+      "created_at": "2026-08-28T07:33:29Z",
+      "updated_at": "2026-09-01T16:19:07Z",
+      "closed_at": "2026-08-29T16:35:24Z",
+      "merged_at": "2026-08-29T16:35:24Z",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3246,
+      "type": "pull_request",
+      "title": "Honor model-owned to_batch when joining a running batch (fixes qwen4_exp continuous-batching crash)",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3246",
+      "created_at": "2026-08-28T08:02:26Z",
+      "updated_at": "2026-08-29T13:26:47Z",
+      "closed_at": "2026-08-29T13:26:47Z",
+      "merged_at": "2026-08-29T13:26:46Z",
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3250,
+      "type": "issue",
+      "title": "feat(ane): extend ANE tuner eligibility to NVFP4-quantized Qwen MLP layers (Qwen3.6-35B-A3B-NVFP4 fails 'No eligible Qwen MLP layer')",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3250",
+      "created_at": "2026-08-28T09:38:31Z",
+      "updated_at": "2026-08-28T09:38:31Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3251,
+      "type": "pull_request",
+      "title": "perf(glm5): flatten native prefill and preserve exact decode scores",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3251",
+      "created_at": "2026-08-28T09:41:13Z",
+      "updated_at": "2026-09-01T22:18:06Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3252,
+      "type": "issue",
+      "title": "[Bug] v0.6.3 Server shuts down 30-40 seconds after startup on M3 Max 128GB",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3252",
+      "created_at": "2026-08-28T11:07:25Z",
+      "updated_at": "2026-08-29T14:52:15Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 3,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3256,
+      "type": "pull_request",
+      "title": "feat(cluster): add qualification, staging, planning, and deployment",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3256",
+      "created_at": "2026-08-28T13:11:57Z",
+      "updated_at": "2026-08-28T13:11:57Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3257,
+      "type": "pull_request",
+      "title": "feat(cluster): harden rank control, teardown, and recovery",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3257",
+      "created_at": "2026-08-28T13:12:15Z",
+      "updated_at": "2026-08-28T13:12:15Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3258,
+      "type": "pull_request",
+      "title": "feat(cluster): make TP and pipeline serving request-safe",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3258",
+      "created_at": "2026-08-28T13:12:33Z",
+      "updated_at": "2026-08-28T13:12:33Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3276,
+      "type": "issue",
+      "title": "Community benchmark uploads return 500 for Qwen3.8-Flash-Next rows (oMLX 0.6.3)",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3276",
+      "created_at": "2026-08-28T22:43:15Z",
+      "updated_at": "2026-08-28T23:25:52Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3279,
+      "type": "pull_request",
+      "title": "fix(scheduler): materialize restored mRoPE seed",
+      "state": "merged",
+      "url": "https://github.com/jundot/omlx/pull/3279",
+      "created_at": "2026-08-29T05:06:17Z",
+      "updated_at": "2026-08-30T04:58:12Z",
+      "closed_at": "2026-08-29T13:16:46Z",
+      "merged_at": "2026-08-29T13:16:46Z",
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3283,
+      "type": "pull_request",
+      "title": "fix(qwen4-exp): resolve prefill memory blowup for QSA long-context",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/3283",
+      "created_at": "2026-08-29T06:15:53Z",
+      "updated_at": "2026-09-04T12:00:45Z",
+      "closed_at": "2026-09-04T12:00:45Z",
+      "merged_at": null,
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3284,
+      "type": "issue",
+      "title": "ArraysCache hybrid prefill: admission guard under-estimates in-flight growth ~8.7x (measured 237 KB/tok vs 27.28 KB/tok) — doomed prefills admitted, then die mid-request",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3284",
+      "created_at": "2026-08-29T06:29:04Z",
+      "updated_at": "2026-08-29T06:29:04Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3289,
+      "type": "issue",
+      "title": "Prefill fails with MTLCommandBufferErrorDomain Code=4 (ANE input pack command buffer ignored) after long-running session, causing chat streaming error",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3289",
+      "created_at": "2026-08-29T11:32:13Z",
+      "updated_at": "2026-08-29T11:32:13Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3295,
+      "type": "issue",
+      "title": "Bug: mtp_num_draft_tokens configuration fails when value != 3, adaptive controller picks invalid depth values",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3295",
+      "created_at": "2026-08-29T13:06:07Z",
+      "updated_at": "2026-09-01T00:04:27Z",
+      "closed_at": "2026-09-01T00:04:27Z",
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3298,
+      "type": "pull_request",
+      "title": "feat(qwen4/ane): Experimental Qwen4 ANE offload",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/pull/3298",
+      "created_at": "2026-08-29T15:16:47Z",
+      "updated_at": "2026-09-01T15:46:54Z",
+      "closed_at": "2026-09-01T15:46:54Z",
+      "merged_at": null,
+      "discussion_comments": 6,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3305,
+      "type": "issue",
+      "title": "Qwen3.8 ANE prefill: GPU timeout on multimodal prefix-cache hit (\"ANE input pack command buffer failed\"), still on 0.6.4",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3305",
+      "created_at": "2026-08-29T20:55:05Z",
+      "updated_at": "2026-09-03T05:30:19Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 5,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3314,
+      "type": "issue",
+      "title": "[0.6.4][Qwen3.8-Flash-Next-MLX-8bit-MTP] Repeated boundary_snapshot_unavailable around 128K coincides with incorrect/truncated turns; output recovers after prefix rebuild",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3314",
+      "created_at": "2026-08-30T09:45:41Z",
+      "updated_at": "2026-08-30T12:54:52Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3317,
+      "type": "issue",
+      "title": "Boundary snapshots never captured on Qwen3.8-27B (qwen3_5 hybrid) in 0.6.4 — available_boundaries=0, worked in 0.6.2",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3317",
+      "created_at": "2026-08-30T16:11:39Z",
+      "updated_at": "2026-09-03T04:36:04Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 4,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3324,
+      "type": "issue",
+      "title": "Lightning MTP diverges from the no-MTP greedy stream at temp 0, and is additionally non-deterministic at draft depth >= 2 (Qwen3.6-27B oQ4e, 0.6.2)",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3324",
+      "created_at": "2026-08-31T00:35:19Z",
+      "updated_at": "2026-08-31T00:35:19Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3340,
+      "type": "pull_request",
+      "title": "fix(ane): clear the per-module state caches when releasing ANE banks",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3340",
+      "created_at": "2026-08-31T20:16:14Z",
+      "updated_at": "2026-09-01T21:37:15Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3343,
+      "type": "issue",
+      "title": "[0.6.4] qwen4_exp: engine loop dies on rope_deltas.item() after a long Lightning-MTP generate",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3343",
+      "created_at": "2026-09-01T00:46:59Z",
+      "updated_at": "2026-09-01T12:40:16Z",
+      "closed_at": "2026-09-01T12:40:16Z",
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3344,
+      "type": "issue",
+      "title": "[0.6.4] Qwen3.8-Flash-Next: engine loop dies after a long generate (rope_deltas.item() on a non-scalar)",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3344",
+      "created_at": "2026-09-01T00:48:51Z",
+      "updated_at": "2026-09-01T12:40:16Z",
+      "closed_at": "2026-09-01T12:40:16Z",
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3345,
+      "type": "issue",
+      "title": "[0.6.4] Qwen3.8-Flash-Next: engine loop dies after a long MTP generate",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3345",
+      "created_at": "2026-09-01T00:50:30Z",
+      "updated_at": "2026-09-01T12:40:16Z",
+      "closed_at": "2026-09-01T12:40:16Z",
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3349,
+      "type": "issue",
+      "title": "[0.6.4] Qwen3.8-27B (qwen3_5 dense GDN) prefill ~5× slower than 0.6.3rc1 — wide-prefill gate in #3244 likely forces fallback path",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3349",
+      "created_at": "2026-09-01T08:02:03Z",
+      "updated_at": "2026-09-02T07:48:31Z",
+      "closed_at": "2026-09-02T07:48:31Z",
+      "merged_at": null,
+      "discussion_comments": 2,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3350,
+      "type": "issue",
+      "title": "[0.6.4] Qwen3.8-Flash-Next: memory guard refuses a ~5K text continuation off a 233K prefix",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3350",
+      "created_at": "2026-09-01T08:14:22Z",
+      "updated_at": "2026-09-02T09:22:16Z",
+      "closed_at": "2026-09-02T09:22:16Z",
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3364,
+      "type": "pull_request",
+      "title": "fix(memory): refresh ANE prefill transient reserve after bank compile",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3364",
+      "created_at": "2026-09-01T23:48:17Z",
+      "updated_at": "2026-09-01T23:48:17Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3365,
+      "type": "pull_request",
+      "title": "fix(engine_pool): escalate prefill headroom past a no-op first pass",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3365",
+      "created_at": "2026-09-01T23:48:20Z",
+      "updated_at": "2026-09-01T23:48:20Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3366,
+      "type": "pull_request",
+      "title": "feat: content-free prefill memory diagnostics",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3366",
+      "created_at": "2026-09-01T23:48:23Z",
+      "updated_at": "2026-09-01T23:48:23Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3381,
+      "type": "issue",
+      "title": "Expose per-model prefill chunk width: at the fixed 2048 step the head_dim=256 SDPA transient (18,560 MiB) outruns guard headroom and 77k prefills livelock (glm5_next)",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3381",
+      "created_at": "2026-09-02T16:39:45Z",
+      "updated_at": "2026-09-02T16:39:45Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3384,
+      "type": "pull_request",
+      "title": "feat(engine): per-model prefill chunk size override (#3381)",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3384",
+      "created_at": "2026-09-02T19:27:45Z",
+      "updated_at": "2026-09-02T21:07:18Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3387,
+      "type": "issue",
+      "title": "Admin API returns 500 instead of 422 when a Pydantic validator raises ValueError (server.py:780)",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3387",
+      "created_at": "2026-09-02T20:51:23Z",
+      "updated_at": "2026-09-02T20:51:23Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3394,
+      "type": "issue",
+      "title": "Source-built oMLX regresses Qwen hd256 128K prefill: #3142 passes, commit 1a7ab338 rejects at 114688",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/issues/3394",
+      "created_at": "2026-09-03T00:55:21Z",
+      "updated_at": "2026-09-03T00:55:21Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3399,
+      "type": "issue",
+      "title": "Qwen3.8 ANE prefill: Metal command buffer timeout on request following a 16K+ tool-call turn (M4 Max, 0.6.4)",
+      "state": "closed",
+      "url": "https://github.com/jundot/omlx/issues/3399",
+      "created_at": "2026-09-03T05:20:31Z",
+      "updated_at": "2026-09-03T05:28:39Z",
+      "closed_at": "2026-09-03T05:28:39Z",
+      "merged_at": null,
+      "discussion_comments": 1,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3425,
+      "type": "pull_request",
+      "title": "feat(ane): price prefill banks at admission from the compiled size",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3425",
+      "created_at": "2026-09-04T04:37:14Z",
+      "updated_at": "2026-09-04T04:37:14Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    },
+    {
+      "number": 3434,
+      "type": "pull_request",
+      "title": "fix(qwen35_prefill): drop the wrong NAX qmm tile variant 6, add a tile benchmark",
+      "state": "open",
+      "url": "https://github.com/jundot/omlx/pull/3434",
+      "created_at": "2026-09-04T08:31:19Z",
+      "updated_at": "2026-09-04T08:31:19Z",
+      "closed_at": null,
+      "merged_at": null,
+      "discussion_comments": 0,
+      "formal_reviews": 0,
+      "inline_review_comments": 0
+    }
+  ]
+}
