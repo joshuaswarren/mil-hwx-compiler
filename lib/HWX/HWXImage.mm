@@ -1,7 +1,6 @@
 #import "HWXImage.h"
 
-#import <mach-o/loader.h>
-#import <mach-o/nlist.h>
+#import "HWXMachOFormat.h"
 
 NSString *const HWXImageErrorDomain = @"ANE.HWX.Image";
 

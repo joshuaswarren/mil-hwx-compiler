@@ -1,6 +1,16 @@
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
 CXX := clang++
 CXXFLAGS := -std=c++17 -fobjc-arc -Wall -Wextra -Werror -Iinclude
 FRAMEWORKS := -framework Foundation
+else
+GNUSTEP_PREFIX ?= $(HOME)/.local/mil-hwx-gnustep
+GNUSTEP_CONFIG ?= $(GNUSTEP_PREFIX)/bin/gnustep-config
+CXX := $(or $(firstword $(wildcard /usr/bin/clang++-18 /usr/bin/clang++-17 /usr/bin/clang++-16 /usr/bin/clang++-15 /usr/bin/clang++-14)),$(shell command -v clang++ 2>/dev/null))
+GNUSTEP_FLAGS := $(shell GNUSTEP_CONFIG_FILE=$(GNUSTEP_PREFIX)/etc/GNUstep/GNUstep.conf $(GNUSTEP_CONFIG) --objc-flags 2>/dev/null)
+CXXFLAGS := -std=c++17 -fobjc-arc $(GNUSTEP_FLAGS) -Wall -Wextra -Werror -Iinclude
+FRAMEWORKS := $(shell GNUSTEP_CONFIG_FILE=$(GNUSTEP_PREFIX)/etc/GNUstep/GNUstep.conf $(GNUSTEP_CONFIG) --base-libs 2>/dev/null)
+endif
 BUILD := build
 
 SUPPORT_SOURCES := lib/Support/ANEDiagnostic.mm

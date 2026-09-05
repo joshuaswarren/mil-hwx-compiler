@@ -1,10 +1,8 @@
 #import "ANEOperationGraph.h"
 
 static ANEOperationKind classifyOperation(NSString *name) {
-    static NSDictionary<NSString *, NSNumber *> *kinds;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        kinds = @{
+    static NSDictionary<NSString *, NSNumber *> *kinds = [] {
+        return @{
             @"const": @(ANEOperationKindConstant),
             @"conv": @(ANEOperationKindConv),
             @"matmul": @(ANEOperationKindMatmul),
@@ -39,7 +37,7 @@ static ANEOperationKind classifyOperation(NSString *name) {
             @"softmax": @(ANEOperationKindHighLevel),
             @"layer_norm": @(ANEOperationKindHighLevel),
         };
-    });
+    }();
     NSNumber *kind = kinds[name];
     return kind ? (ANEOperationKind)kind.unsignedIntegerValue
                 : ANEOperationKindUnsupported;

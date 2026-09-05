@@ -45,7 +45,7 @@ static NSString *const H16GConstantPackerErrorDomain =
                                error:(NSError **)error {
     BOOL measuredChannels = channels == 64 || channels == 128 ||
         channels == 256 || channels == 512;
-    NSUInteger rawBytes = channels * 9 * sizeof(_Float16);
+    NSUInteger rawBytes = channels * 9 * 2;
     if (!measuredChannels || weights.length != rawBytes) {
         if (error) *error = [NSError errorWithDomain:H16GConstantPackerErrorDomain
             code:3 userInfo:@{NSLocalizedDescriptionKey:

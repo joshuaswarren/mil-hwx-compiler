@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <limits>
 
 static NSString *const H16GTaskComposerErrorDomain =
     @"ANE.H16G.TaskComposer";
@@ -26,17 +27,46 @@ static BOOL consumerUsesProducer(H16GEncodedTask *producer,
         [consumer.inputShapes[index] isEqualToArray:producer.outputShape];
 }
 
+static uint64_t roundToNearestEven(double value) {
+    double lower = std::floor(value);
+    double fraction = value - lower;
+    return (uint64_t)lower +
+        (fraction > 0.5 || (fraction == 0.5 && std::fmod(lower, 2.0) != 0.0));
+}
+
 static uint16_t fp16Bits(double value) {
-    _Float16 half = (_Float16)value;
-    uint16_t bits = 0;
-    memcpy(&bits, &half, sizeof(bits));
-    return bits;
+    uint16_t sign = std::signbit(value) ? 0x8000u : 0;
+    if (std::isnan(value)) return sign | 0x7e00u;
+    if (std::isinf(value)) return sign | 0x7c00u;
+    double magnitude = std::fabs(value);
+    if (magnitude == 0.0) return sign;
+    if (magnitude < std::ldexp(1.0, -14)) {
+        uint64_t mantissa = roundToNearestEven(std::ldexp(magnitude, 24));
+        return sign | (uint16_t)mantissa;
+    }
+    int exponent = 0;
+    double fraction = std::frexp(magnitude, &exponent);
+    int unbiasedExponent = exponent - 1;
+    uint64_t significand = roundToNearestEven(std::ldexp(fraction, 11));
+    if (significand == 2048) {
+        significand = 1024;
+        ++unbiasedExponent;
+    }
+    if (unbiasedExponent > 15) return sign | 0x7c00u;
+    return sign | (uint16_t)((unbiasedExponent + 15) << 10) |
+        (uint16_t)(significand - 1024);
 }
 
 static double fp16Value(uint16_t bits) {
-    _Float16 half;
-    memcpy(&half, &bits, sizeof(bits));
-    return (double)half;
+    double sign = (bits & 0x8000u) ? -1.0 : 1.0;
+    uint16_t exponent = (bits >> 10) & 0x1fu;
+    uint16_t mantissa = bits & 0x03ffu;
+    if (exponent == 0x1fu)
+        return mantissa ? std::numeric_limits<double>::quiet_NaN()
+                        : sign * std::numeric_limits<double>::infinity();
+    if (exponent == 0)
+        return sign * std::ldexp((double)mantissa, -24);
+    return sign * std::ldexp((double)(1024 + mantissa), exponent - 25);
 }
 
 static BOOL readWord(NSData *data, NSUInteger byteOffset, uint32_t *value) {

@@ -115,7 +115,8 @@ static BOOL put(H16GTDWriter *writer, NSUInteger offset, uint64_t value,
     if (value > UINT32_MAX) {
         if (error) *error = [NSError errorWithDomain:H16GTDWriterErrorDomain code:6
             userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:
-                @"field '%@' value 0x%llx exceeds H16G u32", field, value]}];
+                @"field '%@' value 0x%llx exceeds H16G u32", field,
+                (unsigned long long)value]}];
         return NO;
     }
     return [writer writeUInt32:(uint32_t)value atOffset:offset

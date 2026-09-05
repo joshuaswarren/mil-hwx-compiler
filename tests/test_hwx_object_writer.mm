@@ -1,5 +1,5 @@
 #import <Foundation/Foundation.h>
-#import <mach-o/loader.h>
+#import "HWXMachOFormat.h"
 
 #import "H16GConvEncoder.h"
 #import "H16GConvChainEncoder.h"

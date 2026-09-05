@@ -124,9 +124,7 @@
 @end
 
 static NSArray<H16GTaskCapability *> *taskCapabilityRows(void) {
-    static NSArray<H16GTaskCapability *> *rows;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
+    static NSArray<H16GTaskCapability *> *rows = [] {
         NSMutableArray<H16GTaskCapability *> *result = [NSMutableArray array];
         for (NSNumber *sizeNumber in @[@128, @256]) {
             NSUInteger size = sizeNumber.unsignedIntegerValue;
@@ -238,16 +236,14 @@ static NSArray<H16GTaskCapability *> *taskCapabilityRows(void) {
             packetFamily:H16GTaskPacketFamilyPrimitiveFallback geometry:128
             programTaskCount:2 semanticConstraint:
                 H16GTaskSemanticConstraintNone]];
-        rows = [result copy];
-    });
+        return [result copy];
+    }();
     return rows;
 }
 
 static NSArray<H16GProgramCompositionCapability *> *
 programCompositionCapabilityRows(void) {
-    static NSArray<H16GProgramCompositionCapability *> *rows;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
+    static NSArray<H16GProgramCompositionCapability *> *rows = [] {
         NSMutableArray<H16GProgramCompositionCapability *> *result =
             [NSMutableArray array];
         for (NSNumber *sizeNumber in @[@128, @256]) {
@@ -348,18 +344,14 @@ programCompositionCapabilityRows(void) {
             action:H16GProgramCompositionActionSRAMTaskChain
             consumerTaskCountContribution:2
             provenance:@"M4 row normalization SRAM program, 2026-09-03"]];
-        rows = [result copy];
-    });
+        return [result copy];
+    }();
     return rows;
 }
 
 @implementation H16GTarget
 + (instancetype)currentTarget {
-    static H16GTarget *target;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        target = [[H16GTarget alloc] init];
-    });
+    static H16GTarget *target = [[H16GTarget alloc] init];
     return target;
 }
 - (instancetype)init {

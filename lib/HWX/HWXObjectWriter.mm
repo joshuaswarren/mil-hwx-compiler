@@ -1,7 +1,6 @@
 #import "HWXObjectWriter.h"
 
-#import <mach-o/loader.h>
-#import <mach-o/nlist.h>
+#import "HWXMachOFormat.h"
 
 static NSString *const HWXObjectWriterErrorDomain = @"ANE.HWX.ObjectWriter";
 
@@ -26,7 +25,7 @@ static BOOL alignUpWithoutOverflow(uint64_t value, uint64_t alignment,
 }
 static void setName(char destination[16], const char *name) {
     memset(destination, 0, 16);
-    strlcpy(destination, name, 16);
+    memcpy(destination, name, MIN(strlen(name), (size_t)15));
 }
 static void writeU32(NSMutableData *data, NSUInteger offset, uint32_t value) {
     [data replaceBytesInRange:NSMakeRange(offset,4) withBytes:&value];

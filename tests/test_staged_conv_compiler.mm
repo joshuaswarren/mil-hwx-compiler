@@ -1,6 +1,6 @@
 #import <Foundation/Foundation.h>
 #import <CommonCrypto/CommonDigest.h>
-#import <mach-o/loader.h>
+#import "HWXMachOFormat.h"
 
 #import "ANEDiagnostic.h"
 #import "ANEExecutableBundle.h"
