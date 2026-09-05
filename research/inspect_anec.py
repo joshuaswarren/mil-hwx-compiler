@@ -33,7 +33,57 @@ def local_file(directory, name, limit):
     return path.read_bytes()
 
 
-def check_binding(binding, index, channels, tiles, layouts):
+def check_tensor(name, tensor):
+    require(isinstance(name, str) and name, 'tensor needs a non-empty name')
+    require(isinstance(tensor, dict) and set(tensor) == {'shape', 'logicalBytes', 'role'},
+            'tensor record has incorrect fields')
+    shape = tensor.get('shape')
+    require(isinstance(shape, list) and shape and
+            all(type(n) is int and n > 0 for n in shape),
+            'tensor shape must have positive static dimensions')
+    require(type(tensor.get('logicalBytes')) is int and
+            tensor['logicalBytes'] == math.prod(shape) * 2,
+            'tensor logical byte count does not match its shape')
+    require(tensor.get('role') in ('input', 'output', 'intermediate', 'constant'),
+            'unsupported tensor role')
+
+
+def binding_interval(binding, tensors):
+    slice_record = binding.get('slice')
+    if slice_record is None:
+        tensor_name = binding['name']
+        require(tensor_name in tensors, 'binding references an unknown tensor')
+        tensor = tensors[tensor_name]
+        require(binding['shape'] == tensor['shape'] and
+                binding['logicalBytes'] == tensor['logicalBytes'],
+                'whole-tensor binding differs from its tensor')
+        return tensor_name, 0, tensor['logicalBytes'] // 2
+    require(isinstance(slice_record, dict) and
+            set(slice_record) == {'tensor', 'elementOffset', 'elementCount'},
+            'slice has incorrect fields')
+    tensor_name = slice_record.get('tensor')
+    offset, count = slice_record.get('elementOffset'), slice_record.get('elementCount')
+    require(tensor_name == binding['name'] and tensor_name in tensors,
+            'slice references an unknown or mismatched tensor')
+    require(type(offset) is int and type(count) is int and offset >= 0 and count > 0,
+            'slice offsets and counts must be nonnegative integers')
+    elements = tensors[tensor_name]['logicalBytes'] // 2
+    require(count == binding['logicalBytes'] // 2 and offset <= elements - count,
+            'slice exceeds its tensor or differs from its binding')
+    return tensor_name, offset, count
+
+
+def exact_tiling(bindings, tensors, message):
+    intervals = sorted(binding_interval(item, tensors)[1:] for _, item in bindings)
+    cursor = 0
+    for offset, count in intervals:
+        require(offset == cursor, message)
+        cursor += count
+    require(bindings and cursor == tensors[binding_interval(bindings[0][1], tensors)[0]]['logicalBytes'] // 2,
+            message)
+
+
+def check_binding(binding, index, channels, tiles, layouts, tensors):
     require(isinstance(binding, dict), 'binding must be an object')
     require(isinstance(binding.get('name'), str) and binding['name'],
             'binding needs a non-empty name')
@@ -59,9 +109,10 @@ def check_binding(binding, index, channels, tiles, layouts):
             'allocation differs from ANEC header')
     require(binding.get('role') in (None, 'intermediate'),
             'unsupported binding role')
+    binding_interval(binding, tensors)
 
 
-def validate_program(directory, program):
+def validate_program(directory, program, tensors):
     require(isinstance(program, dict), 'program must be an object')
     operation = program.get('operation')
     require(operation in ('add', 'mul', 'maximum', 'minimum', 'matmul'),
@@ -108,8 +159,8 @@ def validate_program(directory, program):
     else:
         input_channels = output_channels = 64
     for index, item in enumerate(inputs, start=5):
-        check_binding(item, index, input_channels, tiles, layouts)
-    check_binding(outputs[0], 4, output_channels, tiles, layouts)
+        check_binding(item, index, input_channels, tiles, layouts, tensors)
+    check_binding(outputs[0], 4, output_channels, tiles, layouts, tensors)
     if not matmul:
         require(inputs[0]['shape'] == inputs[1]['shape'] == outputs[0]['shape'],
                 'binary operation shapes must match')
@@ -157,6 +208,7 @@ def load_package(directory):
     programs = manifest.get('programs')
     dispatch = manifest.get('dispatchPlan')
     intermediates = manifest.get('intermediates')
+    tensors = manifest.get('tensors')
     require(isinstance(programs, list) and programs, 'programs must be a non-empty array')
     require(isinstance(dispatch, list) and
             all(type(index) is int for index in dispatch) and
@@ -166,6 +218,13 @@ def load_package(directory):
             all(isinstance(name, str) and name for name in intermediates) and
             len(set(intermediates)) == len(intermediates),
             'intermediates must contain unique non-empty names')
+    require(isinstance(tensors, dict) and tensors, 'tensors must be a non-empty object')
+    for name, tensor in tensors.items():
+        check_tensor(name, tensor)
+    intermediate_set = {name for name, tensor in tensors.items()
+                        if tensor['role'] == 'intermediate'}
+    require(set(intermediates) == intermediate_set,
+            'intermediates must match tensors with intermediate role')
     files = [program.get('file') for program in programs if isinstance(program, dict)]
     require(len(files) == len(programs) and len(set(files)) == len(files),
             'program files must be unique')
@@ -177,65 +236,76 @@ def load_package(directory):
         require(not any(key in manifest for key in PROGRAM_FIELDS),
                 'multi-program packages must omit legacy top-level program fields')
 
-    allocations = [validate_program(directory, program) for program in programs]
-    intermediate_set = set(intermediates)
-    producers = {}
-    consumers = {}
+    allocations = [validate_program(directory, program, tensors) for program in programs]
+    producers = {name: [] for name in intermediates}
+    consumers = {name: [] for name in intermediates}
+    output_tensors = {name: [] for name, tensor in tensors.items()
+                      if tensor['role'] == 'output'}
+    referenced = set()
     for program_index, program in enumerate(programs):
         for item in program['outputs']:
-            name = item['name']
-            if name in intermediate_set:
+            name, _, _ = binding_interval(item, tensors)
+            referenced.add(name)
+            role = tensors[name]['role']
+            if role == 'intermediate':
                 require(item.get('role') == 'intermediate',
                         'intermediate output must have intermediate role')
-                require(name not in producers, 'intermediate must be produced once')
-                producers[name] = (program_index, item)
+                producers[name].append((program_index, item))
             else:
-                require(item.get('role') is None,
-                        'non-intermediate output cannot have intermediate role')
+                require(role == 'output' and item.get('role') is None,
+                        'non-intermediate output must have output tensor role')
+                output_tensors[name].append((program_index, item))
         for item in program['inputs']:
-            name = item['name']
-            if name in intermediate_set:
+            name, _, _ = binding_interval(item, tensors)
+            referenced.add(name)
+            role = tensors[name]['role']
+            if role == 'intermediate':
                 require(item.get('role') == 'intermediate' and
                         item.get('binding') is None,
                         'intermediate input must have intermediate role')
-                require(name not in consumers, 'intermediate must be consumed once')
-                consumers[name] = (program_index, item)
+                consumers[name].append((program_index, item))
+            elif role == 'constant':
+                require(item.get('role') is None and item.get('binding') == 'constant',
+                        'constant tensor input must have constant binding')
             else:
-                require(item.get('role') is None,
-                        'non-intermediate input cannot have intermediate role')
-    require(set(producers) == intermediate_set and set(consumers) == intermediate_set,
-            'every intermediate must be produced and consumed exactly once')
-    require(len(intermediates) == len(programs) - 1,
-            'a straight-line package needs one intermediate per program edge')
+                require(role == 'input' and item.get('role') is None and
+                        item.get('binding') is None,
+                        'runtime input must have input tensor role')
+    require(all(name in referenced or tensor['role'] == 'constant'
+                for name, tensor in tensors.items()),
+            'only constant tensors may be unreferenced by program bindings')
     positions = {program_index: position for position, program_index in enumerate(dispatch)}
-    edges = set()
     for name in intermediates:
-        producer_index, produced = producers[name]
-        consumer_index, consumed = consumers[name]
-        require(binding_layout(produced) == binding_layout(consumed),
-                'intermediate physical layouts must match')
-        require(positions[producer_index] < positions[consumer_index],
-                'dispatchPlan violates an intermediate dependency')
-        edges.add((producer_index, consumer_index))
-    require(edges == set(zip(dispatch, dispatch[1:])),  # noqa: RUF007 - macOS ships Python 3.9
-            'intermediates must connect adjacent dispatched programs')
+        exact_tiling(producers[name], tensors,
+                     'intermediate producer slices must exactly tile the tensor')
+        exact_tiling(consumers[name], tensors,
+                     'intermediate consumer slices must exactly tile the tensor')
+        for producer_index, produced in producers[name]:
+            _, produced_offset, produced_count = binding_interval(produced, tensors)
+            produced_end = produced_offset + produced_count
+            for consumer_index, consumed in consumers[name]:
+                _, consumed_offset, consumed_count = binding_interval(consumed, tensors)
+                if produced_offset < consumed_offset + consumed_count and \
+                        consumed_offset < produced_end:
+                    require(positions[producer_index] < positions[consumer_index],
+                            'dispatchPlan violates an intermediate dependency')
+    for name, bindings in output_tensors.items():
+        exact_tiling(bindings, tensors, 'output slices must exactly tile the tensor')
     return manifest, allocations
 
 
 def find_bindings(manifest, name, direction, constants=False):
     matches = []
-    for program in manifest['programs']:
+    for program_index, program in enumerate(manifest['programs']):
         for item in program[direction]:
-            if item['name'] != name:
+            tensor_name, _, _ = binding_interval(item, manifest['tensors'])
+            if tensor_name != name:
                 continue
             if constants != (item.get('binding') == 'constant'):
                 continue
-            matches.append((program, item))
+            matches.append((program_index, program, item))
     require(matches, 'no such constant input' if constants else
             ('no such input' if direction == 'inputs' else 'no such output'))
-    expected = binding_layout(matches[0][1])
-    require(all(binding_layout(item) == expected for _, item in matches),
-            'binding name has inconsistent layouts across programs')
     return matches
 
 
@@ -250,6 +320,19 @@ def convert_tensor(binding, data, pack):
         else:
             result[dense:dense + 2] = data[padded:padded + 2]
     return result
+
+
+def dense_slice(data, binding, tensors):
+    name, offset, count = binding_interval(binding, tensors)
+    require(len(data) == tensors[name]['logicalBytes'], 'incorrect dense tensor byte count')
+    return data[offset * 2:(offset + count) * 2]
+
+
+def binding_buffer_name(program_index, binding):
+    name = binding['name']
+    require(Path(name).name == name and name not in ('.', '..'),
+            'binding name cannot form a safe buffer filename')
+    return f'program-{program_index}.{name}.buffer'
 
 
 def main():
@@ -270,41 +353,78 @@ def main():
             if args.pack_constant:
                 name = args.pack_constant
                 matches = find_bindings(manifest, name, 'inputs', constants=True)
-                encoded = {program['constantInputs'][name] for program, _ in matches}
+                encoded = {program['constantInputs'][item['name']]
+                           for _, program, item in matches}
                 require(len(encoded) == 1,
                         'constant name has inconsistent payloads across programs')
                 source = bytes.fromhex(encoded.pop())
-                data = convert_tensor(matches[0][1], source, True)
+                data = convert_tensor(matches[0][2], source, True)
+                with args.output.open('xb') as destination:
+                    destination.write(data)
+                written = len(data)
+            elif args.pack_input:
+                name, source_path = args.pack_input
+                matches = find_bindings(manifest, name, 'inputs')
+                source = Path(source_path).read_bytes()
+                buffers = [(program_index, item,
+                            convert_tensor(item, dense_slice(source, item, manifest['tensors']), True))
+                           for program_index, _, item in matches]
+                if len(buffers) == 1:
+                    with args.output.open('xb') as destination:
+                        destination.write(buffers[0][2])
+                else:
+                    args.output.mkdir()
+                    for program_index, item, data in buffers:
+                        (args.output / binding_buffer_name(program_index, item)).write_bytes(data)
+                written = sum(len(data) for _, _, data in buffers)
             else:
-                name, source = conversion
-                direction = 'inputs' if args.pack_input else 'outputs'
-                matches = find_bindings(manifest, name, direction)
-                data = convert_tensor(matches[0][1], Path(source).read_bytes(),
-                                      args.pack_input is not None)
-            with args.output.open('xb') as destination:
-                destination.write(data)
-            print(f'wrote {len(data)} bytes to {args.output}; no device execution')
+                name, source_path = args.unpack_output
+                matches = find_bindings(manifest, name, 'outputs')
+                if len(matches) == 1:
+                    item = matches[0][2]
+                    data = convert_tensor(item, Path(source_path).read_bytes(), False)
+                else:
+                    exact_tiling([(program_index, item) for program_index, _, item in matches],
+                                 manifest['tensors'],
+                                 'output slices must exactly tile the tensor')
+                    data = bytearray(manifest['tensors'][name]['logicalBytes'])
+                    source_directory = Path(source_path).resolve()
+                    require(source_directory.is_dir(),
+                            'multi-binding output source must be a directory')
+                    for program_index, _, item in matches:
+                        physical = local_file(source_directory,
+                                              binding_buffer_name(program_index, item),
+                                              item['allocationBytes'])
+                        dense = convert_tensor(item, physical, False)
+                        _, offset, count = binding_interval(item, manifest['tensors'])
+                        data[offset * 2:(offset + count) * 2] = dense
+                with args.output.open('xb') as destination:
+                    destination.write(data)
+                written = len(data)
+            print(f'wrote {written} bytes to {args.output}; no device execution')
         else:
             command_bytes = sum(item['commandAndConstantsBytes'] for item in allocations)
             input_bindings = {}
             output_bindings = {}
             for program in manifest['programs']:
                 for item in program['inputs']:
-                    if item['name'] not in set(manifest['intermediates']):
-                        input_bindings.setdefault(item['name'], item)
+                    name, offset, count = binding_interval(item, manifest['tensors'])
+                    if manifest['tensors'][name]['role'] != 'intermediate':
+                        input_bindings.setdefault((name, offset, count), item)
                 for item in program['outputs']:
-                    output_bindings.setdefault(item['name'], item)
+                    name, offset, count = binding_interval(item, manifest['tensors'])
+                    output_bindings.setdefault((name, offset, count), item)
             input_bytes = sum(item['allocationBytes'] for item in input_bindings.values())
             output_bytes = sum(item['allocationBytes'] for item in output_bindings.values())
             print(json.dumps({
-                'validation': 'container, binding, and dispatch consistency only',
+                'validation': 'container, tensor, binding, slice, and dispatch consistency only',
                 'manifest': manifest,
                 'bufferAllocation': {
                     'programs': allocations,
                     'commandAndConstantsBytes': command_bytes,
                     'inputBytes': input_bytes, 'outputBytes': output_bytes,
                     'totalBytes': command_bytes + input_bytes + output_bytes,
-                    'scope': 'encoded buffers only; shared names counted once; excludes driver and runtime overhead',
+                    'scope': 'encoded buffers only; shared tensor slices counted once; excludes driver and runtime overhead',
                 },
             }, indent=2, sort_keys=True))
     except (OSError, ValueError, struct.error) as error:

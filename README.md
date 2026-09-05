@@ -32,19 +32,25 @@ or invoke Apple's compiler. The currently encoded shapes are deliberately narrow
 
 | Operation | MIL contract |
 | --- | --- |
-| add, mul, maximum, minimum | Two distinct fp16 inputs, or one fp16 input plus a same-shape 64-element fp16 const tensor on either side. `mul` also expands one inline fp16 scalar to 64 elements. Input, output, and tensor-constant shapes must match and contain exactly 64 elements. |
-| relu | One fp16 input and matching output with the same positive static shape containing exactly 64 elements. Lowers to `maximum(x, 0)` with a synthesized 64-element zero tensor recorded as a constant input. |
-| clip | One fp16 input and matching output with the same positive static shape containing exactly 64 elements, plus finite fp32 scalar `alpha` and `beta` attributes that are exactly representable in fp16 and satisfy `alpha <= beta`. Lowers to `minimum(maximum(x, alpha), beta)` as two chained programs with synthesized constant tensors. |
-| sub | One 64-element fp16 input `x` and a same-shape fp16 const tensor `y`; the host negates the constant and emits the verified add descriptor. Two runtime inputs and `const - input` are rejected. |
-| real_div | One 64-element fp16 input `x` and a same-shape fp16 const tensor `y` whose elements are finite, nonzero powers of two with fp16-exact reciprocals; the host stores the reciprocals and emits the verified multiply descriptor. |
-| matmul | fp16 x with K=256 or 512 as [K], [...,1,K] with singleton leading dimensions, or transpose_x=true [...,K,1]; constant rank-2 W[K,512] with transpose_y=false or W[512,K] with transpose_y=true; output [512], [...,1,512] |
+| add, mul, maximum, minimum | Two distinct fp16 inputs, or one fp16 input plus a same-shape fp16 const tensor on either side. `mul` also expands one inline fp16 scalar. Input, output, and tensor-constant shapes must match, be positive and static, and contain a multiple of 64 elements. The compiler emits one verified 64-element program per slice. |
+| relu | One fp16 input and matching output with a positive static shape containing a multiple of 64 elements. Lowers each slice to `maximum(x, 0)` with a synthesized constant input. |
+| clip | One fp16 input and matching output with a positive static shape containing a multiple of 64 elements, plus finite fp32 scalar `alpha` and `beta` attributes that are exactly representable in fp16 and satisfy `alpha <= beta`. Lowers each slice to `minimum(maximum(x, alpha), beta)` as two operation-major program groups. |
+| sub | One fp16 input `x` and a same-shape fp16 const tensor `y`, with a positive static element count that is a multiple of 64. The host negates each constant slice and emits the verified add descriptor. Two runtime inputs and `const - input` are rejected. |
+| real_div | One fp16 input `x` and a same-shape fp16 const tensor `y`, with a positive static element count that is a multiple of 64. Every constant element must be a finite, nonzero power of two with an fp16-exact reciprocal. The host stores each reciprocal slice and emits the verified multiply descriptor. |
+| matmul | With `transpose_x=false`, fp16 x has shape `[..., K]`, K is 256 or 512, and the product of the leading dimensions is the row count M. The output has shape `[..., 512]`. With `transpose_x=true`, only one logical row is accepted. W is a constant rank-2 tensor `[K,512]` with `transpose_y=false` or `[512,K]` with `transpose_y=true`. The compiler emits one verified matvec program per row. |
+
+The rank-2 W broadcast over x's leading dimensions follows coremltools commit
+[`9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4`](https://github.com/apple/coremltools/commit/9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4),
+which computes the result's leading shape by broadcasting the operands' leading
+dimensions before appending the matrix dimensions.
 
 Exactly one function and at least one non-constant operation are required. A
 straight-line chain is supported when every operation satisfies its row above,
 each non-final result is consumed exactly once by the next operation, and only
-the last result is returned. Intermediate tensors keep the producer's logical
-shape and physical layout. A 512-element matvec result therefore cannot feed a
-64-element binary operation; unsupported chain edges fail with
+the last result is returned. Programs are ordered by operation and then by
+slice. Producer and consumer slices must each tile every intermediate tensor.
+A one-row matmul can therefore feed eight 64-element binary slices, and eight
+binary slices can feed one 512-element matmul row. Unsupported chains fail with
 `h13.unsupported-chain` rather than falling back to CPU execution.
 
 Run the host-only checks with `make test-h13` (set `GNUSTEP_PREFIX` on Linux).
@@ -65,21 +71,23 @@ MIL
 ```
 
 The output directory must be absent or empty. It receives one
-`program-N.anec` file per operation. The v1 manifest always includes a
-`programs` array and numeric `dispatchPlan`; `intermediates` names the shared
-tensors between programs. A single-program package also keeps the original
-top-level program fields for existing readers. Multi-program packages keep only
-`schema`, `target`, `artifactFormat`, `programs`, `dispatchPlan`, and
-`intermediates` at the top level. Each program record contains logical shapes,
-physical strides, buffer indices, allocation sizes, and constant bindings.
+`program-N.anec` file per operation slice. The v1 manifest always includes a
+`programs` array, numeric `dispatchPlan`, and `tensors` object. Each tensor
+records its full logical shape, byte count, and input, output, intermediate, or
+constant role. `intermediates` keeps the names of shared tensors. A sliced
+binding records its tensor name, element offset, and element count. An unsliced
+binding omits `slice` and keeps the original binding fields. A single-program
+package also keeps the original top-level program fields for existing readers.
+Each program record contains its local logical shape, physical strides, buffer
+indices, allocation sizes, and constant bindings.
+
 ANEC uses a 0x1000-byte header, a 0x274-byte descriptor, and constants at
 content offset 0x280. Older libane readers expecting a 0x800-byte header cannot
 consume this format. The schema remains `mil-hwxc.h13-anec-package.v1`, not an
 `ANEExecutableBundle` or an mlx-omarchy bundle. The device-free reader validates
-every container and binding, exact intermediate producer/consumer ownership,
-and dependency-respecting dispatch order. Packing and unpacking resolve binding
-names across all programs and convert dense little-endian fp16 bytes to and from
-the physical channel layout:
+every container, tensor, binding, and slice. It also checks exact intermediate
+tiling and every producer-to-consumer dispatch dependency. Packing and unpacking
+convert dense little-endian fp16 bytes to and from the physical channel layout.
 
 ```bash
 python3 research/inspect_anec.py build/h13-add
@@ -87,10 +95,14 @@ python3 research/inspect_anec.py build/h13-add --pack-input a input.fp16 --outpu
 python3 research/inspect_anec.py build/h13-add --unpack-output y output.buffer --output output.fp16
 ```
 
-Conversion refuses incorrect byte counts and existing output files. Inspection
-reports encoded command, input, and output allocation totals, excluding driver
-and runtime overhead. It does not validate task instructions or establish
-device safety. No device dispatcher is implemented here.
+Conversion refuses incorrect byte counts and existing output paths. When one
+program binding references the selected tensor, `--output` names one buffer.
+When several bindings reference it, packing writes one
+`program-N.NAME.buffer` file per binding under the `--output` directory;
+unpacking reads the same directory form and reassembles one dense output file.
+Inspection reports encoded command, input, and output allocation totals,
+excluding driver and runtime overhead. It does not validate task instructions
+or establish device safety. No device dispatcher is implemented here.
 
 Before hardware use, qualify the matching driver, BAR/kernel binding contract,
 and DMA spans on an ANE-enabled base M1. Compilation on an M1 Ultra host is
