@@ -1,0 +1,2 @@
+compiled target=H13 artifacts=17 format=anec output=/tmp/h13-residual.7reNsN
+programs 17 tensors {'$h13.a.zero': ([1, 512], 'constant', None), 'W': ([512, 256], 'constant', None), 'a': ([1, 512], 'intermediate', None), 'h': ([1, 512], 'intermediate', None), 'r': ([512], 'output', None), 'x': ([1, 256], 'input', None), 'y': ([512], 'output', 'r')}
