@@ -1,8 +1,8 @@
 # MIL-to-HWX compiler
 
 This repository contains a research compiler for the H16G Apple Neural Engine
-in the M4. It reads textual MIL, builds a typed graph, lowers supported
-operations, and writes new HWX objects without calling Apple's compiler.
+in the M4 and an experimental source-native H13/M1 backend. It reads textual
+MIL and emits H16G HWX objects or H13 ANEC packages without Apple's compiler.
 
 The project is a canary for the compiler pipeline recovered in *Inside the M4
 Apple Neural Engine*, Part 4b. It shows which parts of that pipeline are
@@ -10,7 +10,7 @@ understood well enough to reproduce in code and verify on hardware.
 
 ## Linux build
 
-This fork builds the compiler on Linux with GNUstep Foundation. It emits new H16G/M4 HWX files without Apple frameworks or compiler binaries. M1/H13 code generation and Linux device execution are not implemented here.
+This fork builds on Linux with GNUstep Foundation. H16G emits HWX; the experimental H13 backend emits ANEC. H13 hardware execution, numerical correctness, performance, and mlx-omarchy integration remain unqualified.
 
 Install Clang and LLD, CMake, Ninja, Make, pkg-config, Git, Python 3, and development packages for libffi, libxml2, ICU, OpenSSL, and zlib. Then run:
 
@@ -23,6 +23,55 @@ scripts/verify-linux-compiler.sh all
 The script builds pinned libobjc2 and GNUstep sources under `$HOME/.local/mil-hwx-gnustep`, builds the compiler, runs the Linux software checks, and emits and inspects Conv1x1/ReLU and W8A8 HWX files. Set `GNUSTEP_PREFIX` to choose another install directory. The bootstrap does not install system packages or require root. An explicit `CXX` path selects the compiler for both bootstrap and subsequent builds.
 
 Use this verifier on Linux. The macOS hardware suites below require Apple runtime interfaces and do not run on Linux.
+
+## Experimental M1/H13 compilation
+
+The H13 path constructs descriptors from named register fields and packs the
+model's own weights. It does not rename H16G output, patch a binary template,
+or invoke Apple's compiler. The currently encoded shapes are deliberately narrow:
+
+| Operation | MIL contract |
+| --- | --- |
+| add, mul, maximum, minimum | Two distinct fp16 inputs and output, each [1,64,1,1] |
+| matmul | fp16 x[1,K] and constant W[512,K], K=256 or 512; transpose_x=false, transpose_y=true; output [1,512] |
+
+Exactly one function, one non-constant operation, and its single returned result
+are required. Other operations, geometry, and multi-operation graphs fail with
+diagnostics rather than falling back to CPU execution.
+
+Run the host-only checks with `make test-h13` (set `GNUSTEP_PREFIX` on Linux).
+They cover encoding, coefficient packing, serialization, and the MIL CLI;
+they do not execute ANE commands. A minimal compilation example is:
+
+```sh
+cat > /tmp/h13-add.mil <<'MIL'
+program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1,64,1,1]> a, tensor<fp16, [1,64,1,1]> b) {
+    tensor<fp16, [1,64,1,1]> y = add(x = a, y = b)[name = string("sum")];
+  } -> (y);
+}
+MIL
+./build/mil-hwxc --target H13 --mil /tmp/h13-add.mil --model-root /tmp --output build/h13-add
+```
+
+The output directory must be absent or empty. It receives `program-0.anec`
+and a manifest containing logical shapes, physical strides, buffer indices,
+and allocation sizes. ANEC uses a 0x1000-byte header, a 0x274-byte descriptor,
+and constants at content offset 0x280. Older libane readers expecting a
+0x800-byte header cannot consume this format. The manifest schema is
+`mil-hwxc.h13-anec-package.v1`, not an `ANEExecutableBundle` or an mlx-omarchy
+bundle. No H13 manifest loader or device dispatcher is implemented here.
+
+Before hardware use, qualify the matching driver, BAR/kernel binding contract,
+and DMA spans on an ANE-enabled base M1. Compilation on an M1 Ultra host is
+not proof that the emitted program executes on a base M1. General model
+coverage, scheduling/fusion, and device latency optimization remain unfinished.
+The 512-wide encoder omits 512 KiB of unreachable coefficient padding:
+the sixteen KDMA ranges address only 512 KiB. Both reductions therefore
+emit 529,024-byte ANEC files, with 33 command tiles.
+This is a file-size/allocation reduction, not a measured device speedup.
 
 ## macOS build and hardware tests
 
@@ -267,6 +316,13 @@ Descriptor words for operation and geometry rows whose field grammar is still
 incomplete. They are indexed target measurements rather than copied program
 containers. Tests store hashes and decoded field values, not Apple-generated
 HWX files.
+
+H13 register-field evidence comes from allbilly/ane revision
+`e159e2d18ce6cea100e8f19bb27a7f07acaa9c24`, specifically its
+[elementwise](https://github.com/allbilly/ane/blob/e159e2d18ce6cea100e8f19bb27a7f07acaa9c24/examples/elementwise.py)
+and [GEMM](https://github.com/allbilly/ane/blob/e159e2d18ce6cea100e8f19bb27a7f07acaa9c24/examples/gemm.py)
+examples. That source revision has no LICENSE file; these are attributed
+register-layout facts, not an imported dependency or relicensed source files.
 
 See [DISCLAIMER.md](DISCLAIMER.md) for the full scope and private-API notes.
 

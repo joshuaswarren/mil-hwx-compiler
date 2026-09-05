@@ -3,13 +3,14 @@
 #import "ANECompiler.h"
 #import "ANEDiagnostic.h"
 #import "ANEExecutableBundle.h"
+#import "ANEH13Compiler.h"
 
 #include <stdio.h>
 
 static void printUsage(const char *program) {
     fprintf(stderr,
         "usage: %s --mil FILE --model-root DIR "
-        "--output DIR [--target H16G]\n", program);
+        "--output DIR [--target H16G|H13]\n", program);
 }
 
 static NSString *severityName(ANEDiagnosticSeverity severity) {
@@ -73,6 +74,22 @@ int main(int argc, const char *argv[]) {
             return 66;
         }
         ANEDiagnosticEngine *diagnostics = [[ANEDiagnosticEngine alloc] init];
+        if ([target isEqualToString:@"H13"]) {
+            NSError *error = nil;
+            BOOL success = [ANEH13Compiler compileMILData:milData
+                modelRoot:[NSURL fileURLWithPath:modelRoot isDirectory:YES]
+                outputDirectory:[NSURL fileURLWithPath:output isDirectory:YES]
+                diagnostics:diagnostics error:&error];
+            printDiagnostics(diagnostics);
+            if (!success) {
+                if (error) fprintf(stderr, "cannot write H13 package: %s\n",
+                    error.description.UTF8String);
+                return error ? 74 : 65;
+            }
+            printf("compiled target=H13 artifacts=1 format=anec output=%s\n",
+                output.UTF8String);
+            return 0;
+        }
         ANECompiler *compiler = [[ANECompiler alloc] init];
         ANEExecutableBundle *bundle = [compiler compileMILData:milData
             modelRoot:[NSURL fileURLWithPath:modelRoot isDirectory:YES]

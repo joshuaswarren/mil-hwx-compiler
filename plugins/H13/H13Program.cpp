@@ -1,0 +1,331 @@
+#include "H13Program.h"
+
+#include <stdexcept>
+
+namespace ane::h13 {
+namespace {
+
+// Field values follow allbilly/ane e159e2d examples/elementwise.py and
+// examples/gemm.py. Constants use the aligned 0x280 KDMA-base representation.
+namespace reg {
+constexpr std::size_t taskWord0 = 0x00;
+constexpr std::size_t executionCycles = 0x08;
+constexpr std::size_t debugLogEvents = 0x10;
+constexpr std::size_t flags = 0x18;
+constexpr std::size_t baseEnable = 0x20;
+constexpr std::size_t taskWord9 = 0x24;
+constexpr std::size_t kernelDMA = 0x28;
+constexpr std::size_t firmwareDMA = 0x2c;
+constexpr std::size_t commonStream = 0x124;
+constexpr std::size_t inputDimensions = 0x128;
+constexpr std::size_t commonPad0 = 0x12c;
+constexpr std::size_t channelConfig = 0x130;
+constexpr std::size_t inputChannels = 0x134;
+constexpr std::size_t outputChannels = 0x138;
+constexpr std::size_t outputDimensions = 0x13c;
+constexpr std::size_t commonPad1 = 0x140;
+constexpr std::size_t convolutionConfig = 0x144;
+constexpr std::size_t commonPad2 = 0x148;
+constexpr std::size_t groupConvolutionConfig = 0x14c;
+constexpr std::size_t tileConfig = 0x150;
+constexpr std::size_t commonPad3 = 0x154;
+constexpr std::size_t pipelineConfig = 0x15c;
+constexpr std::size_t taskInfo = 0x160;
+constexpr std::size_t sourceStream = 0x168;
+constexpr std::size_t sourceDMAConfig = 0x16c;
+constexpr std::size_t sourceDMAPad0 = 0x170;
+constexpr std::size_t sourceRowStride = 0x178;
+constexpr std::size_t sourcePlaneStride = 0x17c;
+constexpr std::size_t sourceDepthStride = 0x180;
+constexpr std::size_t sourcePad2 = 0x18c;
+constexpr std::size_t sourcePad3 = 0x190;
+constexpr std::size_t sourcePad4 = 0x194;
+constexpr std::size_t sourceFormat = 0x1a4;
+constexpr std::size_t sourcePad8 = 0x1a8;
+constexpr std::size_t sourcePadStream = 0x1ac;
+constexpr std::size_t l2Stream = 0x1dc;
+constexpr std::size_t l2SourceConfig = 0x1e4;
+constexpr std::size_t l2SourceChannelStride = 0x1ec;
+constexpr std::size_t l2SourceRowStride = 0x1f0;
+constexpr std::size_t l2Pad0 = 0x1f4;
+constexpr std::size_t l2Pad1 = 0x1f8;
+constexpr std::size_t l2Pad2 = 0x1fc;
+constexpr std::size_t l2Pad3 = 0x200;
+constexpr std::size_t l2Pad4 = 0x204;
+constexpr std::size_t l2Pad5 = 0x208;
+constexpr std::size_t l2Pad6 = 0x20c;
+constexpr std::size_t l2ResultConfig = 0x210;
+constexpr std::size_t l2ResultBase = 0x214;
+constexpr std::size_t convolutionResultChannelStride = 0x218;
+constexpr std::size_t convolutionResultRowStride = 0x21c;
+constexpr std::size_t l2ResultPad0 = 0x220;
+constexpr std::size_t l2ResultPad1 = 0x224;
+constexpr std::size_t processingElementStream = 0x228;
+constexpr std::size_t processingElementConfig = 0x22c;
+constexpr std::size_t biasScale = 0x230;
+constexpr std::size_t preScale = 0x234;
+constexpr std::size_t finalScale = 0x238;
+constexpr std::size_t neuralEngineStream = 0x23c;
+constexpr std::size_t kernelConfig = 0x240;
+constexpr std::size_t multiplyAccumulateConfig = 0x244;
+constexpr std::size_t postScale = 0x250;
+constexpr std::size_t destinationStream = 0x254;
+constexpr std::size_t destinationDMAConfig = 0x258;
+constexpr std::size_t destinationRowStride = 0x260;
+constexpr std::size_t destinationPlaneStride = 0x264;
+constexpr std::size_t destinationDepthStride = 0x268;
+constexpr std::size_t destinationFormat = 0x270;
+} // namespace reg
+
+constexpr std::size_t outputRows = 512;
+constexpr std::size_t rowsPerBlock = 32;
+constexpr std::size_t blockBytes = 0x8000;
+constexpr std::size_t blockHalfwords = blockBytes / 2;
+constexpr std::size_t dmaBlocks = outputRows / rowsPerBlock;
+constexpr std::uint32_t halfOne = 0x3c00;
+
+constexpr std::uint32_t streamHeader(std::uint32_t address,
+                                     std::uint32_t words) {
+    return ((words - 1) << 26) | address;
+}
+
+void putLE32(std::vector<std::uint8_t> &bytes, std::size_t offset,
+             std::uint32_t value) {
+    for (std::size_t i = 0; i != 4; ++i)
+        bytes[offset + i] = static_cast<std::uint8_t>(value >> (8 * i));
+}
+
+void putBE32(std::vector<std::uint8_t> &bytes, std::size_t offset,
+             std::uint32_t value) {
+    for (std::size_t i = 0; i != 4; ++i)
+        bytes[offset + i] = static_cast<std::uint8_t>(value >> (8 * (3 - i)));
+}
+
+void putTaskHeader(std::vector<std::uint8_t> &task, std::uint32_t baseEnable,
+                   std::uint32_t word9) {
+    putLE32(task, reg::taskWord0, (0x40u << 16) | (1u << 25));
+    putLE32(task, reg::executionCycles, 1058);
+    putLE32(task, reg::debugLogEvents, 0x00fff86a);
+    putLE32(task, reg::flags, (38u << 10) | (3u << 28));
+    putLE32(task, reg::baseEnable, baseEnable);
+    putLE32(task, reg::taskWord9, word9);
+    putLE32(task, reg::kernelDMA, streamHeader(0x1f800, 62));
+}
+
+void putStreamHeaders(std::vector<std::uint8_t> &task) {
+    putLE32(task, reg::commonStream, streamHeader(0x00000, 16));
+    putLE32(task, reg::sourceStream, streamHeader(0x13800, 28));
+    putLE32(task, reg::l2Stream, streamHeader(0x04800, 18));
+    putLE32(task, reg::processingElementStream, streamHeader(0x08800, 4));
+    putLE32(task, reg::neuralEngineStream, streamHeader(0x0c800, 5));
+    putLE32(task, reg::destinationStream, streamHeader(0x17800, 7));
+}
+
+void putFirmwareDMA(std::vector<std::uint8_t> &task) {
+    std::size_t offset = reg::firmwareDMA;
+    putBE32(task, offset, 0x40000000);
+    offset += 8;
+    for (std::size_t i = 0; i != dmaBlocks; ++i, offset += 4)
+        putBE32(task, offset, 0x81000000);
+    for (std::uint32_t i = 0; i != dmaBlocks; ++i, offset += 4)
+        putLE32(task, offset, i * blockBytes);
+    for (std::size_t i = 0; i != dmaBlocks; ++i, offset += 4)
+        putLE32(task, offset, blockBytes);
+    for (std::size_t i = 0; i != 4; ++i, offset += 4)
+        putBE32(task, offset, 0x80000000);
+}
+
+TensorLayout tensor(std::uint32_t index, std::uint64_t channels,
+                    std::uint64_t allocationBytes) {
+    return {index, {1, channels, 1, 1, 64, 64}, allocationBytes};
+}
+
+std::vector<std::uint8_t> binaryTask(std::uint32_t operation) {
+    std::vector<std::uint8_t> task(taskBytes, 0);
+    putTaskHeader(task,
+                  6u | (1u << 5) | (5u << 6) | (1u << 11) | (4u << 12) |
+                      (1u << 17),
+                  0);
+    putStreamHeaders(task);
+
+    putLE32(task, reg::inputDimensions, (1u << 16) | 1u);
+    putLE32(task, reg::commonPad0, 1);
+    putLE32(task, reg::channelConfig, 2u | (2u << 2) | (2u << 4));
+    putLE32(task, reg::inputChannels, 64);
+    putLE32(task, reg::outputChannels, 64);
+    putLE32(task, reg::outputDimensions, (1u << 16) | 1u);
+    putLE32(task, reg::commonPad1, 1);
+    putLE32(task, reg::convolutionConfig,
+            1u | (1u << 5) | (1u << 13) | (1u << 15) | (1u << 28) |
+                (1u << 30));
+    putLE32(task, reg::commonPad2, 0x2041);
+    putLE32(task, reg::groupConvolutionConfig, 1u | (1u << 16));
+    putLE32(task, reg::tileConfig, 1);
+    putLE32(task, reg::commonPad3, 4);
+    putLE32(task, reg::pipelineConfig, 3u | (6u << 3));
+
+    putLE32(task, reg::sourceDMAConfig,
+            1u | (8u << 4) | (8u << 8) | (3u << 12) | (3u << 16));
+    putLE32(task, reg::sourceDMAPad0, 0x33880);
+    putLE32(task, reg::sourceRowStride, 0x40);
+    putLE32(task, reg::sourcePlaneStride, 0x40);
+    putLE32(task, reg::sourceDepthStride, 0x1000);
+    putLE32(task, reg::sourcePad2, 0x40);
+    putLE32(task, reg::sourcePad3, 0x40);
+    putLE32(task, reg::sourcePad4, 0x1000);
+    putLE32(task, reg::sourceFormat,
+            1u | (3u << 4) | (2u << 12) | (1u << 24));
+    putLE32(task, reg::sourcePad8, 0x2030);
+
+    putLE32(task, reg::l2SourceConfig,
+            2u | (1u << 4) | (1u << 5) | (1u << 6) | (1u << 8) |
+                (1u << 20) | (1u << 22) | (1u << 24));
+    putLE32(task, reg::l2SourceChannelStride, 0x10);
+    putLE32(task, reg::l2SourceRowStride, 0x420);
+    putLE32(task, reg::l2Pad0, 0x400);
+    putLE32(task, reg::l2Pad1, 0x400);
+    putLE32(task, reg::l2Pad2, 0x440);
+    putLE32(task, reg::l2Pad3, 0x10);
+    putLE32(task, reg::l2Pad4, 0x420);
+    putLE32(task, reg::l2Pad5, 0x400);
+    putLE32(task, reg::l2Pad6, 0x400);
+    putLE32(task, reg::l2ResultConfig,
+            2u | (2u << 2) | (1u << 4) | (1u << 5) | (1u << 6) |
+                (1u << 8) | (1u << 20) | (1u << 22));
+    putLE32(task, reg::l2ResultBase, 0x860);
+
+    putLE32(task, reg::processingElementConfig,
+            (2u << 18) | (operation << 2));
+    putLE32(task, reg::biasScale, halfOne << 16);
+    putLE32(task, reg::preScale, halfOne << 16);
+    putLE32(task, reg::finalScale, 0x3f800000);
+    if (operation == 1)
+        putLE32(task, reg::multiplyAccumulateConfig, 0x30);
+
+    putLE32(task, reg::destinationDMAConfig,
+            1u | (12u << 4) | (1u << 26));
+    putLE32(task, reg::destinationRowStride, 0x40);
+    putLE32(task, reg::destinationPlaneStride, 0x40);
+    putLE32(task, reg::destinationDepthStride, 0x1000);
+    putLE32(task, reg::destinationFormat,
+            1u | (3u << 4) | (2u << 12) | (1u << 24));
+    return task;
+}
+
+std::vector<std::uint8_t> matvecTask() {
+    std::vector<std::uint8_t> task(taskBytes, 0);
+    putTaskHeader(task,
+                  5u | (1u << 5) | (36u << 12) | (1u << 24) |
+                      (1u << 26),
+                  0x21);
+    putFirmwareDMA(task);
+    putStreamHeaders(task);
+
+    putLE32(task, reg::inputDimensions, (1u << 16) | 1u);
+    putLE32(task, reg::commonPad0, 1);
+    putLE32(task, reg::channelConfig, 2u | (2u << 4));
+    putLE32(task, reg::inputChannels, 512);
+    putLE32(task, reg::outputChannels, 512);
+    putLE32(task, reg::outputDimensions, (1u << 16) | 1u);
+    putLE32(task, reg::commonPad1, 1);
+    putLE32(task, reg::convolutionConfig, 0x5000b421);
+    putLE32(task, reg::commonPad2, 0x2041);
+    putLE32(task, reg::groupConvolutionConfig, 0x00010001);
+    putLE32(task, reg::tileConfig, 1);
+    putLE32(task, reg::pipelineConfig, 0x00244405);
+    putLE32(task, reg::taskInfo, 1u << 20);
+
+    putLE32(task, reg::sourceDMAConfig,
+            1u | (8u << 4) | (8u << 8) | (3u << 12) | (3u << 16));
+    putLE32(task, reg::sourceDMAPad0, 0x8880);
+    putLE32(task, reg::sourceRowStride, 0x40);
+    putLE32(task, reg::sourcePlaneStride, 0x40);
+    putLE32(task, reg::sourceDepthStride, 0x8000);
+    putLE32(task, reg::sourceFormat,
+            1u | (3u << 4) | (2u << 12) | (1u << 24));
+    putLE32(task, reg::sourcePadStream, 0x100);
+
+    putLE32(task, reg::l2SourceConfig, 0x00500172);
+    putLE32(task, reg::l2SourceChannelStride, 0x10);
+    putLE32(task, reg::l2SourceRowStride, 0x2030);
+    putLE32(task, reg::l2Pad0, 0x2000);
+    putLE32(task, reg::l2Pad1, 0x2000);
+    putLE32(task, reg::l2ResultConfig, 0x00500172);
+    putLE32(task, reg::l2ResultBase, 0x2030);
+    putLE32(task, reg::convolutionResultChannelStride, 0x10);
+    putLE32(task, reg::convolutionResultRowStride, 0x2020);
+    putLE32(task, reg::l2ResultPad0, 0x2000);
+    putLE32(task, reg::l2ResultPad1, 0x2000);
+
+    putLE32(task, reg::kernelConfig, 0x82);
+    putLE32(task, reg::multiplyAccumulateConfig, 0x00101c00);
+    putLE32(task, reg::postScale, halfOne);
+
+    putLE32(task, reg::destinationDMAConfig, 1u | (12u << 4));
+    putLE32(task, reg::destinationRowStride, 0x40);
+    putLE32(task, reg::destinationPlaneStride, 0x40);
+    putLE32(task, reg::destinationDepthStride, 0x8000);
+    putLE32(task, reg::destinationFormat,
+            1u | (3u << 4) | (2u << 12) | (3u << 20) | (1u << 24));
+    return task;
+}
+
+std::vector<std::uint8_t> packWeights(std::uint32_t reduction,
+                                      const std::uint8_t *weights) {
+    std::vector<std::uint8_t> packed(dmaBlocks * blockBytes, 0);
+    for (std::size_t block = 0; block != dmaBlocks; ++block) {
+        const auto blockOffset = block * blockHalfwords;
+        for (std::size_t column = 0; column != reduction; ++column) {
+            const auto columnOffset = blockOffset + column * rowsPerBlock;
+            for (std::size_t row = 0; row != rowsPerBlock; ++row) {
+                const auto source = ((block * rowsPerBlock + row) * reduction + column) * 2;
+                const auto destination = (columnOffset + row) * 2;
+                packed[destination] = weights[source];
+                packed[destination + 1] = weights[source + 1];
+            }
+        }
+    }
+    return packed;
+}
+
+} // namespace
+
+Program encodeBinary(BinaryOperation operation) {
+    std::uint32_t operationCode;
+    switch (operation) {
+    case BinaryOperation::Add:
+        operationCode = 0;
+        break;
+    case BinaryOperation::Multiply:
+        operationCode = 1;
+        break;
+    case BinaryOperation::Maximum:
+        operationCode = 2;
+        break;
+    case BinaryOperation::Minimum:
+        operationCode = 3;
+        break;
+    default:
+        throw std::invalid_argument("unsupported H13 binary operation");
+    }
+    return {binaryTask(operationCode),
+            {},
+            {tensor(5, 64, tileBytes), tensor(6, 64, tileBytes)},
+            tensor(4, 64, tileBytes)};
+}
+
+Program encodeMatvec(std::uint32_t reduction, const std::uint8_t *weights,
+                     std::size_t weightBytes) {
+    if (reduction != 256 && reduction != 512)
+        throw std::invalid_argument("H13 matvec reduction must be 256 or 512");
+    if (weightBytes != outputRows * reduction * 2)
+        throw std::invalid_argument("H13 matvec requires 512 * reduction fp16 weights");
+    if (!weights)
+        throw std::invalid_argument("H13 matvec weights must not be null");
+    return {matvecTask(),
+            packWeights(reduction, weights),
+            {tensor(5, reduction, static_cast<std::uint64_t>(reduction) * 64)},
+            tensor(4, outputRows, 0x8000)};
+}
+
+} // namespace ane::h13
