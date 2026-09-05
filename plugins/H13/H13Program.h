@@ -27,10 +27,10 @@ struct Program {
 };
 
 Program encodeBinary(BinaryOperation operation);
-// Weights are canonical row-major little-endian fp16 bytes.
+// Weights are row-major little-endian fp16; transposeY selects [512,K] instead of [K,512].
 Program encodeMatvec(std::uint32_t reduction,
                      const std::uint8_t *weights,
-                     std::size_t weightBytes);
+                     std::size_t weightBytes, bool transposeY);
 std::vector<std::uint8_t> encodeANEC(const Program &program);
 
 }

@@ -235,7 +235,7 @@ void checkMatvec(std::uint32_t reduction) {
             weights[offset + 1] = static_cast<std::uint8_t>(value >> 8);
         }
 
-    const auto program = ane::h13::encodeMatvec(reduction, weights.data(), weights.size());
+    const auto program = ane::h13::encodeMatvec(reduction, weights.data(), weights.size(), true);
     assert(program.task == expectedMatvecTask());
     assert(program.inputs.size() == 1);
     checkLayout(program.inputs[0], 5, reduction, reduction * 64);
@@ -264,9 +264,9 @@ void checkMatvec(std::uint32_t reduction) {
 
 void checkMatvecValidation() {
     std::vector<std::uint8_t> weights(512 * 256 * 2);
-    rejects([&] { ane::h13::encodeMatvec(128, weights.data(), weights.size()); });
-    rejects([&] { ane::h13::encodeMatvec(256, weights.data(), weights.size() - 1); });
-    rejects([&] { ane::h13::encodeMatvec(256, nullptr, weights.size()); });
+    rejects([&] { ane::h13::encodeMatvec(128, weights.data(), weights.size(), true); });
+    rejects([&] { ane::h13::encodeMatvec(256, weights.data(), weights.size() - 1, true); });
+    rejects([&] { ane::h13::encodeMatvec(256, nullptr, weights.size(), true); });
 }
 
 } // namespace

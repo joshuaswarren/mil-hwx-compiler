@@ -271,14 +271,16 @@ std::vector<std::uint8_t> matvecTask() {
 }
 
 std::vector<std::uint8_t> packWeights(std::uint32_t reduction,
-                                      const std::uint8_t *weights) {
+                                      const std::uint8_t *weights, bool transposeY) {
     std::vector<std::uint8_t> packed(dmaBlocks * blockBytes, 0);
+    const std::size_t outputStride = transposeY ? reduction : 1;
+    const std::size_t inputStride = transposeY ? 1 : outputRows;
     for (std::size_t block = 0; block != dmaBlocks; ++block) {
         const auto blockOffset = block * blockHalfwords;
         for (std::size_t column = 0; column != reduction; ++column) {
             const auto columnOffset = blockOffset + column * rowsPerBlock;
             for (std::size_t row = 0; row != rowsPerBlock; ++row) {
-                const auto source = ((block * rowsPerBlock + row) * reduction + column) * 2;
+                const auto source = ((block * rowsPerBlock + row) * outputStride + column * inputStride) * 2;
                 const auto destination = (columnOffset + row) * 2;
                 packed[destination] = weights[source];
                 packed[destination + 1] = weights[source + 1];
@@ -315,7 +317,7 @@ Program encodeBinary(BinaryOperation operation) {
 }
 
 Program encodeMatvec(std::uint32_t reduction, const std::uint8_t *weights,
-                     std::size_t weightBytes) {
+                     std::size_t weightBytes, bool transposeY) {
     if (reduction != 256 && reduction != 512)
         throw std::invalid_argument("H13 matvec reduction must be 256 or 512");
     if (weightBytes != outputRows * reduction * 2)
@@ -323,7 +325,7 @@ Program encodeMatvec(std::uint32_t reduction, const std::uint8_t *weights,
     if (!weights)
         throw std::invalid_argument("H13 matvec weights must not be null");
     return {matvecTask(),
-            packWeights(reduction, weights),
+            packWeights(reduction, weights, transposeY),
             {tensor(5, reduction, static_cast<std::uint64_t>(reduction) * 64)},
             tensor(4, outputRows, 0x8000)};
 }
