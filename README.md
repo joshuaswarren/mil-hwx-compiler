@@ -8,7 +8,23 @@ The project is a canary for the compiler pipeline recovered in *Inside the M4
 Apple Neural Engine*, Part 4b. It shows which parts of that pipeline are
 understood well enough to reproduce in code and verify on hardware.
 
-## Quickstart
+## Linux build
+
+This fork builds the compiler on Linux with GNUstep Foundation. It emits new H16G/M4 HWX files without Apple frameworks or compiler binaries. M1/H13 code generation and Linux device execution are not implemented here.
+
+Install Clang and LLD, CMake, Ninja, Make, pkg-config, Git, Python 3, and development packages for libffi, libxml2, ICU, OpenSSL, and zlib. Then run:
+
+```sh
+git clone https://github.com/joshuaswarren/mil-hwx-compiler.git
+cd mil-hwx-compiler
+scripts/verify-linux-compiler.sh all
+```
+
+The script builds pinned libobjc2 and GNUstep sources under `$HOME/.local/mil-hwx-gnustep`, builds the compiler, runs the Linux software checks, and emits and inspects Conv1x1/ReLU and W8A8 HWX files. Set `GNUSTEP_PREFIX` to choose another install directory. The bootstrap does not install system packages or require root. An explicit `CXX` path selects the compiler for both bootstrap and subsequent builds.
+
+Use this verifier on Linux. The macOS hardware suites below require Apple runtime interfaces and do not run on Linux.
+
+## macOS build and hardware tests
 
 ### Requirements
 
