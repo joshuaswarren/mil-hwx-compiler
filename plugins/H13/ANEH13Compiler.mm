@@ -263,10 +263,10 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 return reject(diagnostics, [NSString stringWithFormat:
                     @"H13 '%@' with two runtime inputs cannot lower exactly through the verified binary modes", name],
                     operation, @"h13.nonfoldable-binary");
-            if (x == y || !tensorElementCount(x, &elements) ||
-                !tensor(y, x.type.shape) || !tensor(operation.result, x.type.shape))
+            if (!tensorElementCount(x, &elements) || !tensor(y, x.type.shape) ||
+                !tensor(operation.result, x.type.shape))
                 return reject(diagnostics,
-                    @"H13 binary operations require two distinct fp16 inputs with the same positive static shape",
+                    @"H13 binary operations require fp16 inputs with the same positive static shape",
                     operation);
             inputs = @[x, y];
         } else {
@@ -496,7 +496,45 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     for (ANEGraphOperation *candidate in function.operations)
         if (![candidate.operationName isEqualToString:@"const"])
             [sourceOperations addObject:candidate];
+    if (!sourceOperations.count)
+        return reject(diagnostics, @"H13 requires at least one operation");
+
+    BOOL chain = sourceOperations.count > 1;
+    NSString *chainCode = @"h13.unsupported-chain";
+    ANEGraphOperation *lastSourceOperation = sourceOperations.lastObject;
+    if (function.returnValues.count != 1 ||
+        function.returnValues[0] != lastSourceOperation.result)
+        return reject(diagnostics,
+            chain ? @"H13 chains must return only the last operation result"
+                  : @"H13 requires one operation with its result returned",
+            lastSourceOperation, chain ? chainCode : @"h13.unsupported-program");
+
+    for (ANEGraphValue *input in function.inputs) {
+        BOOL used = NO;
+        for (ANEGraphOperation *candidate in sourceOperations)
+            for (ANEGraphArgument *operand in candidate.operands.allValues)
+                if (operand.value == input) used = YES;
+        if (!used)
+            return reject(diagnostics, @"H13 function inputs must all be used",
+                sourceOperations[0], chain ? chainCode : @"h13.unsupported-program");
+    }
+    for (NSUInteger index = 0; index + 1 < sourceOperations.count; ++index) {
+        ANEGraphValue *value = sourceOperations[index].result;
+        BOOL used = NO;
+        for (NSUInteger consumer = index + 1;
+             consumer < sourceOperations.count; ++consumer)
+            for (ANEGraphArgument *operand in sourceOperations[consumer].operands.allValues)
+                if (operand.value == value) used = YES;
+        if (!used)
+            return reject(diagnostics,
+                @"H13 operation results not returned must be consumed by a later operation",
+                sourceOperations[index], chainCode);
+    }
+
     NSMutableArray<ANEGraphOperation *> *operations = [NSMutableArray array];
+    NSMutableArray<ANEGraphValue *> *manifestValues = [NSMutableArray array];
+    NSMutableDictionary<NSString *, NSDictionary *> *aliases =
+        [NSMutableDictionary dictionary];
     NSMutableDictionary<NSString *, NSData *> *synthesizedConstants =
         [NSMutableDictionary dictionary];
     NSMapTable<ANEGraphValue *, ANEGraphValue *> *loweredValues =
@@ -511,6 +549,34 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         }
         NSString *name = candidate.operationName;
         ANEGraphValue *x = arguments[@"x"].value;
+        BOOL reshape = [name isEqualToString:@"reshape"];
+        BOOL squeeze = [name isEqualToString:@"squeeze"];
+        BOOL expand = [name isEqualToString:@"expand_dims"];
+        if (reshape || squeeze || expand) {
+            NSString *parameterName = reshape ? @"shape" : @"axes";
+            ANEGraphArgument *parameter = arguments[parameterName];
+            BOOL validCount = squeeze ? (candidate.arguments.count == 1 ||
+                                         candidate.arguments.count == 2)
+                                      : candidate.arguments.count == 2;
+            NSUInteger inputElements = 0, resultElements = 0;
+            if (!validCount || !x || (!squeeze && !parameter) ||
+                (parameter && (parameter.kind != ANEGraphArgumentKindValue ||
+                               !constantValue(parameter.value))) ||
+                !tensorElementCount(x, &inputElements) ||
+                !tensorElementCount(candidate.result, &resultElements) ||
+                inputElements != resultElements)
+                return reject(diagnostics,
+                    @"H13 shape aliases require static fp16 input and result shapes with equal element counts and constant shape parameters",
+                    candidate, @"h13.invalid-shape-alias");
+            ANEGraphValue *alias = [[ANEGraphValue alloc]
+                initWithName:x.name type:candidate.result.type];
+            aliases[candidate.result.name] = @{
+                @"aliasOf": x.name, @"shape": candidate.result.type.shape};
+            [manifestValues addObject:candidate.result];
+            [loweredValues setObject:alias forKey:candidate.result];
+            continue;
+        }
+
         ANEGraphValue *result = [[ANEGraphValue alloc]
             initWithName:candidate.result.name type:candidate.result.type];
         if ([name isEqualToString:@"relu"]) {
@@ -524,6 +590,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             synthesizedConstants[zeroName] = splatFP16(0);
             [operations addObject:binaryOperation(@"maximum", x, zero,
                 result, candidate.range)];
+            [manifestValues addObject:result];
         } else if ([name isEqualToString:@"clip"]) {
             if (candidate.arguments.count != 3 || !x)
                 return reject(diagnostics,
@@ -555,67 +622,55 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 low, candidate.range)];
             [operations addObject:binaryOperation(@"minimum", low, betaValue,
                 result, candidate.range)];
+            [manifestValues addObject:low];
+            [manifestValues addObject:result];
         } else {
             [operations addObject:[[ANEGraphOperation alloc]
                 initWithOperationName:name result:result arguments:arguments
                 attributes:candidate.attributes range:candidate.range]];
+            [manifestValues addObject:result];
         }
         [loweredValues setObject:result forKey:candidate.result];
     }
-    if (!operations.count)
-        return reject(diagnostics, @"H13 requires at least one operation");
 
-    BOOL chain = operations.count > 1;
-    NSString *chainCode = @"h13.unsupported-chain";
-    ANEGraphOperation *lastOperation = operations.lastObject;
-    ANEGraphValue *returned = function.returnValues.count == 1
-        ? [loweredValues objectForKey:function.returnValues[0]] : nil;
-    if (!returned || returned != lastOperation.result)
-        return reject(diagnostics,
-            chain ? @"H13 chains must return only the last operation result"
-                  : @"H13 requires one operation with its result returned",
-            lastOperation, chain ? chainCode : @"h13.unsupported-program");
-
-    for (NSUInteger index = 0; index + 1 < operations.count; ++index) {
-        ANEGraphValue *intermediate = operations[index].result;
-        NSUInteger uses = 0;
-        NSUInteger consumer = NSNotFound;
-        for (NSUInteger candidateIndex = index + 1;
-             candidateIndex < operations.count; ++candidateIndex) {
-            for (ANEGraphArgument *operand in operations[candidateIndex].operands.allValues) {
-                if (operand.value == intermediate) {
-                    ++uses;
-                    consumer = candidateIndex;
-                }
-            }
-        }
-        if (uses != 1 || consumer != index + 1)
+    ANEGraphValue *returned = [loweredValues objectForKey:function.returnValues[0]];
+    NSMutableSet<NSString *> *inputNames = [NSMutableSet set];
+    for (ANEGraphValue *input in function.inputs) [inputNames addObject:input.name];
+    if (!operations.count) {
+        if (returned && [inputNames containsObject:returned.name])
             return reject(diagnostics,
-                @"H13 chains require each intermediate to be consumed exactly once by the next operation",
-                operations[index], chainCode);
+                @"H13 cannot return an alias of a function input because no program produces it",
+                lastSourceOperation, @"h13.returned-input-alias");
+        return reject(diagnostics, @"H13 requires at least one encoded operation");
     }
-    for (ANEGraphValue *input in function.inputs) {
-        BOOL used = NO;
-        for (ANEGraphOperation *operation in operations)
-            for (ANEGraphArgument *operand in operation.operands.allValues)
-                if (operand.value == input) used = YES;
-        if (!used)
-            return reject(diagnostics, @"H13 function inputs must all be used",
-                operations[0], chain ? chainCode : @"h13.unsupported-program");
-    }
+    ANEGraphOperation *lastOperation = operations.lastObject;
+    if (!returned || ![returned.name isEqualToString:lastOperation.result.name])
+        return reject(diagnostics,
+            @"H13 returned aliases must refer to the last encoded operation result",
+            lastSourceOperation, chainCode);
 
-    NSMutableSet<ANEGraphValue *> *intermediateValues = [NSMutableSet set];
+    NSString *returnedSourceName = function.returnValues[0].name;
+    NSString *returnedStorageName = returned.name;
+    NSMutableSet<NSString *> *intermediateStorageNames = [NSMutableSet set];
     NSMutableArray<NSString *> *intermediateNames = [NSMutableArray array];
-    for (NSUInteger index = 0; index + 1 < operations.count; ++index) {
-        [intermediateValues addObject:operations[index].result];
-        [intermediateNames addObject:operations[index].result.name];
+    for (ANEGraphValue *value in manifestValues) {
+        BOOL alias = aliases[value.name] != nil;
+        if ([value.name isEqualToString:returnedSourceName] ||
+            (!alias && [value.name isEqualToString:returnedStorageName]))
+            continue;
+        [intermediateNames addObject:value.name];
+        if (!alias) [intermediateStorageNames addObject:value.name];
     }
+    NSDictionary<NSString *, NSArray<NSNumber *> *> *outputShapes =
+        @{returnedStorageName: function.returnValues[0].type.shape};
 
     NSMutableArray<NSDictionary *> *programRecords = [NSMutableArray array];
     NSMutableArray<NSData *> *payloads = [NSMutableArray array];
     NSMutableArray<NSNumber *> *dispatchPlan = [NSMutableArray array];
     NSMutableDictionary<NSString *, NSDictionary *> *tensors =
         [NSMutableDictionary dictionary];
+    for (ANEGraphValue *input in function.inputs)
+        recordTensor(tensors, input, input.type.shape, @"input");
     NSMutableDictionary<NSString *, NSData *> *resolvedConstants =
         [NSMutableDictionary dictionary];
     NSArray<NSString *> *binaryNames =
@@ -687,8 +742,10 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     ANEGraphValue *input = inputs[index];
                     NSArray<NSNumber *> *fullShape = input == constantInput
                         ? operation.result.type.shape : input.type.shape;
+                    BOOL intermediate = input != constantInput &&
+                        [intermediateStorageNames containsObject:input.name];
                     NSString *role = input == constantInput ? @"constant"
-                        : ([intermediateValues containsObject:input] ? @"intermediate" : @"input");
+                        : (intermediate ? @"intermediate" : @"input");
                     recordTensor(tensors, input, fullShape, role);
                     NSUInteger fullElements = 1;
                     for (NSNumber *dimension in fullShape)
@@ -698,35 +755,39 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                             ? fullShape : @[@(inputSliceElements)];
                     NSMutableDictionary *record =
                         [binding(input, logicalShape, program.inputs.at(index)) mutableCopy];
+                    BOOL aliasShape =
+                        ![fullShape isEqualToArray:tensors[input.name][@"shape"]];
                     if (inputOffset || inputSliceElements != fullElements ||
-                        inputPhysicalElements != inputSliceElements)
+                        inputPhysicalElements != inputSliceElements || aliasShape)
                         addSlice(record, input, inputOffset, inputSliceElements,
                                  inputPhysicalElements);
                     if (input == constantInput) {
                         record[@"binding"] = @"constant";
                         constantInputs[input.name] = hexData(constantData);
-                    } else if ([intermediateValues containsObject:input]) {
+                    } else if (intermediate) {
                         record[@"role"] = @"intermediate";
                     }
                     [inputRecords addObject:record];
                 }
-                NSString *outputRole = [intermediateValues containsObject:operation.result]
-                    ? @"intermediate" : @"output";
-                recordTensor(tensors, operation.result, operation.result.type.shape, outputRole);
+                BOOL intermediateOutput =
+                    [intermediateStorageNames containsObject:operation.result.name];
+                NSString *outputRole = intermediateOutput ? @"intermediate" : @"output";
+                NSArray<NSNumber *> *fullOutputShape = outputShapes[operation.result.name]
+                    ?: operation.result.type.shape;
+                recordTensor(tensors, operation.result, fullOutputShape, outputRole);
                 NSUInteger fullOutputElements = 1;
-                for (NSNumber *dimension in operation.result.type.shape)
+                for (NSNumber *dimension in fullOutputShape)
                     fullOutputElements *= dimension.unsignedIntegerValue;
                 NSArray<NSNumber *> *outputShape =
                     outputOffset == 0 && outputSliceElements == fullOutputElements
-                        ? operation.result.type.shape : @[@(outputSliceElements)];
+                        ? fullOutputShape : @[@(outputSliceElements)];
                 NSMutableDictionary *outputRecord =
                     [binding(operation.result, outputShape, program.output) mutableCopy];
                 if (outputOffset || outputSliceElements != fullOutputElements ||
                     outputPhysicalElements != outputSliceElements)
                     addSlice(outputRecord, operation.result, outputOffset,
                              outputSliceElements, outputPhysicalElements);
-                if ([intermediateValues containsObject:operation.result])
-                    outputRecord[@"role"] = @"intermediate";
+                if (intermediateOutput) outputRecord[@"role"] = @"intermediate";
                 NSUInteger programIndex = programRecords.count;
                 NSString *file = [NSString stringWithFormat:@"program-%lu.anec",
                     (unsigned long)programIndex];
@@ -746,7 +807,18 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     } catch (const std::exception &exception) {
         return reject(diagnostics, [NSString stringWithUTF8String:exception.what()], operation);
     }
-    for (NSString *name in intermediateNames) {
+    for (NSString *name in aliases) {
+        NSDictionary *alias = aliases[name];
+        NSArray<NSNumber *> *shape = alias[@"shape"];
+        NSUInteger elements = 1;
+        for (NSNumber *dimension in shape)
+            elements *= dimension.unsignedIntegerValue;
+        NSString *role = [name isEqualToString:returnedSourceName]
+            ? @"output" : @"intermediate";
+        tensors[name] = @{@"shape": shape, @"logicalBytes": @(elements * 2),
+                          @"role": role, @"aliasOf": alias[@"aliasOf"]};
+    }
+    for (NSString *name in intermediateStorageNames) {
         NSMutableArray<NSArray<NSNumber *> *> *produced = [NSMutableArray array];
         NSMutableArray<NSArray<NSNumber *> *> *consumed = [NSMutableArray array];
         for (NSDictionary *record in programRecords) {

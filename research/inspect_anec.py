@@ -35,7 +35,9 @@ def local_file(directory, name, limit):
 
 def check_tensor(name, tensor):
     require(isinstance(name, str) and name, 'tensor needs a non-empty name')
-    require(isinstance(tensor, dict) and set(tensor) == {'shape', 'logicalBytes', 'role'},
+    fields = set(tensor) if isinstance(tensor, dict) else set()
+    require(fields in ({'shape', 'logicalBytes', 'role'},
+                       {'shape', 'logicalBytes', 'role', 'aliasOf'}),
             'tensor record has incorrect fields')
     shape = tensor.get('shape')
     require(isinstance(shape, list) and shape and
@@ -46,6 +48,9 @@ def check_tensor(name, tensor):
             'tensor logical byte count does not match its shape')
     require(tensor.get('role') in ('input', 'output', 'intermediate', 'constant'),
             'unsupported tensor role')
+    require('aliasOf' not in tensor or
+            isinstance(tensor['aliasOf'], str) and tensor['aliasOf'],
+            'tensor aliasOf must be a non-empty name')
 
 
 def binding_interval(binding, tensors):
@@ -54,6 +59,8 @@ def binding_interval(binding, tensors):
         tensor_name = binding['name']
         require(tensor_name in tensors, 'binding references an unknown tensor')
         tensor = tensors[tensor_name]
+        require('aliasOf' not in tensor,
+                'bindings must reference an underlying tensor')
         require(binding['shape'] == tensor['shape'] and
                 binding['logicalBytes'] == tensor['logicalBytes'],
                 'whole-tensor binding differs from its tensor')
@@ -68,6 +75,8 @@ def binding_interval(binding, tensors):
     physical = slice_record.get('physicalElements', count)
     require(tensor_name == binding['name'] and tensor_name in tensors,
             'slice references an unknown or mismatched tensor')
+    require('aliasOf' not in tensors[tensor_name],
+            'bindings must reference an underlying tensor')
     require(type(offset) is int and type(count) is int and
             type(physical) is int and offset >= 0 and count > 0 and physical >= count,
             'slice offsets, counts, and physical elements must be valid integers')
@@ -174,10 +183,17 @@ def validate_program(directory, program, tensors):
         check_binding(item, index, input_channels, tiles, layouts, tensors)
     check_binding(outputs[0], 4, output_channels, tiles, layouts, tensors)
     if not matmul:
-        require(inputs[0]['shape'] == inputs[1]['shape'] == outputs[0]['shape'],
+        output_is_returned_alias = any(
+            tensor.get('aliasOf') == outputs[0]['name'] and
+            tensor['role'] == 'output' and tensor['shape'] == outputs[0]['shape']
+            for tensor in tensors.values())
+        require(inputs[0]['shape'] == inputs[1]['shape'] and
+                (outputs[0]['shape'] == inputs[0]['shape'] or
+                 output_is_returned_alias and
+                 math.prod(outputs[0]['shape']) == math.prod(inputs[0]['shape'])),
                 'binary operation shapes must match')
-    names = [item['name'] for item in inputs + outputs]
-    require(len(set(names)) == len(names), 'program binding names must be unique')
+    require(outputs[0]['name'] not in {item['name'] for item in inputs},
+            'program output must differ from its inputs')
     marked_constants = {item['name'] for item in inputs
                         if item.get('binding') == 'constant'}
     require(all(item.get('binding') in (None, 'constant') for item in inputs),
@@ -232,6 +248,13 @@ def load_package(directory):
     require(isinstance(tensors, dict) and tensors, 'tensors must be a non-empty object')
     for name, tensor in tensors.items():
         check_tensor(name, tensor)
+    alias_names = {name for name, tensor in tensors.items() if 'aliasOf' in tensor}
+    for name in alias_names:
+        target = tensors[name]['aliasOf']
+        require(target != name and target in tensors and 'aliasOf' not in tensors[target],
+                'tensor aliasOf must name an underlying tensor')
+        require(tensors[name]['logicalBytes'] == tensors[target]['logicalBytes'],
+                'tensor alias element count differs from its underlying tensor')
     intermediate_set = {name for name, tensor in tensors.items()
                         if tensor['role'] == 'intermediate'}
     require(set(intermediates) == intermediate_set,
@@ -248,10 +271,11 @@ def load_package(directory):
                 'multi-program packages must omit legacy top-level program fields')
 
     allocations = [validate_program(directory, program, tensors) for program in programs]
-    producers = {name: [] for name in intermediates}
-    consumers = {name: [] for name in intermediates}
+    storage_intermediates = [name for name in intermediates if name not in alias_names]
+    producers = {name: [] for name in storage_intermediates}
+    consumers = {name: [] for name in storage_intermediates}
     output_tensors = {name: [] for name, tensor in tensors.items()
-                      if tensor['role'] == 'output'}
+                      if tensor['role'] == 'output' and name not in alias_names}
     referenced = set()
     for program_index, program in enumerate(programs):
         for item in program['outputs']:
@@ -282,11 +306,11 @@ def load_package(directory):
                 require(role == 'input' and item.get('role') is None and
                         item.get('binding') is None,
                         'runtime input must have input tensor role')
-    require(all(name in referenced or tensor['role'] == 'constant'
-                for name, tensor in tensors.items()),
-            'only constant tensors may be unreferenced by program bindings')
+    require(all(name in referenced or tensor['role'] == 'constant' or
+                name in alias_names for name, tensor in tensors.items()),
+            'only constants and aliases may be unreferenced by program bindings')
     positions = {program_index: position for position, program_index in enumerate(dispatch)}
-    for name in intermediates:
+    for name in storage_intermediates:
         exact_tiling(producers[name], tensors,
                      'intermediate producer slices must exactly tile the tensor')
         exact_tiling(consumers[name], tensors,

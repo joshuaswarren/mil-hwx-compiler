@@ -33,27 +33,39 @@ tensors may use any positive static size:
 
 | Operation | MIL contract |
 | --- | --- |
-| add, mul, maximum, minimum | Two distinct fp16 inputs, or one fp16 input plus a same-shape fp16 const tensor on either side. `mul` also expands one inline fp16 scalar. Input, output, and tensor-constant shapes must match and be positive and static. The compiler emits 64-element programs and zero-pads the last program. |
+| add, mul, maximum, minimum | Two fp16 inputs, which may name the same value, or one fp16 input plus a same-shape fp16 const tensor on either side. `mul` also expands one inline fp16 scalar. Input, output, and tensor-constant shapes must match and be positive and static. The compiler emits 64-element programs and zero-pads the last program. |
 | relu | One fp16 input and matching output with any positive static shape. Lowers each 64-element slice to `maximum(x, 0)`; the final slice is zero-padded. |
 | clip | One fp16 input and matching output with any positive static shape, plus finite fp32 scalar `alpha` and `beta` attributes that are exactly representable in fp16 and satisfy `alpha <= beta`. Lowers each slice to `minimum(maximum(x, alpha), beta)` as two operation-major program groups. |
 | sub | One fp16 input `x` and a same-shape fp16 const tensor `y`. The host negates each constant slice and emits the verified add descriptor. Two runtime inputs and `const - input` are rejected. |
 | real_div | One fp16 input `x` and a same-shape fp16 const tensor `y`. Every constant element must be a finite, nonzero power of two with an fp16-exact reciprocal. The host stores each reciprocal slice and emits the verified multiply descriptor. |
 | matmul | With `transpose_x=false`, fp16 x has shape `[..., K]`, `1 <= K <= 512`, and the product of the leading dimensions is the row count M. With `transpose_x=true`, only one logical row is accepted. W is a constant rank-2 tensor `[K,N]` with `transpose_y=false` or `[N,K]` with `transpose_y=true`, and the output is `[..., N]`. K is zero-extended to the 256- or 512-lane descriptor. N is emitted in 512-output programs with the last program zero-padded. K above 512 fails with `h13.reduction-too-large`. |
+| reshape, squeeze, expand_dims | Positive static fp16 input and result shapes with equal element counts. The operation emits no program: its result aliases the input's underlying tensor with a new logical shape. Shape and axes inputs must be constants. Returning an alias of a function input fails with `h13.returned-input-alias` because no program produces an output. |
 
-The rank-2 W broadcast over x's leading dimensions follows coremltools commit
-[`9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4`](https://github.com/apple/coremltools/commit/9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4),
-which computes the result's leading shape by broadcasting the operands' leading
-dimensions before appending the matrix dimensions.
+The MIL contracts follow coremltools commit
+[`9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4`](https://github.com/apple/coremltools/commit/9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4).
+Its
+[`reshape` definition](https://github.com/apple/coremltools/blob/9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4/coremltools/converters/mil/mil/ops/defs/iOS15/tensor_transformation.py#L161-L203)
+preserves values and element count, its
+[`expand_dims` definition](https://github.com/apple/coremltools/blob/9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4/coremltools/converters/mil/mil/ops/defs/iOS15/tensor_transformation.py#L77-L129)
+inserts singleton dimensions, and its
+[`squeeze` definition](https://github.com/apple/coremltools/blob/9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4/coremltools/converters/mil/mil/ops/defs/iOS15/tensor_transformation.py#L877-L935)
+removes singleton dimensions. The same commit's matmul definition broadcasts
+the operands' leading dimensions before appending the matrix dimensions.
 
-Exactly one function and at least one non-constant operation are required. A
-straight-line chain is supported when every operation satisfies its row above,
-each non-final result is consumed exactly once by the next operation, and only
-the last result is returned. Programs are ordered by operation and then by
-logical slice. Producer and consumer slices must each tile every intermediate
-tensor. Producer physical write ranges must not overlap, and every consumer
-physical range must be fully covered by producer writes. Padding beyond a
-consumer's logical count is ignored. Other retiling fails with
-`h13.unsupported-chain`.
+Exactly one function and at least one encoded operation are required. The
+compiler lowers operations in their verified MIL order; it does not re-sort
+the graph. Any input or intermediate may feed multiple later operations or
+multiple operands of one operation. Every non-returned operation result must
+feed a later operation. The function must return exactly the last operation's
+result. A returned shape alias of that result promotes the underlying tensor to
+the output and applies the alias's logical shape.
+
+Programs are ordered by operation and then by logical slice. Producer slices
+must exactly tile every stored intermediate without overlapping physical write
+ranges. Repeated and fan-out consumer slices are valid, but every consumer
+physical range must be fully covered by producer writes and dispatched after
+each overlapping producer. Padding beyond a consumer's logical count is
+ignored. Unsupported retiling fails with `h13.unsupported-chain`.
 
 Run the host-only checks with `make test-h13` (set `GNUSTEP_PREFIX` on Linux).
 They cover encoding, coefficient packing, serialization, and the MIL CLI;
@@ -74,16 +86,19 @@ MIL
 
 The output directory must be absent or empty. It receives one
 `program-N.anec` file per operation slice. The v1 manifest always includes a
-`programs` array, numeric `dispatchPlan`, and `tensors` object. Each tensor
-records its full logical shape, byte count, and input, output, intermediate, or
-constant role. `intermediates` keeps the names of shared tensors. A sliced
-binding records its tensor name, element offset, and logical element count. A
-padded slice also records `physicalElements`; omitting it means the physical and
-logical counts match. Pack operations zero-fill physical padding, and unpack
-operations discard it. An unsliced binding keeps the original binding fields. A
-single-program package also keeps the original top-level program fields for
-existing readers. Each program record contains its local logical shape,
-physical strides, buffer indices, allocation sizes, and constant bindings.
+`programs` array, numeric `dispatchPlan`, and `tensors` object. Each stored
+tensor records its full logical shape, byte count, and input, output,
+intermediate, or constant role. A shape-only result has its own tensor record
+with `aliasOf` naming the underlying tensor. Program bindings always name that
+underlying tensor. `intermediates` lists every non-returned operation result,
+including aliases. A sliced binding records its tensor name, element offset,
+and logical element count. A padded slice also records `physicalElements`;
+omitting it means the physical and logical counts match. Pack operations
+zero-fill physical padding, and unpack operations discard it. An unsliced
+binding keeps the original binding fields. A single-program package also keeps
+the original top-level program fields for existing readers. Each program record
+contains its local logical shape, physical strides, buffer indices, allocation
+sizes, and constant bindings.
 
 ANEC uses a 0x1000-byte header, a 0x274-byte descriptor, and constants at
 content offset 0x280. Older libane readers expecting a 0x800-byte header cannot

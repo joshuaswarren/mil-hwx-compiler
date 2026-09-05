@@ -168,6 +168,72 @@ def binary_matmul_chain_source(reduction=512):
 '''
 
 
+def square_source():
+    value_type = tensor_type((64,))
+    return f'''program(1.3)
+[buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>({value_type} x) {{
+    {value_type} y = mul(x = x, y = x)[name = string("square")];
+  }} -> (y);
+}}
+'''
+
+
+def alias_source(op='reshape', return_alias=False, produced_input=False):
+    source_shape = (1, 64, 1, 1)
+    result_shape = (64,)
+    source_type = tensor_type(source_shape)
+    result_type = tensor_type(result_shape)
+    if op == 'reshape':
+        parameter = 'shape'
+        parameter_value = 'tensor<int32, [1]>([64])'
+    elif op == 'squeeze':
+        parameter = 'axes'
+        parameter_value = 'tensor<int32, [3]>([0, 2, 3])'
+    else:
+        source_shape, result_shape = (64,), (1, 64, 1, 1)
+        source_type, result_type = tensor_type(source_shape), tensor_type(result_shape)
+        parameter = 'axes'
+        parameter_value = 'tensor<int32, [3]>([0, 2, 3])'
+    base = (f'    {source_type} t = add(x = x, y = x)'
+            '[name = string("base")];\n') if produced_input else ''
+    input_name = 't' if produced_input else 'x'
+    tail = '' if return_alias else (
+        f'    {result_type} y = add(x = r, y = b)[name = string("sum")];\n')
+    second_input = '' if return_alias else f', {result_type} b'
+    returned = 'r' if return_alias else 'y'
+    parameter_count = 1 if op == 'reshape' else 3
+    return f'''program(1.3)
+[buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>({source_type} x{second_input}) {{
+{base}    tensor<int32, [{parameter_count}]> parameter = const()[name = string("parameter"), val = {parameter_value}];
+    {result_type} r = {op}(x = {input_name}, {parameter} = parameter)[name = string("alias")];
+{tail}  }} -> ({returned});
+}}
+'''
+
+
+def residual_source(reduction=256):
+    input_type = tensor_type((1, reduction))
+    value_type = tensor_type((1, 512))
+    weight_type = tensor_type((512, reduction))
+    return f'''program(1.3)
+[buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>({input_type} x) {{
+    bool f = const()[name = string("f"), val = bool(false)];
+    bool tr = const()[name = string("tr"), val = bool(true)];
+    {weight_type} W = const()[name = string("W"), val = {weight_type}(BLOBFILE(path = string("@model_path/weights.bin"), offset = uint64(64)))];
+    {value_type} t = matmul(x = x, y = W, transpose_x = f, transpose_y = tr)[name = string("projection")];
+    {value_type} u = relu(x = t)[name = string("activation")];
+    {value_type} y = add(x = u, y = t)[name = string("residual")];
+  }} -> (y);
+}}
+'''
+
+
 with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     root = Path(directory)
     mil = root / 'model.mil'
@@ -243,6 +309,50 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             assert logical_manifest['inputs'][1]['shape'] == list(shape)
             assert logical_manifest['outputs'][0]['shape'] == list(shape)
     assert (root / 'mul-canonical' / 'program-0.anec').read_bytes() != data
+
+    square = compile_text(square_source(), 'square')
+    square_manifest = json.loads((square / 'manifest.json').read_text())
+    assert (square / 'program-0.anec').read_bytes() == \
+        (root / 'mul-canonical' / 'program-0.anec').read_bytes()
+    assert [item['name'] for item in square_manifest['inputs']] == ['x', 'x']
+    assert [item['index'] for item in square_manifest['inputs']] == [5, 6]
+    assert json.loads(inspect(square))['manifest'] == square_manifest
+
+    reshape = compile_text(alias_source(), 'reshape')
+    reshape_manifest = json.loads((reshape / 'manifest.json').read_text())
+    assert len(reshape_manifest['programs']) == 1
+    assert (reshape / 'program-0.anec').read_bytes() == data
+    assert reshape_manifest['intermediates'] == ['r']
+    assert reshape_manifest['tensors']['r'] == {
+        'shape': [64], 'logicalBytes': 128, 'role': 'intermediate', 'aliasOf': 'x'}
+    assert reshape_manifest['tensors']['x']['shape'] == [1, 64, 1, 1]
+    assert reshape_manifest['inputs'][0]['name'] == 'x'
+    assert reshape_manifest['outputs'][0]['shape'] == [64]
+    assert json.loads(inspect(reshape))['manifest'] == reshape_manifest
+    invalid_alias_manifest = json.loads(json.dumps(reshape_manifest))
+    invalid_alias_manifest['tensors']['r']['shape'] = [32]
+    invalid_alias_manifest['tensors']['r']['logicalBytes'] = 64
+    (reshape / 'manifest.json').write_text(json.dumps(invalid_alias_manifest))
+    inspect(reshape, success=False)
+    (reshape / 'manifest.json').write_text(json.dumps(reshape_manifest))
+    for shape_op in ('squeeze', 'expand_dims'):
+        aliased = compile_text(alias_source(shape_op), f'{shape_op}-alias')
+        aliased_manifest = json.loads((aliased / 'manifest.json').read_text())
+        assert aliased_manifest['tensors']['r']['aliasOf'] == 'x'
+        assert json.loads(inspect(aliased))['manifest'] == aliased_manifest
+    returned_alias = compile_text(alias_source(return_alias=True, produced_input=True),
+                                  'returned-intermediate-alias')
+    returned_alias_manifest = json.loads((returned_alias / 'manifest.json').read_text())
+    assert returned_alias_manifest['intermediates'] == []
+    assert returned_alias_manifest['tensors']['t'] == {
+        'shape': [64], 'logicalBytes': 128, 'role': 'output'}
+    assert returned_alias_manifest['tensors']['r'] == {
+        'shape': [64], 'logicalBytes': 128, 'role': 'output', 'aliasOf': 't'}
+    assert returned_alias_manifest['outputs'][0]['name'] == 't'
+    assert returned_alias_manifest['outputs'][0]['shape'] == [64]
+    assert json.loads(inspect(returned_alias))['manifest'] == returned_alias_manifest
+    compile_text(alias_source(return_alias=True), 'returned-input-alias', False,
+                 'h13.returned-input-alias')
 
     tiled_add = compile_text(source(shape=(128,)), 'tiled-add')
     tiled_manifest = json.loads((tiled_add / 'manifest.json').read_text())
@@ -685,8 +795,13 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             '  } -> (y);',
             '    tensor<fp16, [1, 512]> z = add(x = y, y = y)[name = string("z")];\n'
             '  } -> (z);')
-        compile_text(matmul_binary, f'matmul-binary-{reduction}', False,
-                     'h13.unsupported-chain')
+        matmul_binary_package = compile_text(
+            matmul_binary, f'matmul-binary-{reduction}')
+        matmul_binary_manifest = json.loads(
+            (matmul_binary_package / 'manifest.json').read_text())
+        assert len(matmul_binary_manifest['programs']) == 9
+        assert json.loads(inspect(matmul_binary_package))['manifest'] == \
+            matmul_binary_manifest
         projection = compile_text(matmul, f'projection-{reduction}')
         payload = (projection / 'program-0.anec').read_bytes()
         assert struct.unpack_from('<H', payload, 4096 + 0x280)[0] == 0x3C00
@@ -743,6 +858,22 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             projected_manifest_path.write_text(json.dumps(projected_manifest))
             assert projected_manifest['intermediates'] == ['projection', 'biased']
             assert json.loads(inspect(projected))['manifest'] == projected_manifest
+            residual = compile_text(residual_source(), 'residual')
+            residual_manifest_path = residual / 'manifest.json'
+            residual_manifest = json.loads(residual_manifest_path.read_text())
+            assert [program['operation'] for program in residual_manifest['programs']] == \
+                ['matmul'] + ['maximum'] * 8 + ['add'] * 8
+            assert residual_manifest['dispatchPlan'] == list(range(17))
+            assert residual_manifest['intermediates'] == ['t', 'u']
+            assert sum(item['name'] == 't' for program in residual_manifest['programs']
+                       for item in program['inputs']) == 16
+            assert json.loads(inspect(residual))['manifest'] == residual_manifest
+            invalid_residual_manifest = json.loads(json.dumps(residual_manifest))
+            invalid_residual_manifest['dispatchPlan'][0], \
+                invalid_residual_manifest['dispatchPlan'][9] = 9, 0
+            residual_manifest_path.write_text(json.dumps(invalid_residual_manifest))
+            inspect(residual, success=False)
+            residual_manifest_path.write_text(json.dumps(residual_manifest))
         if reduction == 512:
             binary_matmul = compile_text(binary_matmul_chain_source(), 'binary-matmul')
             binary_matmul_manifest = json.loads(
