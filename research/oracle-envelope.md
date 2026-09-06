@@ -321,8 +321,8 @@ recorded here because it changes how a task stream must be read.
 
 The last fixed header word — H13 `header[9]`, H14 `header[7]` — carries a flag in
 its two low bits. When both are set, one extra word sits between the fixed header
-and the first register record. Across the 5,549 decoded tasks in the checked-in
-corpus (2,677 H13, 2,872 H14, probe sets included) the
+and the first register record. Across the 4,928 decoded tasks in the committed
+corpus (2,677 H13, 2,251 H14) the
 word takes four values on H13 (`0x0`, `0x21`, `0x23`, `0x26`) and six on H14
 (`0x1`, `0x10001`, `0x30001`, `0x40001`, `0x50001`, `0x50003`); only `0x23` and
 `0x50003` carry the extra word. Bit 1 alone is not the predicate: H13 `0x26` and
@@ -347,7 +347,7 @@ accepted cases.
 
 The forms that use the extended header are the attention chains and every
 runtime-runtime matmul except rank-2 M=16 (rank-2 from M=128, rank-3 from M=64):
-48 of 2,677 H13 tasks and 30 of 2,872 H14 tasks, 26 cases per target.
+48 of 2,677 H13 tasks and 30 of 2,251 H14 tasks, 26 cases per target.
 
 ## Reproducing
 
