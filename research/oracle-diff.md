@@ -71,7 +71,7 @@ The envelope sweep corrects two conclusions that this narrow sampling invited. `
 
 The multi-task rule is observed directly in `matmul_m1_k256_n512_ty1.json`: one program declaring two tasks, first task 126 words, next pointer `0x200`, 8 bytes of zero alignment, and second task 157 words. Across the first campaign, the linked parser decoded H13 objects containing one, two, three, five, and six tasks; the envelope sweep reaches 129 tasks, still in one program.
 
-The extended-header flag was found by the envelope sweep. Across the 5,549 decoded tasks in the checked-in corpus, H13 `header[9]` is `0x0`, `0x21`, `0x23` or `0x26` and H14 `header[7]` is `0x1`, `0x10001`, `0x30001`, `0x40001`, `0x50001` or `0x50003`; only `0x23` and `0x50003` carry the extra word, so bit 1 alone is not the predicate. The extra word held `0x0`, `0x7`, or `0x8`, and the task's declared size already includes it, so only the register stream shifts. `research/oracle-envelope.md` records how a silent mis-parse was caught.
+The extended-header flag was found by the envelope sweep. Across the 4,928 decoded tasks in the committed corpus, H13 `header[9]` is `0x0`, `0x21`, `0x23` or `0x26` and H14 `header[7]` is `0x1`, `0x10001`, `0x30001`, `0x40001`, `0x50001` or `0x50003`; only `0x23` and `0x50003` carry the extra word, so bit 1 alone is not the predicate. The extra word held `0x0`, `0x7`, or `0x8`, and the task's declared size already includes it, so only the register stream shifts. `research/oracle-envelope.md` records how a silent mis-parse was caught.
 
 ## Register block map
 
