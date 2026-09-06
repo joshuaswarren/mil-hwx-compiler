@@ -8,17 +8,21 @@ The campaign retained MIL, weight descriptions, decoded register words, constant
 
 The exact campaign source hashes are `cda43658a57026468a90dc088909559e9fbb0c04597a691119da93338984b648` for `research/mint_oracles.py` and `fc85d0664a4e567e617189d53d22252f46b6cbca2e4246976ee9ae4deaa8aed5` for `research/h13_td.py`. Each JSON record carries both hashes.
 
+A second campaign, the envelope sweep, was added later at repository commit `e1cb580` on the same host and with the same oracle executable. Its 548 records are named `env_*` under the same two directories and carry their own source hashes: `a6e8f70d438973e60913815be66dbd6de19d7200df9053a9efc2a615823d8074` for `research/mint_oracles.py` and `125da0249ca3c3ba0ca1f9f0cabfd1db54a965abb75f9f4cdcc2598e255c8fbc` for `research/h13_td.py`. The 470 first-campaign records were deliberately not regenerated, so the corpus carries two provenance sets and every record states its own. `research/oracle-envelope.md` reports the envelope sweep in full; the coverage table below summarizes it and the corrections it forces on this report.
+
 The external register-name evidence is freedomtan's H14 register map at commit [`ce54664e787976b646c450ceabed1731b506a4cd`](https://github.com/freedomtan/coreml_to_ane_hwx/commit/ce54664e787976b646c450ceabed1731b506a4cd), specifically [`hwx_dump/h14_register_map.md`](https://raw.githubusercontent.com/freedomtan/coreml_to_ane_hwx/ce54664e787976b646c450ceabed1731b506a4cd/hwx_dump/h14_register_map.md). All other claims below come from the checked-in oracle records or the source-native comparison described here.
 
 ## Method
 
-`research/mint_oracles.py` changes one input at a time where practical. It covers binary operations and geometry, unary operations, reductions, normalization, convolution, matmul, linear, constants, and short fused chains. It invokes Apple's compiler for both targets, parses the Mach-O load commands, splits every task descriptor, decodes the register stream, writes one JSON record per attempt, and deletes the temporary HWX.
+`research/mint_oracles.py` changes one input at a time where practical. `campaign()` covers binary operations and geometry, unary operations, reductions, normalization, convolution, matmul, linear, constants, and short fused chains; `envelope_campaign()` adds the `env_*` cases that probe the outer edge of the accepted forms. It invokes Apple's compiler for both targets, parses the Mach-O load commands, splits every task descriptor of every program the object declares, decodes the register stream, writes one JSON record per attempt, and deletes the temporary HWX. A task whose register stream cannot be split is stored with its header words and a `decode_error` rather than failing the case, so a parser gap is never recorded as an Apple rejection.
 
 The complete command was:
 
 `python3 research/mint_oracles.py --host macstudio --targets h13 h14 --force`
 
 It produced `SUMMARY cases=470 decoded=344 rejected=126`.
+
+The envelope sweep was minted separately with `--case 'env_*' --force`, and produced `SUMMARY cases=548 decoded=542 rejected=6`.
 
 ## Campaign coverage
 
@@ -41,18 +45,33 @@ The family results were identical for H13 and H14:
 | Linear | 2 | 0 |
 | Short chains | 3 | 2 |
 
-All 36 accepted matmuls per target use `transpose_y=true`; all 36 `transpose_y=false` attempts were rejected. Inline tensor constants were rejected in all 12 binary-operation cases per target. Scalar constants were accepted in all 12 cases. BLOBFILE constants were accepted in 10 of 12; both `real_div` BLOBFILE cases were rejected. The oracle returned `callback_status=1` for 61 failures per target and `callback_status=22` for two. A rejection JSON is evidence of the attempted MIL and compiler response, not a decoded oracle.
+The envelope sweep, 274 further cases per target:
+
+| Family | Attempts per target | Decoded per target |
+|---|---:|---:|
+| Broadcast elementwise | 93 | 93 |
+| Matmul, runtime and constant operands | 117 | 114 |
+| Convolution with bias, groups, stride 2 | 22 | 22 |
+| gelu and silu on spatial shapes | 13 | 13 |
+| Fused chains | 29 | 29 |
+
+Within this first campaign, all 36 accepted matmuls per target use `transpose_y=true` and all 36 `transpose_y=false` attempts were rejected. Inline tensor constants were rejected in all 12 binary-operation cases per target. Scalar constants were accepted in all 12 cases. BLOBFILE constants were accepted in 10 of 12; both `real_div` BLOBFILE cases were rejected. The oracle returned `callback_status=1` for 61 failures per target and `callback_status=22` for two. A rejection JSON is evidence of the attempted MIL and compiler response, not a decoded oracle.
+
+The envelope sweep corrects two conclusions that this narrow sampling invited. `transpose_y=false` is not refused by Apple: with both matmul operands as runtime inputs it is accepted in every attempted geometry, and it costs one task fewer than `transpose_y=true`. What is refused is a `transpose_y=false` BLOBFILE weight, which reports `ANE internal validation error: Metadata data type does not match requested type.` Likewise convolution bias is not refused: all 6 bias rejections here used an inline fp16 tensor constant, the same storage refused for binary operands, and all 12 envelope convolutions with a BLOBFILE bias decoded. The envelope sweep's own 6 rejections are a single geometry, `[128,8192] x const[N,8192]` with `transpose_y=true`, three per target, all `callback_status=1`.
 
 ## Task descriptor encodings
 
 | Property | H13 | H14 |
 |---|---|---|
 | Task header | 10 words | 8 words |
+| Extended header | One extra word precedes the first register record when `header[9] & 0x3 == 0x3` | Same rule on `header[7]` |
 | Task sizing | First size is program word at `+0x818` plus one; later size is the preceding task's `header[1][24:16]` plus one | `header[0][26:16]` words |
 | Task linking | `header[7]` is the next section-relative byte offset; final value is zero | Tasks are 16-byte aligned; zero-size 16-byte prefix/alignment records are skipped |
 | Register record | `count=(header>>26)+1`; byte address is `header&0x03ffffff` | Dense: `count=((header>>15)&0x3f)+1`. Scatter: bit 31 set, 16-bit mask in bits 30:15. Base word index is bits 14:0. |
 
-The multi-task rule is observed directly in `matmul_m1_k256_n512_ty1.json`: program count 2, first task 126 words, next pointer `0x200`, 8 bytes of zero alignment, and second task 157 words. Across the campaign, the linked parser decoded H13 objects containing one, two, three, five, and six tasks.
+The multi-task rule is observed directly in `matmul_m1_k256_n512_ty1.json`: one program declaring two tasks, first task 126 words, next pointer `0x200`, 8 bytes of zero alignment, and second task 157 words. Across the first campaign, the linked parser decoded H13 objects containing one, two, three, five, and six tasks; the envelope sweep reaches 129 tasks, still in one program.
+
+The extended-header flag was found by the envelope sweep. Across the 4,928 decoded tasks in the corpus, H13 `header[9]` is `0x0`, `0x21`, `0x23` or `0x26` and H14 `header[7]` is `0x1`, `0x10001`, `0x30001`, `0x40001`, `0x50001` or `0x50003`; only `0x23` and `0x50003` carry the extra word, so bit 1 alone is not the predicate. The extra word held `0x0` or `0x7`, and the task's declared size already includes it, so only the register stream shifts. `research/oracle-envelope.md` records how a silent mis-parse of it looked on H14.
 
 ## Register block map
 

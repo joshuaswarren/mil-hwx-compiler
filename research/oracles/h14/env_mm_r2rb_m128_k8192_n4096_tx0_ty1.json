@@ -1,0 +1,62 @@
+{
+  "case": "env_mm_r2rb_m128_k8192_n4096_tx0_ty1",
+  "compiler": {
+    "command": [
+      "/tmp/h13-oracle/bin/ane-compile-hwx",
+      "CAPTURE_DIR",
+      "OUTPUT_DIR",
+      "h14"
+    ],
+    "decoder_sha256": "125da0249ca3c3ba0ca1f9f0cabfd1db54a965abb75f9f4cdcc2598e255c8fbc",
+    "driver_sha256": "a6e8f70d438973e60913815be66dbd6de19d7200df9053a9efc2a615823d8074",
+    "host": "MacStudio.local",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "tool": "/tmp/h13-oracle/bin/ane-compile-hwx",
+    "tool_sha256": "b1bab437e2da0d26e65799698b63d8ad592d5455eec5da64c5877799b08abcbe"
+  },
+  "constant_section": null,
+  "error": "callback_status=1",
+  "family": "env_matmul",
+  "hwx_bytes": null,
+  "hwx_sha256": null,
+  "mil": "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n  func main<ios18>(tensor<fp16, [128, 8192]> x) {\n    bool tx = const()[name = string(\"tx\"), val = bool(false)];\n    bool ty = const()[name = string(\"ty\"), val = bool(true)];\n    tensor<fp16, [4096, 8192]> w = const()[name = string(\"w\"), val = tensor<fp16, [4096, 8192]>(BLOBFILE(path = string(\"@model_path/weights.bin\"), offset = uint64(64)))];\n    tensor<fp16, [128, 4096]> product = matmul(transpose_x = tx, transpose_y = ty, x = x, y = w)[name = string(\"product\")];\n  } -> (product);\n}\n",
+  "parameters": {
+    "batch": null,
+    "columns": 4096,
+    "output_shape": [
+      128,
+      4096
+    ],
+    "reduction": 8192,
+    "rows": 128,
+    "transpose_x": false,
+    "transpose_y": true,
+    "w_shape": [
+      4096,
+      8192
+    ],
+    "w_storage": "blob",
+    "x_shape": [
+      128,
+      8192
+    ],
+    "x_storage": "runtime"
+  },
+  "program_descriptor": null,
+  "schema_version": 1,
+  "source_commit": "e1cb5809ea41f6d2065b14b46a508728f32daacf",
+  "target": "h14",
+  "task_descriptors": [],
+  "tensor_descriptors": [],
+  "weights": {
+    "payload_bytes": 67108864,
+    "shapes": [
+      [
+        4096,
+        8192
+      ]
+    ],
+    "storage": "BLOBFILE",
+    "value": "fp16(0x1p-1)"
+  }
+}
