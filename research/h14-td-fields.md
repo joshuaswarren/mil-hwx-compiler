@@ -467,3 +467,21 @@ forms whose runtime operand surface differs from the result surface
   operand yields a 256-byte section with 72 nonzero bytes, and half of those
   records keep only a section hash — so no packing rule is proven and the
   encoder claims none.
+
+## Appendix: H14 convolution parity
+
+The convolution packing is target-independent: every dense, grouped and
+depthwise section H14 emits is byte-identical to H13's for the same geometry,
+so `research/mint_conv_probes.py` derives one packing and both encoders use it.
+The stride-2 zero-skipping form differs only in where the row's spare bytes
+sit. H13 writes a zero lead byte before each row's first mask byte; H14 hoists
+one zero byte to the head of the plane body and follows every mask byte with a
+zero instead. The 16-bit body count is the same number either way, which is how
+the two forms were separated: the sizes matched while the hashes did not.
+
+H14 carries the same convolution template fields as its normalization
+templates — the whole `__TEXT/__text` stream including the 16-byte zero-size
+prefix frame, the task count, the program record count at descriptor offset
+0x858..0x880, and the constant byte count — and the surfaces follow the same
+64-byte-padded row rule the H13 section describes. 284 decoded H14
+convolutions reproduce byte-for-byte through `tests/test_h14_parity.py`.

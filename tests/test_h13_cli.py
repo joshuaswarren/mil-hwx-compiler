@@ -1359,4 +1359,58 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
                  'reduce-batch-axis', success=False,
                  diagnostic='h13.norm-outside-envelope')
 
+    # Convolution lowers to Apple's own single-task program with the packed
+    # weight, and optional bias, as its whole constant section.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'research'))
+    import mint_conv_probes as conv_probes  # noqa: E402
+    import mint_oracles as oracles  # noqa: E402
+
+    def conv_case(kernel, inputs, outputs, spatial, stride, groups, bias,
+                  pad_type='same'):
+        case = conv_probes.conv_case(kernel, inputs, outputs, spatial, stride,
+                                     groups, bias, pad_type)
+        (root / 'weights.bin').write_bytes(case['weights'])
+        return case
+
+    for kernel, groups, bias, pad_type, section in (
+            (1, 1, False, 'same', 8192), (1, 1, True, 'same', 9216),
+            (3, 1, False, 'valid', 73728), (3, 64, True, 'same', 2048),
+            (1, 1, False, 'same', 11136)):
+        stride = 2 if section == 11136 else 1
+        case = conv_case(kernel, 64, 64, 16, stride, groups, bias, pad_type)
+        package = compile_text(case['mil'], case['name'])
+        manifest = json.loads((package / 'manifest.json').read_text())
+        assert manifest['encoder'] == 'apple-parity-conv', case['name']
+        assert manifest['operation'] == 'conv', case['name']
+        assert manifest['taskDescriptors'] == 1, case['name']
+        assert manifest['constantBytes'] == section, \
+            (case['name'], manifest['constantBytes'])
+        assert manifest['inputs'][0]['nchw'] == [1, 64, 16, 16, 1024, 64]
+        expected_side = 8 if stride == 2 else (14 if pad_type == 'valid' else 16)
+        assert manifest['outputs'][0]['nchw'] == \
+            [1, 64, expected_side, expected_side, 64 * expected_side, 64], \
+            case['name']
+        assert manifest['tensors']['w']['role'] == 'constant', case['name']
+
+    # The packed section is the weight permuted, not copied: the same weight
+    # bytes under a different output count give a different section, and a
+    # bias only ever adds a row per plane.
+    plain = conv_case(1, 64, 64, 16, 1, 1, False)
+    plain_package = compile_text(plain['mil'], 'conv-plain')
+    biased = conv_case(1, 64, 64, 16, 1, 1, True)
+    biased_package = compile_text(biased['mil'], 'conv-biased')
+    assert (plain_package / 'program-0.anec').read_bytes() != \
+        (biased_package / 'program-0.anec').read_bytes()
+
+    # Outside the decoded envelope the encoder refuses rather than guessing:
+    # a channel count no oracle covers, and a stride-2 3x3 kernel, whose
+    # zero-skipping packing the campaign does not derive.
+    off_envelope = conv_case(1, 64, 48, 16, 1, 1, False)
+    compile_text(off_envelope['mil'], 'conv-off-envelope', success=False,
+                 diagnostic='h13.conv-outside-envelope')
+    strided_taps = conv_case(3, 64, 64, 16, 2, 1, False)
+    compile_text(strided_taps['mil'], 'conv-strided-taps', success=False,
+                 diagnostic='h13.conv-outside-envelope')
+    (root / 'weights.bin').write_bytes(oracles.blob(oracles.half_payload(64)))
+
 print('H13 MIL-to-ANEC/HWX CLI: PASS (device-free)')

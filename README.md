@@ -49,6 +49,7 @@ tensors may use any positive static size:
 | softmax | One fp16 input and matching output, and a constant `int32` axis. Emits Apple's own 4-to-8-task program with the exponential (and, for a channel- or height-axis reduction, reciprocal) fp16 lookup table in the constant section. Only the decoded shapes lower; see the envelope table below. |
 | layer_norm | One fp16 input and matching output, a constant rank-1 `int32` axes tensor, and `epsilon = fp32(1e-5)`. Emits Apple's 3-to-6-task program with an all-zero 16384-byte constant section. `gamma` and `beta` are rejected: Apple's compiler rejects every affine form in this harness, so no oracle covers one. |
 | reduce_sum, reduce_max, reduce_mean | One fp16 input, a constant rank-1 `int32` axes tensor, and `keep_dims` either way. Emits Apple's 1-to-3-task program; a `keep_dims = false` result uses Apple's dense rank-reduced output surface. Reduction over the batch axis is rejected. |
+| conv | One fp16 rank-4 `[1, Cin, H, W]` input, a constant `[Cout, Cin/groups, k, k]` fp16 weight, an optional constant fp16 bias `[Cout]`, unit `dilations`, an all-zero explicit `pad`, and `pad_type` `same` or `valid`. Emits Apple's own single-task program whose whole constant section is the permuted weight, with the bias folded in as one row per plane. Kernel 1 and 3, stride 1 and 2, groups 1, 4 and depthwise, `Cin` and `Cout` over 64 to 1024 and spatial 1 to 64 lower where the decoded corpus covers them; anything else is refused with `h13.conv-outside-envelope` (`h14.conv-outside-envelope` on H14). See the convolution envelope table below. |
 
 The MIL contracts follow coremltools commit
 [`9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4`](https://github.com/apple/coremltools/commit/9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4).
@@ -65,6 +66,14 @@ dimensions. Its
 [`linear` definition](https://github.com/apple/coremltools/blob/9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4/coremltools/converters/mil/mil/ops/defs/iOS15/linear.py)
 defines `linear(x, weight, bias)` as `x * weight^T + bias`, requires constant
 weight and bias inputs, and gives bias the shape `[N]`.
+The same commit's
+[`conv` definition](https://github.com/apple/coremltools/blob/9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4/coremltools/converters/mil/mil/ops/defs/iOS15/conv.py)
+takes a `[Cout, Cin / groups, kh, kw]` weight, an optional `[Cout]` bias,
+square `strides` and `dilations` vectors, and either an explicit `pad` with
+`pad_type="custom"` or the `same`, `same_lower` and `valid` spellings: `same`
+covers `ceil(D / stride)` output pixels with the smaller half of the padding in
+front and `valid` covers `floor((D - dilation * (kernel - 1) - 1) / stride) + 1`
+with none.
 
 Exactly one function and at least one encoded operation are required. The
 compiler lowers operations in their verified MIL order; it does not re-sort
@@ -270,6 +279,32 @@ tiled elementwise path. The encoder selects a program by
 | `layer_norm` | W, HW, CHW | 3-5 | 16384 B zero | flat, sequence, spatial |
 | `reduce_sum`, `reduce_mean` | C | 1-2 | 16384 B zero | flat, sequence, spatial |
 | `reduce_max` | C | 1 | 16384 B zero | flat, sequence, spatial |
+
+### Convolution envelope
+
+Every row is proven byte-for-byte against decoded Apple oracles on both H13 and
+H14: the task stream comes from the oracle and the constant section from the
+packing `research/mint_conv_probes.py` derives, whose permutation is read off
+known-weight probes rather than inferred from a hash. 284 decoded convolutions
+per target lower inside the envelope.
+
+| Form | Covered | Constant section |
+| --- | --- | --- |
+| Dense, stride 1 | kernel 1 and 3, `Cin` and `Cout` over 64, 128, 256, 512, 768 and 1024, spatial 1, 8, 16, 32 and 64, `pad_type` `same` and `valid` | 16 plane groups of planes that interleave `lanes` output channels at halfword granularity; `lanes` is the largest power of two at or below `Cout / 16`, capped at 32 for an input of 8 or fewer pixels per side and 16 above it, and the remaining channels take the next chunk down |
+| Grouped, stride 1 | groups 4 over the same kernels and channel counts | 64 planes of `Cout / 64` channels, each plane padded to 64 bytes |
+| Depthwise, stride 1 | groups = `Cin` = `Cout` over the same kernels and channel counts | 16 lanes, each holding `Cout / 16` channels' taps back to back, the lane padded to 64 bytes |
+| Bias | any covered form, `[Cout]` BLOBFILE bias | one bias row per plane ahead of the weight rows, so the section grows by a plane row rather than by `Cout * 2` |
+| Stride 2 | kernel 1, groups 1, up to 8 interleaved lanes | zero-skipping planes: an optional dense bias prefix, a 16-bit body count, then per reduction step a mask byte per eight lanes followed by the nonzero halfwords. Both signed zeros are skipped, so the section size depends on the weight values |
+
+Outside those rows the compiler refuses by name. The campaign measured, but did
+not resolve, four boundaries:
+
+| Unresolved | What the corpus shows |
+| --- | --- |
+| Multi-task convolutions | 57 grid points per target where Apple partitions one convolution into 2 to 32 tasks; the per-task constant partition is not derived |
+| Stride 2 with a 3x3 kernel | The taps reorder by stride phase — `(0,2)`, `(6,8)`, `(1,7)`, `(3,5)`, then the centre tap — and eight slots share one mask byte, but the per-row overhead is 2 bytes short of the measured body count |
+| Stride 2 with 16 or more lanes | The mask and value layout matches the 8-lane form, and the measured body count is 2 bytes below the model's |
+| Stride 2, grouped and depthwise | 68 grid points per target, unprobed at byte level |
 | all three reductions | H | 3 | 16384 B zero | spatial |
 | all three reductions | W, HW, CHW | 1 | 16384 B zero | sequence, spatial |
 

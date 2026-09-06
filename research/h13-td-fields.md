@@ -462,3 +462,80 @@ limits extrapolation, not correctness.
   8192) are recorded as rejections with `callback_status=1` and no validation
   report; they remain unexplained, and the same K and N compile at every other
   probed M.
+
+# Convolution
+
+## Scope and provenance
+
+`research/mint_conv_probes.py` minted a 524-case convolution grid on
+MacStudio.local with Apple's own compiler and decoded it into
+`research/oracles/{h13,h14}/conv_probe_*.json` and `conv_known_*.json`: kernel
+1 and 3, `Cin` and `Cout` over 64, 128, 256, 512 and 1024, spatial 1, 8, 16, 32
+and 64, stride 1 and 2, groups 1, 4 and depthwise, with and without a BLOBFILE
+bias, and both `pad_type` spellings MIL uses. Every case decoded; none was
+refused. The `conv_known_*` half writes one distinct finite fp16 pattern per
+weight element, which is what makes the packing permutation observable — the
+envelope campaign's uniform `fp16(0x1p-1)` weight hides it everywhere except
+where the blob header's own bytes land.
+
+The layout is read off bit planes: `--layout` compiles a baseline probe where
+every element holds `0x3801`, a saturated probe holding `0x3C82`, and one probe
+per index bit that flips the elements whose index has that bit set. A byte of
+the constant section then names the element and the half it came from, which
+recovers a permutation working below halfword granularity. No HWX bytes are
+retained; only the derived map, the sizes and the hashes leave the machine.
+
+## Program shape
+
+Every covered convolution is one task in one program, with the same surface
+model as the elementwise families except for the row stride: the row is the
+width padded to 64 bytes rather than floored at it, which a `pad_type="valid"`
+result 62 columns wide exposes as a 128-byte row. The input surface is
+declared first and the output second, addresses run input then output from
+`0x30000000`, and the scratch allocation below them is zero.
+
+## Constant section
+
+The section is the whole weight, permuted, with no lookup table. Three
+families, all measured:
+
+* Dense (`groups = 1`). Sixteen plane groups; a plane interleaves `lanes`
+  output channels at halfword granularity over the `Cin / groups * kh * kw`
+  reduction. `lanes` is the largest power of two at or below `Cout / 16`,
+  capped at 32 when the input is 8 or fewer pixels per side and 16 above it;
+  the channels a chunk cannot cover take the next chunk down, which 768
+  outputs at cap 32 proves by splitting into 512 channels 32 lanes wide and 256
+  channels 16 lanes wide. Planes inside a group are contiguous and the group is
+  padded to 64 bytes.
+* Grouped (`1 < groups < Cin`). 64 planes of `Cout / 64` channels, each plane
+  padded to 64 bytes.
+* Depthwise (`groups = Cin = Cout`). 16 lanes; a lane holds `Cout / 16`
+  channels' `kh * kw` taps back to back with no padding between them, and the
+  lane is padded to 64 bytes.
+
+A bias adds one row of `lanes` halfwords ahead of a plane's weight rows, which
+is why the envelope campaign measured a fixed 1,024 or 2,048 extra bytes rather
+than `Cout * 2`.
+
+A stride-2 convolution switches to a zero-skipping form. A plane holds the
+plane's `lanes` bias halfwords when there is a bias, a 16-bit count of the body
+bytes, then one row per reduction step: a zero lead byte, then per group of
+eight lanes a mask byte whose bit `l` marks a lane whose weight is not zero
+followed by that lane's halfword, closing with `lanes / 2 - 2` zero bytes. Both
+signed zeros are skipped, so `fp16(-0.0)` in the blob header shortens the
+section by two bytes — the measurement that separated a matching section from a
+two-byte-long one at 256 reductions.
+
+## Coverage and limits
+
+284 decoded convolutions per target reproduce byte-for-byte, task words and
+constant section, through `tests/test_h13_parity.py` and
+`tests/test_h14_parity.py`. Four boundaries are measured but unresolved, and
+the compiler refuses them with `h13.conv-outside-envelope`:
+
+| Unresolved | Evidence |
+| --- | --- |
+| Multi-task convolutions | 57 grid points per target emit 2 to 32 tasks; the per-task weight partition is not derived. The task count tracks the weight bytes at 576 KiB per task for a 3x3 kernel at 1,024 inputs, but 5- and 11-task cases do not divide evenly, so no rule is claimed |
+| Stride 2, 3x3 kernel | The reduction reorders by stride phase — taps `(0,2)`, `(6,8)`, `(1,7)`, `(3,5)`, then tap 4 — and one mask byte covers eight `(tap, lane)` slots. The per-row overhead is two bytes short of the measured body count |
+| Stride 2, 16 or more lanes | Two mask bytes per row with a six-byte trailing pad matches the recovered map, and the body count is two bytes below the model's |
+| Stride 2, grouped or depthwise | 68 grid points per target; no byte-level probe was run |

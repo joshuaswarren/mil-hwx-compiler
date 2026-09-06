@@ -791,6 +791,124 @@ static BOOL normParityPlan(ANEGraphOperation *operation, H13NormPlan *plan) {
     return YES;
 }
 
+struct H13ConvPlan {
+    ane::h13::ConvShape shape;
+    ANEGraphValue *weight;
+    ANEGraphValue *bias;
+};
+
+/// Resolves a rank-1 `int32` constant into its literal values.
+static BOOL int32Vector(ANEGraphValue *value, NSUInteger count,
+                        long long *values) {
+    if (!value || !constantValue(value) || value.producer.arguments.count ||
+        value.type.kind != ANEValueTypeKindTensor ||
+        value.type.elementType != ANEElementTypeInt32 ||
+        value.type.shape.count != 1 ||
+        value.type.shape[0].unsignedIntegerValue != count) return NO;
+    ANEGraphArgument *literal = value.producer.attributes[@"val"];
+    if (literal.kind != ANEGraphArgumentKindCall ||
+        ![literal.calleeValueType isEqualToValueType:value.type] ||
+        literal.callArguments.count != 1) return NO;
+    ANEGraphArgument *payload = literal.callArguments[0].value;
+    if (payload.kind != ANEGraphArgumentKindList ||
+        payload.elements.count != count) return NO;
+    for (NSUInteger index = 0; index < count; ++index)
+        if (!int32Literal(payload.elements[index], &values[index])) return NO;
+    return YES;
+}
+
+static BOOL int32Scalar(ANEGraphValue *value, long long *result) {
+    if (!value || !constantValue(value) || value.producer.arguments.count ||
+        value.type.kind != ANEValueTypeKindScalar ||
+        value.type.elementType != ANEElementTypeInt32) return NO;
+    return int32Literal(value.producer.attributes[@"val"], result);
+}
+
+static BOOL constantString(ANEGraphValue *value, NSString **text) {
+    if (!value || !constantValue(value) || value.producer.arguments.count ||
+        value.type.elementType != ANEElementTypeString) return NO;
+    NSString *resolved = stringArgument(value.producer.attributes[@"val"]);
+    if (!resolved) return NO;
+    *text = resolved;
+    return YES;
+}
+
+/// The CHW surface a convolution operand covers: a rank-4 NCHW tensor with a
+/// batch of one, which is the only form the decoded corpus carries.
+static BOOL convSurface(ANEGraphValue *value, ane::h13::ElementwiseShape *shape) {
+    return elementwiseShape(value, shape);
+}
+
+/// Matches the convolutions whose whole H13 task stream and constant section
+/// are decoded from Apple oracles.
+///
+/// coremltools 9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4 defines `conv` with a
+/// `[Cout, Cin / groups, kh, kw]` weight, square `strides` and `dilations`
+/// vectors, and either an explicit `pad` with `pad_type="custom"` or the
+/// `same`, `same_lower` and `valid` spellings. The decoded corpus covers
+/// square kernels, unit dilations, `same` and `valid`, and the explicit `pad`
+/// vector only when it is all zeroes, which is what those two spellings emit.
+static BOOL convParityPlan(ANEGraphOperation *operation, H13ConvPlan *plan) {
+    if (![operation.operationName isEqualToString:@"conv"]) return NO;
+    ANEGraphValue *x = operation.operands[@"x"].value;
+    ANEGraphValue *weight = operation.operands[@"weight"].value;
+    ANEGraphValue *bias = operation.operands[@"bias"].value;
+    H13ConvPlan candidate{};
+    candidate.weight = weight;
+    candidate.bias = bias;
+    if (!x || !weight || !fp16Tensor(weight) || weight.type.shape.count != 4 ||
+        !convSurface(x, &candidate.shape.input) ||
+        !convSurface(operation.result, &candidate.shape.output)) return NO;
+    if (operation.arguments.count != (bias ? 8u : 7u)) return NO;
+    NSString *padType = nil;
+    long long strides[2] = {0, 0}, dilations[2] = {0, 0}, padding[4] = {0, 0, 0, 0};
+    long long groups = 1;
+    if (!constantString(operation.operands[@"pad_type"].value, &padType) ||
+        !int32Vector(operation.operands[@"strides"].value, 2, strides) ||
+        !int32Vector(operation.operands[@"dilations"].value, 2, dilations) ||
+        !int32Vector(operation.operands[@"pad"].value, 4, padding) ||
+        !int32Scalar(operation.operands[@"groups"].value, &groups)) return NO;
+    if (![padType isEqualToString:@"same"] && ![padType isEqualToString:@"valid"])
+        return NO;
+    if (strides[0] != strides[1] || dilations[0] != 1 || dilations[1] != 1 ||
+        strides[0] < 1 || groups < 1) return NO;
+    for (NSUInteger index = 0; index < 4; ++index)
+        if (padding[index]) return NO;
+    const std::uint32_t kernel = weight.type.shape[2].unsignedIntValue;
+    if (weight.type.shape[3].unsignedIntValue != kernel || !kernel) return NO;
+    if (weight.type.shape[0].unsignedIntValue != candidate.shape.output.channels)
+        return NO;
+    if (!candidate.shape.input.channels ||
+        candidate.shape.input.channels % groups ||
+        weight.type.shape[1].unsignedIntValue !=
+            candidate.shape.input.channels / groups) return NO;
+    // The result surface must be what the pad type asks for: `same` covers
+    // ceil(D / stride) and `valid` covers floor((D - kernel) / stride) + 1.
+    const std::uint32_t extents[2] = {candidate.shape.input.height,
+                                      candidate.shape.input.width};
+    const std::uint32_t results[2] = {candidate.shape.output.height,
+                                      candidate.shape.output.width};
+    for (NSUInteger axis = 0; axis < 2; ++axis) {
+        const std::uint32_t stride = static_cast<std::uint32_t>(strides[0]);
+        if ([padType isEqualToString:@"same"]) {
+            if (results[axis] != (extents[axis] + stride - 1) / stride) return NO;
+        } else {
+            if (extents[axis] < kernel ||
+                results[axis] != (extents[axis] - kernel) / stride + 1) return NO;
+        }
+    }
+    candidate.shape.kernel = kernel;
+    candidate.shape.stride = static_cast<std::uint32_t>(strides[0]);
+    candidate.shape.groups = static_cast<std::uint32_t>(groups);
+    candidate.shape.bias = bias != nil;
+    if (bias && (!fp16Tensor(bias) || bias.type.shape.count != 1 ||
+                 bias.type.shape[0].unsignedIntValue !=
+                     candidate.shape.output.channels)) return NO;
+    if (!ane::h13::supportsConvParity(candidate.shape)) return NO;
+    *plan = candidate;
+    return YES;
+}
+
 static NSData *linearBiasData(ANEGraphValue *bias, NSUInteger columns,
                                 NSURL *modelRoot,
                                 ANEDiagnosticEngine *diagnostics,
@@ -900,6 +1018,38 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     if (normParityPlan(operation, &normalization)) {
         program = ane::h13::encodeNormParity(normalization.operation,
                                              normalization.shape);
+        *inputsOut = @[x];
+        *constantInputOut = nil;
+        *constantDataOut = nil;
+        *manifestOperationOut = name;
+        return YES;
+    }
+
+    H13ConvPlan convolution{};
+    if (convParityPlan(operation, &convolution)) {
+        const std::uint32_t reduction = convolution.shape.input.channels /
+            convolution.shape.groups * convolution.shape.kernel *
+            convolution.shape.kernel;
+        NSData *weights = resolvedConstants[convolution.weight.name];
+        if (!weights) {
+            weights = [ANEBlobResolver loadConstantForOperation:convolution.weight.producer
+                expectedBytes:convolution.shape.output.channels * reduction * 2
+                modelRoot:modelRoot diagnostics:diagnostics];
+            if (!weights) return NO;
+            resolvedConstants[convolution.weight.name] = weights;
+        }
+        NSData *biasData = nil;
+        if (convolution.bias) {
+            biasData = perChannelConstantData(convolution.bias,
+                convolution.shape.output.channels, modelRoot, diagnostics,
+                resolvedConstants);
+            if (!biasData) return NO;
+        }
+        // The MIL weight is already `[Cout, Cin / groups, kh, kw]` row-major,
+        // which is the order the packing consumes, so no host transform runs.
+        program = ane::h13::encodeConvParity(convolution.shape,
+            static_cast<const std::uint8_t *>(weights.bytes), weights.length,
+            static_cast<const std::uint8_t *>(biasData.bytes), biasData.length);
         *inputsOut = @[x];
         *constantInputOut = nil;
         *constantDataOut = nil;
@@ -1188,6 +1338,14 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                  "constant axes, no gamma or beta, epsilon 1e-5, and an input "
                  "and output surface inside the oracle parity envelope", name],
                 operation, @"h13.norm-outside-envelope");
+        if ([name isEqualToString:@"conv"])
+            return reject(diagnostics,
+                @"H13 conv needs a decoded geometry: an fp16 rank-4 input and "
+                 "result with a batch of one, a constant [Cout, Cin/groups, k, k] "
+                 "weight, unit dilations, zero explicit padding, pad_type 'same' "
+                 "or 'valid', and a kernel, stride, group count and surface pair "
+                 "inside the oracle parity envelope",
+                operation, @"h13.conv-outside-envelope");
         return reject(diagnostics, [NSString stringWithFormat:
             @"H13 has no source-qualified encoder for '%@'", name], operation);
     }
@@ -1653,8 +1811,11 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                                            &broadcastPlanned, &broadcastConstant);
             BOOL parity = !broadcast &&
                 parityPlan(operation, synthesizedConstants, &operationPlan);
+            H13ConvPlan convolutionPlan{};
             BOOL normalization = !parity && !broadcast &&
                 normParityPlan(operation, &normalizationPlan);
+            BOOL convolution = !parity && !broadcast && !normalization &&
+                convParityPlan(operation, &convolutionPlan);
             if (parity) {
                 inputSliceElements = outputSliceElements =
                     inputPhysicalElements = outputPhysicalElements =
@@ -1676,6 +1837,23 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     normalizationPlan.inputElements;
                 outputSliceElements = outputPhysicalElements =
                     normalizationPlan.outputElements;
+            } else if (convolution) {
+                NSUInteger elements = 0;
+                if (!tensorElementCount(operation.operands[@"x"].value, &elements))
+                    return reject(diagnostics,
+                        @"H13 convolution input must have a positive static shape",
+                        operation);
+                inputSliceElements = inputPhysicalElements = elements;
+                if (!tensorElementCount(operation.result, &elements))
+                    return reject(diagnostics,
+                        @"H13 convolution result must have a positive static shape",
+                        operation);
+                outputSliceElements = outputPhysicalElements = elements;
+                recordTensor(tensors, convolutionPlan.weight,
+                             convolutionPlan.weight.type.shape, @"constant");
+                if (convolutionPlan.bias)
+                    recordTensor(tensors, convolutionPlan.bias,
+                                 convolutionPlan.bias.type.shape, @"constant");
             } else if ([binaryNames containsObject:operation.operationName]) {
                 NSUInteger elements = 0;
                 if (tensorElementCount(operation.result, &elements)) {
@@ -1731,7 +1909,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                         outputSliceElements =
                             MIN((NSUInteger)512, columns - chunk * 512);
                     }
-                } else if (parity || broadcast || normalization) {
+                } else if (parity || broadcast || normalization || convolution) {
                     outputOffset =
                         [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
                 } else {
@@ -1834,7 +2012,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                                          : @"apple-parity-matvec")
                         : (broadcast ? @"apple-parity-broadcast"
                         : (normalization ? @"apple-parity-norm"
-                        : (parity ? @"h13-oracle-parity" : @"h13-source-qualified"))),
+                        : (convolution ? @"apple-parity-conv"
+                        : (parity ? @"h13-oracle-parity" : @"h13-source-qualified")))),
                     @"operation": manifestOperation,
                     @"inputs": inputRecords, @"constantInputs": constantInputs,
                     @"outputs": @[outputRecord],

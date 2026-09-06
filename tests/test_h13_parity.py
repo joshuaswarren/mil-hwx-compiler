@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "research"))
 from h13_td import decode_task, split_h13_tasks  # noqa: E402
 from inspect_hwx import h13_anec  # noqa: E402
 import mint_oracles  # noqa: E402
+import mint_conv_probes  # noqa: E402
 
 COMPILER = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "build/mil-hwxc").resolve()
 ORACLES = ROOT / "research/oracles/h13"
@@ -25,6 +26,7 @@ UNARY = {"abs", "exp", "gelu", "leaky_relu", "relu", "rsqrt", "sigmoid", "silu",
          "sqrt", "tanh"}
 BROADCAST_FAMILIES = {"env_broadcast", "rrmm_broadcast"}
 MATMUL_FAMILIES = {"env_matmul", "rrmm_matmul", "rrmm_matvec"}
+CONV_FAMILIES = {"env_conv", "conv_probe"}
 DEFAULT_ENCODER = "h13-oracle-parity"
 
 
@@ -53,7 +55,21 @@ def selected_oracles():
             # A constant `x` leaves `y` as the runtime operand; no encoder
             # lowers that form, so it stays outside the envelope.
             selected.append(oracle)
+        elif family in CONV_FAMILIES and conv_covered(oracle, "h13"):
+            selected.append(oracle)
     return selected
+
+
+def conv_covered(oracle, target):
+    """Whether the convolution encoder reproduces this oracle.
+
+    The campaign grid reaches past the encoder: Apple partitions a large
+    convolution into several tasks, and the strided packing is only derived
+    for a groups-1 1x1 kernel below 16 interleaved lanes. Those cases stay
+    outside the parity set and the compiler rejects them by name instead.
+    """
+    oracle = dict(oracle, target=target)
+    return mint_conv_probes.covered(oracle)
 
 
 def encoder(oracle):
@@ -64,6 +80,8 @@ def encoder(oracle):
             else "apple-parity-matvec"
     if family in BROADCAST_FAMILIES:
         return "apple-parity-broadcast"
+    if family in CONV_FAMILIES:
+        return "apple-parity-conv"
     return {"matmul": "apple-parity-matvec",
             "normalization": "apple-parity-norm",
             "reduction": "apple-parity-norm"}.get(family, DEFAULT_ENCODER)
@@ -74,10 +92,15 @@ def write_weights(oracle, root):
     description = oracle.get("weights", {})
     if description.get("storage") != "BLOBFILE":
         return
-    assert description["value"] == "fp16(0x1p-1)", oracle["case"]
     elements = description["payload_bytes"] // 2
-    (root / "weights.bin").write_bytes(mint_oracles.blob(
-        mint_oracles.half_payload(elements)))
+    if description["value"] == "distinct":
+        # The known-weight convolution probes carry one distinct fp16 pattern
+        # per element, which is what proves the packing permutation.
+        payload = mint_conv_probes.known_weights(elements)
+    else:
+        assert description["value"] == "fp16(0x1p-1)", oracle["case"]
+        payload = mint_oracles.half_payload(elements)
+    (root / "weights.bin").write_bytes(mint_oracles.blob(payload))
 
 
 def compile_oracle(oracle, output, artifact_format):
@@ -221,8 +244,9 @@ def main():
     families = collections.Counter(oracle["family"] for oracle in oracles)
     expected = {"binary_runtime": 50, "binary_constant": 12, "unary": 25,
                 "matmul": 36, "normalization": 105, "reduction": 114,
-                "env_broadcast": 93, "env_matmul": 110}
-    for family in ("rrmm_broadcast", "rrmm_matmul", "rrmm_matvec"):
+                "env_broadcast": 93, "env_matmul": 110, "env_conv": 15}
+    for family in ("rrmm_broadcast", "rrmm_matmul", "rrmm_matvec",
+                   "conv_probe"):
         if families[family]:
             expected[family] = families[family]
     assert families == collections.Counter(expected), \
@@ -241,10 +265,12 @@ def main():
     matmul = families["matmul"] + families["env_matmul"] + \
         families["rrmm_matmul"] + families["rrmm_matvec"]
     broadcast = families["env_broadcast"] + families["rrmm_broadcast"]
+    convolution = families["env_conv"] + families["conv_probe"]
     print(f"H13 oracle parity: PASS ({len(oracles)} cases, "
           f"{matmul} matmul, {broadcast} broadcast, "
           f"{families['normalization']} softmax/layer_norm, "
-          f"{families['reduction']} reduction, {len(oracles) * 2} artifacts)")
+          f"{families['reduction']} reduction, {convolution} convolution, "
+          f"{len(oracles) * 2} artifacts)")
 
 
 if __name__ == "__main__":
