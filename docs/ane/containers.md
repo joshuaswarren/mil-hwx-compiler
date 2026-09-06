@@ -40,9 +40,13 @@ A decoded object contains these logical layers:
 
 The task descriptor is not a CPU instruction stream. It is a sequence of register blocks interpreted by ANE control hardware. **Evidence: medium.** The record decoder and address maps are visible in the pinned [parser and maps](https://github.com/freedomtan/coreml_to_ane_hwx/tree/ce54664e787976b646c450ceabed1731b506a4cd/hwx_dump); Apple patents describe task assignment and tile-processing machinery at a higher architectural level in [US20190340490A1](https://patents.google.com/patent/US20190340490A1/en).
 
+Two campaign results sharpen layers 3 and 4. The constant data is not a flat weight image: it concatenates packed weights, lookup tables, and bias rows, each in a family-specific packing — the convolution probes recovered dense, grouped, depthwise, and stride-2 layouts in which a bias is one extra row per plane and a stride-2 section's size depends on which weights are zero (conv section of [h13-td-fields.md](../../research/h13-td-fields.md), conv appendix of [h14-td-fields.md](../../research/h14-td-fields.md)). And the binding layer of a multi-operation chain declares **only the chain's inputs and its result**: no intermediate — not a feed-forward hidden state, not an attention score matrix — gets a tensor descriptor or a resource address; intermediates live in the `__DATA/__bss` scratch below the surfaces, based at `0x30000000`, reused across the blocks of a stack. **Evidence: high over the chain corpus.** See section 4 of [fusion-rules.md](../../research/fusion-rules.md) and [transformer-layer.md](transformer-layer.md).
+
 ## How many programs one object carries
 
 Apple emitted exactly one program load command in every one of the 542 accepted objects of the envelope campaign, on both H13 and H14, including an object with 129 tasks and a 134,217,728-byte constant section. Work is partitioned into more tasks inside the single program, not into more programs. The minting driver parses multi-program objects and records `program_count` per object, so a second program would have been recorded rather than mis-parsed. **Evidence: high over that corpus; it does not prove Apple never emits two programs for some untested form.** See the partitioning section of [oracle-envelope.md](../../research/oracle-envelope.md).
+
+The chain campaign extends the same result to multi-operation programs: every decoded chain object — including a 512-block stack at 10,240 tasks and a constant section of 402,786,304 bytes, and an 8,192-unit stack of 73,728 MIL operations — still carries exactly one program load command. **Evidence: high over the chain corpus; the two accepted-but-undecoded depth-4,096 and depth-8,192 objects are not counted.** See section 7 of [fusion-rules.md](../../research/fusion-rules.md).
 
 An object's task stream is therefore the interesting structure. H13 links tasks by a next-offset field with zero padding between sections; H14 has no link and instead 16-byte-aligns each task after a zero-size 16-byte frame. A reader must follow the generation's own rule. **Evidence: high for the decoded records.** See [task descriptors](task-descriptors.md) and [h14-td-fields.md](../../research/h14-td-fields.md).
 
@@ -72,5 +76,5 @@ A safe inspector should:
 
 - **Open question:** What semantic contract covers every H13 program-descriptor and metadata field?
 - **Open question:** Which ANEC header revisions correspond to which driver and firmware revisions?
-- **Open question:** Does any current production wrapper carry more than one program? Apple emitted exactly one in all 542 accepted envelope objects, so the multi-program path is parsed but unobserved.
+- **Open question:** Does any current production wrapper carry more than one program? Apple emitted exactly one in all 542 accepted envelope objects and in every decoded chain object up to 10,240 tasks and 402 MB of constants, so the multi-program path is parsed but unobserved. See [oracle-envelope.md](../../research/oracle-envelope.md) and [fusion-rules.md](../../research/fusion-rules.md).
 - **Open question:** How would a runtime select among architecture slices if an object ever carried more than one?
