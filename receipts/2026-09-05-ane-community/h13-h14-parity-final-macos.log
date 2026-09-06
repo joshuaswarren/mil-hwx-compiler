@@ -1,5 +1,6 @@
-    raise ValueError(message)
-ValueError: package file must be a regular file within the package
-make: *** [test-h13-simulation] Error 1
+HWX inspection: PASS (multi-task H13 plus source-derived H14 fixtures)
+PASS 6 H13 reference tests
 H13 MIL-to-ANEC/HWX CLI: PASS (device-free)
+ALL SIM CHECKS PASSED
+H14 oracle parity: PASS (434 cases, 165 elementwise, 36 matvec, 14 known-weight matvec probes over 9 (K, N) grid points, 105 softmax/layer_norm, 114 reduction over 186 norm templates, 868 artifacts)
 H13 oracle parity: PASS (635 cases, 216 matmul, 113 broadcast, 105 softmax/layer_norm, 114 reduction, 1270 artifacts)

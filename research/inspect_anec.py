@@ -50,6 +50,7 @@ def local_file(directory, name, limit):
     require(isinstance(name, str) and name not in ('', '.', '..') and
             Path(name).name == name, 'package filename must be a basename')
     require(type(limit) is int and 0 <= limit, 'package file limit must be nonnegative')
+    directory = Path(directory).resolve()
     path = (directory / name).resolve()
     require(path.parent == directory and path.is_file(),
             'package file must be a regular file within the package')
