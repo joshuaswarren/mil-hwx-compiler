@@ -1,0 +1,92 @@
+{
+  "schema": "mil-hwxc.h13-first-run.v1",
+  "note": "Deterministic fixture recipe for the first ANE execution ladder. Every tensor value is scale * ((index % modulus) - offset), or scale * (index - offset) when modulus is 0, rounded once to fp16. Encoder counts are asserted against the compiled manifest so a rung cannot silently change which encoder it exercises.",
+  "rungs": [
+    {
+      "id": 1,
+      "name": "01-add-legacy",
+      "title": "add [1,64,1,1], allbilly-derived legacy encoder",
+      "encoders": {"h13-source-qualified": 1},
+      "taskDescriptors": 1,
+      "blobs": [{"file": "c.bin", "count": 64, "scale": 0.25, "modulus": 0, "offset": 0}],
+      "inputs": [{"name": "a", "count": 64, "scale": 0.125, "modulus": 0, "offset": 0}]
+    },
+    {
+      "id": 2,
+      "name": "02-add-parity",
+      "title": "add [1,64,1,1], Apple-parity encoder",
+      "encoders": {"h13-oracle-parity": 1},
+      "taskDescriptors": 1,
+      "blobs": [],
+      "inputs": [
+        {"name": "a", "count": 64, "scale": 0.125, "modulus": 0, "offset": 0},
+        {"name": "b", "count": 64, "scale": 0.25, "modulus": 0, "offset": 0}
+      ]
+    },
+    {
+      "id": 3,
+      "name": "03-mul-scalar",
+      "title": "scalar-constant mul [1,64,1,1] by fp16 0.5",
+      "encoders": {"h13-oracle-parity": 1},
+      "taskDescriptors": 1,
+      "blobs": [],
+      "inputs": [{"name": "a", "count": 64, "scale": 0.125, "modulus": 0, "offset": 0}]
+    },
+    {
+      "id": 4,
+      "name": "04-matvec-k256-n512",
+      "title": "Apple-parity matvec K=256 N=512",
+      "encoders": {"apple-parity-matvec": 1},
+      "taskDescriptors": 2,
+      "blobs": [{"file": "weights.bin", "count": 131072, "scale": 0.125, "modulus": 5, "offset": 2}],
+      "inputs": [{"name": "x", "count": 256, "scale": 0.25, "modulus": 7, "offset": 3}]
+    },
+    {
+      "id": 5,
+      "name": "05-softmax-512",
+      "title": "Apple-parity softmax [1,512,1,1] over axis 1",
+      "encoders": {"apple-parity-norm": 1},
+      "taskDescriptors": 5,
+      "blobs": [],
+      "inputs": [{"name": "a", "count": 512, "scale": 0.25, "modulus": 7, "offset": 3}]
+    },
+    {
+      "id": 6,
+      "name": "06-chain-add-mul",
+      "title": "two-program chain add -> mul on [1,64,1,1]",
+      "encoders": {"h13-oracle-parity": 2},
+      "taskDescriptors": 2,
+      "blobs": [],
+      "inputs": [
+        {"name": "a", "count": 64, "scale": 0.125, "modulus": 0, "offset": 0},
+        {"name": "b", "count": 64, "scale": 0.125, "modulus": 5, "offset": 2}
+      ]
+    },
+    {
+      "id": 7,
+      "name": "07-runtime-matmul-64",
+      "title": "runtime-runtime matmul M=64 K=64 N=64 transpose_y=false",
+      "encoders": {"apple-parity-matmul": 1},
+      "taskDescriptors": 2,
+      "blobs": [],
+      "inputs": [
+        {"name": "x", "count": 4096, "scale": 0.25, "modulus": 7, "offset": 3},
+        {"name": "w", "count": 4096, "scale": 0.125, "modulus": 5, "offset": 2}
+      ]
+    },
+    {
+      "id": 8,
+      "name": "08-mlp-768-1024-768",
+      "title": "768->1024->768 MLP block with relu and residual",
+      "encoders": {"h13-source-qualified": 76, "h13-oracle-parity": 1},
+      "taskDescriptors": 77,
+      "blobs": [
+        {"file": "mlp-w1.bin", "count": 786432, "scale": 0.03125, "modulus": 5, "offset": 2},
+        {"file": "mlp-b1.bin", "count": 1024, "scale": 0.125, "modulus": 7, "offset": 3},
+        {"file": "mlp-w2.bin", "count": 786432, "scale": 0.03125, "modulus": 5, "offset": 2},
+        {"file": "mlp-b2.bin", "count": 768, "scale": 0.125, "modulus": 7, "offset": 3}
+      ],
+      "inputs": [{"name": "x", "count": 768, "scale": 0.25, "modulus": 7, "offset": 3}]
+    }
+  ]
+}

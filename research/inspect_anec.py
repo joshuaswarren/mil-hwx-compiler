@@ -167,7 +167,9 @@ def validate_program(directory, program, tensors):
     operation = program.get('operation')
     require(operation in ('add', 'mul', 'maximum', 'minimum', 'sub', 'real_div',
                           'matmul', 'abs', 'exp', 'gelu', 'leaky_relu', 'relu',
-                          'rsqrt', 'sigmoid', 'silu', 'sqrt', 'tanh'),
+                          'rsqrt', 'sigmoid', 'silu', 'sqrt', 'tanh',
+                          'softmax', 'layer_norm', 'reduce_sum', 'reduce_max',
+                          'reduce_mean', 'conv'),
             'unsupported operation')
     inputs, outputs = program.get('inputs'), program.get('outputs')
     require(isinstance(inputs, list) and isinstance(outputs, list),

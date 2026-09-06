@@ -120,6 +120,28 @@ class LibANEAdapter:
             if result:
                 raise self._failure("pyane_free", result)
 
+    @staticmethod
+    def call_sequence(program):
+        """The exact order `execute` issues libane calls for one program, so a
+        driver owner can review the submission before any hardware run."""
+        calls = [f"pyane_init(\"{program['file']}\", device)"]
+        if program["constantBytes"]:
+            calls.append(
+                f"ane_bind_kernel(handle, anec[0x1000 + {program['constantOffset']}], "
+                f"{program['constantBytes']})")
+        for index, binding in enumerate(program["inputs"]):
+            calls.append(f"__ane_src_size(handle, {index}) == "
+                         f"{binding['allocationBytes']}  # {binding['name']}")
+            calls.append(f"__ane_send(handle, buffer, {index})")
+        for index, binding in enumerate(program["outputs"]):
+            calls.append(f"__ane_dst_size(handle, {index}) == "
+                         f"{binding['allocationBytes']}  # {binding['name']}")
+        calls.append("ane_exec(handle)")
+        for index in range(len(program["outputs"])):
+            calls.append(f"__ane_read(handle, buffer, {index})")
+        calls.append("pyane_free(handle)")
+        return calls
+
     def execute_loop(self, handle, iterations, state_input, state_output):
         result = self.lib.ane_exec_loop(handle, iterations, state_input, state_output)
         if result:
@@ -181,14 +203,25 @@ def build_plan(manifest, reference_outputs):
             "index": index,
             "file": program["file"],
             "operation": program["operation"],
+            "encoder": program["encoder"],
+            "taskDescriptors": program["taskDescriptors"],
             "inputs": inputs,
             "outputs": [_binding_record(item, tensors) for item in program["outputs"]],
+            "libaneCalls": LibANEAdapter.call_sequence(program),
         })
+    chunked = chunked_tensors(manifest)
     return {
         "schema": "mil-hwxc.h13-linux-plan.v1",
         "deviceCalls": False,
         "programs": programs,
-        "referenceOutputs": {name: len(data) for name, data in sorted(reference_outputs.items())},
+        "referenceOutputs": {name: len(data)
+                             for name, data in sorted(reference_outputs.items())},
+        "referenceCriteria": {
+            name: (f"|device - reference| <= {CHUNKED_ATOL} + "
+                   f"{CHUNKED_RTOL} * |reference|"
+                   if tensors[name].get("aliasOf", name) in chunked
+                   else "byte-for-byte equal to the fp16 reference")
+            for name in sorted(reference_outputs)},
     }
 
 
@@ -248,6 +281,23 @@ def _unpack_outputs(manifest, regions, names):
     return dense
 
 
+def chunked_tensors(manifest):
+    """Tensors whose device values carry chunked-fp16 rounding: the chunked
+    reductions themselves and everything computed from one. A residual add
+    downstream of a 768-element reduction inherits that extra rounding per
+    512-element chunk, so comparing it for exact equality would report a
+    device failure for arithmetic the compiler chose on purpose."""
+    tensors = manifest["tensors"]
+    chunked = {name for name, tensor in tensors.items()
+               if tensor.get("accumulation") == "chunked-fp16"}
+    for index in manifest["dispatchPlan"]:
+        program = manifest["programs"][index]
+        sources = {binding["name"] for binding in program["inputs"]}
+        if sources & chunked:
+            chunked.update(binding["name"] for binding in program["outputs"])
+    return chunked
+
+
 def run_package(package, mil, model_root, inputs, adapter):
     manifest, _ = inspect_anec.load_package(package)
     tensors = manifest["tensors"]
@@ -294,10 +344,10 @@ def run_package(package, mil, model_root, inputs, adapter):
             else:
                 output_regions.setdefault(name, []).append((binding, data))
     actual = _unpack_outputs(manifest, output_regions, output_names)
+    chunked = chunked_tensors(manifest)
     for name in output_names:
         target = tensors[name].get("aliasOf", name)
-        compare_fp16(actual[name], expected[name],
-                     tensors[target].get("accumulation") == "chunked-fp16")
+        compare_fp16(actual[name], expected[name], target in chunked)
     return manifest, actual, None
 
 
