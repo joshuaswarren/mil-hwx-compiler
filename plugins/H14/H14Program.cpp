@@ -70,9 +70,30 @@ struct OracleNormTemplate {
     std::uint32_t scratchDescriptorWord;
 };
 
+
+/// One decoded Apple convolution program, keyed by everything the compiler
+/// knows before it picks one: the kernel, stride, group count, whether a bias
+/// is folded in, and the two CHW surfaces.
+struct OracleConvTemplate {
+    std::uint32_t kernel;
+    std::uint32_t stride;
+    std::uint32_t groups;
+    bool bias;
+    ElementwiseShape input;
+    ElementwiseShape output;
+    const std::uint32_t *text;
+    std::size_t textWords;
+    std::uint32_t taskCount;
+    std::size_t constantBytes;
+    std::uint32_t programRecordCount;
+    std::uint32_t unresolvedDescriptorWord;
+    std::uint32_t scratchDescriptorWord;
+};
+
 #include "H14ElementwiseTemplates.inc"
 #include "H14MatvecTemplates.inc"
 #include "H14NormTemplates.inc"
+#include "H14ConvTemplates.inc"
 // H14's exponential and reciprocal sections are the H13 tables byte-for-byte:
 // research/mint_h14_norm_probes.py resolves every decoded H14 section against
 // these words by SHA-256 before it emits a NormConstants kind.
@@ -488,5 +509,278 @@ std::vector<std::uint8_t> encodeANEC(const Program &program) {
     anec.insert(anec.end(), program.constants.begin(), program.constants.end());
     return anec;
 }
+
+namespace {
+
+const OracleConvTemplate *convTemplate(ConvShape shape) {
+    for (const auto &candidate : kConvTasks)
+        if (candidate.kernel == shape.kernel &&
+            candidate.stride == shape.stride &&
+            candidate.groups == shape.groups && candidate.bias == shape.bias &&
+            sameShape(candidate.input, shape.input) &&
+            sameShape(candidate.output, shape.output)) return &candidate;
+    return nullptr;
+}
+
+std::uint64_t alignUp(std::uint64_t value, std::uint64_t alignment) {
+    return (value + alignment - 1) / alignment * alignment;
+}
+
+/// Apple's convolution surface. The row is the width padded to 64 bytes, not
+/// merely floored at it: a `pad_type="valid"` result 62 columns wide takes a
+/// 128-byte row, which is what the decoded oracles record.
+TensorLayout convTensor(std::uint32_t index, ElementwiseShape shape) {
+    const std::uint64_t row =
+        alignUp(static_cast<std::uint64_t>(shape.width) * 2, 64);
+    const std::uint64_t plane = row * shape.height;
+    const std::uint64_t element = plane * shape.channels;
+    return {index, {1, shape.channels, shape.height, shape.width, plane, row},
+            alignTile(element)};
+}
+
+/// How Apple splits the output channels into halfword interleave widths.
+///
+/// Every plane group holds 16 planes, so the channels are consumed in chunks
+/// of `16 * lanes`, where `lanes` is the largest power of two at or below
+/// `outputs / 16` and at most the cap: 32 for an input surface of 8 or fewer
+/// pixels per side and 16 above it. 768 outputs at cap 32 is the case that
+/// proves the split -- 512 channels interleave 32 wide, the remaining 256
+/// interleave 16 wide -- and known-weight probes pin the cap's boundary
+/// between 8 and 9 pixels.
+std::vector<std::uint32_t> laneChunks(std::uint32_t outputs, std::uint32_t cap) {
+    std::vector<std::uint32_t> chunks;
+    std::uint32_t remaining = outputs;
+    while (remaining) {
+        std::uint32_t lanes = 1;
+        if (remaining >= 16) {
+            lanes = cap;
+            while (lanes > remaining / 16) lanes /= 2;
+        }
+        chunks.push_back(lanes);
+        remaining -= 16 * lanes;
+    }
+    return chunks;
+}
+
+std::uint32_t laneCap(ElementwiseShape input) {
+    return std::max(input.height, input.width) <= 8 ? 32 : 16;
+}
+
+void putHalfword(std::vector<std::uint8_t> &bytes, std::size_t offset,
+                 const std::uint8_t *source) {
+    bytes[offset] = source[0];
+    bytes[offset + 1] = source[1];
+}
+
+/// Apple's dense convolution section. A plane interleaves `lanes` output
+/// channels at halfword granularity over `reduction` rows, preceded by one
+/// bias row when the convolution has a bias; 16 plane groups follow, each
+/// holding one plane per chunk. A grouped convolution pads every plane to 64
+/// bytes and a groups-1 convolution pads only the plane group.
+std::vector<std::uint8_t> packConvDense(std::uint32_t reduction,
+                                        const std::vector<std::uint32_t> &chunks,
+                                        const std::uint8_t *weights,
+                                        const std::uint8_t *bias,
+                                        bool planePadding) {
+    const std::uint64_t rows = reduction + (bias ? 1 : 0);
+    std::vector<std::uint64_t> planeBytes;
+    planeBytes.reserve(chunks.size());
+    for (const auto lanes : chunks) {
+        const std::uint64_t span = rows * lanes * 2;
+        planeBytes.push_back(planePadding ? alignUp(span, 64) : span);
+    }
+    std::uint64_t total = 0;
+    for (const auto span : planeBytes) total += span;
+    const std::uint64_t groupBytes = alignUp(total, 64);
+    std::vector<std::uint8_t> packed(groupBytes * 16, 0);
+    std::uint32_t start = 0;
+    for (std::size_t chunk = 0; chunk != chunks.size(); ++chunk) {
+        const std::uint32_t lanes = chunks[chunk];
+        std::uint64_t offset = 0;
+        for (std::size_t earlier = 0; earlier != chunk; ++earlier)
+            offset += planeBytes[earlier];
+        for (std::uint32_t group = 0; group != 16; ++group) {
+            for (std::uint32_t lane = 0; lane != lanes; ++lane) {
+                const std::uint32_t column = start + group * lanes + lane;
+                std::size_t cursor = static_cast<std::size_t>(
+                    group * groupBytes + offset + lane * 2);
+                if (bias) {
+                    putHalfword(packed, cursor, bias + column * 2);
+                    cursor += lanes * 2;
+                }
+                const std::uint8_t *source =
+                    weights + static_cast<std::size_t>(column) * reduction * 2;
+                for (std::uint32_t row = 0; row != reduction; ++row) {
+                    putHalfword(packed, cursor, source);
+                    cursor += lanes * 2;
+                    source += 2;
+                }
+            }
+        }
+        start += 16 * lanes;
+    }
+    return packed;
+}
+
+/// Apple's depthwise section: 16 lanes, each holding `outputs / 16` channels
+/// back to back with no padding between them and the lane padded to 64 bytes.
+/// A bias precedes each channel's taps.
+std::vector<std::uint8_t> packConvDepthwise(std::uint32_t taps,
+                                            std::uint32_t outputs,
+                                            const std::uint8_t *weights,
+                                            const std::uint8_t *bias) {
+    const std::uint32_t lanes = std::min<std::uint32_t>(16, outputs);
+    const std::uint32_t slots = outputs / lanes;
+    const std::uint64_t rows = taps + (bias ? 1 : 0);
+    const std::uint64_t laneBytes = alignUp(slots * rows * 2, 64);
+    std::vector<std::uint8_t> packed(laneBytes * lanes, 0);
+    for (std::uint32_t column = 0; column != outputs; ++column) {
+        std::size_t cursor = static_cast<std::size_t>(
+            (column % lanes) * laneBytes + (column / lanes) * rows * 2);
+        if (bias) {
+            putHalfword(packed, cursor, bias + column * 2);
+            cursor += 2;
+        }
+        const std::uint8_t *source =
+            weights + static_cast<std::size_t>(column) * taps * 2;
+        for (std::uint32_t tap = 0; tap != taps; ++tap)
+            putHalfword(packed, cursor + tap * 2, source + tap * 2);
+    }
+    return packed;
+}
+
+/// Apple's stride-2 section, which skips zero weights.
+///
+/// A plane holds the plane's `lanes` bias halfwords when the convolution has
+/// a bias, a 16-bit count of the body bytes, one zero lead byte, then one row
+/// per reduction step. A row carries, per group of eight lanes, a mask byte
+/// whose bit `l` marks a lane whose weight is not zero, a zero byte, and the
+/// marked lanes' halfwords, and closes with `lanes / 2 - 2` zero bytes -- the
+/// H13 body with the lead byte hoisted and the mask byte padded, which counts
+/// the same. Both signed zeros count as zero, so the section's size depends on
+/// the weight values.
+std::vector<std::uint8_t> packConvStrided(std::uint32_t reduction,
+                                          const std::vector<std::uint32_t> &chunks,
+                                          const std::uint8_t *weights,
+                                          const std::uint8_t *bias) {
+    std::vector<std::uint8_t> packed;
+    std::uint32_t start = 0;
+    for (const auto lanes : chunks) {
+        const std::uint32_t padding = lanes >= 4 ? lanes / 2 - 2 : 0;
+        for (std::uint32_t group = 0; group != 16; ++group) {
+            const std::uint32_t first = start + group * lanes;
+            std::vector<std::uint8_t> body;
+            std::size_t count = 0;
+            body.push_back(0);
+            for (std::uint32_t row = 0; row != reduction; ++row) {
+                ++count;
+                for (std::uint32_t base = 0; base < lanes; base += 8) {
+                    const std::uint32_t end = std::min(base + 8, lanes);
+                    std::uint8_t mask = 0;
+                    std::vector<std::uint8_t> values;
+                    for (std::uint32_t lane = base; lane != end; ++lane) {
+                        const std::uint8_t *value = weights +
+                            (static_cast<std::size_t>(first + lane) * reduction +
+                             row) * 2;
+                        if (value[0] || (value[1] & 0x7f)) {
+                            mask |= static_cast<std::uint8_t>(1u << (lane - base));
+                            values.push_back(value[0]);
+                            values.push_back(value[1]);
+                        }
+                    }
+                    body.push_back(mask);
+                    body.push_back(0);
+                    count += 1 + values.size();
+                    body.insert(body.end(), values.begin(), values.end());
+                }
+                body.insert(body.end(), padding, 0);
+                count += padding;
+            }
+            if (count > 0xffff)
+                throw std::invalid_argument(
+                    "H14 strided convolution plane exceeds a 16-bit body count");
+            std::vector<std::uint8_t> plane;
+            if (bias)
+                plane.insert(plane.end(), bias + first * 2,
+                             bias + (first + lanes) * 2);
+            plane.push_back(static_cast<std::uint8_t>(count));
+            plane.push_back(static_cast<std::uint8_t>(count >> 8));
+            plane.insert(plane.end(), body.begin(), body.end());
+            plane.resize(alignUp(plane.size(), 64), 0);
+            packed.insert(packed.end(), plane.begin(), plane.end());
+        }
+        start += 16 * lanes;
+    }
+    return packed;
+}
+
+} // namespace
+
+bool supportsConvParity(ConvShape shape) { return convTemplate(shape); }
+
+std::vector<std::uint8_t> packConvWeights(ConvShape shape,
+                                          const std::uint8_t *weights,
+                                          std::size_t weightBytes,
+                                          const std::uint8_t *bias,
+                                          std::size_t biasBytes) {
+    const std::uint32_t taps = shape.kernel * shape.kernel;
+    if (!shape.groups || shape.input.channels % shape.groups ||
+        shape.output.channels % shape.groups)
+        throw std::invalid_argument(
+            "H14 convolution groups must divide both channel counts");
+    const std::uint32_t reduction = shape.input.channels / shape.groups * taps;
+    if (!weights || weightBytes !=
+            static_cast<std::size_t>(shape.output.channels) * reduction * 2)
+        throw std::invalid_argument(
+            "H14 convolution requires Cout * Cin / groups * kh * kw fp16 weights");
+    if (shape.bias != (bias != nullptr) ||
+        (bias && biasBytes != static_cast<std::size_t>(shape.output.channels) * 2))
+        throw std::invalid_argument(
+            "H14 convolution bias must hold one fp16 value per output channel");
+    if (shape.groups == shape.input.channels &&
+        shape.groups == shape.output.channels)
+        return packConvDepthwise(taps, shape.output.channels, weights, bias);
+    const auto chunks = laneChunks(shape.output.channels, laneCap(shape.input));
+    if (shape.stride > 1) {
+        if (shape.groups != 1 || taps != 1 ||
+            *std::max_element(chunks.begin(), chunks.end()) > 8)
+            throw std::invalid_argument(
+                "H14 has no derived strided packing for grouped, multi-tap, or "
+                "16-lane convolutions");
+        return packConvStrided(reduction, chunks, weights, bias);
+    }
+    if (shape.groups > 1) {
+        const std::uint32_t lanes =
+            std::max<std::uint32_t>(1, shape.output.channels / 64);
+        return packConvDense(reduction,
+                             std::vector<std::uint32_t>(
+                                 shape.output.channels / lanes / 16, lanes),
+                             weights, bias, true);
+    }
+    return packConvDense(reduction, chunks, weights, bias, false);
+}
+
+Program encodeConvParity(ConvShape shape, const std::uint8_t *weights,
+                         std::size_t weightBytes, const std::uint8_t *bias,
+                         std::size_t biasBytes) {
+    const auto *source = convTemplate(shape);
+    if (!source)
+        throw std::invalid_argument(
+            "H14 convolution geometry is outside the decoded parity envelope");
+    Program program = streamProgram(source->text, source->textWords,
+                                    source->taskCount,
+                                    source->programRecordCount,
+                                    source->unresolvedDescriptorWord);
+    program.constants =
+        packConvWeights(shape, weights, weightBytes, bias, biasBytes);
+    if (program.constants.size() != source->constantBytes)
+        throw std::logic_error(
+            "H14 packed convolution section differs from the decoded size");
+    program.inputs = {convTensor(5, shape.input)};
+    program.output = convTensor(4, shape.output);
+    program.scratchDescriptorWord = source->scratchDescriptorWord;
+    return program;
+}
+
 
 } // namespace ane::h14

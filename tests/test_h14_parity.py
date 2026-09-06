@@ -18,6 +18,7 @@ import inspect_hwx  # noqa: E402
 import mint_h14_matvec_probes as probes  # noqa: E402
 import mint_h14_norm_probes as norm_templates  # noqa: E402
 import mint_norm_probes as norm_probes  # noqa: E402
+import mint_conv_probes  # noqa: E402
 import mint_oracles  # noqa: E402
 from generate_h14_templates import (selected_matvec_oracles,  # noqa: E402
                                     selected_oracles)
@@ -27,9 +28,13 @@ TILE_BYTES = 0x4000
 MATVEC_ENCODER = "apple-parity-matvec"
 NORM_ENCODER = "apple-parity-norm"
 ELEMENTWISE_ENCODER = "h14-oracle-parity"
+CONV_ENCODER = "apple-parity-conv"
+CONV_FAMILIES = {"env_conv", "conv_probe"}
 
 
 def encoder(oracle):
+    if oracle["family"] in CONV_FAMILIES:
+        return CONV_ENCODER
     if oracle["family"] in {"binary_runtime", "binary_constant", "unary",
                             "env_activation", "env_broadcast"}:
         return ELEMENTWISE_ENCODER
@@ -49,6 +54,11 @@ def write_weights(oracle, root):
                                  parameters["pattern"])
         assert hashlib.sha256(payload).hexdigest() == \
             description["payload_sha256"], oracle["case"]
+    elif description.get("value") == "distinct":
+        # The known-weight convolution probes carry one distinct fp16 pattern
+        # per element, which is what proves the packing permutation.
+        payload = mint_conv_probes.known_weights(
+            description["payload_bytes"] // 2)
     else:
         assert description["value"] == "fp16(0x1p-1)", oracle["case"]
         payload = mint_oracles.half_payload(description["payload_bytes"] // 2)
@@ -312,6 +322,20 @@ def check_hwx(oracle, output, manifest):
         oracle["case"]
 
 
+def conv_oracles():
+    """Every decoded H14 convolution the parity encoder reproduces. The grid
+    reaches past the encoder: a convolution Apple partitions into several
+    tasks, and a strided grouped, multi-tap or 16-lane packing, stay outside
+    the envelope and the compiler rejects them by name instead."""
+    selected = []
+    for path in sorted((ROOT / "research/oracles/h14").glob("*conv*.json")):
+        oracle = json.loads(path.read_text())
+        if oracle["family"] in CONV_FAMILIES and \
+                mint_conv_probes.covered(dict(oracle, target="h14")):
+            selected.append(oracle)
+    return selected
+
+
 def main():
     elementwise = selected_oracles()
     matvec = selected_matvec_oracles()
@@ -331,7 +355,10 @@ def main():
     assert grid == {(reduction, columns)
                     for reduction in probes.GRID_SIDES
                     for columns in probes.GRID_SIDES}, sorted(grid)
-    oracles = elementwise + matvec + probe + norm
+    conv = conv_oracles()
+    assert len(conv) == 284, \
+        f"expected 284 covered H14 convolution oracles, found {len(conv)}"
+    oracles = elementwise + matvec + probe + norm + conv
     with tempfile.TemporaryDirectory(prefix="h14-parity-") as directory:
         root = Path(directory)
         for oracle in oracles:
@@ -348,7 +375,8 @@ def main():
           f"{len(probe)} known-weight matvec probes over {len(grid)} (K, N) "
           f"grid points, {families['normalization']} softmax/layer_norm, "
           f"{families['reduction']} reduction over {len(templates)} norm "
-          f"templates, {len(oracles) * 2} artifacts)")
+          f"templates, {len(conv)} convolution, "
+          f"{len(oracles) * 2} artifacts)")
 
 
 if __name__ == "__main__":

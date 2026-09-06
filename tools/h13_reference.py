@@ -609,6 +609,86 @@ def _layer_norm(value, axes, epsilon, result_type):
     return Tensor("fp16", result_type.shape, tuple(results))
 
 
+def _conv_padding(extent, kernel, stride, pad_type):
+    """The leading pad and output extent of one spatial axis.
+
+    coremltools 9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4,
+    `coremltools/converters/mil/mil/ops/defs/iOS15/conv.py`: `same` pads so the
+    output covers `ceil(D / stride)` and splits the total padding with the
+    smaller half in front, `valid` pads nothing and yields
+    `floor((D - kernel) / stride) + 1`. Dilations stay at one here, which is
+    the only form the parity encoders cover.
+    """
+    if pad_type == "valid":
+        if extent < kernel:
+            raise ValueError("conv kernel does not fit a valid pad_type input")
+        return 0, (extent - kernel) // stride + 1
+    if pad_type != "same":
+        raise ValueError(f"unsupported conv pad_type {pad_type}")
+    output = (extent + stride - 1) // stride
+    total = max(0, (output - 1) * stride + kernel - extent)
+    return total // 2, output
+
+
+def _conv(value, weight, bias, strides, dilations, pad, pad_type, groups,
+          result_type):
+    """`conv` over a [1, Cin, H, W] fp16 input with a [Cout, Cin/groups, kh, kw]
+    weight, accumulating each output in fp32 exactly as `_matmul` does."""
+    value = _tensor(value)
+    weight = _tensor(weight)
+    if value.dtype != "fp16" or weight.dtype != "fp16":
+        raise ValueError("conv requires fp16 tensors")
+    if len(value.shape) != 4 or value.shape[0] != 1:
+        raise ValueError("conv requires a [1, Cin, H, W] input")
+    if len(weight.shape) != 4:
+        raise ValueError("conv requires a [Cout, Cin/groups, kh, kw] weight")
+    if any(dilation != 1 for dilation in dilations):
+        raise ValueError("conv reference covers unit dilations")
+    if any(amount != 0 for amount in pad):
+        raise ValueError("conv reference covers zero explicit padding")
+    _, channels, height, width = value.shape
+    outputs, group_channels, kernel_height, kernel_width = weight.shape
+    if groups < 1 or channels % groups or outputs % groups or \
+            group_channels != channels // groups:
+        raise ValueError("conv groups must divide both channel counts")
+    top, out_height = _conv_padding(height, kernel_height, strides[0], pad_type)
+    left, out_width = _conv_padding(width, kernel_width, strides[1], pad_type)
+    expected = (1, outputs, out_height, out_width)
+    if tuple(result_type.shape) != expected:
+        raise ValueError("conv result shape differs from its declaration")
+    biases = _tensor(bias).values if bias is not None else None
+    if biases is not None and len(biases) != outputs:
+        raise ValueError("conv bias must hold one value per output channel")
+    per_group = outputs // groups
+    results = []
+    for channel in range(outputs):
+        group = channel // per_group
+        for row in range(out_height):
+            for column in range(out_width):
+                total = 0.0
+                for offset in range(group_channels):
+                    source = group * group_channels + offset
+                    for tap_row in range(kernel_height):
+                        position = row * strides[0] + tap_row - top
+                        if position < 0 or position >= height:
+                            continue
+                        for tap_column in range(kernel_width):
+                            span = column * strides[1] + tap_column - left
+                            if span < 0 or span >= width:
+                                continue
+                            sample = value.values[
+                                ((source * height) + position) * width + span]
+                            tap = weight.values[
+                                (((channel * group_channels + offset) *
+                                  kernel_height) + tap_row) * kernel_width +
+                                tap_column]
+                            total = fp32(total + fp32(float(sample) * float(tap)))
+                if biases is not None:
+                    total = fp32(total + float(biases[channel]))
+                results.append(fp16(total))
+    return Tensor("fp16", expected, tuple(results))
+
+
 def _execute(operation, environment, model_root):
     arguments = {name: _resolve(value, environment, model_root)
                  for name, value in operation.arguments.items()}
@@ -655,6 +735,14 @@ def _execute(operation, environment, model_root):
         return _layer_norm(arguments["x"], axes,
                            fp32(arguments.get("epsilon", 1e-5)),
                            operation.result_type)
+    if name == "conv":
+        return _conv(arguments["x"], arguments["weight"],
+                     arguments.get("bias"),
+                     tuple(_tensor(arguments["strides"]).values),
+                     tuple(_tensor(arguments["dilations"]).values),
+                     tuple(_tensor(arguments["pad"]).values),
+                     str(arguments["pad_type"]), int(arguments["groups"]),
+                     operation.result_type)
     raise ValueError(f"unsupported H13 MIL operation {name}")
 
 

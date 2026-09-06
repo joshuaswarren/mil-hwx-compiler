@@ -78,6 +78,20 @@ struct NormShape {
     bool keepDims;
 };
 
+/// One decoded Apple convolution geometry: the MIL kernel extent, stride and
+/// group count, whether a bias is folded into the constant section, and the
+/// input and output CHW surfaces. The padding follows from those, so a
+/// `pad_type` of `same` and `valid` share a shape whenever they agree on the
+/// output surface.
+struct ConvShape {
+    std::uint32_t kernel;
+    std::uint32_t stride;
+    std::uint32_t groups;
+    bool bias;
+    ElementwiseShape input;
+    ElementwiseShape output;
+};
+
 struct TensorLayout {
     std::uint32_t index;
     std::array<std::uint64_t, 6> nchw;
@@ -145,6 +159,22 @@ bool supportsNormParity(NormOperation operation, NormShape shape);
 /// Encodes Apple's own task stream for the geometry, with the LUT constant
 /// section the decoded oracle carries.
 Program encodeNormParity(NormOperation operation, NormShape shape);
+/// True when the decoded Apple corpus covers this convolution as one program.
+bool supportsConvParity(ConvShape shape);
+/// Apple's constant-section layout for a convolution weight. `weights` is the
+/// MIL `[Cout, Cin / groups, kh, kw]` row-major fp16 constant, exactly the
+/// bytes the blob resolves to, and `bias` holds one fp16 value per output
+/// channel or is null.
+std::vector<std::uint8_t> packConvWeights(ConvShape shape,
+                                          const std::uint8_t *weights,
+                                          std::size_t weightBytes,
+                                          const std::uint8_t *bias = nullptr,
+                                          std::size_t biasBytes = 0);
+/// Encodes Apple's own convolution task stream for the geometry.
+Program encodeConvParity(ConvShape shape, const std::uint8_t *weights,
+                         std::size_t weightBytes,
+                         const std::uint8_t *bias = nullptr,
+                         std::size_t biasBytes = 0);
 std::vector<std::uint8_t> encodeANEC(const Program &program);
 
 }
