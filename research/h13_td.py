@@ -44,13 +44,14 @@ def _block(target: str, address: int) -> tuple[str, int] | None:
 
 
 def _extra_header_words(words: tuple[int, ...], header_count: int) -> int:
-    """Bit 1 of the last fixed header word announces one extra word before the records.
+    """Low bits 0b11 of the last fixed header word announce one extra word before the records.
 
-    Observed in Apple attention chains: H13 header[9] 0x23 and H14 header[7]
-    0x00050003 instead of 0x21 and 0x00050001. The extra word held 0x0 or 0x7.
+    Corpus values: H13 header[9] in {0x0, 0x21, 0x23, 0x26}; H14 header[7] in
+    {0x1, 0x10001, 0x30001, 0x40001, 0x50001, 0x50003}. Only 0x23 and 0x50003
+    carry the extra word (observed 0x0 or 0x7), so the predicate is both low
+    bits set, not bit 1 alone.
     """
-    return 1 if len(words) >= header_count and words[header_count - 1] & 0x2 else 0
-
+    return 1 if len(words) >= header_count and words[header_count - 1] & 0x3 == 0x3 else 0
 
 def _h13_records(words: tuple[int, ...]) -> list[dict[str, Any]]:
     index = H13_HEADER_WORDS + _extra_header_words(words, H13_HEADER_WORDS)
