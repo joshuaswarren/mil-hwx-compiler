@@ -6,6 +6,7 @@ import argparse
 import fnmatch
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import platform
@@ -22,6 +23,7 @@ from h13_td import decode_task, split_h13_tasks, split_h14_tasks
 MAGIC = 0xBEEFFACE
 SUBTYPES = {"h13": 4, "h14": 5}
 DEFAULT_TOOL = "/tmp/h13-oracle/bin/ane-compile-hwx"
+COMPILE_TIMEOUT_SECONDS = 900
 
 
 def decode_constant_half_words(data: bytes) -> list[dict[str, Any]] | None:
@@ -77,8 +79,10 @@ def half_payload(elements: int) -> bytes:
 
 
 def case(name: str, family: str, parameters: dict[str, Any], mil: str,
-         weights: bytes | None = None, weights_description: dict[str, Any] | None = None
-         ) -> dict[str, Any]:
+         weights: bytes | int | None = None,
+         weights_description: dict[str, Any] | None = None) -> dict[str, Any]:
+    """A campaign entry. `weights` is raw bytes or an element count for a
+    uniform fp16 payload that `run_case` materializes at compile time."""
     return {
         "name": name,
         "family": family,
@@ -115,14 +119,9 @@ def binary_constant(operation: str, channels: int, storage: str) -> dict[str, An
         description = {"storage": "inline_tensor", "shape": shape,
                        "value": "fp16(0x1p-1)"}
     else:
-        payload = half_payload(channels)
-        constant = (
-            f'{kind} z = const()[name = string("z"), val = {kind}'
-            '(BLOBFILE(path = string("@model_path/weights.bin"), '
-            'offset = uint64(64)))];')
-        weights = blob(payload)
+        constant, weights = blobfile("z", shape)
         description = {"storage": "BLOBFILE", "shape": shape,
-                       "payload_bytes": len(payload), "value": "fp16(0x1p-1)"}
+                       "payload_bytes": weights * 2, "value": "fp16(0x1p-1)"}
     mil = program(
         f"{kind} x", [constant,
         f'{kind} y = {operation}(x = x, y = z)[name = string("y")];'], "y")
@@ -187,18 +186,19 @@ def normalization(operation: str, shape: tuple[int, ...]) -> dict[str, Any]:
                 program(f"{kind} x", body, "y"))
 
 
-def weight_constant(name: str, shape: tuple[int, ...]) -> tuple[str, bytes, dict[str, Any]]:
-    elements = 1
-    for dimension in shape:
-        elements *= dimension
-    payload = half_payload(elements)
+def blobfile(name: str, shape: tuple[int, ...]) -> tuple[str, int]:
+    """A BLOBFILE constant declaration and the element count it needs."""
     kind = tensor_type(shape)
-    source = (
+    return (
         f'{kind} {name} = const()[name = string("{name}"), val = {kind}'
         '(BLOBFILE(path = string("@model_path/weights.bin"), '
-        'offset = uint64(64)))];')
-    return source, blob(payload), {
-        "storage": "BLOBFILE", "shape": shape, "payload_bytes": len(payload),
+        'offset = uint64(64)))];'), math.prod(shape)
+
+
+def weight_constant(name: str, shape: tuple[int, ...]) -> tuple[str, int, dict[str, Any]]:
+    source, elements = blobfile(name, shape)
+    return source, elements, {
+        "storage": "BLOBFILE", "shape": shape, "payload_bytes": elements * 2,
         "value": "fp16(0x1p-1)",
     }
 
@@ -302,6 +302,337 @@ def add_relu_chain() -> dict[str, Any]:
                 "shape": shape}, program(f"{kind} x, {kind} z", body, "y"))
 
 
+def dims(shape: tuple[int, ...]) -> str:
+    return "x".join(map(str, shape))
+
+
+def boolean(value: bool) -> str:
+    return "true" if value else "false"
+
+
+def env_case(name: str, family: str, parameters: dict[str, Any], arguments: str,
+             body: list[str], result: str, elements: int | None = None,
+             shapes: list[tuple[int, ...]] | None = None) -> dict[str, Any]:
+    """An envelope case whose BLOBFILE constants share one uniform payload."""
+    description: dict[str, Any] = {"storage": "none"}
+    if elements:
+        description = {
+            "storage": "BLOBFILE", "shapes": [list(shape) for shape in shapes or []],
+            "payload_bytes": elements * 2, "value": "fp16(0x1p-1)",
+        }
+    return case(name, family, parameters, program(arguments, body, result),
+                elements, description)
+
+
+def env_broadcast(operation: str, x_shape: tuple[int, ...],
+                  z_shape: tuple[int, ...], mode: str = "runtime") -> dict[str, Any]:
+    """`operation` over an input and a second operand of a broadcastable shape."""
+    out_shape = tuple(max(left, right) for left, right in zip(x_shape, z_shape))
+    x_kind, out_kind = tensor_type(x_shape), tensor_type(out_shape)
+    arguments, body, elements, shapes = f"{x_kind} x", [], None, []
+    if mode == "runtime":
+        arguments += f", {tensor_type(z_shape)} z"
+    elif mode == "scalar":
+        body.append('fp16 z = const()[name = string("z"), val = fp16(0x1p-1)];')
+    else:
+        source, elements = blobfile("z", z_shape)
+        body.append(source)
+        shapes = [z_shape]
+    body.append(f'{out_kind} y = {operation}(x = x, y = z)[name = string("y")];')
+    operand = "scalar" if mode == "scalar" else f"{mode}_{dims(z_shape)}"
+    return env_case(f"env_bcast_{operation}_{dims(x_shape)}_{operand}",
+                    "env_broadcast", {
+                        "operation": operation, "shape": x_shape,
+                        "operand_shape": None if mode == "scalar" else z_shape,
+                        "operand": mode, "output_shape": out_shape,
+                    }, arguments, body, "y", elements, shapes)
+
+
+def env_matmul(rows: int, reduction: int, columns: int, batch: int | None = None,
+               transpose_x: bool = False, transpose_y: bool = True,
+               x_storage: str = "runtime", w_storage: str = "blob") -> dict[str, Any]:
+    """One matmul with either operand runtime or a BLOBFILE constant."""
+    prefix = () if batch is None else (batch,)
+    x_shape = prefix + ((reduction, rows) if transpose_x else (rows, reduction))
+    w_matrix = (columns, reduction) if transpose_y else (reduction, columns)
+    w_shape = prefix + w_matrix if w_storage == "runtime" else w_matrix
+    out_shape = prefix + (rows, columns)
+    body = [
+        f'bool tx = const()[name = string("tx"), val = bool({boolean(transpose_x)})];',
+        f'bool ty = const()[name = string("ty"), val = bool({boolean(transpose_y)})];',
+    ]
+    arguments, elements, shapes = [], None, []
+    for operand, shape, storage in (("x", x_shape, x_storage), ("w", w_shape, w_storage)):
+        if storage == "runtime":
+            arguments.append(f"{tensor_type(shape)} {operand}")
+        else:
+            source, count = blobfile(operand, shape)
+            body.append(source)
+            elements = max(elements or 0, count)
+            shapes.append(shape)
+    body.append(f'{tensor_type(out_shape)} product = matmul(transpose_x = tx, '
+                'transpose_y = ty, x = x, y = w)[name = string("product")];')
+    form = f"{'r2' if batch is None else 'r3'}{x_storage[0]}{w_storage[0]}"
+    name = (f"env_mm_{form}_m{rows}_k{reduction}_n{columns}"
+            f"_tx{int(transpose_x)}_ty{int(transpose_y)}")
+    if batch is not None:
+        name += f"_b{batch}"
+    return env_case(name, "env_matmul", {
+        "rows": rows, "reduction": reduction, "columns": columns, "batch": batch,
+        "transpose_x": transpose_x, "transpose_y": transpose_y,
+        "x_storage": x_storage, "w_storage": w_storage, "x_shape": x_shape,
+        "w_shape": w_shape, "output_shape": out_shape,
+    }, ", ".join(arguments), body, "product", elements, shapes)
+
+
+def env_conv(kernel: int, inputs: int, outputs: int, spatial: int, stride: int,
+             groups: int, bias: bool) -> dict[str, Any]:
+    """A convolution sweeping kernel, stride, grouping, and a BLOBFILE bias."""
+    out_spatial = (spatial + stride - 1) // stride
+    x_shape = (1, inputs, spatial, spatial)
+    y_shape = (1, outputs, out_spatial, out_spatial)
+    w_shape = (outputs, inputs // groups, kernel, kernel)
+    weight, elements = blobfile("w", w_shape)
+    shapes = [w_shape]
+    body = [
+        'string pt = const()[name = string("pt"), val = string("same")];',
+        'tensor<int32, [2]> st = const()[name = string("st"), '
+        f'val = tensor<int32, [2]>([{stride}, {stride}])];',
+        'tensor<int32, [4]> pd = const()[name = string("pd"), '
+        'val = tensor<int32, [4]>([0, 0, 0, 0])];',
+        'tensor<int32, [2]> dl = const()[name = string("dl"), '
+        'val = tensor<int32, [2]>([1, 1])];',
+        f'int32 gp = const()[name = string("gp"), val = int32({groups})];', weight,
+    ]
+    bias_argument = ""
+    if bias:
+        source, count = blobfile("b", (outputs,))
+        body.append(source)
+        elements = max(elements, count)
+        shapes.append((outputs,))
+        bias_argument = "bias = b, "
+    body.append(
+        f'{tensor_type(y_shape)} y = conv({bias_argument}dilations = dl, '
+        'groups = gp, pad = pd, pad_type = pt, strides = st, weight = w, x = x)'
+        '[name = string("y")];')
+    name = (f"env_conv_k{kernel}_c{inputs}_n{outputs}_s{spatial}"
+            f"_st{stride}_g{groups}_bias{int(bias)}")
+    return env_case(name, "env_conv", {
+        "kernel": kernel, "input_channels": inputs, "output_channels": outputs,
+        "spatial": spatial, "stride": stride, "groups": groups, "bias": bias,
+        "input_shape": x_shape, "output_shape": y_shape, "weight_shape": w_shape,
+    }, f"{tensor_type(x_shape)} x", body, "y", elements, shapes)
+
+
+def env_activation(operation: str, shape: tuple[int, ...],
+                   mode: str | None = None) -> dict[str, Any]:
+    """gelu or silu on a spatial shape, optionally selecting the gelu mode."""
+    kind = tensor_type(shape)
+    attributes = f', mode = string("{mode}")' if mode else ""
+    body = [f'{kind} y = {operation}(x = x{attributes})[name = string("y")];']
+    name = f"env_act_{operation}_{dims(shape)}"
+    if mode:
+        name += f"_{mode.lower()}"
+    return env_case(name, "env_activation",
+                    {"operation": operation, "shape": shape, "mode": mode},
+                    f"{kind} x", body, "y")
+
+
+def env_chain_mlp(rows: int, reduction: int, hidden: int,
+                  batch: int | None = None) -> dict[str, Any]:
+    """matmul -> gelu -> matmul, the transformer feed-forward block."""
+    prefix = () if batch is None else (batch,)
+    x_shape = prefix + (rows, reduction)
+    inner_shape = prefix + (rows, hidden)
+    first, first_elements = blobfile("w1", (hidden, reduction))
+    second, second_elements = blobfile("w2", (reduction, hidden))
+    body = [
+        'bool f = const()[name = string("f"), val = bool(false)];',
+        'bool t = const()[name = string("t"), val = bool(true)];', first,
+        f'{tensor_type(inner_shape)} h = matmul(transpose_x = f, transpose_y = t, '
+        'x = x, y = w1)[name = string("h")];',
+        f'{tensor_type(inner_shape)} a = gelu(x = h, mode = string("EXACT"))'
+        '[name = string("a")];', second,
+        f'{tensor_type(x_shape)} y = matmul(transpose_x = f, transpose_y = t, '
+        'x = a, y = w2)[name = string("y")];',
+    ]
+    name = f"env_chain_mlp_m{rows}_k{reduction}_h{hidden}"
+    if batch is not None:
+        name += f"_b{batch}"
+    return env_case(name, "env_chain", {
+        "operations": ["matmul", "gelu", "matmul"], "rows": rows,
+        "reduction": reduction, "hidden": hidden, "batch": batch,
+        "input_shape": x_shape,
+    }, f"{tensor_type(x_shape)} x", body, "y",
+        max(first_elements, second_elements), [(hidden, reduction), (reduction, hidden)])
+
+
+def env_chain_softmax(heads: int, sequence: int) -> dict[str, Any]:
+    """Attention-style softmax over the last axis of [1, H, S, S]."""
+    shape = (1, heads, sequence, sequence)
+    kind = tensor_type(shape)
+    body = [
+        'int32 axis = const()[name = string("axis"), val = int32(-1)];',
+        f'{kind} y = softmax(x = x, axis = axis)[name = string("y")];',
+    ]
+    return env_case(f"env_chain_softmax_h{heads}_s{sequence}", "env_chain",
+                    {"operations": ["softmax"], "heads": heads,
+                     "sequence": sequence, "shape": shape, "axis": -1},
+                    f"{kind} x", body, "y")
+
+
+def env_chain_layer_norm_matmul(reduction: int, columns: int, rows: int = 1,
+                                batch: int | None = None) -> dict[str, Any]:
+    """layer_norm over the last axis feeding a constant-weight matmul."""
+    prefix = () if batch is None else (batch,)
+    x_shape = prefix + (rows, reduction)
+    out_shape = prefix + (rows, columns)
+    kind = tensor_type(x_shape)
+    weight, elements = blobfile("w", (columns, reduction))
+    body = [
+        'tensor<int32, [1]> axes = const()[name = string("axes"), '
+        'val = tensor<int32, [1]>([-1])];',
+        'bool f = const()[name = string("f"), val = bool(false)];',
+        'bool t = const()[name = string("t"), val = bool(true)];',
+        f'{kind} n = layer_norm(x = x, axes = axes, epsilon = fp32(0.00001))'
+        '[name = string("n")];', weight,
+        f'{tensor_type(out_shape)} y = matmul(transpose_x = f, transpose_y = t, '
+        'x = n, y = w)[name = string("y")];',
+    ]
+    name = f"env_chain_ln_matmul_m{rows}_k{reduction}_n{columns}"
+    if batch is not None:
+        name += f"_b{batch}"
+    return env_case(name, "env_chain", {
+        "operations": ["layer_norm", "matmul"], "rows": rows,
+        "reduction": reduction, "columns": columns, "batch": batch,
+        "input_shape": x_shape, "output_shape": out_shape,
+    }, f"{kind} x", body, "y", elements, [(columns, reduction)])
+
+
+def env_chain_residual(operation: str, shape: tuple[int, ...]) -> dict[str, Any]:
+    """The residual form x + f(x)."""
+    kind = tensor_type(shape)
+    attributes = ', mode = string("EXACT")' if operation == "gelu" else ""
+    body = [
+        f'{kind} f = {operation}(x = x{attributes})[name = string("f")];',
+        f'{kind} y = add(x = x, y = f)[name = string("y")];',
+    ]
+    return env_case(f"env_chain_residual_{operation}_{dims(shape)}", "env_chain",
+                    {"operations": [operation, "add"], "operation": operation,
+                     "shape": shape}, f"{kind} x", body, "y")
+
+
+def env_chain_attention(sequence: int, depth: int) -> dict[str, Any]:
+    """matmul -> softmax -> matmul over three runtime inputs."""
+    operand = (1, sequence, depth)
+    scores = (1, sequence, sequence)
+    operand_kind, scores_kind = tensor_type(operand), tensor_type(scores)
+    body = [
+        'bool f = const()[name = string("f"), val = bool(false)];',
+        'bool t = const()[name = string("t"), val = bool(true)];',
+        'int32 axis = const()[name = string("axis"), val = int32(-1)];',
+        f'{scores_kind} s = matmul(transpose_x = f, transpose_y = t, x = q, y = k)'
+        '[name = string("s")];',
+        f'{scores_kind} p = softmax(x = s, axis = axis)[name = string("p")];',
+        f'{operand_kind} y = matmul(transpose_x = f, transpose_y = f, x = p, y = v)'
+        '[name = string("y")];',
+    ]
+    arguments = ", ".join(f"{operand_kind} {name}" for name in ("q", "k", "v"))
+    return env_case(f"env_chain_attention_s{sequence}_d{depth}", "env_chain",
+                    {"operations": ["matmul", "softmax", "matmul"],
+                     "sequence": sequence, "depth": depth,
+                     "operand_shape": operand, "scores_shape": scores},
+                    arguments, body, "y")
+
+
+def envelope_campaign() -> list[dict[str, Any]]:
+    """Probes for the outer edge of Apple's accepted single-program forms."""
+    cases = []
+    for operation in ("add", "mul"):
+        for channels in (64, 96, 768):
+            for spatial in (8, 16):
+                shape = (1, channels, spatial, spatial)
+                cases.extend(env_broadcast(operation, shape, operand) for operand in
+                             ((1, channels, 1, 1), (1, 1, spatial, spatial), (1, 1, 1, 1)))
+        for channels in (64, 768):
+            for spatial in (8, 16):
+                shape = (1, channels, spatial, spatial)
+                cases.append(env_broadcast(operation, shape, (1, channels, 1, 1), "blob"))
+                cases.append(env_broadcast(operation, shape, (1, 1, 1, 1), "scalar"))
+        for batch in (2, 8):
+            for channels in (64, 512, 1024):
+                shape = (batch, channels, 1, 1)
+                cases.append(env_broadcast(operation, shape, shape))
+            spatial_shape = (batch, 64, 8, 8)
+            cases.append(env_broadcast(operation, spatial_shape, spatial_shape))
+            cases.append(env_broadcast(operation, spatial_shape, (1, 64, 1, 1)))
+    for operation in ("add", "mul", "sub"):
+        for channels in (96, 200, 300, 768, 3072, 8192, 16384):
+            shape = (1, channels, 1, 1)
+            cases.append(env_broadcast(operation, shape, shape))
+    for reduction in (2048, 4096, 8192):
+        for columns in (2048, 4096, 8192):
+            cases.extend(env_matmul(rows, reduction, columns)
+                         for rows in (1, 16, 32, 128, 256, 512))
+            cases.extend(env_matmul(rows, reduction, columns, batch=1)
+                         for rows in (1, 32, 256))
+    for size in (2048, 4096):
+        for rows in (1, 32, 256):
+            cases.append(env_matmul(rows, size, size, transpose_x=True))
+        for rows in (1, 32):
+            cases.append(env_matmul(rows, size, size, x_storage="blob",
+                                    w_storage="runtime"))
+        for rows in (16, 128):
+            cases.append(env_matmul(rows, size, size, w_storage="runtime"))
+            cases.append(env_matmul(rows, size, size, w_storage="runtime",
+                                    transpose_y=False))
+    cases.append(env_matmul(128, 2048, 2048, w_storage="runtime", transpose_x=True))
+    cases.append(env_matmul(128, 2048, 2048, w_storage="runtime", transpose_x=True,
+                            transpose_y=False))
+    for sequence in (64, 128, 256, 512):
+        for depth in (64, 128):
+            cases.append(env_matmul(sequence, depth, sequence, batch=1,
+                                    w_storage="runtime"))
+            cases.append(env_matmul(sequence, sequence, depth, batch=1,
+                                    w_storage="runtime", transpose_y=False))
+    for kernel in (1, 3):
+        for stride in (1, 2):
+            for bias in (False, True):
+                cases.extend(env_conv(kernel, 64, 64, 16, stride, groups, bias)
+                             for groups in (1, 4))
+    cases.extend([
+        env_conv(1, 256, 256, 8, 1, 1, True),
+        env_conv(1, 768, 768, 1, 1, 1, True),
+        env_conv(1, 64, 256, 8, 1, 1, False),
+        env_conv(3, 128, 128, 16, 2, 1, True),
+        env_conv(3, 64, 64, 16, 1, 64, False),
+        env_conv(3, 64, 64, 16, 1, 64, True),
+    ])
+    for operation in ("gelu", "silu"):
+        mode = "EXACT" if operation == "gelu" else None
+        cases.extend(env_activation(operation, shape, mode) for shape in (
+            (1, 64, 8, 8), (1, 128, 16, 16), (1, 256, 32, 32), (1, 768, 16, 16),
+            (1, 3072, 1, 1)))
+    cases.extend(env_activation("gelu", (1, 768, 1, 1), mode) for mode in
+                 ("EXACT", "TANH_APPROXIMATION", "SIGMOID_APPROXIMATION"))
+    cases.extend(env_chain_mlp(rows, 2048, 4096) for rows in (1, 32, 128))
+    cases.append(env_chain_mlp(32, 4096, 4096))
+    cases.append(env_chain_mlp(1, 2048, 2048, batch=1))
+    for heads in (1, 8, 12):
+        cases.extend(env_chain_softmax(heads, sequence)
+                     for sequence in (64, 128, 256))
+    for reduction in (2048, 4096):
+        cases.extend(env_chain_layer_norm_matmul(reduction, columns)
+                     for columns in (2048, 4096))
+    cases.append(env_chain_layer_norm_matmul(2048, 2048, rows=32, batch=1))
+    for operation in ("gelu", "silu", "relu"):
+        cases.extend(env_chain_residual(operation, shape)
+                     for shape in ((1, 768, 1, 1), (1, 64, 8, 8)))
+    cases.extend(env_chain_attention(sequence, 64) for sequence in (64, 128, 256))
+    cases.append(env_chain_attention(128, 128))
+    return cases
+
+
 def campaign() -> list[dict[str, Any]]:
     cases = []
     shapes = [(1, channels, 1, 1) for channels in
@@ -339,6 +670,7 @@ def campaign() -> list[dict[str, Any]]:
         matmul(512, 512, 1, False, True),
         convolution(1, 64, 64, 8, False, True),
     ])
+    cases.extend(envelope_campaign())
     names = [item["name"] for item in cases]
     if len(names) != len(set(names)):
         raise AssertionError("campaign contains duplicate case names")
@@ -347,6 +679,48 @@ def campaign() -> list[dict[str, Any]]:
 
 def cstring(raw: bytes) -> str:
     return raw.split(b"\0", 1)[0].decode("ascii", errors="replace")
+
+
+def program_regions(programs: list[dict[str, Any]], text: dict[str, int],
+                    text_bytes: int) -> list[tuple[int, int]]:
+    """The __TEXT/__text byte range each program descriptor owns."""
+    starts = []
+    for index, program in enumerate(programs):
+        start = int(program["text_address"], 16) - text["address"]
+        if start < 0 or start >= text_bytes or start % 4:
+            raise ValueError(
+                f"program[{index}] text address {program['text_address']} is "
+                "outside __TEXT/__text")
+        starts.append(start)
+    if starts != sorted(starts):
+        raise ValueError("HWX program descriptors are not in text order")
+    return [(start, next_start) for start, next_start in
+            zip(starts, starts[1:] + [text_bytes])]
+
+
+def split_program_tasks(region: bytes, program: dict[str, Any],
+                        target: str) -> list[bytes]:
+    if target == "h13":
+        return split_h13_tasks(region, program["task_words_minus_one"],
+                               program["task_count"])
+    return split_h14_tasks(region)
+
+
+def decode_task_safely(task: bytes, target: str) -> dict[str, Any]:
+    """Decode one task, or record why its register stream is undecodable.
+
+    A register-stream gap means Apple accepted the program and this parser
+    cannot yet split every record; it is not an Apple rejection."""
+    try:
+        return decode_task(task, target)
+    except ValueError as error:
+        header = 10 if target == "h13" else 8
+        words = struct.unpack_from(f"<{min(len(task) // 4, header)}I", task)
+        return {
+            "size_bytes": len(task),
+            "header_words": [f"0x{word:08x}" for word in words],
+            "decode_error": str(error),
+        }
 
 
 def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
@@ -360,7 +734,7 @@ def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
         raise ValueError(f"compiler returned subtype {subtype} for {target}")
     sections: dict[tuple[str, str], dict[str, int]] = {}
     tensors = []
-    program_descriptor: dict[str, Any] | None = None
+    programs: list[dict[str, Any]] = []
     cursor = 32
     command_end = cursor + command_bytes
     if command_end > len(data):
@@ -396,7 +770,7 @@ def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
                 "total_bytes": struct.unpack_from("<Q", data, cursor + 0x70)[0],
             })
         elif command == 4 and kind == 1 and size >= 0x820:
-            program_descriptor = {
+            programs.append({
                 "kind": kind, "command_size": size,
                 "code": struct.unpack_from("<I", data, cursor + 0x0C)[0],
                 "text_address": f"0x{struct.unpack_from('<Q', data, cursor + 0x10)[0]:x}",
@@ -406,9 +780,9 @@ def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
                 ],
                 "task_words_minus_one": struct.unpack_from("<I", data, cursor + 0x818)[0],
                 "task_count": struct.unpack_from("<I", data, cursor + 0x81C)[0],
-            }
+            })
         elif command == 4 and kind == 4 and size >= 0x838:
-            program_descriptor = {
+            programs.append({
                 "kind": kind, "command_size": size,
                 "text_address": f"0x{struct.unpack_from('<Q', data, cursor + 0x10)[0]:x}",
                 "constant_address": f"0x{struct.unpack_from('<Q', data, cursor + 0x20)[0]:x}",
@@ -421,13 +795,13 @@ def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
                     f"0x{value:08x}" for value in struct.unpack_from(
                         f"<{(size - 0x810) // 4}I", data, cursor + 0x810)
                 ],
-            }
+            })
         cursor += size
     if cursor != command_end:
         raise ValueError("HWX load command sizes do not match the header")
     text = sections.get(("__TEXT", "__text")) or sections.get(("__TEXT", "__TEXT"))
     constants = sections.get(("__TEXT", "__const"))
-    if not text or not constants or not program_descriptor:
+    if not text or not constants or not programs:
         raise ValueError("HWX lacks text, constant, or program descriptor metadata")
     text_end = text["offset"] + text["size"]
     constant_end = constants["offset"] + constants["size"]
@@ -449,20 +823,24 @@ def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
         for offset in range(0, len(constant_data), chunk_bytes)
         for chunk in (constant_data[offset:offset + chunk_bytes],)
     ] if len(constant_data) <= 0x10000 else []
-    if target == "h13":
-        raw_tasks = split_h13_tasks(
-            text_data, program_descriptor["task_words_minus_one"],
-            program_descriptor["task_count"])
-    else:
-        raw_tasks = split_h14_tasks(text_data)
-        if len(raw_tasks) != program_descriptor["task_count"]:
+    raw_tasks = []
+    for index, (program, region) in enumerate(
+            zip(programs, program_regions(programs, text, len(text_data)))):
+        start, end = region
+        tasks = split_program_tasks(text_data[start:end], program, target)
+        if len(tasks) != program["task_count"]:
             raise ValueError(
-                f"H14 program declares {program_descriptor['task_count']} tasks but "
-                f"decoded {len(raw_tasks)}")
+                f"program[{index}] declares {program['task_count']} tasks but "
+                f"decoded {len(tasks)}")
+        program["task_section"] = {"offset": start, "size": end - start}
+        raw_tasks.extend(tasks)
+    descriptors = [decode_task_safely(task, target) for task in raw_tasks]
     return {
         "hwx_sha256": hashlib.sha256(data).hexdigest(),
         "hwx_bytes": len(data),
-        "program_descriptor": program_descriptor,
+        "program_descriptor": programs[-1],
+        "program_count": len(programs),
+        "programs": programs,
         "tensor_descriptors": tensors,
         "constant_section": {
             "size": len(constant_data),
@@ -477,7 +855,8 @@ def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
             "chunk_count": (len(constant_data) + chunk_bytes - 1) // chunk_bytes,
             "chunks": chunks,
         },
-        "task_descriptors": [decode_task(task, target) for task in raw_tasks],
+        "task_descriptors": descriptors,
+        "task_decode_errors": sum("decode_error" in item for item in descriptors),
     }
 
 
@@ -512,15 +891,14 @@ def run_case(item: dict[str, Any], target: str, output: Path,
         compiled.mkdir()
         (capture / "model.mil").write_text(item["mil"])
         weights = item["weights"]
-        if weights is None:
-            (capture / "weights.bin").write_bytes(b"")
-        else:
-            (capture / "weights.bin").write_bytes(weights)
+        if isinstance(weights, int):
+            weights = blob(half_payload(weights))
+        (capture / "weights.bin").write_bytes(weights or b"")
         command = [str(oracle_tool), str(capture), str(compiled), target]
         record["compiler"]["command"] = [str(oracle_tool), "CAPTURE_DIR", "OUTPUT_DIR", target]
         try:
             result = subprocess.run(command, capture_output=True, text=True,
-                                    timeout=180, check=False)
+                                    timeout=COMPILE_TIMEOUT_SECONDS, check=False)
             error = (result.stderr or result.stdout).strip()
             hwx = compiled / "model.hwx"
             if result.returncode == 0 and hwx.is_file():
@@ -554,11 +932,6 @@ def source_commit() -> str:
 
 
 def local_run(args: argparse.Namespace) -> int:
-    tool = Path(args.oracle_tool)
-    if platform.system() != "Darwin":
-        raise SystemExit("--local requires macOS")
-    if not os.access(tool, os.X_OK):
-        raise SystemExit(f"oracle tool is not executable: {tool}")
     selected = [item for item in campaign()
                 if not args.case or fnmatch.fnmatch(item["name"], args.case)]
     if args.limit is not None:
@@ -568,6 +941,11 @@ def local_run(args: argparse.Namespace) -> int:
             print(item["name"])
         print(f"cases={len(selected)} targets={len(args.targets)}")
         return 0
+    tool = Path(args.oracle_tool)
+    if platform.system() != "Darwin":
+        raise SystemExit("--local requires macOS")
+    if not os.access(tool, os.X_OK):
+        raise SystemExit(f"oracle tool is not executable: {tool}")
     decoded = rejected = 0
     output = Path(args.output)
     for target in args.targets:
