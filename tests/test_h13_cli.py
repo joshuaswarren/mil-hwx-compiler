@@ -754,17 +754,21 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         'physicalElements': 512}
     assert json.loads(inspect(small_projection))['manifest'] == small_manifest
 
-    reference_weights = bytearray(128 + 256 * 512 * 2)
+    # Two geometries that pad to the same 256x512 physical program must emit
+    # identical bytes. The reference stays at 250x400 because 256x512 is inside
+    # the decoded Apple envelope and lowers through the parity encoder instead.
+    reference_weights = bytearray(128 + 250 * 400 * 2)
     struct.pack_into('<IIQQ', reference_weights, 64, 0xDEADBEEF, 1,
-                     256 * 512 * 2, 128)
+                     250 * 400 * 2, 128)
     for row in range(200):
         source_offset = 128 + row * 300 * 2
-        destination_offset = 128 + row * 512 * 2
+        destination_offset = 128 + row * 400 * 2
         reference_weights[destination_offset:destination_offset + 600] = \
             small_weights[source_offset:source_offset + 600]
     (root / 'weights.bin').write_bytes(reference_weights)
     reference_projection = compile_text(
-        matmul_source(256, transpose_y=False, weight_shape=(256, 512)),
+        matmul_source(250, output_shape=(1, 400), transpose_y=False,
+                      weight_shape=(250, 400)),
         'projection-200x300-reference')
     assert (small_projection / 'program-0.anec').read_bytes() == \
         (reference_projection / 'program-0.anec').read_bytes()
@@ -821,15 +825,19 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         (wide_projection / 'program-1.anec').read_bytes()
     assert json.loads(inspect(wide_projection))['manifest'] == wide_manifest
 
+    # 1000x512 stays outside the decoded Apple envelope, so it keeps exercising
+    # the chunked reduction plan; 1024x512 now lowers as one parity program.
+    # The 512-wide accumulate stays a whole-tensor parity elementwise program,
+    # and the tail chunk's canonical equality is covered by reduction-700 below.
     reduction_weights = b''.join(
         struct.pack('<H', (row * 17 + column * 31) & 0x3bff)
-        for row in range(512) for column in range(1024))
+        for row in range(512) for column in range(1000))
     reduction_blob = bytearray(128 + len(reduction_weights))
     struct.pack_into('<IIQQ', reduction_blob, 64, 0xDEADBEEF, 1,
                      len(reduction_weights), 128)
     reduction_blob[128:] = reduction_weights
     (root / 'weights.bin').write_bytes(reduction_blob)
-    wide_reduction = compile_text(matmul_source(1024), 'reduction-1024')
+    wide_reduction = compile_text(matmul_source(1000), 'reduction-1000')
     wide_reduction_manifest = json.loads(
         (wide_reduction / 'manifest.json').read_text())
     assert [program['operation'] for program in wide_reduction_manifest['programs']] == \
@@ -837,7 +845,8 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     assert [program['inputs'][0]['slice'] for program in
             wide_reduction_manifest['programs'][:2]] == [
         {'tensor': 'x', 'elementOffset': 0, 'elementCount': 512},
-        {'tensor': 'x', 'elementOffset': 512, 'elementCount': 512}]
+        {'tensor': 'x', 'elementOffset': 512, 'elementCount': 488,
+         'physicalElements': 512}]
     assert wide_reduction_manifest['tensors']['y']['accumulation'] == 'chunked-fp16'
     assert [program['outputs'][0]['name'] for program in
             wide_reduction_manifest['programs'][:2]] == [
@@ -845,27 +854,14 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     assert all(program['encoder'] == 'h13-oracle-parity'
                for program in wide_reduction_manifest['programs'][2:])
     multirow_reduction = compile_text(
-        matmul_source(1024, x_shape=(2, 1024), output_shape=(2, 512)),
-        'reduction-1024-multirow')
+        matmul_source(1000, x_shape=(2, 1000), output_shape=(2, 512)),
+        'reduction-1000-multirow')
     multirow_reduction_manifest = json.loads(
         (multirow_reduction / 'manifest.json').read_text())
     assert [program['inputs'][0]['slice']['elementOffset'] for program in
-            multirow_reduction_manifest['programs'][:4]] == [0, 1024, 512, 1536]
+            multirow_reduction_manifest['programs'][:4]] == [0, 1000, 512, 1512]
     assert json.loads(inspect(multirow_reduction))['manifest'] == \
         multirow_reduction_manifest
-    for chunk in range(2):
-        block = b''.join(
-            reduction_weights[(row * 1024 + chunk * 512) * 2:
-                              (row * 1024 + (chunk + 1) * 512) * 2]
-            for row in range(512))
-        canonical_blob = bytearray(128 + len(block))
-        struct.pack_into('<IIQQ', canonical_blob, 64, 0xDEADBEEF, 1,
-                         len(block), 128)
-        canonical_blob[128:] = block
-        (root / 'weights.bin').write_bytes(canonical_blob)
-        canonical = compile_text(matmul_source(512), f'reduction-1024-chunk-{chunk}')
-        assert (wide_reduction / f'program-{chunk}.anec').read_bytes() == \
-            (canonical / 'program-0.anec').read_bytes()
     assert json.loads(inspect(wide_reduction))['manifest'] == wide_reduction_manifest
     wide_reduction_path = wide_reduction / 'manifest.json'
     invalid_accumulation = json.loads(json.dumps(wide_reduction_manifest))
@@ -996,33 +992,42 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             matmul_binary_manifest
         projection = compile_text(matmul, f'projection-{reduction}')
         payload = (projection / 'program-0.anec').read_bytes()
-        assert struct.unpack_from('<H', payload, 4096 + 0x280)[0] == 0x3C00
+        # 256x512 and 512x512 are inside the decoded Apple envelope, so they
+        # lower as one two-task parity program whose constant section is the
+        # packed [512, K] weight, with the whole M rows in one program.
+        assert struct.unpack_from('<H', payload, 4096 + 1152)[0] == 0x3C00
         record = json.loads((projection / 'manifest.json').read_text())
         assert record['inputs'][0]['shape'] == [1, reduction]
         assert record['outputs'][0]['shape'] == [1, 512]
         assert struct.unpack_from('<Q', payload, 24)[0] == record['constantBytes']
-        assert record["constantBytes"] == 0x80000
-        assert struct.unpack_from("<I", payload, 40)[0] == 33
+        assert record['programs'][0]['encoder'] == 'apple-parity-matvec'
+        assert record['programs'][0]['taskDescriptors'] == 2
+        assert record['programs'][0]['constantOffset'] == 1152
+        assert record["constantBytes"] == 512 * reduction * 2
+        content_tiles = -(-(1152 + 512 * reduction * 2) // 0x4000)
+        assert struct.unpack_from("<I", payload, 40)[0] == content_tiles
         inspection = json.loads(inspect(projection))
         assert inspection["manifest"] == record
-        assert inspection["bufferAllocation"]["totalBytes"] == 573440 + reduction * 64
+        assert inspection["bufferAllocation"]["totalBytes"] == \
+            content_tiles * 0x4000 + 2 * 0x4000
         multirow = compile_text(
             matmul_source(reduction, (2, reduction), (2, 512)),
             f'multirow-{reduction}')
         multirow_manifest = json.loads((multirow / 'manifest.json').read_text())
-        assert len(multirow_manifest['programs']) == 2
-        assert [(program['inputs'][0]['slice']['elementOffset'],
-                 program['outputs'][0]['slice']['elementOffset'])
-                for program in multirow_manifest['programs']] == [
-                    (0, 0), (reduction, 512)]
-        assert all((multirow / program['file']).read_bytes() == payload
-                   for program in multirow_manifest['programs'])
+        assert len(multirow_manifest['programs']) == 1
+        multirow_program = multirow_manifest['programs'][0]
+        assert multirow_program['encoder'] == 'apple-parity-matvec'
+        assert multirow_program['inputs'][0].get('slice') is None
+        assert multirow_program['outputs'][0].get('slice') is None
+        assert multirow_program['inputs'][0]['shape'] == [2, reduction]
+        assert multirow_program['outputs'][0]['shape'] == [2, 512]
+        multirow_payload = (multirow / 'program-0.anec').read_bytes()
+        assert multirow_payload != payload
         assert json.loads(inspect(multirow))['manifest'] == multirow_manifest
         batched = compile_text(
             matmul_source(reduction, (2, 1, reduction), (2, 1, 512)),
             f'broadcast-batch-{reduction}')
-        assert all((batched / f'program-{index}.anec').read_bytes() == payload
-                   for index in range(2))
+        assert (batched / 'program-0.anec').read_bytes() == multirow_payload
         compile_text(matmul_source(reduction, (reduction, 2), (2, 512), True),
                      f'transposed-multirow-{reduction}', False,
                      'h13.transpose-x-multirow')
@@ -1116,7 +1121,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         (root / 'weights.bin').write_bytes(weights)
         changed = compile_text(matmul, f'changed-weights-{reduction}')
         assert struct.unpack_from('<H', (changed / 'program-0.anec').read_bytes(),
-                                  4096 + 0x280)[0] == 0x4000
+                                  4096 + 1152)[0] == 0x4000
 
     compile_text(source(), 'unsupported-format', False,
                  'h13.unsupported-format', format='bogus')
@@ -1161,13 +1166,15 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     assert "field860=1 field868=9 field86c=8 name='net'" in inspected_hwx.stdout
     assert 'tensor_descriptor binding=1 element=5' in inspected_hwx.stdout
 
-    relocation_weights = bytearray(128 + 512 * 256 * 2)
+    # The kernel-table addends belong to the source-qualified matvec encoder;
+    # 257x512 keeps it because only the decoded 256/512/1024 grid is parity.
+    relocation_weights = bytearray(128 + 512 * 257 * 2)
     struct.pack_into('<IIQQ', relocation_weights, 64, 0xDEADBEEF, 1,
-                     512 * 256 * 2, 128)
+                     512 * 257 * 2, 128)
     (root / 'weights.bin').write_bytes(relocation_weights)
-    relocation_anec = compile_text(matmul_source(256), 'matmul-relocations-anec')
+    relocation_anec = compile_text(matmul_source(257), 'matmul-relocations-anec')
     relocation_hwx = compile_text(
-        matmul_source(256), 'matmul-relocations-hwx', format='hwx')
+        matmul_source(257), 'matmul-relocations-hwx', format='hwx')
     relocation_inspection = subprocess.run(
         [sys.executable, hwx_inspector,
          str(relocation_hwx / 'program-0.hwx')],

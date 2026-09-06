@@ -201,20 +201,29 @@ def _constant_buffer(program, binding):
 
 
 def _intermediate_buffer(binding, tensors, regions):
-    _, offset, _, physical = inspect_anec.binding_interval(binding, tensors)
-    result = bytearray(binding["allocationBytes"])
-    covered = [False] * physical
-    for produced_offset, produced_physical, data in regions:
+    """Builds one consumer surface from its producers' surfaces.
+
+    Producers and consumers can use different physical layouts -- a parity
+    matvec writes dense rows while an elementwise program reads 64-byte lanes
+    -- so composition goes through dense fp16.
+    """
+    _, offset, count, _ = inspect_anec.binding_interval(binding, tensors)
+    dense = bytearray(count * 2)
+    covered = [False] * count
+    for produced_binding, data in regions:
+        _, produced_offset, produced_count, _ = \
+            inspect_anec.binding_interval(produced_binding, tensors)
+        produced = inspect_anec.convert_tensor(produced_binding, data, False)
         start = max(offset, produced_offset)
-        end = min(offset + physical, produced_offset + produced_physical)
+        end = min(offset + count, produced_offset + produced_count)
         for element in range(start, end):
-            source = (element - produced_offset) * 64
-            destination = (element - offset) * 64
-            result[destination:destination + 64] = data[source:source + 64]
+            source = (element - produced_offset) * 2
+            destination = (element - offset) * 2
+            dense[destination:destination + 2] = produced[source:source + 2]
             covered[element - offset] = True
     if not all(covered):
-        raise ValueError(f"intermediate {binding['name']} lacks a produced physical range")
-    return bytes(result)
+        raise ValueError(f"intermediate {binding['name']} lacks a produced logical range")
+    return bytes(inspect_anec.convert_tensor(binding, bytes(dense), True))
 
 
 def _unpack_outputs(manifest, regions, names):
@@ -276,9 +285,9 @@ def run_package(package, mil, model_root, inputs, adapter):
             anec, kernel, input_buffers,
             [binding["allocationBytes"] for binding in program["outputs"]])
         for binding, data in zip(program["outputs"], outputs):
-            name, offset, _, physical = inspect_anec.binding_interval(binding, tensors)
+            name, _, _, _ = inspect_anec.binding_interval(binding, tensors)
             if tensors[name]["role"] == "intermediate":
-                intermediate_regions.setdefault(name, []).append((offset, physical, data))
+                intermediate_regions.setdefault(name, []).append((binding, data))
             else:
                 output_regions.setdefault(name, []).append((binding, data))
     actual = _unpack_outputs(manifest, output_regions, output_names)

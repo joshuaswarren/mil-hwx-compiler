@@ -25,6 +25,15 @@ def bits_f16(b: int) -> float:
     return struct.unpack('<e', struct.pack('<H', b))[0]
 
 
+def surface(binding, dense: bytes) -> bytes:
+    """Dense fp16 -> the binding's physical surface (64-byte lanes or dense rows)."""
+    return bytes(inspect_anec.convert_tensor(binding, dense, True))
+
+
+def dense_of_surface(binding, buffer: bytes) -> bytes:
+    return bytes(inspect_anec.convert_tensor(binding, buffer, False))
+
+
 def pack_dense(dense: bytes, count: int, alloc: int) -> bytearray:
     """Dense fp16[count] -> allocationBytes buffer, 64-byte channel stride, zero pad."""
     out = bytearray(alloc)
@@ -50,6 +59,17 @@ def write_lanes(vals: list[float], alloc: int) -> bytearray:
     for i, v in enumerate(vals):
         struct.pack_into('<e', out, i * STRIDE, float(v))
     return out
+
+
+def dense_values(dense: bytes) -> list[float]:
+    return [bits_f16(value) for (value,) in struct.iter_unpack('<H', dense)]
+
+
+def dense_bytes(values: list[float]) -> bytes:
+    out = bytearray(len(values) * 2)
+    for index, value in enumerate(values):
+        struct.pack_into('<e', out, index * 2, float(value))
+    return bytes(out)
 
 
 def binary_op(op: str, a: float, b: float) -> float:
@@ -104,6 +124,35 @@ def simulate_matvec(xin: bytes, weight_const: bytes, reduction: int, out_alloc: 
     return write_lanes(out, out_alloc)
 
 
+def parity_weights(kernel: bytes, reduction: int, columns: int) -> list[list[float]]:
+    """Invert ane::h13::packMatvecWeights: Apple's constant-section permutation."""
+    group = min(16, columns // 16)
+    groups = columns // group
+    weights = [[0.0] * reduction for _ in range(columns)]
+    for column in range(columns):
+        plane = column // group
+        destination = (plane % 16) * (groups // 16) + plane // 16
+        base = destination * reduction * group + column % group
+        for index in range(reduction):
+            bits = struct.unpack_from('<H', kernel, (base + index * group) * 2)[0]
+            weights[column][index] = bits_f16(bits)
+    return weights
+
+
+def simulate_parity_matvec(in_binding, out_binding, x_surface: bytes,
+                           kernel: bytes) -> bytearray:
+    """Apple's two-task form: `rows` dense x rows against every output column."""
+    rows, reduction = in_binding['nchw'][2], in_binding['nchw'][3]
+    columns = out_binding['nchw'][3]
+    x = dense_values(dense_of_surface(in_binding, x_surface))
+    weights = parity_weights(kernel, reduction, columns)
+    values = []
+    for row in range(rows):
+        lane = x[row * reduction:(row + 1) * reduction]
+        values.extend(dot_fp32(lane, weights[column]) for column in range(columns))
+    return bytearray(surface(out_binding, dense_bytes(values)))
+
+
 def intermediate_compose(binding, tensors, regions):
     return __import__('h13_run_linux', fromlist=['x'])._intermediate_buffer(binding, tensors, regions)
 
@@ -129,6 +178,7 @@ def run_sim(package: Path, mil: Path, model_root: Path, inputs: dict[str, bytes]
     for pi in manifest['dispatchPlan']:
         program = manifest['programs'][pi]
         op = program['operation']
+        parity_matvec = program['encoder'] == inspect_anec.PARITY_MATVEC
         in_bufs = []
         for binding in program['inputs']:
             name = binding['name']
@@ -136,12 +186,12 @@ def run_sim(package: Path, mil: Path, model_root: Path, inputs: dict[str, bytes]
                 # constant hex is dense physical-count fp16 words (64 for elemwise)
                 raw = bytes.fromhex(program['constantInputs'][name])
                 logical = binding['logicalBytes']
-                in_bufs.append(bytes(pack_dense(raw[:logical], logical // 2, binding['allocationBytes'])))
+                in_bufs.append(surface(binding, raw[:logical]))
             elif tensors[name]['role'] == 'intermediate':
                 in_bufs.append(intermediate_compose(binding, tensors, intermediate_regions.get(name, [])))
             else:
                 sliced = inspect_anec.dense_slice(bytes(dense[name]), binding, tensors)
-                in_bufs.append(bytes(pack_dense(sliced, binding['logicalBytes'] // 2, binding['allocationBytes'])))
+                in_bufs.append(surface(binding, sliced))
 
         # produce output physical
         out_binding = program['outputs'][0]
@@ -153,18 +203,22 @@ def run_sim(package: Path, mil: Path, model_root: Path, inputs: dict[str, bytes]
             anec = inspect_anec.local_file(package, program['file'], program['bytes'])
             kstart = inspect_anec.HEADER_BYTES + program['constantOffset']
             kernel = anec[kstart:kstart + program['constantBytes']]
-            in_phys = inspect_anec.binding_interval(program['inputs'][0], tensors)[3]
-            out_buf = simulate_matvec(in_bufs[0], kernel, in_phys, out_binding['allocationBytes'])
+            if parity_matvec:
+                out_buf = simulate_parity_matvec(program['inputs'][0], out_binding,
+                                                 in_bufs[0], kernel)
+            else:
+                in_phys = inspect_anec.binding_interval(program['inputs'][0], tensors)[3]
+                out_buf = simulate_matvec(in_bufs[0], kernel, in_phys, out_binding['allocationBytes'])
         else:
             raise ValueError(op)
 
         name, offset, count, physical = inspect_anec.binding_interval(out_binding, tensors)
         if tensors[name]['role'] == 'intermediate':
-            intermediate_regions.setdefault(name, []).append((offset, physical, bytes(out_buf)))
+            intermediate_regions.setdefault(name, []).append((out_binding, bytes(out_buf)))
         else:
-            # write into dense via logical unpack of count only (match macOS runner)
-            logical = unpack_physical(out_buf, count)
-            dense[name][offset * 2:(offset + count) * 2] = logical
+            # write into dense via the binding's own physical layout
+            dense[name][offset * 2:(offset + count) * 2] = \
+                dense_of_surface(out_binding, bytes(out_buf))
             output_regions.setdefault(name, []).append((out_binding, bytes(out_buf)))
 
     # unpack outputs like linux runner for multi-slice
@@ -443,7 +497,7 @@ def check_macos_packing_rule():
     binding = {'logicalBytes': 72, 'allocationBytes': 4096}
     p2 = bytes(inspect_anec.convert_tensor(binding, dense[64*2:100*2], True))
     assert phys[:4096] == p2
-    print('OK macOS writePhysical/readPhysical matches inspect_anec.convert_tensor (run_h13.mm:51-86)')
+    print('OK macOS writePhysical/readPhysical matches inspect_anec.convert_tensor (run_h13.mm writePhysical/readPhysical)')
     return []
 
 

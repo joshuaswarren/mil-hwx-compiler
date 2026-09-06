@@ -43,7 +43,7 @@ tensors may use any positive static size:
 | clip | One fp16 input and matching output with any positive static shape, plus finite fp32 scalar `alpha` and `beta` attributes that are exactly representable in fp16 and satisfy `alpha <= beta`. Lowers each slice to `minimum(maximum(x, alpha), beta)` as two operation-major program groups. |
 | sub | One fp16 input `x` and a same-shape fp16 const tensor `y`. The host negates each constant slice and emits the verified add descriptor. Two runtime inputs and `const - input` are rejected. |
 | real_div | One fp16 input `x` and a same-shape fp16 const tensor `y`. Every constant element must be a finite, nonzero power of two with an fp16-exact reciprocal. The host stores each reciprocal slice and emits the verified multiply descriptor. |
-| matmul | With `transpose_x=false`, fp16 x has shape `[..., K]`, `K >= 1`, and the product of the leading dimensions is the row count M. With `transpose_x=true`, only one logical row is accepted. W is a constant rank-2 tensor `[K,N]` with `transpose_y=false` or `[N,K]` with `transpose_y=true`, and the output is `[..., N]`. N is emitted in 512-output programs with the last program zero-padded. Each reduction of at most 512 elements is zero-extended to the 256- or 512-lane descriptor. Larger reductions emit one matvec per 512-element reduction chunk and sum the partial tensors with 64-lane add programs. The final tensor records `"accumulation": "chunked-fp16"`. Chunked results are not bit-identical to one unbroken accumulation because each partial sum adds one fp16 rounding step. |
+| matmul | With `transpose_x=false`, fp16 x has shape `[..., K]`, `K >= 1`, and the product of the leading dimensions is the row count M. With `transpose_x=true`, only one logical row is accepted. W is a constant rank-2 tensor `[K,N]` with `transpose_y=false` or `[N,K]` with `transpose_y=true`, and the output is `[..., N]`. N is emitted in 512-output programs with the last program zero-padded. Each reduction of at most 512 elements is zero-extended to the 256- or 512-lane descriptor. Larger reductions emit one matvec per 512-element reduction chunk and sum the partial tensors with 64-lane add programs. The final tensor records `"accumulation": "chunked-fp16"`. Chunked results are not bit-identical to one unbroken accumulation because each partial sum adds one fp16 rounding step. Inside the decoded Apple envelope -- M in {1, 2, 8, 64} and K, N in {256, 512, 1024} -- the compiler instead emits one Apple-parity program: the 126-word preparation task, the 157-word compute task, the whole M rows and N columns in place, no reduction chunking, and the constant section packed in Apple's own permutation. Those programs record `"encoder": "apple-parity-matvec"` and their bytes match the oracle task words and constant SHA-256 exactly; see [`research/h13-td-fields.md`](research/h13-td-fields.md). `transpose_y=false` inside the envelope transposes the constant exactly on the host and uses the same encoder. |
 | linear | fp16 x has shape `[..., K]`, constant weight has shape `[N,K]`, and the output is `[..., N]`. The compiler lowers `linear(x, weight)` to `matmul(x, weight, transpose_y=true)`. An optional constant fp16 bias vector `[N]`, encoded as an inline list or BLOBFILE, adds one folded 64-lane add group after the matmul. |
 | reshape, squeeze, expand_dims | Positive static fp16 input and result shapes with equal element counts. The operation emits no program: its result aliases the input's underlying tensor with a new logical shape. Shape and axes inputs must be constants. Returning an alias of a function input fails with `h13.returned-input-alias` because no program produces an output. |
 
@@ -160,6 +160,34 @@ compares elementwise output at exact fp16 equality. A tensor marked
 `abs(device-reference) <= 0.03125 + 0.01 * abs(reference)` to allow the extra
 partial-sum rounding. Override the binding path with `--libane-library`. Run the
 host-only reference and dry-run checks with `make test-h13-reference`.
+
+### H13 Apple-parity programs
+
+`make test-h13-parity` compiles all 123 decoded H13 oracles in both formats
+and compares each emitted task's header words and register writes, the program
+descriptor, the tensor descriptors, and the constant-section SHA-256 with
+`research/oracles/h13/*.json`. 87 are elementwise, scalar-constant, and unary
+cases (`"encoder": "h13-oracle-parity"`); the remaining 36 are every decoded
+`matmul` (`"encoder": "apple-parity-matvec"`), covering M in {1, 2, 8, 64} and
+K, N in {256, 512, 1024}, including the one three-task case at
+M = 64, K = 256, N = 1024.
+
+A parity matvec program differs from the source-qualified one in four ways:
+it runs Apple's 126-word preparation task before the 157-word compute task,
+its surfaces are dense `[1, 1, M, W]` fp16 rows instead of 64-byte lanes, its
+object carries Apple's `__DATA/__bss` scratch with the output surface laid out
+below the input, and its constant section is the `K * N` fp16 weight in Apple's
+packing permutation instead of a 512-row padded block. Inputs and outputs keep
+ANEC channels 5 and 4. `research/mint_matvec_probes.py` mints the known-weight
+oracles that pin that permutation, and
+[`research/h13-td-fields.md`](research/h13-td-fields.md) documents each word,
+the surface-address formula, and what stays unresolved.
+
+Geometries outside the decoded grid keep the source-qualified encoder,
+including K > 1024 or N > 1024, any K or N off {256, 512, 1024}, any row count
+off {1, 2, 8, 64}, and `transpose_x=true` with more than one logical row.
+Chunked and column-sliced plans are still built on top of parity programs when
+a slice lands on a decoded geometry.
 
 ### H13 HWX and macOS aned gate
 

@@ -496,8 +496,8 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
         rejection = @"writer requires one output, at least one input, at most four surfaces and five total resources";
     else if (taskDescriptor.length == 0 || taskDescriptor.length > 0x3fc0)
         rejection = @"writer requires a nonempty task descriptor of at most 0x3fc0 bytes";
-    else if (constantRegion.length > 0x100000)
-        rejection = @"writer requires a constant region of at most 1 MiB";
+    else if (constantRegion.length > 0x200000)
+        rejection = @"writer requires a constant region of at most 2 MiB";
     else if (programInfo.descriptorLayout == HWXProgramDescriptorLayoutLinear &&
              programInfo.scratchByteLength != 0)
         rejection = @"a linear program cannot declare scratch";

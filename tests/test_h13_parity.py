@@ -14,12 +14,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "research"))
 from h13_td import decode_task, split_h13_tasks  # noqa: E402
 from inspect_hwx import h13_anec  # noqa: E402
+import mint_oracles  # noqa: E402
 
 COMPILER = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "build/mil-hwxc").resolve()
 ORACLES = ROOT / "research/oracles/h13"
 RUNTIME_BINARY = {"add", "mul", "maximum", "minimum", "sub"}
 UNARY = {"abs", "exp", "gelu", "leaky_relu", "relu", "rsqrt", "sigmoid", "silu",
          "sqrt", "tanh"}
+ENCODERS = {"matmul": "apple-parity-matvec"}
+DEFAULT_ENCODER = "h13-oracle-parity"
 
 
 def selected_oracles():
@@ -37,12 +40,30 @@ def selected_oracles():
             selected.append(oracle)
         elif family == "unary" and operation in UNARY:
             selected.append(oracle)
+        elif family == "matmul":
+            selected.append(oracle)
     return selected
+
+
+def encoder(oracle):
+    return ENCODERS.get(oracle["family"], DEFAULT_ENCODER)
+
+
+def write_weights(oracle, root):
+    """Recreates the exact weights.bin the campaign compiled against."""
+    description = oracle.get("weights", {})
+    if description.get("storage") != "BLOBFILE":
+        return
+    assert description["value"] == "fp16(0x1p-1)", oracle["case"]
+    elements = description["payload_bytes"] // 2
+    (root / "weights.bin").write_bytes(mint_oracles.blob(
+        mint_oracles.half_payload(elements)))
 
 
 def compile_oracle(oracle, output, artifact_format):
     mil = output.parent / f"{oracle['case']}-{artifact_format}.mil"
     mil.write_text(oracle["mil"])
+    write_weights(oracle, output.parent)
     result = subprocess.run(
         [str(COMPILER), "--mil", str(mil), "--model-root", str(output.parent),
          "--target", "H13", "--format", artifact_format, "--output", str(output)],
@@ -138,7 +159,7 @@ def check_anec(oracle, output, manifest):
     assert len(manifest["programs"]) == 1, \
         f"{oracle['case']}: {len(manifest['programs'])} programs, expected 1"
     record = manifest["programs"][0]
-    assert record["encoder"] == "h13-oracle-parity", oracle["case"]
+    assert record["encoder"] == encoder(oracle), oracle["case"]
     payload = (output / record["file"]).read_bytes()
     tasks, constants, constant_offset = anec_contents(payload)
     assert_tasks(tasks, oracle)
@@ -152,7 +173,7 @@ def check_hwx(oracle, output, manifest):
     assert len(manifest["programs"]) == 1, \
         f"{oracle['case']}: {len(manifest['programs'])} programs, expected 1"
     record = manifest["programs"][0]
-    assert record["encoder"] == "h13-oracle-parity", oracle["case"]
+    assert record["encoder"] == encoder(oracle), oracle["case"]
     payload = (output / record["file"]).read_bytes()
     sections, program, tensors = unpack_commands(payload)
     assert program == oracle["program_descriptor"], oracle["case"]
@@ -170,7 +191,11 @@ def check_hwx(oracle, output, manifest):
 
 def main():
     oracles = selected_oracles()
-    assert len(oracles) == 87, f"expected 87 decoded parity oracles, found {len(oracles)}"
+    matmuls = [oracle for oracle in oracles if oracle["family"] == "matmul"]
+    assert len(oracles) == 123, \
+        f"expected 123 decoded parity oracles, found {len(oracles)}"
+    assert len(matmuls) == 36, \
+        f"expected 36 decoded matmul oracles, found {len(matmuls)}"
     with tempfile.TemporaryDirectory(prefix="h13-parity-") as directory:
         root = Path(directory)
         for oracle in oracles:
@@ -178,7 +203,7 @@ def main():
                 output = root / f"{oracle['case']}-{artifact_format}"
                 check(oracle, output, compile_oracle(oracle, output, artifact_format))
     print(f"H13 oracle parity: PASS ({len(oracles)} cases, "
-          f"{len(oracles) * 2} artifacts)")
+          f"{len(matmuls)} of them matmul, {len(oracles) * 2} artifacts)")
 
 
 if __name__ == "__main__":
