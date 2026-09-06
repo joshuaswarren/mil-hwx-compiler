@@ -24,6 +24,25 @@ SUBTYPES = {"h13": 4, "h14": 5}
 DEFAULT_TOOL = "/tmp/h13-oracle/bin/ane-compile-hwx"
 
 
+def decode_constant_half_words(data: bytes) -> list[dict[str, Any]] | None:
+    if len(data) > 256 or len(data) % 2:
+        return None
+    words = []
+    for index, (value,) in enumerate(struct.iter_unpack("<e", data)):
+        if value == 0.0:
+            continue
+        if value != value:
+            decoded: float | str = "nan"
+        elif value == float("inf"):
+            decoded = "+inf"
+        elif value == float("-inf"):
+            decoded = "-inf"
+        else:
+            decoded = value
+        words.append({"index": index, "value": decoded})
+    return words
+
+
 def shape_text(shape: tuple[int, ...]) -> str:
     return "[" + ", ".join(map(str, shape)) + "]"
 
@@ -411,9 +430,25 @@ def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
     if not text or not constants or not program_descriptor:
         raise ValueError("HWX lacks text, constant, or program descriptor metadata")
     text_end = text["offset"] + text["size"]
+    constant_end = constants["offset"] + constants["size"]
     if text_end > len(data):
         raise ValueError("HWX task section is truncated")
+    if constant_end > len(data):
+        raise ValueError("HWX constant section is truncated")
     text_data = data[text["offset"]:text_end]
+    constant_data = data[constants["offset"]:constant_end]
+    prefix = constant_data[:128]
+    chunk_bytes = 0x800
+    chunks = [
+        {
+            "offset": offset,
+            "size": len(chunk),
+            "sha256": hashlib.sha256(chunk).hexdigest(),
+            "nonzero_bytes": sum(value != 0 for value in chunk),
+        }
+        for offset in range(0, len(constant_data), chunk_bytes)
+        for chunk in (constant_data[offset:offset + chunk_bytes],)
+    ] if len(constant_data) <= 0x10000 else []
     if target == "h13":
         raw_tasks = split_h13_tasks(
             text_data, program_descriptor["task_words_minus_one"],
@@ -429,7 +464,19 @@ def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
         "hwx_bytes": len(data),
         "program_descriptor": program_descriptor,
         "tensor_descriptors": tensors,
-        "constant_section_size": constants["size"],
+        "constant_section": {
+            "size": len(constant_data),
+            "sha256": hashlib.sha256(constant_data).hexdigest(),
+            "nonzero_bytes": sum(value != 0 for value in constant_data),
+            "prefix_128_sha256": hashlib.sha256(prefix).hexdigest(),
+            "prefix_128_nonzero_bytes": sum(value != 0 for value in prefix),
+            "tail_after_128_nonzero_bytes": sum(
+                value != 0 for value in constant_data[128:]),
+            "nonzero_fp16_words": decode_constant_half_words(constant_data),
+            "chunk_bytes": chunk_bytes,
+            "chunk_count": (len(constant_data) + chunk_bytes - 1) // chunk_bytes,
+            "chunks": chunks,
+        },
         "task_descriptors": [decode_task(task, target) for task in raw_tasks],
     }
 
@@ -450,6 +497,9 @@ def run_case(item: dict[str, Any], target: str, output: Path,
         "compiler": {
             "tool": str(oracle_tool),
             "tool_sha256": hashlib.sha256(oracle_tool.read_bytes()).hexdigest(),
+            "driver_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            "decoder_sha256": hashlib.sha256(
+                Path(__file__).with_name("h13_td.py").read_bytes()).hexdigest(),
             "host": platform.node(),
             "platform": platform.platform(),
         },
@@ -481,7 +531,7 @@ def run_case(item: dict[str, Any], target: str, output: Path,
                 record.update({
                     "hwx_sha256": None, "hwx_bytes": None,
                     "program_descriptor": None, "tensor_descriptors": [],
-                    "constant_section_size": None, "task_descriptors": [],
+                    "constant_section": None, "task_descriptors": [],
                     "error": error or f"compiler exited {result.returncode}",
                 })
                 status = "rejected"
@@ -489,7 +539,7 @@ def run_case(item: dict[str, Any], target: str, output: Path,
             record.update({
                 "hwx_sha256": None, "hwx_bytes": None,
                 "program_descriptor": None, "tensor_descriptors": [],
-                "constant_section_size": None, "task_descriptors": [],
+                "constant_section": None, "task_descriptors": [],
                 "error": str(error),
             })
             status = "rejected"

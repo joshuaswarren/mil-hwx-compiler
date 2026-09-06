@@ -13,8 +13,8 @@ TASK_BYTES = 0x274
 CONSTANT_OFFSET = 0x280
 TILE_BYTES = 0x4000
 PROGRAM_FIELDS = (
-    'file', 'bytes', 'taskDescriptors', 'operation', 'inputs', 'constantInputs',
-    'outputs', 'constantOffset', 'constantBytes')
+    'file', 'bytes', 'taskDescriptors', 'encoder', 'operation', 'inputs',
+    'constantInputs', 'outputs', 'constantOffset', 'constantBytes')
 
 
 def require(condition, message):
@@ -124,7 +124,7 @@ def check_binding(binding, index, physical_elements, tiles, layouts, tensors):
     require(type(binding.get('logicalBytes')) is int and
             binding['logicalBytes'] == logical_elements * 2,
             'incorrect logical byte count')
-    allocation = TILE_BYTES if physical_elements <= 256 else 2 * TILE_BYTES
+    allocation = -(-physical_elements * 64 // TILE_BYTES) * TILE_BYTES
     require(type(binding.get('allocationBytes')) is int and
             binding['allocationBytes'] == allocation, 'incorrect allocation size')
     require(tiles[index] * TILE_BYTES == allocation,
@@ -139,7 +139,9 @@ def check_binding(binding, index, physical_elements, tiles, layouts, tensors):
 def validate_program(directory, program, tensors):
     require(isinstance(program, dict), 'program must be an object')
     operation = program.get('operation')
-    require(operation in ('add', 'mul', 'maximum', 'minimum', 'matmul'),
+    require(operation in ('add', 'mul', 'maximum', 'minimum', 'sub', 'real_div',
+                          'matmul', 'abs', 'exp', 'gelu', 'leaky_relu', 'relu',
+                          'rsqrt', 'sigmoid', 'silu', 'sqrt', 'tanh'),
             'unsupported operation')
     inputs, outputs = program.get('inputs'), program.get('outputs')
     require(isinstance(inputs, list) and isinstance(outputs, list),
@@ -147,23 +149,27 @@ def validate_program(directory, program, tensors):
     constant_inputs = program.get('constantInputs')
     require(isinstance(constant_inputs, dict), 'constantInputs must be an object')
     matmul = operation == 'matmul'
-    require(len(inputs) == (1 if matmul else 2) and len(outputs) == 1,
+    require(1 <= len(inputs) <= 2 and len(outputs) == 1,
             'incorrect input/output count')
-    constants = 0x80000 if matmul else 0
-    for key, expected in (('bytes', HEADER_BYTES + CONSTANT_OFFSET + constants),
-                          ('constantBytes', constants), ('constantOffset', CONSTANT_OFFSET),
-                          ('taskDescriptors', 1)):
-        require(type(program.get(key)) is int and program[key] == expected,
+    for key in ('bytes', 'constantBytes', 'constantOffset', 'taskDescriptors'):
+        require(type(program.get(key)) is int and program[key] > 0 or
+                (key == 'constantBytes' and program.get(key) == 0),
                 f'incorrect {key}')
+    constants, offset = program['constantBytes'], program['constantOffset']
+    require(program['bytes'] == HEADER_BYTES + offset + constants,
+            'incorrect bytes')
     data = local_file(directory, program.get('file'), program['bytes'])
     require(len(data) == program['bytes'], 'ANEC file length differs from manifest')
     fields = HEADER.unpack_from(data)
     size, td_size, td_count, task_size, kernel_size, source_count, dest_count = fields[:7]
-    require((size, td_size, td_count, task_size, kernel_size, source_count, dest_count) ==
-            (CONSTANT_OFFSET + constants, TASK_BYTES, 1, TASK_BYTES, constants,
+    require((size, td_count, kernel_size, source_count, dest_count) ==
+            (offset + constants, program['taskDescriptors'], constants,
              len(inputs), len(outputs)), 'ANEC header differs from manifest')
+    require(td_size % 4 == 0 and 0 < td_size <= task_size <= offset and
+            offset == (task_size + 0x3f) & ~0x3f,
+            'ANEC task stream does not fit its constant offset')
     require(not any(data[HEADER.size:HEADER_BYTES]) and
-            not any(data[HEADER_BYTES + TASK_BYTES:HEADER_BYTES + CONSTANT_OFFSET]),
+            not any(data[HEADER_BYTES + task_size:HEADER_BYTES + offset]),
             'nonzero reserved padding')
     tiles, layouts = fields[7:39], fields[39:]
     require(tiles[0] == (size + TILE_BYTES - 1) // TILE_BYTES,
@@ -182,7 +188,8 @@ def validate_program(directory, program, tensors):
         require(input_channels in (256, 512) and output_channels == 512,
                 'unsupported matvec physical size')
     else:
-        input_channels = output_channels = 64
+        input_channels = binding_interval(inputs[0], tensors)[3]
+        output_channels = binding_interval(outputs[0], tensors)[3]
     for index, item in enumerate(inputs, start=5):
         check_binding(item, index, input_channels, tiles, layouts, tensors)
     check_binding(outputs[0], 4, output_channels, tiles, layouts, tensors)
@@ -191,11 +198,11 @@ def validate_program(directory, program, tensors):
             tensor.get('aliasOf') == outputs[0]['name'] and
             tensor['role'] == 'output' and tensor['shape'] == outputs[0]['shape']
             for tensor in tensors.values())
-        require(inputs[0]['shape'] == inputs[1]['shape'] and
+        require(all(item['shape'] == inputs[0]['shape'] for item in inputs) and
                 (outputs[0]['shape'] == inputs[0]['shape'] or
                  output_is_returned_alias and
                  math.prod(outputs[0]['shape']) == math.prod(inputs[0]['shape'])),
-                'binary operation shapes must match')
+                'elementwise operation shapes must match')
     require(outputs[0]['name'] not in {item['name'] for item in inputs},
             'program output must differ from its inputs')
     marked_constants = {item['name'] for item in inputs

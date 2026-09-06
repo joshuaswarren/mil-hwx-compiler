@@ -126,7 +126,8 @@ static NSData *programDescriptor(uint64_t textAddress,uint64_t textConstAddress,
             writeU64(d,0x30 + index * 8,
                      resourceAddresses[index].unsignedLongLongValue);
         writeU64(d,0x810,textAddress);
-        writeU32(d,0x818,taskWordCount - 1); writeU32(d,0x81c,1);
+        writeU32(d,0x818,taskWordCount - 1);
+        writeU32(d,0x81c,(uint32_t)info.taskCount);
         writeU32(d,0x824,0xffff); writeU32(d,0x83c,0x878);
         writeU32(d,0x850,0x11); writeU32(d,0x858,4);
         writeU32(d,0x860,1); writeU32(d,0x868,9); writeU32(d,0x86c,8);
@@ -304,10 +305,27 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
                         formatCode:(uint32_t)formatCode
                  scratchByteLength:(NSUInteger)scratchByteLength
                   descriptorLayout:(HWXProgramDescriptorLayout)descriptorLayout {
-    return [self initWithTaskCount:taskCount recordCount:recordCount
-        formatCode:formatCode scratchByteLength:scratchByteLength
-        scratchAllocationByteLength:scratchByteLength
+    return [self initWithTaskCount:taskCount firstTaskByteLength:0
+        recordCount:recordCount formatCode:formatCode
+        scratchByteLength:scratchByteLength
         descriptorLayout:descriptorLayout];
+}
+
+- (instancetype)initWithTaskCount:(NSUInteger)taskCount
+               firstTaskByteLength:(NSUInteger)firstTaskByteLength
+                       recordCount:(NSUInteger)recordCount
+                        formatCode:(uint32_t)formatCode
+                 scratchByteLength:(NSUInteger)scratchByteLength
+                  descriptorLayout:(HWXProgramDescriptorLayout)descriptorLayout {
+    self = [super init];
+    if (self) {
+        _taskCount = taskCount; _firstTaskByteLength = firstTaskByteLength;
+        _recordCount = recordCount; _formatCode = formatCode;
+        _scratchByteLength = scratchByteLength;
+        _scratchAllocationByteLength = scratchByteLength;
+        _descriptorLayout = descriptorLayout;
+    }
+    return self;
 }
 
 - (instancetype)initWithTaskCount:(NSUInteger)taskCount
@@ -318,8 +336,9 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
                   descriptorLayout:(HWXProgramDescriptorLayout)descriptorLayout {
     self = [super init];
     if (self) {
-        _taskCount = taskCount; _recordCount = recordCount;
-        _formatCode = formatCode; _scratchByteLength = scratchByteLength;
+        _taskCount = taskCount; _firstTaskByteLength = 0;
+        _recordCount = recordCount; _formatCode = formatCode;
+        _scratchByteLength = scratchByteLength;
         _scratchAllocationByteLength = scratchAllocationByteLength;
         _descriptorLayout = descriptorLayout;
     }
@@ -431,19 +450,22 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
     NSString *rejection = nil;
     if (!supportedArchitecture)
         rejection = @"writer supports only H13 and H16G architectures";
-    else if (h13 && (taskDescriptor.length != 0x274 ||
-                     programInfo.taskCount != 1 ||
+    else if (!programInfo || programInfo.taskCount == 0)
+        rejection = @"writer requires program info with at least one task";
+    else if (h13 && (taskDescriptor.length == 0 ||
+                     taskDescriptor.length % sizeof(uint32_t) ||
                      programInfo.descriptorLayout != HWXProgramDescriptorLayoutLinear ||
-                     programInfo.scratchAllocationByteLength != 0))
-        rejection = @"H13 HWX requires one 0x274-byte linear task without scratch";
+                     programInfo.scratchAllocationByteLength != 0 ||
+                     (programInfo.firstTaskByteLength &&
+                      (programInfo.firstTaskByteLength > taskDescriptor.length ||
+                       programInfo.firstTaskByteLength % sizeof(uint32_t)))))
+        rejection = @"H13 HWX requires a nonempty word-aligned linear task stream without scratch";
     else if (!resourceCountValid)
         rejection = @"writer requires one output, at least one input, at most four surfaces and five total resources";
     else if (taskDescriptor.length == 0 || taskDescriptor.length > 0x3fc0)
         rejection = @"writer requires a nonempty task descriptor of at most 0x3fc0 bytes";
     else if (constantRegion.length > 0x100000)
         rejection = @"writer requires a constant region of at most 1 MiB";
-    else if (!programInfo || programInfo.taskCount == 0)
-        rejection = @"writer requires program info with at least one task";
     else if (programInfo.descriptorLayout == HWXProgramDescriptorLayoutLinear &&
              programInfo.scratchByteLength != 0)
         rejection = @"a linear program cannot declare scratch";
@@ -505,12 +527,13 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
     uint32_t textFileOffset = h13 ? 0x4000 :
         ((kernelRelocationOffsets.count <= 1 &&
           (bindings.count == 2 || compactThreeSurface)) ? 0x4000 : 0x8000);
+    uint64_t textConstOffset = textConstVM - textVM;
     uint64_t textSegmentSize = h13
-        ? alignUp(0x280 + constantRegion.length, 0x4000) : 0x8000;
+        ? alignUp(textConstOffset + constantRegion.length, 0x4000) : 0x8000;
     uint32_t kernelFileOffset = textFileOffset + 0x8000;
     uint64_t kernelSegmentSize = hasKernel
         ? alignUp(constantRegion.length, 0x4000) : 0;
-    uint32_t textConstFile = h13 ? textFileOffset + 0x280 :
+    uint32_t textConstFile = h13 ? textFileOffset + (uint32_t)textConstOffset :
         (uint32_t)alignUp(textFileOffset + taskDescriptor.length, 0x40);
     NSMutableArray<NSData *> *commands = [NSMutableArray array];
     [commands addObject:segmentRecord("__PAGEZERO",0,0x4000,0,0,0,0,4,NULL,0)];
@@ -553,13 +576,15 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
             bindingVMs[i].unsignedLongLongValue)];
     NSMutableArray<NSNumber *> *resourceAddresses = [bindingVMs mutableCopy];
     if (hasKernel) [resourceAddresses addObject:@(kernelVM)];
+    NSUInteger firstTaskBytes = programInfo.firstTaskByteLength ?: taskDescriptor.length;
     [commands addObject:programDescriptor(textVM,textConstVM,scratchVM,
-        resourceAddresses,(uint32_t)(taskDescriptor.length / 4),programInfo,
+        resourceAddresses,(uint32_t)(firstTaskBytes / 4),programInfo,
         architecture)];
     if (h13) {
-        for (NSUInteger index = 0; index < bindings.count; ++index)
-            [commands addObject:tensorDescriptor(bindings[index],
-                (uint32_t)index + 1)];
+        for (HWXObjectBinding *input in inputs)
+            [commands addObject:tensorDescriptor(input, 1)];
+        for (HWXObjectBinding *output in outputs)
+            [commands addObject:tensorDescriptor(output, 2)];
     } else {
         for (HWXObjectBinding *input in inputs)
             [commands addObject:tensorDescriptor(input,1)];

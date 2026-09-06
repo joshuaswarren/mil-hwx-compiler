@@ -251,6 +251,9 @@ test-h13-reference: $(BUILD)/mil-hwxc
 .PHONY: test-h13-simulation
 test-h13-simulation: $(BUILD)/mil-hwxc
 	python3 tests/test_h13_package_simulation.py
+.PHONY: test-h13-parity
+test-h13-parity: $(BUILD)/mil-hwxc
+	python3 tests/test_h13_parity.py $(BUILD)/mil-hwxc
 
 $(BUILD)/test_h13_encoding: plugins/H13/H13Program.cpp tests/test_h13_encoding.cpp plugins/H13/H13Program.h | $(BUILD)
 	$(CXX) -O2 -std=c++17 -Wall -Wextra -Werror $(filter %.cpp,$^) -o $@
@@ -262,7 +265,7 @@ $(BUILD)/test_h13_anec: plugins/H13/H13ANEC.cpp tests/test_h13_anec.cpp plugins/
 test-hwx-inspection:
 	python3 tests/test_hwx_inspection.py
 
-test: test-h13 test-h13-reference test-h13-simulation test-hwx-inspection
+test: test-h13 test-h13-parity test-h13-reference test-h13-simulation test-hwx-inspection
 
 .PHONY: test-h13-hardware
 test-h13-hardware: $(BUILD)/mil-hwxc $(BUILD)/h13_exec
