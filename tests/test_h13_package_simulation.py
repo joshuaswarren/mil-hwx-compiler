@@ -501,6 +501,104 @@ def check_macos_packing_rule():
     return []
 
 
+def norm_source(op, shape, result_shape, axis=None, axes=None, keep_dims=True):
+    def kind(dimensions):
+        return f"tensor<fp16, [{', '.join(map(str, dimensions))}]>"
+    if op == 'softmax':
+        declaration = (f'    int32 axis = const()[name = string("axis"), '
+                       f'val = int32({axis})];')
+        arguments = 'x = x, axis = axis'
+    else:
+        axes_kind = f'tensor<int32, [{len(axes)}]>'
+        declaration = (f'    {axes_kind} axes = const()[name = string("axes"), '
+                       f'val = {axes_kind}([{", ".join(map(str, axes))}])];')
+        arguments = 'x = x, axes = axes'
+        arguments += (', epsilon = fp32(0.00001)' if op == 'layer_norm' else
+                      f', keep_dims = bool({"true" if keep_dims else "false"})')
+    return f'''program(1.3)
+[buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>({kind(shape)} x) {{
+{declaration}
+    {kind(result_shape)} y = {op}({arguments})[name = string("y")];
+  }} -> (y);
+}}
+'''
+
+
+def check_norm_packages():
+    """Softmax, layer_norm, and the reductions package as one whole-tensor
+    program per operation.
+
+    Their arithmetic is not simulated: Apple's task streams evaluate the
+    exponential and reciprocal through hardware lookup tables that this
+    file's fp16 simulators do not model. What is checked is the part the
+    runtime depends on — one program, no slicing, the physical surfaces the
+    decoded oracle declares, and dense host bytes that survive the pack and
+    unpack round trip — plus that h13_reference evaluates the same MIL.
+    """
+    failures = []
+    cases = [
+        ('softmax', (1, 512, 1, 1), (1, 512, 1, 1), dict(axis=1),
+         [1, 512, 1, 1, 64, 64], 5),
+        ('softmax', (1, 1, 1, 128), (1, 1, 1, 128), dict(axis=-1),
+         [1, 1, 1, 128, 256, 256], 5),
+        ('layer_norm', (1, 512, 1, 1), (1, 512, 1, 1), dict(axes=(1,)),
+         [1, 512, 1, 1, 64, 64], 5),
+        ('reduce_sum', (1, 64, 8, 8), (1, 64, 1, 1), dict(axes=(2, 3)),
+         [1, 64, 1, 1, 64, 64], 1),
+        ('reduce_mean', (1, 64, 8, 8), (1, 1, 8, 8), dict(axes=(1,)),
+         [1, 1, 8, 8, 512, 64], 2),
+        ('reduce_max', (1, 64, 8, 8), (1, 64), dict(axes=(2, 3), keep_dims=False),
+         [1, 1, 1, 64, 128, 128], 1),
+    ]
+    for op, shape, result_shape, options, output_layout, tasks in cases:
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            mil = norm_source(op, shape, result_shape, **options)
+            package = directory / 'pkg'
+            mil_path = compile_mil(mil, directory, package)
+            manifest = json.loads((package / 'manifest.json').read_text())
+            label = f'{op} {"x".join(map(str, shape))}'
+            if len(manifest['programs']) != 1:
+                failures.append(f'{label}: {len(manifest["programs"])} programs')
+                continue
+            program = manifest['programs'][0]
+            binding = program['inputs'][0]
+            output_binding = program['outputs'][0]
+            if program['encoder'] != 'apple-parity-norm':
+                failures.append(f'{label}: encoder {program["encoder"]}')
+            if program['taskDescriptors'] != tasks:
+                failures.append(
+                    f'{label}: {program["taskDescriptors"]} tasks, expected {tasks}')
+            if output_binding['nchw'] != output_layout:
+                failures.append(
+                    f'{label}: output layout {output_binding["nchw"]}')
+            if binding.get('slice') or output_binding.get('slice'):
+                failures.append(f'{label}: whole-tensor program was sliced')
+            elements = math.prod(shape)
+            dense = encode_fp16([fp16(0.5 + index % 7) for index in range(elements)])
+            packed = bytes(inspect_anec.convert_tensor(binding, dense, True))
+            if len(packed) != binding['allocationBytes']:
+                failures.append(f'{label}: packed {len(packed)} bytes')
+            if bytes(inspect_anec.convert_tensor(binding, packed, False)) != dense:
+                failures.append(f'{label}: input pack/unpack round trip differs')
+            expected = evaluate(mil_path.read_text(), directory, {'x': dense})
+            if len(expected['y']) != math.prod(result_shape) * 2:
+                failures.append(f'{label}: reference produced the wrong size')
+            round_trip = bytes(inspect_anec.convert_tensor(
+                output_binding,
+                bytes(inspect_anec.convert_tensor(output_binding, expected['y'], True)),
+                False))
+            if round_trip != expected['y']:
+                failures.append(f'{label}: output pack/unpack round trip differs')
+            if not failures:
+                print(f'OK {label} -> {"x".join(map(str, result_shape))} '
+                      f'({tasks} task{"s" if tasks > 1 else ""}, reference agrees '
+                      f'on {len(expected["y"]) // 2} elements)')
+    return failures
+
+
 def main():
     all_f = []
     all_f += check_macos_packing_rule()
@@ -508,6 +606,7 @@ def main():
     all_f += check_ops()
     all_f += check_reader_vs_linux_intermediate()
     all_f += check_matmul_grid()
+    all_f += check_norm_packages()
     if all_f:
         print('FAILURES:')
         for f in all_f:

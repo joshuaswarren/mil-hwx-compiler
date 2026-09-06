@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Compares emitted H13 task streams word-for-word with decoded Apple oracles."""
+import collections
 import contextlib
 import hashlib
 import io
@@ -21,7 +22,9 @@ ORACLES = ROOT / "research/oracles/h13"
 RUNTIME_BINARY = {"add", "mul", "maximum", "minimum", "sub"}
 UNARY = {"abs", "exp", "gelu", "leaky_relu", "relu", "rsqrt", "sigmoid", "silu",
          "sqrt", "tanh"}
-ENCODERS = {"matmul": "apple-parity-matvec"}
+ENCODERS = {"matmul": "apple-parity-matvec",
+            "normalization": "apple-parity-norm",
+            "reduction": "apple-parity-norm"}
 DEFAULT_ENCODER = "h13-oracle-parity"
 
 
@@ -41,6 +44,8 @@ def selected_oracles():
         elif family == "unary" and operation in UNARY:
             selected.append(oracle)
         elif family == "matmul":
+            selected.append(oracle)
+        elif family in ("normalization", "reduction"):
             selected.append(oracle)
     return selected
 
@@ -191,11 +196,11 @@ def check_hwx(oracle, output, manifest):
 
 def main():
     oracles = selected_oracles()
-    matmuls = [oracle for oracle in oracles if oracle["family"] == "matmul"]
-    assert len(oracles) == 123, \
-        f"expected 123 decoded parity oracles, found {len(oracles)}"
-    assert len(matmuls) == 36, \
-        f"expected 36 decoded matmul oracles, found {len(matmuls)}"
+    families = collections.Counter(oracle["family"] for oracle in oracles)
+    expected = {"binary_runtime": 50, "binary_constant": 12, "unary": 25,
+                "matmul": 36, "normalization": 105, "reduction": 114}
+    assert families == collections.Counter(expected), \
+        f"decoded parity oracles per family: {dict(families)}"
     with tempfile.TemporaryDirectory(prefix="h13-parity-") as directory:
         root = Path(directory)
         for oracle in oracles:
@@ -203,7 +208,9 @@ def main():
                 output = root / f"{oracle['case']}-{artifact_format}"
                 check(oracle, output, compile_oracle(oracle, output, artifact_format))
     print(f"H13 oracle parity: PASS ({len(oracles)} cases, "
-          f"{len(matmuls)} of them matmul, {len(oracles) * 2} artifacts)")
+          f"{families['matmul']} matmul, "
+          f"{families['normalization']} softmax/layer_norm, "
+          f"{families['reduction']} reduction, {len(oracles) * 2} artifacts)")
 
 
 if __name__ == "__main__":

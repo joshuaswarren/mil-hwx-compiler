@@ -326,3 +326,55 @@ Config words contain enable/cache/DataSetId/UserTag; base and size fields use 64
 Implement the shared H14 container and task-record writer first, then copy exact templates for smoke probes, then derive the listed changing words one family at a time. Do not start with convolution, reductions, normalization, real_div, or pow: their extra task graphs add unresolved allocation and SparseKernelBlockSize behavior beyond the three ranked families.
 
 No extra oracle was minted for this report. The checked-in campaign already supplies at least three spatial points, seven channel points, five operation points, and the full 4×3×3 matvec grid needed for the formulas and blockers stated here.
+
+## Appendix: H14 matvec constant-section packing
+
+**Hand-maintained.** `research/h14-oracle-analysis.py` regenerates everything
+above this heading and does not emit this appendix; re-apply it after
+regenerating. That script reads every `research/oracles/h14/*.json`, so a
+regeneration now also counts the 125 `h14mv_*` probe records as a
+`matvec_probe` family and folds their tasks into the block-coverage totals.
+The `matmul` family tables and the rank-3 blocker list are unaffected: probes
+carry their own family name.
+
+`research/mint_h14_matvec_probes.py` minted 125 known-weight `transpose_y=true`
+matmul oracles on `macstudio` (case prefix `h14mv_`, target `h14` only). Apple
+decoded all 125 and rejected none. `python3
+research/mint_h14_matvec_probes.py --verify` rebuilds every recorded
+constant-section SHA-256 and nonzero-byte count byte-for-byte, so the
+permutation below is proven rather than inferred from the campaign's uniform
+fp16 `0.5` weight, which cannot distinguish one permutation from another.
+
+- **Source bytes.** The harness compiler takes the weight pointer as the mapped
+  file base, so the packed source is the first `K * N * 2` bytes of
+  `weights.bin` *including* the 128-byte blob header, and the last 64 payload
+  halfwords are dropped. The `h14mv_zero_*` probes isolate this: with an
+  all-zero weight the only nonzero section bytes are the eight nonzero header
+  bytes.
+- **Permutation.** `group = min(16, N / 16)`, `planes = N / group`. Weight row
+  group `p = n / group` is stored at plane `q = (p % 16) * (planes / 16) +
+  p / 16`, and inside a plane the `group` rows interleave at halfword
+  granularity, so weight element `(n, k)` lands at halfword
+  `q * stride + (n % group) + k * group`. This is the H13 permutation
+  unchanged: every one of the 36 uniform-weight H14 matmul sections has the
+  same SHA-256 as its H13 twin.
+- **Section length.** `max(1024, K * N * 2)`, with
+  `stride = section_halfwords / planes`. Every shipped geometry has
+  `K, N >= 256`, so the weight fills the section and `stride = K * group`. The
+  four `h14mv_index_*_n16` probes are the only decoded points below 1 KiB:
+  64-, 128-, 256-, and 512-byte weights all land in a 1024-byte section with
+  the plane stride padded to `1024 / (2 * planes)` halfwords. The emitter
+  rejects those geometries, so it implements only the filled form.
+- **Carried verbatim.** The rank-3 register words listed above stay unresolved
+  and are emitted per `(M, K, N)` template; nothing is interpolated between
+  grid points. Program-descriptor word `0x860` is `0x15` in all 36 cases.
+  Word `0x880` takes 15 distinct values with no resolved formula: it is mostly
+  a function of `(K, N)`, but `M = 64` shifts every value and
+  `M = 8, K = 512, N = 1024` is `0x1f` where the same `(K, N)` is `0x1e` at
+  every other row count. `text_words` is 129 at `M = 1` and 130 above it, and
+  `task_count` is 2 in all 36 H14 cases, unlike H13, which decodes three tasks
+  at `M = 64, K = 256, N = 1024`.
+- **No oracle.** `transpose_y=false` is rejected by Apple's compiler, so the
+  emitter's exact host transpose onto the same encoder has no parity evidence;
+  `tests/test_h14_parity.py` proves only that both forms of one non-square
+  matrix produce a single identical artifact.

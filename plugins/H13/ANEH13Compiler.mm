@@ -86,6 +86,104 @@ static BOOL unaryEncoding(NSString *name, ane::h13::UnaryOperation *encoding) {
     return YES;
 }
 
+static BOOL normEncoding(NSString *name, ane::h13::NormOperation *encoding) {
+    if ([name isEqualToString:@"softmax"]) *encoding = ane::h13::NormOperation::Softmax;
+    else if ([name isEqualToString:@"layer_norm"]) *encoding = ane::h13::NormOperation::LayerNorm;
+    else if ([name isEqualToString:@"reduce_sum"]) *encoding = ane::h13::NormOperation::ReduceSum;
+    else if ([name isEqualToString:@"reduce_max"]) *encoding = ane::h13::NormOperation::ReduceMax;
+    else if ([name isEqualToString:@"reduce_mean"]) *encoding = ane::h13::NormOperation::ReduceMean;
+    else return NO;
+    return YES;
+}
+
+/// The CHW surface H13 lays a logical MIL shape out as: leading unit
+/// dimensions collapse into the batch, and a rank below three pads on the
+/// left. Every decoded normalization and reduction surface follows this,
+/// including the rank-reduced `keep_dims = false` results.
+static BOOL normSurface(NSArray<NSNumber *> *shape,
+                        ane::h13::ElementwiseShape *surface,
+                        NSInteger *axisShift) {
+    NSMutableArray<NSNumber *> *dimensions = [shape mutableCopy];
+    NSInteger shift = 0;
+    while (dimensions.count > 3 && dimensions[0].unsignedIntegerValue == 1) {
+        [dimensions removeObjectAtIndex:0];
+        --shift;
+    }
+    while (dimensions.count && dimensions.count < 3) {
+        [dimensions insertObject:@1 atIndex:0];
+        ++shift;
+    }
+    if (dimensions.count != 3) return NO;
+    uint64_t extents[3];
+    for (NSUInteger index = 0; index < 3; ++index) {
+        extents[index] = dimensions[index].unsignedLongLongValue;
+        if (!extents[index] || extents[index] > UINT32_MAX) return NO;
+    }
+    *surface = {static_cast<std::uint32_t>(extents[0]),
+                static_cast<std::uint32_t>(extents[1]),
+                static_cast<std::uint32_t>(extents[2])};
+    if (axisShift) *axisShift = shift;
+    return YES;
+}
+
+static BOOL int32Literal(ANEGraphArgument *argument, long long *value) {
+    if (argument.kind == ANEGraphArgumentKindCall &&
+        [argument.calleeName isEqualToString:@"int32"] &&
+        argument.callArguments.count == 1)
+        argument = argument.callArguments[0].value;
+    if (argument.kind != ANEGraphArgumentKindInteger) return NO;
+    const char *text = argument.text.UTF8String;
+    if (!text) return NO;
+    char *end = nullptr;
+    long long parsed = std::strtoll(text, &end, 10);
+    if (end == text || *end) return NO;
+    *value = parsed;
+    return YES;
+}
+
+/// Resolves a constant axis operand — softmax's `int32` scalar or a rank-1
+/// `int32` axes tensor — into the NCHW mask of the physical surface, with
+/// `axisShift` mapping logical axes onto the canonical CHW the encoder keys
+/// its templates on. Bit `i` of the mask is NCHW axis `i`.
+static BOOL constantAxisMask(ANEGraphValue *value, NSUInteger rank,
+                             NSInteger axisShift, std::uint32_t *mask) {
+    if (!value || ![value.producer.operationName isEqualToString:@"const"] ||
+        value.producer.arguments.count || !rank || rank > 4) return NO;
+    ANEGraphArgument *literal = value.producer.attributes[@"val"];
+    if (!literal || value.type.elementType != ANEElementTypeInt32) return NO;
+    NSArray<ANEGraphArgument *> *axes = nil;
+    if (value.type.kind == ANEValueTypeKindScalar) {
+        axes = @[literal];
+    } else {
+        if (value.type.kind != ANEValueTypeKindTensor ||
+            value.type.shape.count != 1 ||
+            literal.kind != ANEGraphArgumentKindCall ||
+            ![literal.calleeValueType isEqualToValueType:value.type] ||
+            literal.callArguments.count != 1) return NO;
+        ANEGraphArgument *payload = literal.callArguments[0].value;
+        if (payload.kind != ANEGraphArgumentKindList ||
+            payload.elements.count != value.type.shape[0].unsignedIntegerValue)
+            return NO;
+        axes = payload.elements;
+    }
+    if (!axes.count) return NO;
+    std::uint32_t resolved = 0;
+    for (ANEGraphArgument *element in axes) {
+        long long axis = 0;
+        if (!int32Literal(element, &axis)) return NO;
+        if (axis < 0) axis += (long long)rank;
+        if (axis < 0 || axis >= (long long)rank) return NO;
+        // Canonical CHW index 0 is NCHW axis 1, so the surface bit is shifted.
+        const long long surfaceAxis = axis + axisShift + 1;
+        if (surfaceAxis < 1 || surfaceAxis > 3) return NO;
+        const std::uint32_t bit = 1u << surfaceAxis;
+        if (resolved & bit) return NO;
+        resolved |= bit;
+    }
+    *mask = resolved;
+    return YES;
+}
+
 static uint64_t roundToNearestEven(double value) {
     double lower = std::floor(value);
     double fraction = value - lower;
@@ -482,6 +580,56 @@ static BOOL parityPlan(ANEGraphOperation *operation,
     return NO;
 }
 
+struct H13NormPlan {
+    ane::h13::NormOperation operation;
+    ane::h13::NormShape shape;
+    NSUInteger inputElements;
+    NSUInteger outputElements;
+};
+
+/// Matches the softmax, layer_norm, and reduction programs whose whole H13
+/// task streams are decoded from Apple oracles. `epsilon` must be the decoded
+/// 1e-5 and layer_norm must carry no gamma or beta: Apple's compiler in this
+/// harness rejects every affine form, so no oracle covers one.
+static BOOL normParityPlan(ANEGraphOperation *operation, H13NormPlan *plan) {
+    ANEGraphValue *x = operation.operands[@"x"].value;
+    NSString *name = operation.operationName;
+    H13NormPlan candidate{};
+    if (!normEncoding(name, &candidate.operation) || !x) return NO;
+    const BOOL softmax = candidate.operation == ane::h13::NormOperation::Softmax;
+    const BOOL layerNorm = candidate.operation == ane::h13::NormOperation::LayerNorm;
+    NSInteger inputShift = 0;
+    if (!fp16Tensor(x) || !fp16Tensor(operation.result) ||
+        !normSurface(x.type.shape, &candidate.shape.input, &inputShift) ||
+        !normSurface(operation.result.type.shape, &candidate.shape.output, nullptr))
+        return NO;
+    if (!constantAxisMask(operation.operands[softmax ? @"axis" : @"axes"].value,
+                          x.type.shape.count, inputShift,
+                          &candidate.shape.axisMask))
+        return NO;
+    float epsilon = 0.0f;
+    if (softmax) {
+        if (operation.arguments.count != 2) return NO;
+    } else if (layerNorm) {
+        if (operation.arguments.count != 3 ||
+            !fp32Attribute(operation.arguments[@"epsilon"], &epsilon) ||
+            epsilon != 1e-5f) return NO;
+    } else {
+        if (operation.arguments.count != 3) return NO;
+    }
+    candidate.shape.keepDims = softmax || layerNorm ||
+        boolean(operation.arguments[@"keep_dims"], YES);
+    if (!candidate.shape.keepDims &&
+        !boolean(operation.arguments[@"keep_dims"], NO)) return NO;
+    if (!tensorElementCount(x, &candidate.inputElements) ||
+        !tensorElementCount(operation.result, &candidate.outputElements))
+        return NO;
+    if (!ane::h13::supportsNormParity(candidate.operation, candidate.shape))
+        return NO;
+    *plan = candidate;
+    return YES;
+}
+
 static NSData *linearBiasData(ANEGraphValue *bias, NSUInteger columns,
                                 NSURL *modelRoot,
                                 ANEDiagnosticEngine *diagnostics,
@@ -559,6 +707,17 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             : ane::h13::encodeElementwise(plan.binaryOperation, plan.shape,
                                           plan.scalarConstant, plan.scalarBits);
         *inputsOut = plan.inputCount == 2 ? @[x, y] : @[x];
+        *constantInputOut = nil;
+        *constantDataOut = nil;
+        *manifestOperationOut = name;
+        return YES;
+    }
+
+    H13NormPlan normalization{};
+    if (normParityPlan(operation, &normalization)) {
+        program = ane::h13::encodeNormParity(normalization.operation,
+                                             normalization.shape);
+        *inputsOut = @[x];
         *constantInputOut = nil;
         *constantDataOut = nil;
         *manifestOperationOut = name;
@@ -806,6 +965,13 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             paddedWeights.length, transposeY);
         inputs = @[x];
     } else {
+        ane::h13::NormOperation normOperation{};
+        if (normEncoding(name, &normOperation))
+            return reject(diagnostics, [NSString stringWithFormat:
+                @"H13 '%@' needs a decoded geometry: fp16 static shapes, "
+                 "constant axes, no gamma or beta, epsilon 1e-5, and an input "
+                 "and output surface inside the oracle parity envelope", name],
+                operation, @"h13.norm-outside-envelope");
         return reject(diagnostics, [NSString stringWithFormat:
             @"H13 has no source-qualified encoder for '%@'", name], operation);
     }
@@ -1254,11 +1420,19 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 matvecParityShape(operation.operands[@"x"].value, operation.result,
                     boolean(operation.arguments[@"transpose_x"], YES), nullptr);
             H13ParityPlan operationPlan{};
+            H13NormPlan normalizationPlan{};
             BOOL parity = parityPlan(operation, synthesizedConstants, &operationPlan);
+            BOOL normalization = !parity &&
+                normParityPlan(operation, &normalizationPlan);
             if (parity) {
                 inputSliceElements = outputSliceElements =
                     inputPhysicalElements = outputPhysicalElements =
                         operationPlan.elements;
+            } else if (normalization) {
+                inputSliceElements = inputPhysicalElements =
+                    normalizationPlan.inputElements;
+                outputSliceElements = outputPhysicalElements =
+                    normalizationPlan.outputElements;
             } else if ([binaryNames containsObject:operation.operationName]) {
                 NSUInteger elements = 0;
                 if (tensorElementCount(operation.result, &elements)) {
@@ -1314,7 +1488,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                         outputSliceElements =
                             MIN((NSUInteger)512, columns - chunk * 512);
                     }
-                } else if (parity) {
+                } else if (parity || normalization) {
                     outputOffset =
                         [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
                 } else {
@@ -1405,7 +1579,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     @"file": file, @"bytes": @(payload.length),
                     @"taskDescriptors": @(program.taskCount),
                     @"encoder": matvecParity ? @"apple-parity-matvec"
-                        : (parity ? @"h13-oracle-parity" : @"h13-source-qualified"),
+                        : (normalization ? @"apple-parity-norm"
+                        : (parity ? @"h13-oracle-parity" : @"h13-source-qualified")),
                     @"operation": manifestOperation,
                     @"inputs": inputRecords, @"constantInputs": constantInputs,
                     @"outputs": @[outputRecord],

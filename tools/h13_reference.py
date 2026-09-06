@@ -487,6 +487,122 @@ def _shape_op(name, value, parameter, result_type):
     return Tensor(value.dtype, result_type.shape, value.values)
 
 
+def _reduction_groups(shape, axes):
+    """The flat input indices contributing to each flat output element, and the
+    keep-dims output shape, for a reduction over `axes`."""
+    rank = len(shape)
+    resolved = set()
+    for axis in axes:
+        index = axis if axis >= 0 else axis + rank
+        if not 0 <= index < rank or index in resolved:
+            raise ValueError("reduction axes must be distinct and in range")
+        resolved.add(index)
+    if not resolved:
+        raise ValueError("reduction requires at least one axis")
+    kept_shape = tuple(1 if index in resolved else dimension
+                       for index, dimension in enumerate(shape))
+    strides = []
+    stride = 1
+    for dimension in reversed(shape):
+        strides.append(stride)
+        stride *= dimension
+    strides.reverse()
+    kept_strides = []
+    stride = 1
+    for dimension in reversed(kept_shape):
+        kept_strides.append(stride)
+        stride *= dimension
+    kept_strides.reverse()
+    groups = [[] for _ in range(math.prod(kept_shape))]
+    for flat in range(math.prod(shape)):
+        target = 0
+        for index, dimension in enumerate(shape):
+            if index in resolved:
+                continue
+            target += (flat // strides[index]) % dimension * kept_strides[index]
+        groups[target].append(flat)
+    return kept_shape, groups
+
+
+def _sum_fp32(values):
+    total = 0.0
+    for value in values:
+        total = fp32(total + float(value))
+    return total
+
+
+def _reduce(name, value, axes, keep_dims, result_type):
+    value = _tensor(value)
+    if value.dtype != "fp16":
+        raise ValueError(f"{name} requires an fp16 tensor")
+    kept_shape, groups = _reduction_groups(value.shape, axes)
+    expected = kept_shape if keep_dims else tuple(
+        dimension for dimension, kept in zip(value.shape, kept_shape)
+        if dimension == kept)
+    if result_type.shape != expected:
+        raise ValueError(f"{name} result shape differs from its declaration")
+    results = []
+    for group in groups:
+        elements = [value.values[index] for index in group]
+        if name == "reduce_max":
+            results.append(fp16(max(elements)))
+        elif name == "reduce_sum":
+            results.append(fp16(_sum_fp32(elements)))
+        else:
+            results.append(fp16(fp32(_sum_fp32(elements) / len(elements))))
+    return Tensor("fp16", result_type.shape, tuple(results))
+
+
+def _softmax(value, axis, result_type):
+    """Max-subtracted softmax accumulated in float32.
+
+    Apple's H13 program evaluates the exponential and the reciprocal through
+    fp16 lookup tables, so device results differ from this reference by those
+    tables' interpolation error. Parity is asserted on the emitted bytes;
+    numerical agreement is a tolerance, documented in README.
+    """
+    value = _tensor(value)
+    if value.dtype != "fp16":
+        raise ValueError("softmax requires an fp16 tensor")
+    if result_type.shape != value.shape:
+        raise ValueError("softmax result shape differs from its declaration")
+    _, groups = _reduction_groups(value.shape, (axis,))
+    results = [0.0] * len(value.values)
+    for group in groups:
+        elements = [float(value.values[index]) for index in group]
+        peak = max(elements)
+        shifted = [fp32(math.exp(fp32(element - peak))) for element in elements]
+        total = _sum_fp32(shifted)
+        for index, exponential in zip(group, shifted):
+            results[index] = fp16(fp32(exponential / total))
+    return Tensor("fp16", result_type.shape, tuple(results))
+
+
+def _layer_norm(value, axes, epsilon, result_type):
+    """Zero-mean unit-variance normalization with float32 statistics.
+
+    H13's decoded programs carry no gamma or beta: Apple's compiler rejects
+    every affine layer_norm form in this harness, so the reference rejects one
+    too rather than computing a result no encoder can emit.
+    """
+    value = _tensor(value)
+    if value.dtype != "fp16":
+        raise ValueError("layer_norm requires an fp16 tensor")
+    if result_type.shape != value.shape:
+        raise ValueError("layer_norm result shape differs from its declaration")
+    _, groups = _reduction_groups(value.shape, axes)
+    results = [0.0] * len(value.values)
+    for group in groups:
+        elements = [float(value.values[index]) for index in group]
+        mean = fp32(_sum_fp32(elements) / len(elements))
+        variance = fp32(_sum_fp32([fp32((element - mean) ** 2)
+                                   for element in elements]) / len(elements))
+        scale = fp32(1.0 / math.sqrt(fp32(variance + epsilon)))
+        for index, element in zip(group, elements):
+            results[index] = fp16(fp32(fp32(element - mean) * scale))
+    return Tensor("fp16", result_type.shape, tuple(results))
+
+
 def _execute(operation, environment, model_root):
     arguments = {name: _resolve(value, environment, model_root)
                  for name, value in operation.arguments.items()}
@@ -518,6 +634,21 @@ def _execute(operation, environment, model_root):
     if name in ("reshape", "squeeze", "expand_dims"):
         parameter = arguments.get("shape" if name == "reshape" else "axes")
         return _shape_op(name, arguments["x"], parameter, operation.result_type)
+    if name in ("reduce_sum", "reduce_max", "reduce_mean"):
+        axes = _tensor(arguments["axes"]).values
+        return _reduce(name, arguments["x"], axes,
+                       bool(arguments.get("keep_dims", True)),
+                       operation.result_type)
+    if name == "softmax":
+        return _softmax(arguments["x"], int(arguments["axis"]),
+                        operation.result_type)
+    if name == "layer_norm":
+        if "gamma" in arguments or "beta" in arguments:
+            raise ValueError("H13 layer_norm carries no gamma or beta")
+        axes = _tensor(arguments["axes"]).values
+        return _layer_norm(arguments["x"], axes,
+                           fp32(arguments.get("epsilon", 1e-5)),
+                           operation.result_type)
     raise ValueError(f"unsupported H13 MIL operation {name}")
 
 

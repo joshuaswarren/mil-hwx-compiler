@@ -2,8 +2,8 @@
 
 This repository contains a research compiler for the H16G Apple Neural Engine
 in the M4, an experimental source-native H13/M1 backend, and an
-oracle-parity H14/M2 elementwise backend. It reads textual MIL and emits
-H16G HWX objects, or H13 and H14 ANEC and HWX packages, without Apple's
+oracle-parity H14/M2 elementwise and matvec backend. It reads textual MIL and
+emits H16G HWX objects, or H13 and H14 ANEC and HWX packages, without Apple's
 compiler.
 
 The project is a canary for the compiler pipeline recovered in *Inside the M4
@@ -46,6 +46,9 @@ tensors may use any positive static size:
 | matmul | With `transpose_x=false`, fp16 x has shape `[..., K]`, `K >= 1`, and the product of the leading dimensions is the row count M. With `transpose_x=true`, only one logical row is accepted. W is a constant rank-2 tensor `[K,N]` with `transpose_y=false` or `[N,K]` with `transpose_y=true`, and the output is `[..., N]`. N is emitted in 512-output programs with the last program zero-padded. Each reduction of at most 512 elements is zero-extended to the 256- or 512-lane descriptor. Larger reductions emit one matvec per 512-element reduction chunk and sum the partial tensors with 64-lane add programs. The final tensor records `"accumulation": "chunked-fp16"`. Chunked results are not bit-identical to one unbroken accumulation because each partial sum adds one fp16 rounding step. Inside the decoded Apple envelope -- M in {1, 2, 8, 64} and K, N in {256, 512, 1024} -- the compiler instead emits one Apple-parity program: the 126-word preparation task, the 157-word compute task, the whole M rows and N columns in place, no reduction chunking, and the constant section packed in Apple's own permutation. Those programs record `"encoder": "apple-parity-matvec"` and their bytes match the oracle task words and constant SHA-256 exactly; see [`research/h13-td-fields.md`](research/h13-td-fields.md). `transpose_y=false` inside the envelope transposes the constant exactly on the host and uses the same encoder. |
 | linear | fp16 x has shape `[..., K]`, constant weight has shape `[N,K]`, and the output is `[..., N]`. The compiler lowers `linear(x, weight)` to `matmul(x, weight, transpose_y=true)`. An optional constant fp16 bias vector `[N]`, encoded as an inline list or BLOBFILE, adds one folded 64-lane add group after the matmul. |
 | reshape, squeeze, expand_dims | Positive static fp16 input and result shapes with equal element counts. The operation emits no program: its result aliases the input's underlying tensor with a new logical shape. Shape and axes inputs must be constants. Returning an alias of a function input fails with `h13.returned-input-alias` because no program produces an output. |
+| softmax | One fp16 input and matching output, and a constant `int32` axis. Emits Apple's own 4-to-8-task program with the exponential (and, for a channel- or height-axis reduction, reciprocal) fp16 lookup table in the constant section. Only the decoded shapes lower; see the envelope table below. |
+| layer_norm | One fp16 input and matching output, a constant rank-1 `int32` axes tensor, and `epsilon = fp32(1e-5)`. Emits Apple's 3-to-6-task program with an all-zero 16384-byte constant section. `gamma` and `beta` are rejected: Apple's compiler rejects every affine form in this harness, so no oracle covers one. |
+| reduce_sum, reduce_max, reduce_mean | One fp16 input, a constant rank-1 `int32` axes tensor, and `keep_dims` either way. Emits Apple's 1-to-3-task program; a `keep_dims = false` result uses Apple's dense rank-reduced output surface. Reduction over the batch axis is rejected. |
 
 The MIL contracts follow coremltools commit
 [`9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4`](https://github.com/apple/coremltools/commit/9d9de1aebd4f082fb9e7076c9799a1b5f29ba5e4).
@@ -143,6 +146,16 @@ float32 and rounds once to fp16. Reductions larger than 512 elements on H13
 instead round each chunk before the add chain, so their device results can
 differ by the extra fp16 rounding.
 
+`reduce_sum`, `reduce_mean`, `softmax`, and `layer_norm` accumulate their sums,
+means, and variances in float32 and round once. `reduce_max` is exact. Softmax
+subtracts the group maximum before exponentiating. These agree with H13 in
+form, not bit-for-bit: Apple's softmax program evaluates the exponential and
+the reciprocal through the fp16 lookup tables in its constant section, so
+device output carries those tables' interpolation error, and layer_norm's
+device reciprocal square root is likewise hardware-evaluated. Byte parity with
+Apple is asserted on the emitted program (`make test-h13-parity`); numerical
+agreement with this reference is a tolerance, not an equality.
+
 ```bash
 python3 tools/h13_reference.py model.mil --model-root models \
   --input x=input.fp16 --output y=reference.fp16
@@ -163,14 +176,15 @@ host-only reference and dry-run checks with `make test-h13-reference`.
 
 ### H13 Apple-parity programs
 
-`make test-h13-parity` compiles all 123 decoded H13 oracles in both formats
+`make test-h13-parity` compiles all 342 decoded H13 oracles in both formats
 and compares each emitted task's header words and register writes, the program
 descriptor, the tensor descriptors, and the constant-section SHA-256 with
 `research/oracles/h13/*.json`. 87 are elementwise, scalar-constant, and unary
-cases (`"encoder": "h13-oracle-parity"`); the remaining 36 are every decoded
-`matmul` (`"encoder": "apple-parity-matvec"`), covering M in {1, 2, 8, 64} and
+cases (`"encoder": "h13-oracle-parity"`); 36 are every decoded `matmul`
+(`"encoder": "apple-parity-matvec"`), covering M in {1, 2, 8, 64} and
 K, N in {256, 512, 1024}, including the one three-task case at
-M = 64, K = 256, N = 1024.
+M = 64, K = 256, N = 1024; and 219 are softmax, layer_norm, and reductions
+(`"encoder": "apple-parity-norm"`).
 
 A parity matvec program differs from the source-qualified one in four ways:
 it runs Apple's 126-word preparation task before the 157-word compute task,
@@ -188,6 +202,52 @@ including K > 1024 or N > 1024, any K or N off {256, 512, 1024}, any row count
 off {1, 2, 8, 64}, and `transpose_x=true` with more than one logical row.
 Chunked and column-sliced plans are still built on top of parity programs when
 a slice lands on a decoded geometry.
+
+#### Softmax, layer_norm, and reduction envelope
+
+`softmax`, `layer_norm`, `reduce_sum`, `reduce_max`, and `reduce_mean` lower
+directly to Apple's own multi-task programs instead of decomposing into the
+tiled elementwise path. The encoder selects a program by
+`(operation, input CHW, reduced-axis mask, keep_dims)`, and 186 templates in
+`plugins/H13/H13NormTemplates.inc` cover the whole decoded corpus:
+
+| Operation | Reduced axes | Tasks | Constant section | Shapes |
+|---|---|---|---|---|
+| `softmax` | C | 4-5 | 256 / 1152 / 2176 B, exp + reciprocal LUT | flat `[1, C, 1, 1]`, sequence `[1, C, 1, W]`, spatial `[1, C, S, S]` |
+| `softmax` | H | 5 | 640 / 1152 / 2176 B, exp + reciprocal LUT | spatial `[1, C, S, S]` |
+| `softmax` | W (last axis) | 5-8 | 128 / 1024 / 1536 / 2048 B, exp LUT | flat, sequence, spatial, and attention scores `[1, H, S, S]` |
+| `layer_norm` | C | 5-6 | 16384 B zero | flat, spatial |
+| `layer_norm` | W, HW, CHW | 3-5 | 16384 B zero | flat, sequence, spatial |
+| `reduce_sum`, `reduce_mean` | C | 1-2 | 16384 B zero | flat, sequence, spatial |
+| `reduce_max` | C | 1 | 16384 B zero | flat, sequence, spatial |
+| all three reductions | H | 3 | 16384 B zero | spatial |
+| all three reductions | W, HW, CHW | 1 | 16384 B zero | sequence, spatial |
+
+The swept extents are C in {64, 128, 256, 512, 1024, 2048, 4096} for the flat
+form, W in {32, 64, 128, 512} for the sequence form, (C, S) in
+{(32, 4), (64, 8), (128, 16)} for the spatial form, and
+(H, S) in {(1, 64), (1, 256), (8, 64), (8, 128), (12, 64)} for attention
+scores. `keep_dims = false` is covered as its own template because Apple writes
+a rank-reduced result to a dense `[1, 1, 1, N]` surface rather than the
+channel-major one.
+
+MIL rank is normalized before lookup, so the rank-2 and rank-3 forms a
+transformer emits reach the same program as the rank-4 surface they collapse
+onto: `softmax(axis = -1)` on `[1, 512]` emits the same bytes as `axis = 3` on
+`[1, 1, 1, 512]`. Anything else is refused with `h13.norm-outside-envelope`:
+a shape off the sweep, an epsilon other than 1e-5, a non-constant axes
+operand, a reduction over the batch axis, and `gamma`/`beta` — Apple's compiler
+rejects every affine `layer_norm` form in this harness, in seven variants
+tried, so no oracle exists to match.
+
+Parity is on bytes; numerics are a separate contract. Apple evaluates softmax's
+exponential and reciprocal through the fp16 lookup tables in the constant
+section, so device output differs from `tools/h13_reference.py`, which
+accumulates reductions, softmax sums, and layer_norm statistics in float32 and
+rounds once to fp16. `research/mint_norm_probes.py` mints the sweep and emits
+the template table; [`research/h13-td-fields.md`](research/h13-td-fields.md)
+documents the constant-section layout, the surface formula, the resolved
+scaling words, and the words that stay unresolved.
 
 ### H13 HWX and macOS aned gate
 
@@ -250,13 +310,15 @@ published register ranges and record lengths. Run `make test-hwx-inspection`.
 ## Experimental M2/H14 compilation
 
 `--target H14` emits H14 task streams, ANEC containers, and HWX objects for
-the elementwise families Apple's own compiler was sampled on. Every emitted
-task is word-for-word identical to the decoded oracle for that case:
-`make test-h14-parity` compiles all 87 decoded H14 elementwise,
-scalar-constant, and unary oracles in both formats, decodes the emitted
+the elementwise and matmul families Apple's own compiler was sampled on. Every
+emitted task is word-for-word identical to the decoded oracle for that case:
+`make test-h14-parity` compiles 137 cases in both formats, decodes the emitted
 stream with `research/h13_td.py`, and compares each task's header words and
-register writes plus the constant-section sha256 with
-`research/oracles/h14/*.json`.
+register writes, the program descriptor, the tensor descriptors, and the
+constant-section sha256 with `research/oracles/h14/*.json`. 87 are
+elementwise, scalar-constant, and unary cases
+(`"encoder": "h14-oracle-parity"`); 36 are every decoded `matmul` and 14 are
+known-weight matmul probes (`"encoder": "apple-parity-matvec"`).
 
 ```bash
 ./build/mil-hwxc --target H14 --format hwx --mil /tmp/h14-add.mil \
@@ -275,18 +337,60 @@ interpolated between them:
 - `abs` at C = 64, 128, 256, 512, 1024, 2048, and 4096, and `exp`, `gelu`
   (`EXACT`), `leaky_relu` (`alpha = 0.125`), `relu`, `rsqrt`
   (`epsilon = 1e-6`), `sigmoid`, `silu`, `sqrt`, `tanh` at C = 64 and 512.
+- `matmul`, and `linear` without a bias, at M in {1, 2, 8, 64} and K, N in
+  {256, 512, 1024}, detailed below.
 
 Anything else is rejected with `h14.outside-parity-envelope`. Tensors lower
 through their literal NCHW geometry, or their channel-flattened form when that
 is the decoded point.
 
-`plugins/H14/H14ElementwiseTemplates.inc` holds the decoded task words,
-constant-section runs, and per-case program-descriptor metadata. It is
+`plugins/H14/H14ElementwiseTemplates.inc` and
+`plugins/H14/H14MatvecTemplates.inc` hold the decoded task words,
+constant-section runs, and per-case program-descriptor metadata. They are
 generated, never edited by hand:
 
 ```bash
 python3 research/generate_h14_templates.py          # regenerate
 python3 research/generate_h14_templates.py --check   # fail when stale
+```
+
+### H14 Apple-parity matvec programs
+
+`matmul` covers the decoded grid M in {1, 2, 8, 64} and K, N in
+{256, 512, 1024}: 36 two-task programs whose x surface is one dense
+`[1, 1, M, K]` fp16 plane, whose output is the same form at N columns, and
+whose constant section is the `K * N` fp16 weight in Apple's packing
+permutation. Inputs and outputs keep ANEC channels 5 and 4, and each program
+carries its own `constantOffset` at `align_up(text_bytes, 64)`. Leading batch
+dimensions collapse into M, because the surface is the same contiguous plane
+however the MIL shape spells the batch.
+
+`transpose_y=true` is the decoded form and encodes natively.
+`transpose_y=false` is rejected by Apple's compiler, so its `[K, N]` weight is
+transposed exactly on the host and fed to the same encoder; the test proves
+both forms of one non-square matrix emit a single identical artifact.
+`linear` without a bias lowers to the identical program. A `linear` bias is
+rejected with `h14.linear-bias-unsupported`, because this backend emits one
+program per artifact and a bias needs a second elementwise program.
+`transpose_x=true` is rejected with `h14.transpose-x-unsupported`, and any
+geometry off the grid with `h14.outside-parity-envelope`.
+
+The campaign's uniform fp16 `0.5` weight cannot tell one permutation from
+another, so `research/mint_h14_matvec_probes.py` mints 125 known-weight H14
+matmul oracles (`research/oracles/h14/h14mv_*.json`, all 125 decoded by
+Apple) that pin it. Its `--verify` mode, which `make test-h14-parity` also
+runs, rebuilds every recorded constant section byte-for-byte, and the 14
+probes whose geometry the encoder covers are compiled and compared like any
+other oracle, which proves the packing over all nine (K, N) grid points
+against a nonuniform weight. The permutation is the H13 one unchanged: every
+uniform-weight H14 section has the same sha256 as its H13 twin. The appendix
+in [`research/h14-td-fields.md`](research/h14-td-fields.md) records the
+permutation, the blob-header bytes Apple's compiler packs ahead of the
+payload, the 1 KiB minimum section, and what stays unresolved.
+
+```bash
+python3 research/mint_h14_matvec_probes.py --host macstudio  # re-mint (macOS host)
+python3 research/mint_h14_matvec_probes.py --verify          # offline re-check
 ```
 
 ### H14 task stream, ANEC, and HWX layout
@@ -330,11 +434,14 @@ of the container are not evidence-backed:
 - The single 16-byte zero-size frame is required by the text word count, but
   the oracles cannot say whether Apple places it before the first task or
   after the last; both decode identically. This emitter places it first.
-- The descriptor word at `0x860` (`0x10`, `0x11`, or `0x15` here) and the
-  word at `0x880` (nine distinct values here) have no resolved formula.
-  Parity carries the decoded value per case. `0x880` tracks surface
-  allocation and `0x860` tracks task structure, but no sampled formula
-  reproduces either across shapes.
+- The descriptor word at `0x860` (`0x10`, `0x11`, or `0x15` here; `0x15` in
+  every matvec case) and the word at `0x880` (22 distinct values here, 15 of
+  them matvec) have no resolved formula. Parity carries the decoded value per
+  case. `0x880` tracks surface allocation and `0x860` tracks task structure,
+  but no sampled formula reproduces either across shapes: matvec `0x880` is
+  mostly a function of (K, N), yet M = 64 shifts every value and
+  M = 8, K = 512, N = 1024 is `0x1f` where the same (K, N) is `0x1e` at every
+  other row count.
 - The descriptor word at `0xc` is not decoded at all; this emitter writes
   `0x222`, the value the other kind-4 descriptor uses.
 - The campaign records no `__text` relocation table for H14, so none is
@@ -344,6 +451,12 @@ of the container are not evidence-backed:
   [`research/h14-td-fields.md`](research/h14-td-fields.md): Common 7 of 19,
   L2 15 of 25, PE 2 of 5, NE 2 of 5, TileDMA source 6 of 53, TileDMA
   destination 3 of 10, and KernelDMA 54 of 70 remain unresolved.
+- 44 matvec register words stay unresolved and are carried verbatim per
+  (M, K, N) template: t0 `0x001c`, `0x0028`, `0x0038`, `0x0508`, `0x0510`,
+  `0x0514`, `0x0518`, `0x0538`, `0x111c`, and t1 `0x0038`, `0x050c`, `0x0534`,
+  `0x1514` plus the 31 KernelDMA words `0x195c`..`0x19d4`, together with
+  header words t0:h1, t0:h6, and t1:h1. The 16 coefficient base/size words
+  dominate the gap, so nothing is interpolated between grid points.
 
 No H14 program in this repository has been executed on M2 hardware. Parity
 with Apple's emitted stream is not proof of execution.
@@ -606,12 +719,15 @@ H14 inspection follows the [register map](https://github.com/freedomtan/coreml_t
 and parser at freedomtan/coreml_to_ane_hwx revision
 `ce54664e787976b646c450ceabed1731b506a4cd`.
 
-`plugins/H14/H14ElementwiseTemplates.inc` is generated by
+`plugins/H14/H14ElementwiseTemplates.inc` and
+`plugins/H14/H14MatvecTemplates.inc` are generated by
 `research/generate_h14_templates.py` from the decoded oracle JSON in
-`research/oracles/h14`. It stores task register words, constant-section
-halfword runs verified against the recorded sha256, and per-case
-program-descriptor metadata. No HWX container bytes are read or stored, and
-the checked-in oracles keep decoded fields and hashes only.
+`research/oracles/h14`, and the H14 weight-packing permutation is pinned by
+the known-weight probes `research/mint_h14_matvec_probes.py` mints. They store
+task register words, constant-section halfword runs verified against the
+recorded sha256, and per-case program-descriptor metadata. No HWX container
+bytes are read or stored, and the checked-in oracles keep decoded fields and
+hashes only.
 
 See [DISCLAIMER.md](DISCLAIMER.md) for the full scope and private-API notes.
 

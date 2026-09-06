@@ -34,6 +34,14 @@ struct ElementwiseShape {
     std::uint32_t width;
 };
 
+/// One decoded Apple matmul geometry: `rows` logical x rows, a `reduction`
+/// long inner product, and `columns` output columns.
+struct MatvecShape {
+    std::uint32_t rows;
+    std::uint32_t reduction;
+    std::uint32_t columns;
+};
+
 struct TensorLayout {
     std::uint32_t index;
     std::array<std::uint64_t, 6> nchw;
@@ -64,6 +72,19 @@ Program encodeElementwise(BinaryOperation operation, ElementwiseShape shape,
                           bool scalarConstant = false,
                           std::uint16_t scalarBits = 0x3800);
 Program encodeElementwise(UnaryOperation operation, ElementwiseShape shape);
+/// True when the decoded Apple corpus covers this matmul geometry as one
+/// two-task H14 program.
+bool supportsMatvecParity(MatvecShape shape);
+/// Encodes Apple's two-task H14 matvec form. `weights` is the
+/// [columns, reduction] row-major fp16 constant, exactly the bytes the MIL
+/// blob reference resolves to.
+Program encodeMatvecParity(MatvecShape shape, const std::uint8_t *weights,
+                           std::size_t weightBytes);
+/// Apple's constant-section permutation for a [columns, reduction] fp16
+/// weight, proven byte-for-byte by research/mint_h14_matvec_probes.py.
+std::vector<std::uint8_t> packMatvecWeights(MatvecShape shape,
+                                            const std::uint8_t *weights,
+                                            std::size_t weightBytes);
 /// Byte lengths of the tasks a task stream carries, in stream order.
 std::vector<std::size_t> taskSizes(const std::vector<std::uint8_t> &stream);
 std::vector<std::uint8_t> encodeANEC(const Program &program);

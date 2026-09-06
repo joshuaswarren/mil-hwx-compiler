@@ -1,5 +1,6 @@
 #import "ANEH14Compiler.h"
 
+#import "ANEBlobResolver.h"
 #import "ANEGraphVerifier.h"
 #import "MILLexer.h"
 #import "MILGraphImporter.h"
@@ -152,16 +153,19 @@ static BOOL constantValue(ANEGraphValue *value) {
     return [value.producer.operationName isEqualToString:@"const"];
 }
 
+static NSUInteger logicalBytes(ANEGraphValue *value) {
+    NSUInteger elements = 1;
+    for (NSNumber *dimension in value.type.shape)
+        elements *= dimension.unsignedIntegerValue;
+    return elements * 2;
+}
+
 static NSDictionary *binding(ANEGraphValue *value,
-                             NSArray<NSNumber *> *logicalShape,
                              const ane::h14::TensorLayout &layout) {
     NSMutableArray *physical = [NSMutableArray arrayWithCapacity:6];
     for (std::uint64_t dimension : layout.nchw) [physical addObject:@(dimension)];
-    NSUInteger elements = 1;
-    for (NSNumber *dimension in logicalShape)
-        elements *= dimension.unsignedIntegerValue;
     return @{@"name": value.name, @"dtype": @"float16",
-        @"shape": logicalShape, @"logicalBytes": @(elements * 2),
+        @"shape": value.type.shape, @"logicalBytes": @(logicalBytes(value)),
         @"index": @(layout.index), @"nchw": physical,
         @"allocationBytes": @(layout.allocationBytes)};
 }
@@ -213,7 +217,6 @@ struct H14ParityPlan {
     ane::h14::BinaryOperation binaryOperation;
     uint16_t scalarBits;
     ane::h14::ElementwiseShape shape;
-    NSUInteger elements;
 };
 
 /// The decoded shapes a tensor may lower through: its literal NCHW geometry
@@ -260,8 +263,6 @@ static BOOL parityPlan(ANEGraphOperation *operation, H14ParityPlan *plan) {
             if (!ane::h14::supportsElementwise(candidate.unaryOperation,
                                                shapes[index])) continue;
             candidate.shape = shapes[index];
-            candidate.elements = (NSUInteger)shapes[index].channels *
-                shapes[index].height * shapes[index].width;
             candidate.unary = YES;
             *plan = candidate;
             return YES;
@@ -284,13 +285,117 @@ static BOOL parityPlan(ANEGraphOperation *operation, H14ParityPlan *plan) {
         if (!ane::h14::supportsElementwise(candidate.binaryOperation,
                                            shapes[index], !runtime)) continue;
         candidate.shape = shapes[index];
-        candidate.elements = (NSUInteger)shapes[index].channels *
-            shapes[index].height * shapes[index].width;
         candidate.scalarConstant = !runtime;
         *plan = candidate;
         return YES;
     }
     return NO;
+}
+
+static BOOL boolean(ANEGraphArgument *argument, BOOL expected) {
+    if (argument.kind == ANEGraphArgumentKindValue) {
+        ANEGraphOperation *producer = argument.value.producer;
+        if (![producer.operationName isEqualToString:@"const"] ||
+            producer.result.type.kind != ANEValueTypeKindScalar ||
+            producer.result.type.elementType != ANEElementTypeBool) return NO;
+        argument = producer.attributes[@"val"];
+    }
+    if (argument.kind == ANEGraphArgumentKindCall &&
+        [argument.calleeName isEqualToString:@"bool"] &&
+        argument.callArguments.count == 1)
+        argument = argument.callArguments[0].value;
+    return argument.kind == ANEGraphArgumentKindBoolean &&
+        [argument.text isEqualToString:expected ? @"true" : @"false"];
+}
+
+/// The logical geometry of a rank-two or higher fp16 matmul. Every leading
+/// dimension collapses into `rows`, because Apple's x surface is one dense
+/// [1, 1, rows, reduction] plane however the MIL shape spells the batch.
+static BOOL matvecGeometry(ANEGraphValue *x, ANEGraphValue *result,
+                           NSUInteger *rows, NSUInteger *reduction,
+                           NSUInteger *columns) {
+    if (!fp16Tensor(x) || !fp16Tensor(result)) return NO;
+    NSArray<NSNumber *> *inputShape = x.type.shape;
+    NSArray<NSNumber *> *outputShape = result.type.shape;
+    NSUInteger rank = inputShape.count;
+    if (rank < 2 || outputShape.count != rank) return NO;
+    NSUInteger rowCount = 1;
+    for (NSUInteger index = 0; index + 1 < rank; ++index) {
+        NSUInteger dimension = inputShape[index].unsignedIntegerValue;
+        if (!dimension || outputShape[index].unsignedIntegerValue != dimension ||
+            rowCount > NSUIntegerMax / dimension) return NO;
+        rowCount *= dimension;
+    }
+    NSUInteger inner = inputShape[rank - 1].unsignedIntegerValue;
+    NSUInteger outer = outputShape[rank - 1].unsignedIntegerValue;
+    if (!inner || !outer || inner > UINT32_MAX || outer > UINT32_MAX ||
+        rowCount > UINT32_MAX || inner > NSUIntegerMax / 2 / outer) return NO;
+    *rows = rowCount;
+    *reduction = inner;
+    *columns = outer;
+    return YES;
+}
+
+/// Matches the matmul and linear operations whose two-task H14 streams are
+/// decoded word-for-word from Apple oracles, and resolves their weight to the
+/// [columns, reduction] row-major fp16 form the encoder packs.
+static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
+                       ANEDiagnosticEngine *diagnostics,
+                       ane::h14::MatvecShape *shape,
+                       NSData *__autoreleasing *weightsOut) {
+    BOOL linear = [operation.operationName isEqualToString:@"linear"];
+    ANEGraphValue *x = operation.operands[@"x"].value;
+    ANEGraphValue *y = linear ? operation.operands[@"weight"].value
+                              : operation.operands[@"y"].value;
+    if (linear && operation.operands[@"bias"])
+        return reject(diagnostics,
+            @"H14 emits one program per artifact, so a linear bias has no encoder",
+            operation, @"h14.linear-bias-unsupported");
+    if (!linear && (operation.arguments.count != 4 ||
+                    !boolean(operation.arguments[@"transpose_x"], NO)))
+        return reject(diagnostics,
+            @"H14 matmul requires an explicit transpose_x = false, an explicit transpose_y, x, and y",
+            operation, @"h14.transpose-x-unsupported");
+    BOOL transposeY = linear || boolean(operation.arguments[@"transpose_y"], YES);
+    if (!linear && !transposeY &&
+        !boolean(operation.arguments[@"transpose_y"], NO))
+        return reject(diagnostics, @"H14 matmul requires an explicit transpose_y flag",
+                      operation);
+    NSUInteger rows = 0, reduction = 0, columns = 0;
+    if (!x || !y || constantValue(x) || !constantValue(y) ||
+        (linear && operation.arguments.count != 2) ||
+        !matvecGeometry(x, operation.result, &rows, &reduction, &columns) ||
+        !tensor(y, transposeY ? @[@(columns), @(reduction)]
+                              : @[@(reduction), @(columns)]))
+        return reject(diagnostics,
+            @"H14 matmul requires a runtime fp16 x, a constant rank-2 weight matching its transpose flag, and a matching output shape",
+            operation);
+    ane::h14::MatvecShape candidate{static_cast<std::uint32_t>(rows),
+        static_cast<std::uint32_t>(reduction),
+        static_cast<std::uint32_t>(columns)};
+    if (!ane::h14::supportsMatvecParity(candidate))
+        return reject(diagnostics,
+            @"H14 matmul supports only the decoded geometries: rows 1, 2, 8, or 64 with reduction and columns each 256, 512, or 1024",
+            operation, @"h14.outside-parity-envelope");
+    NSUInteger count = reduction * columns;
+    NSData *weights = [ANEBlobResolver loadConstantForOperation:y.producer
+        expectedBytes:count * 2 modelRoot:modelRoot diagnostics:diagnostics];
+    if (!weights) return NO;
+    if (!transposeY) {
+        // Apple rejects transpose_y=false, so the exact host transpose of the
+        // [reduction, columns] weight feeds the same decoded encoder.
+        NSMutableData *rowMajor = [NSMutableData dataWithLength:count * 2];
+        const uint16_t *source = static_cast<const uint16_t *>(weights.bytes);
+        uint16_t *destination = static_cast<uint16_t *>(rowMajor.mutableBytes);
+        for (NSUInteger column = 0; column < columns; ++column)
+            for (NSUInteger index = 0; index < reduction; ++index)
+                destination[column * reduction + index] =
+                    source[index * columns + column];
+        weights = rowMajor;
+    }
+    *shape = candidate;
+    *weightsOut = weights;
+    return YES;
 }
 
 @implementation ANEH14Compiler
@@ -300,7 +405,6 @@ static BOOL parityPlan(ANEGraphOperation *operation, H14ParityPlan *plan) {
        outputDirectory:(NSURL *)directory
            diagnostics:(ANEDiagnosticEngine *)diagnostics
                  error:(NSError **)error {
-    (void)modelRoot;
     BOOL hwx = [format isEqualToString:@"hwx"];
     if (!hwx && ![format isEqualToString:@"anec"]) {
         reject(diagnostics, @"H14 artifact format must be 'anec' or 'hwx'",
@@ -330,7 +434,7 @@ static BOOL parityPlan(ANEGraphOperation *operation, H14ParityPlan *plan) {
             [sourceOperations addObject:candidate];
     if (sourceOperations.count != 1)
         return reject(diagnostics,
-            @"H14 parity encodes exactly one elementwise or unary operation",
+            @"H14 parity encodes exactly one elementwise, unary, or matmul operation",
             sourceOperations.lastObject);
     ANEGraphOperation *operation = sourceOperations[0];
     if (function.returnValues.count != 1 ||
@@ -346,20 +450,34 @@ static BOOL parityPlan(ANEGraphOperation *operation, H14ParityPlan *plan) {
                           operation);
     }
 
+    NSString *name = operation.operationName;
+    BOOL matvec = [name isEqualToString:@"matmul"] ||
+        [name isEqualToString:@"linear"];
     H14ParityPlan plan{};
-    if (!parityPlan(operation, &plan))
+    ane::h14::MatvecShape matvecShape{};
+    NSData *matvecWeights = nil;
+    if (matvec) {
+        if (!matvecPlan(operation, modelRoot, diagnostics, &matvecShape,
+                        &matvecWeights)) return NO;
+    } else if (!parityPlan(operation, &plan)) {
         return reject(diagnostics,
             @"H14 supports only the decoded fp16 elementwise, scalar-constant, and unary parity envelope",
             operation, @"h14.outside-parity-envelope");
+    }
 
     ane::h14::Program program;
     NSData *payload = nil;
-    NSUInteger inputCount = plan.unary || plan.scalarConstant ? 1 : 2;
+    NSUInteger inputCount = matvec || plan.unary || plan.scalarConstant ? 1 : 2;
     try {
-        program = plan.unary
-            ? ane::h14::encodeElementwise(plan.unaryOperation, plan.shape)
-            : ane::h14::encodeElementwise(plan.binaryOperation, plan.shape,
-                                          plan.scalarConstant, plan.scalarBits);
+        program = matvec
+            ? ane::h14::encodeMatvecParity(matvecShape,
+                static_cast<const std::uint8_t *>(matvecWeights.bytes),
+                matvecWeights.length)
+            : (plan.unary
+                ? ane::h14::encodeElementwise(plan.unaryOperation, plan.shape)
+                : ane::h14::encodeElementwise(plan.binaryOperation, plan.shape,
+                                              plan.scalarConstant,
+                                              plan.scalarBits));
         if (program.inputs.size() != inputCount)
             return reject(diagnostics, @"H14 encoder returned unexpected inputs",
                           operation);
@@ -375,7 +493,6 @@ static BOOL parityPlan(ANEGraphOperation *operation, H14ParityPlan *plan) {
             [NSString stringWithUTF8String:exception.what()], operation);
     }
 
-    NSArray<NSNumber *> *shape = operation.result.type.shape;
     NSMutableArray<NSDictionary *> *inputRecords = [NSMutableArray array];
     NSMutableDictionary<NSString *, NSDictionary *> *tensors =
         [NSMutableDictionary dictionary];
@@ -384,21 +501,21 @@ static BOOL parityPlan(ANEGraphOperation *operation, H14ParityPlan *plan) {
     if (inputCount == 2) [inputValues addObject:operation.operands[@"y"].value];
     for (NSUInteger index = 0; index < inputCount; ++index) {
         ANEGraphValue *value = inputValues[index];
-        [inputRecords addObject:binding(value, shape, program.inputs[index])];
-        tensors[value.name] = @{@"shape": shape,
-            @"logicalBytes": @(plan.elements * 2), @"role": @"input"};
+        [inputRecords addObject:binding(value, program.inputs[index])];
+        tensors[value.name] = @{@"shape": value.type.shape,
+            @"logicalBytes": @(logicalBytes(value)), @"role": @"input"};
     }
-    tensors[operation.result.name] = @{@"shape": shape,
-        @"logicalBytes": @(plan.elements * 2), @"role": @"output"};
+    tensors[operation.result.name] = @{@"shape": operation.result.type.shape,
+        @"logicalBytes": @(logicalBytes(operation.result)), @"role": @"output"};
     NSDictionary *record = @{
         @"file": [@"program-0." stringByAppendingString:format],
         @"bytes": @(payload.length),
         @"taskDescriptors": @(program.taskCount),
-        @"encoder": @"h14-oracle-parity",
+        @"encoder": matvec ? @"apple-parity-matvec" : @"h14-oracle-parity",
         @"operation": operation.operationName,
         @"inputs": inputRecords,
         @"constantInputs": @{},
-        @"outputs": @[binding(operation.result, shape, program.output)],
+        @"outputs": @[binding(operation.result, program.output)],
         @"constantOffset": @(program.constantOffsetBytes),
         @"constantBytes": @(program.constants.size()),
         @"firstTaskBytes": @(program.firstTaskBytes),

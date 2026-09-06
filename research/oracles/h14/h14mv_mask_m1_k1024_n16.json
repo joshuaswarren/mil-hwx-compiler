@@ -1,0 +1,494 @@
+{
+  "case": "h14mv_mask_m1_k1024_n16",
+  "compiler": {
+    "command": [
+      "/tmp/h13-oracle/bin/ane-compile-hwx",
+      "CAPTURE_DIR",
+      "OUTPUT_DIR",
+      "h14"
+    ],
+    "decoder_sha256": "fc85d0664a4e567e617189d53d22252f46b6cbca2e4246976ee9ae4deaa8aed5",
+    "driver_sha256": "0e90f1eac64fda229948b4d75ffcf95d8bae9a2e877386ccbb6561e01942b946",
+    "host": "MacStudio.local",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "tool": "/tmp/h13-oracle/bin/ane-compile-hwx",
+    "tool_sha256": "b1bab437e2da0d26e65799698b63d8ad592d5455eec5da64c5877799b08abcbe"
+  },
+  "constant_section": {
+    "chunk_bytes": 2048,
+    "chunk_count": 16,
+    "chunks": [
+      {
+        "nonzero_bytes": 1928,
+        "offset": 0,
+        "sha256": "3ea2fc81e42a77388cd13b467b1b14bb05e0652a92f2966260747dc0a35279b4",
+        "size": 2048
+      },
+      {
+        "nonzero_bytes": 2048,
+        "offset": 2048,
+        "sha256": "b2e8907c5905e86692b7fd34a91ad8861851bf6c696e56f7d11e86bf31d70737",
+        "size": 2048
+      },
+      {
+        "nonzero_bytes": 2048,
+        "offset": 4096,
+        "sha256": "8aafc88d3092250bd9b098ec2829e7c7c8a38513c02d11c81b23e570e4bcfd64",
+        "size": 2048
+      },
+      {
+        "nonzero_bytes": 2048,
+        "offset": 6144,
+        "sha256": "871b7f677a9ff7a237cc657e3b896fa685fcee23170f0ba8424a138d982853f3",
+        "size": 2048
+      },
+      {
+        "nonzero_bytes": 2048,
+        "offset": 8192,
+        "sha256": "4970a42f153a768411ad1dd292a093b886e26f7cd67283b8a0c8de920f9c342b",
+        "size": 2048
+      },
+      {
+        "nonzero_bytes": 2048,
+        "offset": 10240,
+        "sha256": "5508205eeaab9a9ea4cd72a4eaca263aedcaf4fb72a5a5665dd647abe62539ac",
+        "size": 2048
+      },
+      {
+        "nonzero_bytes": 2048,
+        "offset": 12288,
+        "sha256": "d8a9964f343ea70f23329b62835b6ba9841b8099756d1d89c928f875cfaa1607",
+        "size": 2048
+      },
+      {
+        "nonzero_bytes": 2048,
+        "offset": 14336,
+        "sha256": "bb8feed9a7adda962b21c0a6daa4a5e2f94caa81e30268975226cafc39147710",
+        "size": 2048
+      },
+      {
+        "nonzero_bytes": 2048,
+        "offset": 16384,
+        "sha256": "d254f1b329e85acd1e44972ea1990882b50ae755171f2c628158b129294bbe2d",
+        "size": 2048
+      },
+      {
+        "nonzero_bytes": 2048,
+        "offset": 18432,
+        "sha256": "0ab29691fcf7236ba55189afc87fd61b883708442b923298d560d9f6d5107a37",
+        "size": 2048
+      },
+      {
+        "nonzero_bytes": 2048,
+        "offset": 20480,
+        "sha256": "194d06451fdb41aa9395e309a3f53ae27a945685fe1469f1fa55fe517b2e5999",
+        "size": 2048
+      },
+      {
+        "nonzero_bytes": 2048,
+        "offset": 22528,
+        "sha256": "4f39ecf9219bdc0125180891082c1e7d9e7bc6cd92c68f6071c060e18fef1cf4",
+        "size": 2048
+      },
+      {
+        "nonzero_bytes": 2048,
+        "offset": 24576,
+        "sha256": "7c8dc281b4e3db6d377c06c265df07cb2d0f4784a9dd9ea9e43c49fa840142a5",
+        "size": 2048
+      },
+      {
+        "nonzero_bytes": 2048,
+        "offset": 26624,
+        "sha256": "58098b13add68acda182790fd9ba794fdd17d749e1cc8c9b4373e7bc9cf0772e",
+        "size": 2048
+      },
+      {
+        "nonzero_bytes": 2048,
+        "offset": 28672,
+        "sha256": "d9b9d50925b46c18c95c791de718bf2925453ce3277712e4008dab1653c87a0d",
+        "size": 2048
+      },
+      {
+        "nonzero_bytes": 2048,
+        "offset": 30720,
+        "sha256": "ea5758e7e80af75aba02b1cd543ced8d4a811279fcc133d9cee7f72c166e6cd4",
+        "size": 2048
+      }
+    ],
+    "nonzero_bytes": 32648,
+    "nonzero_fp16_words": null,
+    "prefix_128_nonzero_bytes": 8,
+    "prefix_128_sha256": "d8a7bd7311c72452a1ccb687d2dbb376bf99456ae4e177a9f667a0216159a48b",
+    "sha256": "674ba60793b3f0a5d81db1bf534ba7f071a1401f82dd26d1daa4bc2bfd65c22e",
+    "size": 32768,
+    "tail_after_128_nonzero_bytes": 32640
+  },
+  "error": null,
+  "family": "matvec_probe",
+  "hwx_bytes": 65536,
+  "hwx_sha256": "8a47a87f4bc769d723908026b8d4305bb0952357fec4d54a501b6a632d7d27ef",
+  "mil": "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n  func main<ios18>(tensor<fp16, [1, 1024]> x) {\n    bool f = const()[name = string(\"f\"), val = bool(false)];\n    bool ty = const()[name = string(\"ty\"), val = bool(true)];\n    tensor<fp16, [16, 1024]> w = const()[name = string(\"w\"), val = tensor<fp16, [16, 1024]>(BLOBFILE(path = string(\"@model_path/weights.bin\"), offset = uint64(64)))];\n    tensor<fp16, [1, 16]> product = matmul(transpose_x = f, transpose_y = ty, x = x, y = w)[name = string(\"product\")];\n  } -> (product);\n}\n",
+  "parameters": {
+    "columns": 16,
+    "container": "blob",
+    "pattern": "mask",
+    "reduction": 1024,
+    "rows": 1,
+    "transpose_y": true
+  },
+  "program_descriptor": {
+    "command_size": 2192,
+    "constant_address": "0x30008240",
+    "kind": 4,
+    "resource_addresses": [
+      "0x0",
+      "0x0",
+      "0x0",
+      "0x0",
+      "0x30000000"
+    ],
+    "task_count": 2,
+    "text_address": "0x30008000",
+    "text_words": 130,
+    "trailing_words": [
+      "0x30008000",
+      "0x00000000",
+      "0x00000000",
+      "0x00000000",
+      "0x00000004",
+      "0x00000082",
+      "0x00000000",
+      "0x00000000",
+      "0x00000002",
+      "0x00000000",
+      "0xffffffff",
+      "0xffffffff",
+      "0x00000000",
+      "0x0000ffff",
+      "0x00000888",
+      "0x00000000",
+      "0x00000000",
+      "0x00000000",
+      "0x00000000",
+      "0x00000000",
+      "0x00000015",
+      "0x00000000",
+      "0x00000003",
+      "0x00000000",
+      "0x00000001",
+      "0x00000000",
+      "0x00000009",
+      "0x00000008",
+      "0x00000000",
+      "0x00000000",
+      "0x6e69616d",
+      "0x00000000"
+    ]
+  },
+  "schema_version": 1,
+  "source_commit": "c9ce17925c939be068bae81c536358072e0d6861",
+  "target": "h14",
+  "task_descriptors": [
+    {
+      "blocks": {
+        "0x00000": {
+          "name": "common",
+          "words": {
+            "0x00000": "0x00010400",
+            "0x0000c": "0x00000001",
+            "0x00010": "0x00000001",
+            "0x00014": "0x00010400",
+            "0x0001c": "0x00000000",
+            "0x00028": "0x00014001",
+            "0x0002c": "0x00000001",
+            "0x00038": "0x10230301",
+            "0x0003c": "0x00100000"
+          }
+        },
+        "0x00500": {
+          "name": "l2",
+          "words": {
+            "0x00504": "0x00500172",
+            "0x00508": "0x00004000",
+            "0x0050c": "0x00000100",
+            "0x00510": "0x00000100",
+            "0x00514": "0x00000100",
+            "0x00518": "0x00000100",
+            "0x00530": "0x00500170",
+            "0x00538": "0x00000010"
+          }
+        },
+        "0x00d00": {
+          "name": "ne",
+          "words": {
+            "0x00d04": "0x00101c0c",
+            "0x00d10": "0x00003c00"
+          }
+        },
+        "0x01100": {
+          "name": "tile_dma_src",
+          "words": {
+            "0x01100": "0x00000e21",
+            "0x01108": "0x000000ce",
+            "0x01110": "0x00000000",
+            "0x01114": "0x00000000",
+            "0x01150": "0x01002031"
+          }
+        }
+      },
+      "header_words": [
+        "0x00260000",
+        "0x00000000",
+        "0x00000008",
+        "0x00000000",
+        "0x00000068",
+        "0x00000000",
+        "0x00000001",
+        "0x00050001"
+      ],
+      "records": [
+        {
+          "address": "0x00000",
+          "count": 9,
+          "header": "0xb32e0000"
+        },
+        {
+          "address": "0x01100",
+          "count": 2,
+          "header": "0x80010440"
+        },
+        {
+          "address": "0x01150",
+          "count": 1,
+          "header": "0x00000454"
+        },
+        {
+          "address": "0x00504",
+          "count": 8,
+          "header": "0x8a0f8141"
+        },
+        {
+          "address": "0x00d04",
+          "count": 2,
+          "header": "0x80020341"
+        },
+        {
+          "address": "0x01110",
+          "count": 2,
+          "header": "0x22808444"
+        }
+      ],
+      "size_bytes": 152
+    },
+    {
+      "blocks": {
+        "0x00000": {
+          "name": "common",
+          "words": {
+            "0x00000": "0x00010001",
+            "0x0000c": "0x00000400",
+            "0x00014": "0x00010001",
+            "0x0001c": "0x00000000",
+            "0x0002c": "0x00000001",
+            "0x00038": "0x10200005",
+            "0x0003c": "0x00100000"
+          }
+        },
+        "0x00500": {
+          "name": "l2",
+          "words": {
+            "0x00504": "0x00000120",
+            "0x0050c": "0x00000010",
+            "0x00530": "0x0000014a",
+            "0x00534": "0x00004000"
+          }
+        },
+        "0x00d00": {
+          "name": "ne",
+          "words": {
+            "0x00d04": "0x00101c00",
+            "0x00d10": "0x00003c00"
+          }
+        },
+        "0x01500": {
+          "name": "tile_dma_dst",
+          "words": {
+            "0x01500": "0x01010e31",
+            "0x01508": "0x00000000",
+            "0x0150c": "0x00000000",
+            "0x01520": "0x01302031",
+            "0x01524": "0x0000dead"
+          }
+        },
+        "0x01900": {
+          "name": "kernel_dma_src",
+          "words": {
+            "0x01900": "0x000202c0",
+            "0x01908": "0x00000000",
+            "0x0190c": "0x00000000",
+            "0x01918": "0x00010021",
+            "0x0191c": "0x00010021",
+            "0x01920": "0x00010021",
+            "0x01924": "0x00010021",
+            "0x01928": "0x00010021",
+            "0x0192c": "0x00010021",
+            "0x01930": "0x00010021",
+            "0x01934": "0x00010021",
+            "0x01938": "0x00010021",
+            "0x0193c": "0x00010021",
+            "0x01940": "0x00010021",
+            "0x01944": "0x00010021",
+            "0x01948": "0x00010021",
+            "0x0194c": "0x00010021",
+            "0x01950": "0x00010021",
+            "0x01954": "0x00010021",
+            "0x0195c": "0x00000800",
+            "0x01960": "0x00001000",
+            "0x01964": "0x00001800",
+            "0x01968": "0x00002000",
+            "0x0196c": "0x00002800",
+            "0x01970": "0x00003000",
+            "0x01974": "0x00003800",
+            "0x01978": "0x00004000",
+            "0x0197c": "0x00004800",
+            "0x01980": "0x00005000",
+            "0x01984": "0x00005800",
+            "0x01988": "0x00006000",
+            "0x0198c": "0x00006800",
+            "0x01990": "0x00007000",
+            "0x01994": "0x00007800",
+            "0x01998": "0x00000800",
+            "0x0199c": "0x00000800",
+            "0x019a0": "0x00000800",
+            "0x019a4": "0x00000800",
+            "0x019a8": "0x00000800",
+            "0x019ac": "0x00000800",
+            "0x019b0": "0x00000800",
+            "0x019b4": "0x00000800",
+            "0x019b8": "0x00000800",
+            "0x019bc": "0x00000800",
+            "0x019c0": "0x00000800",
+            "0x019c4": "0x00000800",
+            "0x019c8": "0x00000800",
+            "0x019cc": "0x00000800",
+            "0x019d0": "0x00000800",
+            "0x019d4": "0x00000800"
+          }
+        }
+      },
+      "header_words": [
+        "0x00560001",
+        "0x00000000",
+        "0x00000022",
+        "0x00000000",
+        "0x00fff868",
+        "0x00000000",
+        "0x00000000",
+        "0x00050001"
+      ],
+      "records": [
+        {
+          "address": "0x01900",
+          "count": 12,
+          "header": "0xfff00640"
+        },
+        {
+          "address": "0x01944",
+          "count": 5,
+          "header": "0x00020651"
+        },
+        {
+          "address": "0x0195c",
+          "count": 31,
+          "header": "0x000f0657"
+        },
+        {
+          "address": "0x00000",
+          "count": 7,
+          "header": "0xb22a0000"
+        },
+        {
+          "address": "0x00504",
+          "count": 4,
+          "header": "0x86010141"
+        },
+        {
+          "address": "0x00d04",
+          "count": 2,
+          "header": "0x80020341"
+        },
+        {
+          "address": "0x01500",
+          "count": 2,
+          "header": "0x80400540"
+        },
+        {
+          "address": "0x01524",
+          "count": 1,
+          "header": "0x00000549"
+        },
+        {
+          "address": "0x01908",
+          "count": 2,
+          "header": "0x20808642"
+        },
+        {
+          "address": "0x01508",
+          "count": 2,
+          "header": "0x22008542"
+        }
+      ],
+      "size_bytes": 344
+    }
+  ],
+  "tensor_descriptors": [
+    {
+      "binding": 1,
+      "element_code": 5,
+      "shape": [
+        1,
+        1,
+        1,
+        1024
+      ],
+      "strides": [
+        2048,
+        2048,
+        2048,
+        2
+      ],
+      "total_bytes": 2048
+    },
+    {
+      "binding": 2,
+      "element_code": 5,
+      "shape": [
+        1,
+        1,
+        1,
+        16
+      ],
+      "strides": [
+        64,
+        64,
+        64,
+        2
+      ],
+      "total_bytes": 64
+    }
+  ],
+  "weights": {
+    "blob_offset": 64,
+    "container": "blob",
+    "file_sha256": "91a74930ff01f6f2fb969f12f3fc7b8d71e253dc3df56add28a3f8f7823d3a6d",
+    "payload_bytes": 32768,
+    "payload_sha256": "47bc629c108fb5fbf021474a936aafa29aab7506202065b1a7e1231b567b47f8",
+    "probe_driver_sha256": "4dccbe48ecc1589cfb1fc14fc59a5d329f84bd0fd8acd46fd7a42553bf4b5734",
+    "shape": [
+      16,
+      1024
+    ],
+    "storage": "BLOBFILE",
+    "value": "probe pattern mask"
+  }
+}

@@ -25,6 +25,8 @@ enum class UnaryOperation {
     Tanh,
 };
 
+enum class NormOperation { Softmax, LayerNorm, ReduceSum, ReduceMax, ReduceMean };
+
 struct ElementwiseShape {
     std::uint32_t channels;
     std::uint32_t height;
@@ -37,6 +39,16 @@ struct MatvecShape {
     std::uint32_t rows;
     std::uint32_t reduction;
     std::uint32_t columns;
+};
+
+/// One decoded Apple normalization or reduction geometry: the input and output
+/// CHW surfaces, which NCHW axes the operation reduces (bit `i` for axis `i`),
+/// and whether the MIL result keeps the reduced axes.
+struct NormShape {
+    ElementwiseShape input;
+    ElementwiseShape output;
+    std::uint32_t axisMask;
+    bool keepDims;
 };
 
 struct TensorLayout {
@@ -85,6 +97,12 @@ Program encodeMatvecParity(MatvecShape shape, const std::uint8_t *weights,
 std::vector<std::uint8_t> packMatvecWeights(MatvecShape shape,
                                             const std::uint8_t *weights,
                                             std::size_t weightBytes);
+/// True when the decoded Apple corpus covers this softmax, layer_norm, or
+/// reduction geometry as one multi-task program.
+bool supportsNormParity(NormOperation operation, NormShape shape);
+/// Encodes Apple's own task stream for the geometry, with the LUT constant
+/// section the decoded oracle carries.
+Program encodeNormParity(NormOperation operation, NormShape shape);
 std::vector<std::uint8_t> encodeANEC(const Program &program);
 
 }

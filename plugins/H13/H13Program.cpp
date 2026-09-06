@@ -318,9 +318,35 @@ struct OracleMatvecTemplate {
     std::uint64_t scratchAllocationBytes;
 };
 
+/// Which LUT layout a decoded normalization program's constant section holds.
+/// The generator derives this from the recorded section hash, so the encoder
+/// rebuilds the same bytes instead of guessing them from the operation.
+enum class NormConstants : std::uint8_t {
+    Zero,
+    Exponential,
+    ExponentialReciprocal,
+};
+
+struct OracleNormTemplate {
+    NormOperation operation;
+    ElementwiseShape input;
+    ElementwiseShape output;
+    std::uint32_t axisMask;
+    bool keepDims;
+    NormConstants constants;
+    const std::uint32_t *words;
+    std::size_t wordCount;
+    std::size_t firstTaskBytes;
+    std::uint32_t taskCount;
+    std::size_t constantOffsetBytes;
+    std::size_t constantBytes;
+    std::uint64_t scratchAllocationBytes;
+};
+
 #include "H13ElementwiseTemplates.inc"
 #include "H13ElementwiseConstants.inc"
 #include "H13MatvecTemplates.inc"
+#include "H13NormTemplates.inc"
 
 bool sameShape(ElementwiseShape left, ElementwiseShape right) {
     return left.channels == right.channels && left.height == right.height &&
@@ -341,6 +367,17 @@ const OracleMatvecTemplate *matvecTemplate(MatvecShape shape) {
         if (candidate.rows == shape.rows &&
             candidate.reduction == shape.reduction &&
             candidate.columns == shape.columns) return &candidate;
+    return nullptr;
+}
+
+const OracleNormTemplate *normTemplate(NormOperation operation,
+                                       NormShape shape) {
+    for (const auto &candidate : kNormTasks)
+        if (candidate.operation == operation &&
+            candidate.axisMask == shape.axisMask &&
+            candidate.keepDims == shape.keepDims &&
+            sameShape(candidate.input, shape.input) &&
+            sameShape(candidate.output, shape.output)) return &candidate;
     return nullptr;
 }
 
@@ -377,16 +414,23 @@ TensorLayout matvecTensor(std::uint32_t index, std::uint32_t rows,
     return {index, {1, 1, rows, width, plane, row}, alignTile(plane)};
 }
 
+/// Writes a decoded LUT block, little-endian, at a byte offset in a section.
+template <std::size_t N>
+void putWords(std::vector<std::uint8_t> &bytes, std::size_t offset,
+              const std::uint32_t (&words)[N]) {
+    if (offset + N * sizeof(std::uint32_t) > bytes.size())
+        throw std::logic_error("H13 constant table exceeds its decoded section");
+    for (std::size_t index = 0; index != N; ++index)
+        for (std::size_t byte = 0; byte != sizeof(std::uint32_t); ++byte)
+            bytes[offset + index * sizeof(std::uint32_t) + byte] =
+                static_cast<std::uint8_t>(words[index] >> (byte * 8));
+}
+
 template <std::size_t N>
 std::vector<std::uint8_t> paddedConstants(const std::uint32_t (&words)[N],
                                           std::size_t size) {
-    if (N * sizeof(std::uint32_t) > size)
-        throw std::logic_error("H13 constant table exceeds its decoded section");
     std::vector<std::uint8_t> bytes(size, 0);
-    for (std::size_t index = 0; index != N; ++index)
-        for (std::size_t byte = 0; byte != sizeof(std::uint32_t); ++byte)
-            bytes[index * sizeof(std::uint32_t) + byte] =
-                static_cast<std::uint8_t>(words[index] >> (byte * 8));
+    putWords(bytes, 0, words);
     return bytes;
 }
 
@@ -463,6 +507,18 @@ std::vector<std::uint8_t> unaryConstants(UnaryOperation operation,
         return paddedConstants(kTanhKERNWords, size);
     }
     throw std::invalid_argument("unsupported H13 unary operation");
+}
+
+/// Apple's softmax sections hold the exponential table at offset 0 and, when
+/// the reduced axis is not the last one, the reciprocal table in the final
+/// 128 bytes; layer_norm and every reduction leave the section zero.
+std::vector<std::uint8_t> normConstants(NormConstants kind, std::size_t size) {
+    if (kind == NormConstants::Zero)
+        return std::vector<std::uint8_t>(size, 0);
+    auto bytes = paddedConstants(kExpKERNWords, size);
+    if (kind == NormConstants::ExponentialReciprocal)
+        putWords(bytes, size - sizeof(kRecipKERNWords), kRecipKERNWords);
+    return bytes;
 }
 
 Program oracleProgram(const OracleTaskTemplate &source,
@@ -622,6 +678,27 @@ Program encodeMatvecParity(MatvecShape shape, const std::uint8_t *weights,
     program.constantOffsetBytes = source->constantOffsetBytes;
     program.scratchAllocationBytes = source->scratchAllocationBytes;
     program.outputSurfaceFirst = true;
+    return program;
+}
+
+bool supportsNormParity(NormOperation operation, NormShape shape) {
+    return normTemplate(operation, shape);
+}
+
+Program encodeNormParity(NormOperation operation, NormShape shape) {
+    const auto *source = normTemplate(operation, shape);
+    if (!source)
+        throw std::invalid_argument(
+            "H13 normalization geometry is outside the decoded parity envelope");
+    Program program;
+    program.task = taskBytesFor(source->words, source->wordCount);
+    program.constants = normConstants(source->constants, source->constantBytes);
+    program.inputs = {elementwiseTensor(5, source->input)};
+    program.output = elementwiseTensor(4, source->output);
+    program.firstTaskBytes = source->firstTaskBytes;
+    program.taskCount = source->taskCount;
+    program.constantOffsetBytes = source->constantOffsetBytes;
+    program.scratchAllocationBytes = source->scratchAllocationBytes;
     return program;
 }
 

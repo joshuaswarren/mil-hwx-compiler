@@ -14,15 +14,60 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "research"))
 from h13_td import decode_task, split_h14_tasks  # noqa: E402
 import inspect_hwx  # noqa: E402
-from generate_h14_templates import selected_oracles  # noqa: E402
+import mint_h14_matvec_probes as probes  # noqa: E402
+import mint_oracles  # noqa: E402
+from generate_h14_templates import (selected_matvec_oracles,  # noqa: E402
+                                    selected_oracles)
 
 COMPILER = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "build/mil-hwxc").resolve()
 TILE_BYTES = 0x4000
+MATVEC_ENCODER = "apple-parity-matvec"
+ELEMENTWISE_ENCODER = "h14-oracle-parity"
+
+
+def encoder(oracle):
+    return ELEMENTWISE_ENCODER if oracle["family"] in {
+        "binary_runtime", "binary_constant", "unary"} else MATVEC_ENCODER
+
+
+def write_weights(oracle, root):
+    """Recreates the exact weights.bin Apple's compiler saw for this case."""
+    description = oracle.get("weights", {})
+    if description.get("storage") != "BLOBFILE":
+        return
+    parameters = oracle["parameters"]
+    if oracle["family"] == "matvec_probe":
+        payload = probes.payload(parameters["reduction"], parameters["columns"],
+                                 parameters["pattern"])
+        assert hashlib.sha256(payload).hexdigest() == \
+            description["payload_sha256"], oracle["case"]
+    else:
+        assert description["value"] == "fp16(0x1p-1)", oracle["case"]
+        payload = mint_oracles.half_payload(description["payload_bytes"] // 2)
+    (root / "weights.bin").write_bytes(mint_oracles.blob(payload))
+
+
+def grid_probe_oracles():
+    """The known-weight probes whose geometry the parity encoder covers, so the
+    packed constant section is proven against a nonuniform Apple weight."""
+    covered = {(oracle["parameters"]["rows"], oracle["parameters"]["reduction"],
+                oracle["parameters"]["columns"])
+               for oracle in selected_matvec_oracles()}
+    selected = []
+    for path in sorted((ROOT / "research/oracles/h14").glob("h14mv_*.json")):
+        oracle = json.loads(path.read_text())
+        parameters = oracle["parameters"]
+        if oracle.get("error") is None and \
+                (parameters["rows"], parameters["reduction"],
+                 parameters["columns"]) in covered:
+            selected.append(oracle)
+    return selected
 
 
 def compile_oracle(oracle, output, artifact_format):
     mil = output.parent / f"{oracle['case']}-{artifact_format}.mil"
     mil.write_text(oracle["mil"])
+    write_weights(oracle, output.parent)
     result = subprocess.run(
         [str(COMPILER), "--mil", str(mil), "--model-root", str(output.parent),
          "--target", "H14", "--format", artifact_format, "--output", str(output)],
@@ -30,6 +75,66 @@ def compile_oracle(oracle, output, artifact_format):
     assert result.returncode == 0, \
         f"{oracle['case']} {artifact_format}: {result.stdout}{result.stderr}"
     return json.loads((output / "manifest.json").read_text())
+
+
+def aligned_blob(payload):
+    """A weights.bin whose sub-header fields sit exactly where
+    `ANEBlobResolver` reads them, so the resolved constant is `payload` alone.
+    `mint_oracles.blob` packs the length and payload offset four bytes lower,
+    which is why Apple's campaign sections start with the blob header."""
+    data = bytearray(128 + len(payload))
+    struct.pack_into("<II", data, 0, 1, 2)
+    struct.pack_into("<I", data, 64, 0xDEADBEEF)
+    struct.pack_into("<Q", data, 72, len(payload))
+    struct.pack_into("<Q", data, 80, 128)
+    data[128:] = payload
+    return bytes(data)
+
+
+def check_transposed_weights(root):
+    """Apple rejects `transpose_y=false`, so no oracle covers it. Compiling the
+    same non-square matrix in both forms must give one identical artifact, and
+    its constants must be the packing the [N, K] weight implies."""
+    rows, reduction, columns = 2, 512, 256
+    weight = bytearray(columns * reduction * 2)
+    transposed = bytearray(len(weight))
+    for column in range(columns):
+        for index in range(reduction):
+            bits = 0x3000 | ((column * 131 + index * 17) & 0x3FF)
+            struct.pack_into("<H", weight, (column * reduction + index) * 2, bits)
+            struct.pack_into("<H", transposed,
+                             (index * columns + column) * 2, bits)
+    artifacts = {}
+    for flag, payload, weight_shape in (
+            ("true", weight, (columns, reduction)),
+            ("false", transposed, (reduction, columns))):
+        model = root / f"transpose-y-{flag}"
+        model.mkdir()
+        (model / "weights.bin").write_bytes(aligned_blob(bytes(payload)))
+        x_kind = f"tensor<fp16, [{rows}, {reduction}]>"
+        y_kind = f"tensor<fp16, [{rows}, {columns}]>"
+        w_kind = f"tensor<fp16, [{weight_shape[0]}, {weight_shape[1]}]>"
+        (model / "model.mil").write_text(mint_oracles.program(f"{x_kind} x", [
+            'bool f = const()[name = string("f"), val = bool(false)];',
+            f'bool ty = const()[name = string("ty"), val = bool({flag})];',
+            f'{w_kind} w = const()[name = string("w"), val = {w_kind}'
+            '(BLOBFILE(path = string("@model_path/weights.bin"), '
+            'offset = uint64(64)))];',
+            f'{y_kind} product = matmul(transpose_x = f, transpose_y = ty, '
+            'x = x, y = w)[name = string("product")];'], "product"))
+        result = subprocess.run(
+            [str(COMPILER), "--mil", str(model / "model.mil"),
+             "--model-root", str(model), "--target", "H14", "--format", "anec",
+             "--output", str(model / "out")],
+            capture_output=True, text=True, timeout=60, check=False)
+        assert result.returncode == 0, \
+            f"transpose_y={flag}: {result.stdout}{result.stderr}"
+        artifacts[flag] = (model / "out/program-0.anec").read_bytes()
+    assert artifacts["true"] == artifacts["false"], \
+        "transpose_y=false does not reproduce the transpose_y=true artifact"
+    _, constants, _, _ = anec_contents(artifacts["true"])
+    assert constants == probes.packed_section(reduction, columns, bytes(weight)), \
+        "the emitted constants are not the modelled packing of the [N, K] weight"
 
 
 def unpack_commands(hwx):
@@ -114,7 +219,7 @@ def assert_constants(constants, oracle):
 
 def check_anec(oracle, output, manifest):
     record = manifest["programs"][0]
-    assert record["encoder"] == "h14-oracle-parity", oracle["case"]
+    assert record["encoder"] == encoder(oracle), oracle["case"]
     payload = (output / record["file"]).read_bytes()
     tasks, constants, constant_offset, header = anec_contents(payload)
     assert_tasks(tasks, oracle)
@@ -135,7 +240,7 @@ def check_anec(oracle, output, manifest):
 
 def check_hwx(oracle, output, manifest):
     record = manifest["programs"][0]
-    assert record["encoder"] == "h14-oracle-parity", oracle["case"]
+    assert record["encoder"] == encoder(oracle), oracle["case"]
     path = output / record["file"]
     payload = path.read_bytes()
     sections, program, tensors = unpack_commands(payload)
@@ -167,8 +272,19 @@ def check_hwx(oracle, output, manifest):
 
 
 def main():
-    oracles = selected_oracles()
-    assert len(oracles) == 87, f"expected 87 decoded parity oracles, found {len(oracles)}"
+    elementwise = selected_oracles()
+    matvec = selected_matvec_oracles()
+    probe = grid_probe_oracles()
+    assert len(elementwise) == 87, \
+        f"expected 87 decoded elementwise oracles, found {len(elementwise)}"
+    assert len(matvec) == 36, \
+        f"expected 36 decoded matvec oracles, found {len(matvec)}"
+    grid = {(oracle["parameters"]["reduction"], oracle["parameters"]["columns"])
+            for oracle in probe}
+    assert grid == {(reduction, columns)
+                    for reduction in probes.GRID_SIDES
+                    for columns in probes.GRID_SIDES}, sorted(grid)
+    oracles = elementwise + matvec + probe
     with tempfile.TemporaryDirectory(prefix="h14-parity-") as directory:
         root = Path(directory)
         for oracle in oracles:
@@ -178,8 +294,12 @@ def main():
                 assert len(manifest["programs"]) == 1, \
                     f"{oracle['case']}: {len(manifest['programs'])} programs"
                 check(oracle, output, manifest)
+        check_transposed_weights(root)
+    probes.verify()
     print(f"H14 oracle parity: PASS ({len(oracles)} cases, "
-          f"{len(oracles) * 2} artifacts)")
+          f"{len(elementwise)} elementwise, {len(matvec)} matvec, "
+          f"{len(probe)} known-weight matvec probes over {len(grid)} (K, N) "
+          f"grid points, {len(oracles) * 2} artifacts)")
 
 
 if __name__ == "__main__":
