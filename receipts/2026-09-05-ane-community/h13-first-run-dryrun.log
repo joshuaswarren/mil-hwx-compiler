@@ -1,0 +1,124 @@
+# H13 first-run kit dry-run receipt
+# recorded 2026-09-06T05:22:52Z (UTC) on omp-studio-local Linux 6.17.2-1-pve x86_64
+# compiler d72cb9b on feat/h13-m1
+
+$ python3 tests/h13_first_run/first_run.py
+compiled target=H13 artifacts=1 format=anec output=/tmp/h13-first-run/01-add-legacy/pkg
+PASS rung 1 01-add-legacy: {'h13-source-qualified': 1}, 1 task descriptors, 1 dispatched programs, 9 libane calls, plan /tmp/h13-first-run/01-add-legacy/plan.json
+  hardware: ANE_CHECKOUT=~/src/omarchy-ane bash tests/run_h13_linux_hardware.sh /tmp/h13-first-run/01-add-legacy/model.mil /tmp/h13-first-run/01-add-legacy/models a=/tmp/h13-first-run/01-add-legacy/inputs/a.fp16
+compiled target=H13 artifacts=1 format=anec output=/tmp/h13-first-run/02-add-parity/pkg
+PASS rung 2 02-add-parity: {'h13-oracle-parity': 1}, 1 task descriptors, 1 dispatched programs, 10 libane calls, plan /tmp/h13-first-run/02-add-parity/plan.json
+  hardware: ANE_CHECKOUT=~/src/omarchy-ane bash tests/run_h13_linux_hardware.sh /tmp/h13-first-run/02-add-parity/model.mil /tmp/h13-first-run/02-add-parity/models a=/tmp/h13-first-run/02-add-parity/inputs/a.fp16 b=/tmp/h13-first-run/02-add-parity/inputs/b.fp16
+compiled target=H13 artifacts=1 format=anec output=/tmp/h13-first-run/03-mul-scalar/pkg
+PASS rung 3 03-mul-scalar: {'h13-oracle-parity': 1}, 1 task descriptors, 1 dispatched programs, 8 libane calls, plan /tmp/h13-first-run/03-mul-scalar/plan.json
+  hardware: ANE_CHECKOUT=~/src/omarchy-ane bash tests/run_h13_linux_hardware.sh /tmp/h13-first-run/03-mul-scalar/model.mil /tmp/h13-first-run/03-mul-scalar/models a=/tmp/h13-first-run/03-mul-scalar/inputs/a.fp16
+compiled target=H13 artifacts=1 format=anec output=/tmp/h13-first-run/04-matvec-k256-n512/pkg
+PASS rung 4 04-matvec-k256-n512: {'apple-parity-matvec': 1}, 2 task descriptors, 1 dispatched programs, 8 libane calls, plan /tmp/h13-first-run/04-matvec-k256-n512/plan.json
+  hardware: ANE_CHECKOUT=~/src/omarchy-ane bash tests/run_h13_linux_hardware.sh /tmp/h13-first-run/04-matvec-k256-n512/model.mil /tmp/h13-first-run/04-matvec-k256-n512/models x=/tmp/h13-first-run/04-matvec-k256-n512/inputs/x.fp16
+compiled target=H13 artifacts=1 format=anec output=/tmp/h13-first-run/05-softmax-512/pkg
+PASS rung 5 05-softmax-512: {'apple-parity-norm': 1}, 5 task descriptors, 1 dispatched programs, 8 libane calls, plan /tmp/h13-first-run/05-softmax-512/plan.json
+  hardware: ANE_CHECKOUT=~/src/omarchy-ane bash tests/run_h13_linux_hardware.sh /tmp/h13-first-run/05-softmax-512/model.mil /tmp/h13-first-run/05-softmax-512/models a=/tmp/h13-first-run/05-softmax-512/inputs/a.fp16
+compiled target=H13 artifacts=2 format=anec output=/tmp/h13-first-run/06-chain-add-mul/pkg
+PASS rung 6 06-chain-add-mul: {'h13-oracle-parity': 2}, 2 task descriptors, 2 dispatched programs, 20 libane calls, plan /tmp/h13-first-run/06-chain-add-mul/plan.json
+  hardware: ANE_CHECKOUT=~/src/omarchy-ane bash tests/run_h13_linux_hardware.sh /tmp/h13-first-run/06-chain-add-mul/model.mil /tmp/h13-first-run/06-chain-add-mul/models a=/tmp/h13-first-run/06-chain-add-mul/inputs/a.fp16 b=/tmp/h13-first-run/06-chain-add-mul/inputs/b.fp16
+compiled target=H13 artifacts=1 format=anec output=/tmp/h13-first-run/07-runtime-matmul-64/pkg
+PASS rung 7 07-runtime-matmul-64: {'apple-parity-matmul': 1}, 2 task descriptors, 1 dispatched programs, 10 libane calls, plan /tmp/h13-first-run/07-runtime-matmul-64/plan.json
+  hardware: ANE_CHECKOUT=~/src/omarchy-ane bash tests/run_h13_linux_hardware.sh /tmp/h13-first-run/07-runtime-matmul-64/model.mil /tmp/h13-first-run/07-runtime-matmul-64/models x=/tmp/h13-first-run/07-runtime-matmul-64/inputs/x.fp16 w=/tmp/h13-first-run/07-runtime-matmul-64/inputs/w.fp16
+compiled target=H13 artifacts=77 format=anec output=/tmp/h13-first-run/08-mlp-768-1024-768/pkg
+PASS rung 8 08-mlp-768-1024-768: {'h13-source-qualified': 76, 'h13-oracle-parity': 1}, 77 task descriptors, 77 dispatched programs, 686 libane calls, plan /tmp/h13-first-run/08-mlp-768-1024-768/plan.json
+  hardware: ANE_CHECKOUT=~/src/omarchy-ane bash tests/run_h13_linux_hardware.sh /tmp/h13-first-run/08-mlp-768-1024-768/model.mil /tmp/h13-first-run/08-mlp-768-1024-768/models x=/tmp/h13-first-run/08-mlp-768-1024-768/inputs/x.fp16
+H13 first-run ladder: 8 rung(s) dry-run OK
+
+$ bash tests/h13_first_run/preflight.sh; echo exit=$?
+PREFLIGHT FAIL host is x86_64, not aarch64
+identity host               omp-studio-local
+identity kernel             6.17.2-1-pve x86_64
+PREFLIGHT FAIL no /proc/device-tree/soc/ane@* node; boot the ANE device-tree entry
+PREFLIGHT FAIL ane module is not loaded; run the jwm1 bring-up ladder first
+PREFLIGHT FAIL no /sys/bus/platform/devices/*.ane; the module bound nothing
+PREFLIGHT FAIL no character device at /dev/accel/accel0
+identity libane-checkout    /home/joshuawarren/src/omarchy-ane
+identity libane-commit      2ced80b on omarchy-kmd
+identity libane-dirty       0 modified path(s)
+PREFLIGHT FAIL /home/joshuawarren/src/omarchy-ane is on 'omarchy-kmd', not 'omarchy'
+identity libane-anec-header 0x800
+PREFLIGHT FAIL libane reads the ANEC payload at 0x800, not 0x1000
+PREFLIGHT FAIL missing /home/joshuawarren/src/omarchy-ane/libane/libane.a; build libane and bindings/python/dylib
+PREFLIGHT FAIL missing /home/joshuawarren/src/omarchy-ane/bindings/python/dylib/libane_python.so; build libane and bindings/python/dylib
+identity compiler-repo      /home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler
+identity compiler-commit    d72cb9b on feat/h13-m1
+identity compiler-dirty     183 modified path(s)
+H13 preflight: FAIL; do not submit
+reminder: after a hung submission, reboot. Never rmmod and reload ane - the remove path leaks IOVA mappings and a second insmod fails bo_init.
+exit=2
+
+$ python3 tests/h13_first_run/first_run.py --rung 1 --execute; echo exit=$?
+compiled target=H13 artifacts=1 format=anec output=/tmp/h13-first-run/01-add-legacy/pkg
+PASS rung 1 01-add-legacy: {'h13-source-qualified': 1}, 1 task descriptors, 1 dispatched programs, 9 libane calls, plan /tmp/h13-first-run/01-add-legacy/plan.json
+  hardware: ANE_CHECKOUT=~/src/omarchy-ane bash tests/run_h13_linux_hardware.sh /tmp/h13-first-run/01-add-legacy/model.mil /tmp/h13-first-run/01-add-legacy/models a=/tmp/h13-first-run/01-add-legacy/inputs/a.fp16
+submitting rung 1: bash /home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler/tests/run_h13_linux_hardware.sh /tmp/h13-first-run/01-add-legacy/model.mil /tmp/h13-first-run/01-add-legacy/models a=/tmp/h13-first-run/01-add-legacy/inputs/a.fp16
+PREFLIGHT FAIL host is x86_64, not aarch64
+identity host               omp-studio-local
+identity kernel             6.17.2-1-pve x86_64
+PREFLIGHT FAIL no /proc/device-tree/soc/ane@* node; boot the ANE device-tree entry
+PREFLIGHT FAIL ane module is not loaded; run the jwm1 bring-up ladder first
+PREFLIGHT FAIL no /sys/bus/platform/devices/*.ane; the module bound nothing
+PREFLIGHT FAIL no character device at /dev/accel/accel0
+identity libane-checkout    /home/joshuawarren/src/omarchy-ane
+identity libane-commit      2ced80b on omarchy-kmd
+identity libane-dirty       0 modified path(s)
+PREFLIGHT FAIL /home/joshuawarren/src/omarchy-ane is on 'omarchy-kmd', not 'omarchy'
+identity libane-anec-header 0x800
+PREFLIGHT FAIL libane reads the ANEC payload at 0x800, not 0x1000
+PREFLIGHT FAIL missing /home/joshuawarren/src/omarchy-ane/libane/libane.a; build libane and bindings/python/dylib
+PREFLIGHT FAIL missing /home/joshuawarren/src/omarchy-ane/bindings/python/dylib/libane_python.so; build libane and bindings/python/dylib
+identity compiler-repo      /home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler
+identity compiler-commit    d72cb9b on feat/h13-m1
+identity compiler-dirty     183 modified path(s)
+H13 preflight: FAIL; do not submit
+reminder: after a hung submission, reboot. Never rmmod and reload ane - the remove path leaks IOVA mappings and a second insmod fails bo_init.
+FAIL rung 1 hardware run exited 2; stop the ladder here
+exit=1
+
+$ python3 tests/h13_first_run/first_run.py --rung 6 (plan excerpt: the intermediate handoff)
+{
+  "programs": [
+    {
+      "encoder": "h13-oracle-parity",
+      "file": "program-0.anec",
+      "libaneCalls": [
+        "pyane_init(\"program-0.anec\", device)",
+        "ane_bind_kernel(handle, anec[0x1000 + 512], 16384)",
+        "__ane_src_size(handle, 0) == 16384  # a",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # b",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # sum",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add"
+    },
+    {
+      "encoder": "h13-oracle-parity",
+      "file": "program-1.anec",
+      "libaneCalls": [
+        "pyane_init(\"program-1.anec\", device)",
+        "ane_bind_kernel(handle, anec[0x1000 + 512], 16384)",
+        "__ane_src_size(handle, 0) == 16384  # sum",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # b",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # y",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "mul"
+    }
+  ],
+  "referenceCriteria": {
+    "y": "byte-for-byte equal to the fp16 reference"
+  }
+}

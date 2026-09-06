@@ -1,7 +1,7 @@
 {
   "schema": "h13-hardware-handoff.v1",
   "purpose": "Everything the base-M1 owner needs to run the compiler's H13 packages once the ANE-enabled boot and driver are confirmed. Artifact readiness is not permission to submit.",
-  "source_revision": "f2fdabd on joshuaswarren/mil-hwx-compiler feat/h13-m1",
+  "source_revision": "d72cb9b on joshuaswarren/mil-hwx-compiler feat/h13-m1, plus the first-run kit in tests/h13_first_run",
   "host_verification": [
     "receipts/2026-09-05-ane-community/h13-norm-parity-linux.log (H13 oracle parity PASS, 342 cases / 684 artifacts; H14 oracle parity PASS, 137 cases / 274 artifacts; H14 matvec probes 125 sections rebuilt byte-for-byte)",
     "receipts/2026-09-05-ane-community/h13-matvec-parity-linux.log",
@@ -11,7 +11,8 @@
     "receipts/2026-09-05-ane-community/h13-hwx-macos.log",
     "receipts/2026-09-05-ane-community/h13-wide-linux.log",
     "receipts/2026-09-05-ane-community/h13-wide-macos.log",
-    "receipts/2026-09-05-ane-community/h13-mlp-block-smoke.log"
+    "receipts/2026-09-05-ane-community/h13-mlp-block-smoke.log",
+    "receipts/2026-09-05-ane-community/h13-first-run-dryrun.log (all eight first-run rungs compile and dry-run on Linux; preflight and --execute refuse on a non-ANE host)"
   ],
   "verification_command": "GNUSTEP_PREFIX=/tmp/mil-hwx-bootstrap-proof-prefix LD_LIBRARY_PATH=/tmp/mil-hwx-bootstrap-proof-prefix/lib make test-h13 test-hwx-inspection test-h13-reference test-h13-simulation test-h13-parity test-h14-parity",
   "package": {
@@ -20,7 +21,7 @@
     "anec_layout": "0x1000-byte header, task descriptor at 0x1000, constants at content offset 0x280 for the source-qualified encoder and at align_up(text_bytes, 64) for the Apple-parity encoders, 0x4000-byte tiles",
     "manifest": "tensors{}, programs[], dispatchPlan[], intermediates[]; bindings carry logical shape, ANEC channel index, physical nchw layout, logicalBytes, allocationBytes, and optional slice {tensor, elementOffset, elementCount, physicalElements}; folded constants appear as constantInputs hex plus binding=constant; shape-only aliases carry aliasOf; chunked matmul results carry accumulation=chunked-fp16",
     "buffer_conversion": "python3 research/inspect_anec.py PACKAGE --pack-input NAME dense.fp16 --output PATH | --pack-constant NAME --output PATH | --unpack-output NAME PATH --output dense.fp16 (PATH is a directory of program-<i>.<binding>.buffer files when a tensor is sliced across programs; padded lanes are zero-filled and dropped)",
-    "inspect_anec_limits": "the package reader is H13-only and its operation whitelist and channel-layout model exclude the Apple-parity softmax, layer_norm and reduction packages; a plain add on [1,64,8,8] also fails its physical-layout check. Extending it is separate work (research/h13-td-fields.md)"
+    "inspect_anec_limits": "the package reader is H13-only. Its operation whitelist now accepts softmax, layer_norm, reduce_sum, reduce_max, reduce_mean and conv alongside the elementwise and matmul families, so the Apple-parity norm packages validate and dry-run; the channel-layout model already handled their dense [1,C,1,1] surfaces. Remaining limit: a plain add on [1,64,8,8] still fails its physical-layout check (research/h13-td-fields.md)"
   },
   "supported_now": [
     "add, mul, maximum, minimum, sub, real_div, relu, clip on any positive static fp16 shape (64-lane programs, zero-padded tail); constants folded on the host, sub via negation, real_div via exact reciprocals",
@@ -29,7 +30,7 @@
     "Apple-parity H13 softmax, layer_norm, reduce_sum, reduce_max and reduce_mean over 186 templates keyed on (operation, input CHW, reduced-axis mask, keep_dims), with the fp16 exponential and reciprocal lookup tables in the constant section; affine layer_norm is refused because Apple's compiler rejects every affine form in this harness (research/h13-td-fields.md; norm_layer_norm_ax1_1x2048x1x1_affine)",
     "H14/M2 elementwise, unary, scalar-constant and matvec parity backend emitting H14 task streams, ANEC containers and HWX objects (README 'Experimental M2/H14 compilation'; research/h14-td-fields.md)",
     "DAGs with fan-out (residuals, mul(x,x)); reshape, squeeze, expand_dims as zero-program aliases",
-    "example: a 768->1024->768 MLP block with relu and residual compiles to 92 programs (8 matvec, 84 elementwise)"
+    "example: a 768->1024->768 MLP block with relu and residual. The kit's form (two linear ops with BLOBFILE weights and biases, relu, residual add) compiles to 77 programs and 77 task descriptors: 8 matmul, 52 add and 16 maximum through the source-qualified encoder plus the residual add through the oracle-parity encoder, measured 2026-09-06 in receipts/2026-09-05-ane-community/h13-first-run-dryrun.log. An earlier variant of the same block recorded 92 programs in h13-mlp-block-smoke.log; the program count follows how the biases and activations are written, not just the layer shapes"
   ],
   "not_claimed": [
     "No H13 or H14 program in this repository has executed on an M1 or M2 ANE. Byte parity with Apple's compiler is not device execution; see docs/ane/parity-method.md",
@@ -37,10 +38,9 @@
     "Geometries off a decoded grid point are refused rather than interpolated; a neighbouring shape is not covered evidence"
   ],
   "first_hardware_checks": [
-    "add with a=index*0.125 patterns and b=index*0.25 patterns; expect exact fp16 sums (same oracle as tests/hardware/run_alu.mm)",
-    "matvec K=256 with the dense test weights from tests/test_h13_cli.py; compare against a CPU fp32-accumulated fp16 reference",
-    "a two-program chain add->mul; the intermediate buffer is the first program's output channel 4 and the second program's input channel 5",
-    "then one Apple-parity program: a covered matvec geometry, which exercises the two-task linked stream and Apple's surface order (output laid out below input) rather than the source-qualified single task"
+    "The ladder is tests/h13_first_run/RUNBOOK.md, eight rungs in order with a stop rule after each: (1) add [1,64,1,1] through the allbilly-derived legacy source-qualified encoder, the descriptor family this driver was validated with; (2) the same add through the Apple-parity encoder, same inputs and same expected bytes, so a rung-2-only failure is descriptor-side; (3) scalar-constant mul by fp16 0.5; (4) Apple-parity matvec K=256 N=512; (5) Apple-parity softmax [1,512,1,1], five linked tasks in one program; (6) a two-program add->mul chain, the intermediate leaving on channel 4 and re-entering on channel 5; (7) runtime-runtime matmul M=K=N=64 with Apple's reversed operand order (y on 5, x on 6); (8) the 768->1024->768 MLP block, 77 programs and 686 libane calls",
+    "Each rung records its MIL, deterministic weights and inputs, the tools/h13_reference.py expected output, the exact command, the pass criterion, the libane call sequence tools/h13_run_linux.py will issue, and what a failure there implicates (driver contract, ANEC header, DMA and kernel-bind sizes, descriptor words, surface order, sustained dispatch)",
+    "There is no --encoder flag: the encoder follows the operation's form. RUNBOOK.md 'Which encoder a rung gets' records the lowering order and how rung 1 forces the legacy encoder (a matching-shape BLOBFILE constant, which parityPlan refuses because a constant operand must be the inline fp16 0.5, and broadcastPlan refuses for want of a decoded per-channel template at that geometry)"
   ],
   "prerequisites_from_peer": [
     "Verified ANE-enabled Linux boot with the device-tree node present",
@@ -48,13 +48,16 @@
     "Explicit hardware handoff for this session"
   ],
   "linux_run": {
-    "command": "ANE_CHECKOUT=~/src/omarchy-ane bash tests/run_h13_linux_hardware.sh MIL MODEL_ROOT x=input.fp16",
+    "preflight": "bash tests/h13_first_run/preflight.sh - gates and prints host, kernel, /proc/device-tree/soc/ane@* node with compatible and status, ane module srcversion and parameters, bound platform device with driver and runtime-PM state (must be pinned on), device-node mode and owner, libane branch/commit/dirty/ANEC_HEADER_SIZE (must be 0x1000) with both built artifacts, and this repository's commit and dirty count. Exits 2 on any failure and reaches no device. tests/run_h13_linux_hardware.sh runs the same script and refuses to compile or submit if it fails",
+    "command": "python3 tests/h13_first_run/first_run.py --rung N [--execute] (dry run without --execute; --execute hands the fixture to ANE_CHECKOUT=~/src/omarchy-ane bash tests/run_h13_linux_hardware.sh MIL MODEL_ROOT name=input.fp16 ...)",
     "prerequisites": [
       "~/src/omarchy-ane on branch omarchy (f8df7bc: ANEC payload at 0x1000), libane/libane.a and bindings/python/dylib/libane_python.so built",
-      "ane.ko loaded with /dev/accel/accel0 accessible",
-      "verified ANE-enabled boot per homelab-infra docs/jw-m1.md bring-up ladder"
+      "ane.ko loaded with /dev/accel/accel0 accessible and runtime PM pinned on",
+      "verified ANE-enabled boot per homelab-infra docs/jw-m1.md bring-up ladder (~/src/homelab-infra/scripts/jwm1-ane-bringup.sh)"
     ],
-    "first_run": "a 64-element add (tests/test_h13_cli.py source()) before any matmul; the runner compares every output with tools/h13_reference.py and fails closed on any manifest or size mismatch before submission"
+    "first_run": "rung 1 of tests/h13_first_run/RUNBOOK.md: a 64-element add whose second operand is a folded BLOBFILE constant, one task descriptor, no ane_bind_kernel, 32 KiB of input surfaces. The runner compares every output with tools/h13_reference.py and fails closed on any manifest or size mismatch before submission",
+    "pass_criteria": "the dry-run plan states them per output in referenceCriteria: byte-for-byte equality with the fp16 reference, except outputs computed from a chunked reduction, which carry |device - reference| <= 0.02 + 0.02 * |reference|. tools/h13_run_linux.py propagates that envelope to consumers, so rung 8's residual add inherits it from the two K=768 reductions",
+    "teardown": "never rmmod and reload ane after a hung submission - the remove path leaks IOVA mappings and the next insmod fails bo_init with iommu_map failed at 0x4000. Reboot, re-run the bring-up ladder, re-run preflight, and restart at the rung that failed. Any result read after a hang is not evidence"
   },
   "macos_run": {
     "command": "bash tests/run_h13_hardware.sh MIL MODEL_ROOT x=input.fp16 (or make test-h13-hardware ...)",
@@ -68,6 +71,7 @@
     "h14_fields": "research/h14-td-fields.md",
     "h13_container_fields": "research/h13-hwx-fields.md",
     "accepted_and_refused_geometry": "research/oracle-envelope.md",
-    "first_campaign": "research/oracle-diff.md"
+    "first_campaign": "research/oracle-diff.md",
+    "first_run_ladder": "tests/h13_first_run/RUNBOOK.md (rung metadata in tests/h13_first_run/rungs.json, MIL in tests/h13_first_run/rungs/<rung>/model.mil, driver tests/h13_first_run/first_run.py, gates tests/h13_first_run/preflight.sh)"
   }
 }
