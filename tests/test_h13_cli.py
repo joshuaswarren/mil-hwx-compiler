@@ -278,6 +278,48 @@ def residual_source(reduction=256):
 '''
 
 
+def norm_source(op, shape=(1, 512, 1, 1), axis=None, axes=None,
+                output_shape=None, keep_dims=True, epsilon='0.00001',
+                affine=False):
+    """A single softmax, layer_norm, or reduce_* operation over one input."""
+    input_type = tensor_type(shape)
+    result_type = tensor_type(output_shape if output_shape is not None else shape)
+    body = []
+    if op == 'softmax':
+        body.append(f'    int32 axis = const()[name = string("axis"), '
+                    f'val = int32({axis})];')
+        arguments = 'x = x, axis = axis'
+    else:
+        axes_type = f'tensor<int32, [{len(axes)}]>'
+        values = ', '.join(map(str, axes))
+        body.append(f'    {axes_type} axes = const()[name = string("axes"), '
+                    f'val = {axes_type}([{values}])];')
+        arguments = 'x = x, axes = axes'
+        if op == 'layer_norm':
+            if affine:
+                affine_type = tensor_type((shape[1],))
+                ones = ', '.join(['fp16(1.0)'] * shape[1])
+                zeros = ', '.join(['fp16(0.0)'] * shape[1])
+                body.append(f'    {affine_type} gamma = const()'
+                            f'[name = string("gamma"), val = {affine_type}([{ones}])];')
+                body.append(f'    {affine_type} beta = const()'
+                            f'[name = string("beta"), val = {affine_type}([{zeros}])];')
+                arguments += ', beta = beta, gamma = gamma'
+            arguments += f', epsilon = fp32({epsilon})'
+        else:
+            arguments += f', keep_dims = bool({"true" if keep_dims else "false"})'
+    parameters = f'{input_type} x'
+    lines = '\n'.join(body)
+    return f'''program(1.3)
+[buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>({parameters}) {{
+{lines}
+    {result_type} y = {op}({arguments})[name = string("y")];
+  }} -> (y);
+}}
+'''
+
 with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     root = Path(directory)
     mil = root / 'model.mil'
@@ -1193,5 +1235,117 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         relocation_result.stdout + relocation_result.stderr)
     assert relocation_extracted.read_bytes() == \
         (relocation_anec / 'program-0.anec').read_bytes()
+
+    # Softmax, layer_norm, and the reductions lower straight to Apple's own
+    # multi-task programs: one program per operation, no elementwise
+    # decomposition, and the constant section the decoded oracle carries.
+    softmax_package = compile_text(norm_source(
+        'softmax', axis=1, shape=(1, 512, 1, 1)), 'softmax-c512')
+    softmax_manifest = json.loads((softmax_package / 'manifest.json').read_text())
+    assert softmax_manifest['programs'] == [softmax_manifest['programs'][0]]
+    assert softmax_manifest['encoder'] == 'apple-parity-norm'
+    assert softmax_manifest['operation'] == 'softmax'
+    assert softmax_manifest['taskDescriptors'] == 5
+    assert softmax_manifest['constantBytes'] == 256
+    assert softmax_manifest['inputs'][0]['nchw'] == [1, 512, 1, 1, 64, 64]
+    assert softmax_manifest['outputs'][0]['nchw'] == [1, 512, 1, 1, 64, 64]
+    assert softmax_manifest['inputs'][0].get('slice') is None
+    assert softmax_manifest['outputs'][0].get('slice') is None
+    # research/inspect_anec.py is not extended here: its operation whitelist
+    # and channel-layout model cover neither these programs nor the spatial
+    # elementwise packages that already exist, so the package reader stays a
+    # separate piece of work.
+    softmax_payload = (softmax_package / 'program-0.anec').read_bytes()
+    # The exponential table sits at the start of the section and the
+    # reciprocal table in its final 128 bytes; a channel-axis softmax needs
+    # both, so neither block is zero.
+    constant_start = 4096 + softmax_manifest['constantOffset']
+    assert struct.unpack_from('<H', softmax_payload, constant_start)[0] == 0xce40
+    assert struct.unpack_from(
+        '<H', softmax_payload, constant_start + 256 - 128)[0] == 0x0000
+    assert struct.unpack_from(
+        '<H', softmax_payload, constant_start + 256 - 126)[0] == 0x7c00
+
+    # A last-axis softmax needs no reciprocal table, so its section is the
+    # 128-byte exponential block alone.
+    last_axis = compile_text(norm_source(
+        'softmax', axis=-1, shape=(1, 512, 1, 1)), 'softmax-last-axis')
+    last_axis_manifest = json.loads((last_axis / 'manifest.json').read_text())
+    assert last_axis_manifest['constantBytes'] == 128
+    assert last_axis_manifest['taskDescriptors'] == 5
+    assert (last_axis / 'program-0.anec').read_bytes() != softmax_payload
+
+    # The rank-2 form a transformer emits reaches the same program as the
+    # rank-4 [1, 1, 1, C] surface it collapses onto.
+    flat_softmax = compile_text(norm_source(
+        'softmax', axis=-1, shape=(1, 512)), 'softmax-rank2')
+    nchw_softmax = compile_text(norm_source(
+        'softmax', axis=3, shape=(1, 1, 1, 512)), 'softmax-rank4')
+    assert (flat_softmax / 'program-0.anec').read_bytes() == \
+        (nchw_softmax / 'program-0.anec').read_bytes()
+
+    layer_norm_package = compile_text(norm_source(
+        'layer_norm', axes=(1,), shape=(1, 512, 1, 1)), 'layer-norm-c512')
+    layer_norm_manifest = json.loads(
+        (layer_norm_package / 'manifest.json').read_text())
+    assert layer_norm_manifest['encoder'] == 'apple-parity-norm'
+    assert layer_norm_manifest['taskDescriptors'] == 5
+    assert layer_norm_manifest['constantBytes'] == 16384
+
+    for operation, tasks in (('reduce_sum', 1), ('reduce_max', 1),
+                             ('reduce_mean', 1)):
+        spatial = compile_text(norm_source(
+            operation, axes=(2, 3), shape=(1, 64, 8, 8),
+            output_shape=(1, 64, 1, 1)), f'{operation}-spatial')
+        spatial_manifest = json.loads((spatial / 'manifest.json').read_text())
+        assert spatial_manifest['encoder'] == 'apple-parity-norm'
+        assert spatial_manifest['operation'] == operation
+        assert spatial_manifest['taskDescriptors'] == tasks
+        assert spatial_manifest['inputs'][0]['nchw'] == [1, 64, 8, 8, 512, 64]
+        assert spatial_manifest['outputs'][0]['nchw'] == [1, 64, 1, 1, 64, 64]
+        assert spatial_manifest['tensors']['y']['shape'] == [1, 64, 1, 1]
+        # keep_dims = false keeps the reduction but writes Apple's dense
+        # [1, 1, 1, N] surface instead of the channel-major one.
+        flat = compile_text(norm_source(
+            operation, axes=(2, 3), shape=(1, 64, 8, 8), output_shape=(1, 64),
+            keep_dims=False), f'{operation}-flat')
+        flat_manifest = json.loads((flat / 'manifest.json').read_text())
+        assert flat_manifest['encoder'] == 'apple-parity-norm'
+        assert flat_manifest['outputs'][0]['nchw'] == [1, 1, 1, 64, 128, 128]
+        assert (flat / 'program-0.anec').read_bytes() != \
+            (spatial / 'program-0.anec').read_bytes()
+
+    # Channel-axis reduce_sum and reduce_mean differ: the mean needs a second
+    # task for its scale, so the operation is not interchangeable.
+    channel_sum = compile_text(norm_source(
+        'reduce_sum', axes=(1,), shape=(1, 64, 8, 8),
+        output_shape=(1, 1, 8, 8)), 'reduce-sum-channel')
+    channel_mean = compile_text(norm_source(
+        'reduce_mean', axes=(1,), shape=(1, 64, 8, 8),
+        output_shape=(1, 1, 8, 8)), 'reduce-mean-channel')
+    assert json.loads(
+        (channel_sum / 'manifest.json').read_text())['taskDescriptors'] == 2
+    assert json.loads(
+        (channel_mean / 'manifest.json').read_text())['taskDescriptors'] == 2
+    assert (channel_sum / 'program-0.anec').read_bytes() != \
+        (channel_mean / 'program-0.anec').read_bytes()
+
+    # Outside the decoded envelope the encoder refuses rather than guessing.
+    compile_text(norm_source('softmax', axis=1, shape=(1, 777, 1, 1)),
+                 'softmax-off-envelope', success=False,
+                 diagnostic='h13.norm-outside-envelope')
+    compile_text(norm_source('layer_norm', axes=(1,), shape=(1, 512, 1, 1),
+                             epsilon='0.001'),
+                 'layer-norm-epsilon', success=False,
+                 diagnostic='h13.norm-outside-envelope')
+    compile_text(norm_source('layer_norm', axes=(1,), shape=(1, 512, 1, 1),
+                             affine=True),
+                 'layer-norm-affine', success=False,
+                 diagnostic='h13.norm-outside-envelope')
+    # A reduction over the batch axis has no decoded surface form.
+    compile_text(norm_source('reduce_sum', axes=(0,), shape=(1, 512, 1, 1),
+                             output_shape=(1, 512, 1, 1)),
+                 'reduce-batch-axis', success=False,
+                 diagnostic='h13.norm-outside-envelope')
 
 print('H13 MIL-to-ANEC/HWX CLI: PASS (device-free)')

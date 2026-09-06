@@ -31,7 +31,19 @@ struct OracleTaskTemplate {
     std::uint32_t unresolvedDescriptorWord;
 };
 
+struct OracleMatvecTemplate {
+    std::uint32_t rows;
+    std::uint32_t reduction;
+    std::uint32_t columns;
+    const std::uint32_t *text;
+    std::size_t textWords;
+    std::uint32_t taskCount;
+    std::uint32_t programRecordCount;
+    std::uint32_t unresolvedDescriptorWord;
+};
+
 #include "H14ElementwiseTemplates.inc"
+#include "H14MatvecTemplates.inc"
 
 bool sameShape(ElementwiseShape left, ElementwiseShape right) {
     return left.channels == right.channels && left.height == right.height &&
@@ -47,10 +59,19 @@ const OracleTaskTemplate *elementwiseTemplate(ElementwiseKind kind,
     return nullptr;
 }
 
-std::vector<std::uint8_t> streamBytes(const OracleTaskTemplate &source) {
-    std::vector<std::uint8_t> bytes(source.textWords * sizeof(std::uint32_t));
-    for (std::size_t index = 0; index != source.textWords; ++index) {
-        const auto value = source.text[index];
+const OracleMatvecTemplate *matvecTemplate(MatvecShape shape) {
+    for (const auto &candidate : kMatvecTasks)
+        if (candidate.rows == shape.rows &&
+            candidate.reduction == shape.reduction &&
+            candidate.columns == shape.columns) return &candidate;
+    return nullptr;
+}
+
+std::vector<std::uint8_t> streamBytes(const std::uint32_t *text,
+                                      std::size_t textWords) {
+    std::vector<std::uint8_t> bytes(textWords * sizeof(std::uint32_t));
+    for (std::size_t index = 0; index != textWords; ++index) {
+        const auto value = text[index];
         for (std::size_t byte = 0; byte != sizeof(value); ++byte)
             bytes[index * sizeof(value) + byte] =
                 static_cast<std::uint8_t>(value >> (byte * 8));
@@ -85,24 +106,45 @@ TensorLayout elementwiseTensor(std::uint32_t index, ElementwiseShape shape) {
             alignTile(bytes)};
 }
 
-Program oracleProgram(const OracleTaskTemplate &source, std::size_t inputCount) {
+/// Apple's matvec surface: one dense [1, 1, rows, width] fp16 plane whose row
+/// stride is the logical row, without the 64-byte elementwise row padding.
+TensorLayout matvecTensor(std::uint32_t index, std::uint32_t rows,
+                          std::uint32_t width) {
+    const std::uint64_t row = static_cast<std::uint64_t>(width) * 2;
+    const std::uint64_t plane = row * rows;
+    return {index, {1, 1, rows, width, plane, row}, alignTile(plane)};
+}
+
+/// The task stream and descriptor metadata every oracle template carries; the
+/// caller supplies the constants and the surfaces.
+Program streamProgram(const std::uint32_t *text, std::size_t textWords,
+                      std::uint32_t taskCount,
+                      std::uint32_t programRecordCount,
+                      std::uint32_t unresolvedDescriptorWord) {
     Program program;
-    program.taskStream = streamBytes(source);
+    program.taskStream = streamBytes(text, textWords);
+    const auto sizes = taskSizes(program.taskStream);
+    if (sizes.size() != taskCount)
+        throw std::logic_error("H14 task stream task count differs from the oracle");
+    program.firstTaskBytes = sizes.front();
+    program.taskCount = taskCount;
+    program.constantOffsetBytes =
+        (program.taskStream.size() + 0x3f) & ~std::size_t(0x3f);
+    program.programRecordCount = programRecordCount;
+    program.unresolvedDescriptorWord = unresolvedDescriptorWord;
+    return program;
+}
+
+Program oracleProgram(const OracleTaskTemplate &source, std::size_t inputCount) {
+    Program program = streamProgram(source.text, source.textWords,
+                                    source.taskCount, source.programRecordCount,
+                                    source.unresolvedDescriptorWord);
     program.constants = constantBytes(source);
     program.inputs.reserve(inputCount);
     for (std::size_t index = 0; index != inputCount; ++index)
         program.inputs.push_back(elementwiseTensor(
             static_cast<std::uint32_t>(5 + index), source.shape));
     program.output = elementwiseTensor(4, source.shape);
-    const auto sizes = taskSizes(program.taskStream);
-    if (sizes.size() != source.taskCount)
-        throw std::logic_error("H14 task stream task count differs from the oracle");
-    program.firstTaskBytes = sizes.front();
-    program.taskCount = source.taskCount;
-    program.constantOffsetBytes =
-        (program.taskStream.size() + 0x3f) & ~std::size_t(0x3f);
-    program.programRecordCount = source.programRecordCount;
-    program.unresolvedDescriptorWord = source.unresolvedDescriptorWord;
     return program;
 }
 
@@ -235,6 +277,66 @@ Program encodeElementwise(UnaryOperation operation, ElementwiseShape shape) {
     if (!source)
         throw std::invalid_argument("H14 unary operation is outside the decoded parity envelope");
     return oracleProgram(*source, 1);
+}
+
+bool supportsMatvecParity(MatvecShape shape) {
+    return matvecTemplate(shape);
+}
+
+std::vector<std::uint8_t> packMatvecWeights(MatvecShape shape,
+                                            const std::uint8_t *weights,
+                                            std::size_t weightBytes) {
+    if (!weights)
+        throw std::invalid_argument("H14 matvec weights must not be null");
+    if (!shape.reduction || shape.columns < 16 || shape.columns % 16 ||
+        (shape.columns > 256 && shape.columns % 256))
+        throw std::invalid_argument(
+            "H14 matvec packing needs a positive reduction and 16 columns per "
+            "row group, 256 per plane group above 256 columns");
+    if (weightBytes !=
+        static_cast<std::size_t>(shape.reduction) * shape.columns * 2)
+        throw std::invalid_argument(
+            "H14 matvec requires columns * reduction fp16 weights");
+    // Apple interleaves `group` weight rows at halfword granularity, packs
+    // each group of rows as one contiguous reduction-major plane, and orders
+    // the planes by the low four bits of the group index. Identical to the
+    // H13 permutation: research/mint_h14_matvec_probes.py rebuilds all 125
+    // known-weight H14 probe sections byte-for-byte from this rule.
+    const std::uint32_t group = std::min<std::uint32_t>(16, shape.columns / 16);
+    const std::uint32_t groups = shape.columns / group;
+    std::vector<std::uint8_t> packed(weightBytes);
+    for (std::uint32_t column = 0; column != shape.columns; ++column) {
+        const std::uint32_t plane = column / group;
+        const std::uint32_t destinationPlane =
+            (plane % 16) * (groups / 16) + plane / 16;
+        std::size_t destination =
+            (static_cast<std::size_t>(destinationPlane) * shape.reduction *
+                 group + column % group) * 2;
+        std::size_t source = static_cast<std::size_t>(column) * shape.reduction * 2;
+        for (std::uint32_t index = 0; index != shape.reduction; ++index) {
+            packed[destination] = weights[source];
+            packed[destination + 1] = weights[source + 1];
+            destination += static_cast<std::size_t>(group) * 2;
+            source += 2;
+        }
+    }
+    return packed;
+}
+
+Program encodeMatvecParity(MatvecShape shape, const std::uint8_t *weights,
+                           std::size_t weightBytes) {
+    const auto *source = matvecTemplate(shape);
+    if (!source)
+        throw std::invalid_argument(
+            "H14 matmul geometry is outside the decoded parity envelope");
+    Program program = streamProgram(source->text, source->textWords,
+                                    source->taskCount,
+                                    source->programRecordCount,
+                                    source->unresolvedDescriptorWord);
+    program.constants = packMatvecWeights(shape, weights, weightBytes);
+    program.inputs = {matvecTensor(5, shape.rows, shape.reduction)};
+    program.output = matvecTensor(4, shape.rows, shape.columns);
+    return program;
 }
 
 std::vector<std::uint8_t> encodeANEC(const Program &program) {

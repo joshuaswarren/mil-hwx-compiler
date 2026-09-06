@@ -28,6 +28,8 @@ from h13_td import decode_task  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 ORACLES = ROOT / "research/oracles/h14"
 OUTPUT = ROOT / "plugins/H14/H14ElementwiseTemplates.inc"
+MATVEC_OUTPUT = ROOT / "plugins/H14/H14MatvecTemplates.inc"
+CONSTANT_ALIGNMENT = 0x40
 
 # Task-stream framing: a 16-byte zero prefix that decodes as a zero-size task,
 # then every task 16-byte aligned with the last task left unpadded.
@@ -198,21 +200,76 @@ def generate() -> str:
     return "\n".join(lines)
 
 
+def selected_matvec_oracles() -> list[dict[str, Any]]:
+    """The H14 `transpose_y=true` matmul geometries Apple decoded, ordered by
+    rows, reduction, then columns."""
+    selected = []
+    for path in sorted(ORACLES.glob("matmul_m*_ty1.json")):
+        oracle = json.loads(path.read_text())
+        if oracle.get("error") is None and oracle["family"] == "matmul":
+            selected.append(oracle)
+    selected.sort(key=lambda item: (item["parameters"]["rows"],
+                                    item["parameters"]["reduction"],
+                                    item["parameters"]["columns"]))
+    return selected
+
+
+def generate_matvec() -> str:
+    oracles = selected_matvec_oracles()
+    lines = ["// Generated from decoded H14 matmul oracle task words by",
+             "// research/generate_h14_templates.py. No HWX container bytes.",
+             ""]
+    entries = []
+    for index, oracle in enumerate(oracles):
+        parameters = oracle["parameters"]
+        descriptor = oracle["program_descriptor"]
+        rows = parameters["rows"]
+        reduction = parameters["reduction"]
+        columns = parameters["columns"]
+        stream = task_stream(oracle)
+        constant_offset = (int(descriptor["constant_address"], 16) -
+                           int(descriptor["text_address"], 16))
+        aligned = (len(stream) * 4 + CONSTANT_ALIGNMENT - 1) & \
+            ~(CONSTANT_ALIGNMENT - 1)
+        if constant_offset != aligned:
+            raise ValueError(
+                f"{oracle['case']}: constants sit at {constant_offset}, not "
+                f"the {aligned} the aligned text stream implies")
+        if oracle["constant_section"]["size"] != reduction * columns * 2:
+            raise ValueError(
+                f"{oracle['case']}: constant section is not K*N halfwords")
+        lines.append(f"// {oracle['case']}")
+        lines.append(f"static constexpr std::uint32_t kH14MatvecText{index}[] = {{")
+        lines.append(word_rows(stream))
+        lines.append("};")
+        lines.append("")
+        trailer = descriptor["trailing_words"]
+        entries.append(
+            f"    {{{rows}, {reduction}, {columns}, kH14MatvecText{index}, "
+            f"std::size(kH14MatvecText{index}), {descriptor['task_count']}, "
+            f"0x{int(trailer[20], 16):08x}, 0x{int(trailer[28], 16):08x}}},")
+    lines.append("static constexpr OracleMatvecTemplate kMatvecTasks[] = {")
+    lines.extend(entries)
+    lines.append("};")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true",
-                        help="fail when the checked-in file is stale")
+                        help="fail when a checked-in file is stale")
     arguments = parser.parse_args()
-    generated = generate()
-    if arguments.check:
-        current = OUTPUT.read_text() if OUTPUT.exists() else ""
-        if current != generated:
-            raise SystemExit(f"{OUTPUT} is stale; regenerate it")
-        print(f"H14 templates: up to date ({OUTPUT})")
-        return
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(generated)
-    print(f"wrote {OUTPUT} ({len(generated)} bytes)")
+    for path, generated in ((OUTPUT, generate()),
+                            (MATVEC_OUTPUT, generate_matvec())):
+        if arguments.check:
+            if (path.read_text() if path.exists() else "") != generated:
+                raise SystemExit(f"{path} is stale; regenerate it")
+            print(f"H14 templates: up to date ({path})")
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(generated)
+        print(f"wrote {path} ({len(generated)} bytes)")
 
 
 if __name__ == "__main__":

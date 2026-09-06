@@ -1,4 +1,10 @@
-# H13 matvec task-descriptor and constant-section fields
+# H13 task-descriptor and constant-section fields
+
+Two encoders are documented here: the `matmul` (matvec) programs, and the
+`softmax` / `layer_norm` / `reduce_*` programs. Both emit Apple's decoded task
+stream verbatim for a covered geometry and refuse anything else.
+
+# Matvec
 
 ## Scope and provenance
 
@@ -167,3 +173,189 @@ Invariant task 1 words include `header[6] = 0x2000b800`,
   `0x00000`/`0x00014`, the L2 configuration words listed above, the three-task
   scratch size, and which ANEC channel Apple's runtime would use if a matvec
   ever needed the scratch as a DMA surface.
+
+# Softmax, layer_norm, and reductions
+
+## Scope and provenance
+
+This documents the `softmax`, `layer_norm`, `reduce_sum`, `reduce_max`, and
+`reduce_mean` programs, minted on the same host and tool as the matvec section
+above. The shipped campaign in `research/mint_oracles.py` contributes 10 cases
+(two softmax shapes, two layer_norm shapes, six reductions), which cannot
+separate a word that tracks C from one that tracks the reduced extent, because
+every one of its normalization cases reduces the same axis.
+
+`research/mint_norm_probes.py` adds the sweep. It attempted 226 cases and
+Apple's compiler accepted 209:
+
+| Sweep | Shapes | Purpose |
+|---|---|---|
+| Flat channel | `[1, C, 1, 1]`, C ∈ {64, 128, 256, 512, 1024, 2048, 4096} | The transformer residual width; softmax over C and over the last axis, layer_norm over C and over every non-batch axis, all three reductions over C |
+| Sequence | `[1, C, 1, W]`, W ∈ {32, 64, 128, 512} | Softmax and reduction over the last axis with a nonunit W |
+| Attention scores | `[1, H, S, S]`, H ∈ {1, 8, 12}, S ∈ {64, 128, 256} | Last-axis softmax on a score matrix |
+| Spatial | `[1, C, S, S]`, (C, S) ∈ {(32, 4), (64, 8), (128, 16)} | Reduction and normalization over C, H, W, HW, and CHW |
+| Rank reduction | `keep_dims = false` on the flat and spatial forms | Apple's dense output surface for a rank-reduced result |
+
+The 17 rejections are all of one kind: **every affine `layer_norm` form is
+rejected by this compiler**. `research/oracles/h13/*_affine.json` records them
+with `callback_status=1`. Before concluding that, seven forms were tried:
+inline rank-1 `gamma`/`beta` matching the reduced axis, inline rank-1 over a
+unit last axis, inline rank-3 `[C, 1, 1]` with `axes = [1, 2, 3]`, `gamma`
+without `beta`, a rank-2 `x` with `axes = [-1]`, a rank-4 `x` normalized over a
+64-wide last axis, and `BLOBFILE`-backed `gamma`/`beta`. A `BLOBFILE`-backed
+`mul` compiled in the same harness, so the blob path itself works. There is
+therefore no oracle for an affine layer_norm, and both the encoder and
+`tools/h13_reference.py` refuse one rather than emit a program Apple never
+produced.
+
+## Program shape
+
+219 decoded records (105 normalization, 114 reduction) collapse to 186
+templates keyed on `(operation, input CHW, reduced-axis mask, keep_dims)`, with
+177 distinct task streams; `research/mint_norm_probes.py --emit-templates`
+asserts that two records sharing a key agree on every decoded word, section
+hash, and descriptor before it writes `plugins/H13/H13NormTemplates.inc`.
+
+Task counts depend on the operation and on which axis reduces, not on the
+extent:
+
+| Operation | Reduced axes | Tasks | Constant section |
+|---|---|---|---|
+| `softmax` | C | 4 (W = 1, C = 1) or 5 | 256 / 1152 / 2176 bytes |
+| `softmax` | H | 5 | 640 / 1152 / 2176 bytes |
+| `softmax` | W | 5, 6 (H > 1), 8 (S = 256) | 128 / 1024 / 1536 / 2048 bytes |
+| `layer_norm` | C | 5, 6 (H > 1) | 16384 zero bytes |
+| `layer_norm` | W | 3, 5 (H > 1) | 16384 zero bytes |
+| `layer_norm` | HW, CHW | 3 | 16384 zero bytes |
+| `reduce_sum`, `reduce_mean` | C | 1 (H = W = 1) or 2 | 16384 zero bytes |
+| `reduce_max` | C | 1 | 16384 zero bytes |
+| all three reductions | H | 3 | 16384 zero bytes |
+| all three reductions | W, HW, CHW | 1 | 16384 zero bytes |
+
+Every task stream starts with a 126-word (504-byte) first task, so
+`task_words_minus_one` is 125 in all 186 templates, and each later task's size
+comes from the previous task's `header[1][24:16] + 1`, exactly as in the matvec
+form.
+
+## Constant section
+
+`layer_norm` and all three reductions carry a 16384-byte all-zero section: the
+decoded SHA-256 equals `sha256(bytes(16384))` for all 143 such records.
+
+`softmax` carries fp16 lookup tables, and its section size varies with the
+shape (128 to 2176 bytes). The content rule is exact for all 69 decoded softmax
+records:
+
+- the exponential table (`kExpKERNWords`, 128 bytes, the same block the unary
+  `exp` encoder already uses) at offset 0;
+- when the reduced axis is C or H, the reciprocal table (`kRecipKERNWords`,
+  128 bytes) in the final 128 bytes of the section, i.e. at `size - 128`;
+- zero everywhere else.
+
+A last-axis softmax carries no reciprocal table. The generator derives which
+of the three layouts applies by hashing each candidate against the recorded
+section SHA-256, so `plugins/H13/H13NormTemplates.inc` never asserts a layout
+that was not observed. The offsets were read out, not assumed: brute-forcing
+every 2-byte-aligned position for both blocks returns `(0, size - 128)` for all
+21 channel-axis and height-axis cases.
+
+## Surfaces and scratch
+
+Both surfaces follow the elementwise rule already in
+`plugins/H13/H13Program.cpp:elementwiseTensor`, with the logical MIL shape
+mapped to CHW by dropping leading unit dimensions above rank 3 and padding
+below it:
+
+```
+row   = max(64, W * 2)
+plane = row * H
+bytes = plane * C
+```
+
+This reproduces `shape`, `strides`, and `total_bytes` for all 438 decoded input
+and output surfaces, including the rank-reduced results: `keep_dims = false`
+over `[1, 64, 8, 8]`'s spatial axes gives a logical `[1, 64]`, which Apple lays
+out as `[1, 1, 1, 64]` with a 128-byte row stride, not as the channel-major
+`[1, 64, 1, 1]` the `keep_dims = true` form uses. That difference is why
+`keep_dims` is part of the template key.
+
+The input surface is laid out first and the output second (unlike matvec).
+Scratch is 0 for 179 templates and 16384 for 7 (channel-axis `reduce_sum` and
+`reduce_mean` with two tasks, and some softmax shapes); the templates carry the
+decoded value.
+
+## Task words
+
+A whole family mixes shapes that differ in C, H, and W at once, so words were
+fitted inside 32 sweeps where exactly one of C, H, W moves. Across those
+sweeps, of 12966 word slots: 11937 are invariant within their sweep, 562 have a
+fitted formula, and 467 are unresolved.
+
+Resolved words worth naming, all from the flat `[1, C, 1, 1]` sweep unless
+stated:
+
+| Word | Value |
+|---|---|
+| `0x0000c`, `0x00010` | `C` |
+| `0x00028` | `C` (reductions and `layer_norm` over CHW) |
+| `0x00000`, `0x00014` | `C + 0x10000`, or `C` in the high halfword with `1` in the low one, in the tasks that stream a plane per channel |
+| `0x00024` | `C` in the high halfword with `0x4001` in the low one (`reduce_max`, `softmax` task 0) |
+| `0x0480c`-`0x04840` | `C * 2`, `C * 16`, or an affine form such as `16 * C + 0x20`; the L2 base and stride block |
+| `0x0880c` | `fp32(1 / reduced extent)`: exactly `1/C` for a channel reduction. This is the mean divisor, and it is the one word that carries the reduction's arithmetic rather than its geometry |
+| `0x0002c` | `min(log2(reduced extent), 9)` in `layer_norm` (6, 7, 8, 9, 9, 9, 9 for C = 64..4096); a constant `84` in `reduce_mean` |
+| `0x13814`, `0x13818` | `C * 64`, the source DMA byte count of the padded surface |
+| `0x17810`, `0x17814` | `C * 64` on the output side |
+| `0x1380c`, `0x13810`, `0x17808`, `0x1780c` | `CHW * 2` in the W sweeps, `rowIn` or `planeIn` elsewhere |
+| `header[1]` | bits 24:16 are the next task's size minus one (`0x7d` for a 126-word successor, `0x9c` for a 157-word one); low bits vary and are unresolved |
+
+The softmax kernel-DMA block is partly readable. The 16 offsets at
+`0x1f848`-`0x1f884` are 0 when the task loads the exponential table and
+`size - 128` when it loads the reciprocal table (`0x800` for a 2176-byte
+section), which is the same offset the constant-section rule above gives. The
+16 sizes at `0x1f888`-`0x1f8c4` are a mix of `0x80` and `0x40` whose split
+tracks the number of active lanes (all `0x80` for `[1, 64, 1, 64]`, eight
+`0x80` then eight `0x40` for `[1, 8, 64, 64]`, one `0x80` then fifteen `0x40`
+for the flat shapes); the rule for the split is not resolved.
+
+### Unresolved words
+
+Listed per operation and per swept dimension. Parity does not depend on any of
+them: the encoder emits Apple's decoded stream for a covered geometry and
+refuses anything else, so an unresolved word is a limit on extrapolation, not
+on correctness.
+
+| Operation | Sweep | Unresolved |
+|---|---|---|
+| `layer_norm` | C | `0x0002c` (the clamp above 512 is observed, not derived), `header[1]` low bits |
+| `reduce_max` | C | `0x04800`, `0x04810`, `0x04834`, `0x0c804`, `header[1]`, `header[4]` |
+| `reduce_sum`, `reduce_mean` | C | `0x04810`, `0x04834`, `header[1]` |
+| all three reductions | W | `0x00000`, `0x00014`, `0x00028`, `0x0002c`, `0x0480c`, `0x04810`, `0x04814`, `0x04818`, `0x04834`, `0x1380c` |
+| `softmax` | C | `0x0000c`, `0x00010`, `0x00024`, `0x00030`, `0x00034`, `0x04808`-`0x04844`, the kernel-DMA block `0x1f80c`-`0x1f8c4`, `header[1]`, `header[8]` |
+| `softmax` | W | the same set plus `0x13800`-`0x13838`, `0x17808`-`0x17818`, `header[4]`, `header[6]` |
+
+The softmax lists are long because its L2 configuration and LUT DMA change
+shape with the tiling, not because those sweeps disagree: each individual
+template still reproduces Apple's words exactly.
+
+## Coverage and limits
+
+- Covered as one program: the 186 templates above, i.e. all 219 decoded
+  normalization and reduction oracles. `tests/test_h13_parity.py` re-derives
+  every task word, section hash, program descriptor, and tensor descriptor
+  from the compiler's own output for each of them, in both `anec` and `hwx`.
+- MIL rank is normalized before lookup, so the rank-2 and rank-3 forms a
+  transformer emits reach the same program as the rank-4 surface they collapse
+  onto: `softmax(axis = -1)` on `[1, 512]` compiles to the same bytes as
+  `axis = 3` on `[1, 1, 1, 512]`.
+- Refused, with `h13.norm-outside-envelope`: any shape off the sweep, an
+  epsilon other than 1e-5, `gamma`/`beta`, a non-constant axes operand, and a
+  reduction over the batch axis.
+- Numerics are documented separately from parity. Apple's softmax evaluates
+  `exp` and the reciprocal through the fp16 LUTs above, so device output differs
+  from `tools/h13_reference.py`, which accumulates in float32 and rounds once.
+  The reference is the numerical contract; the oracle bytes are the parity
+  contract. They are not the same claim.
+- `research/inspect_anec.py` cannot read these packages: its operation
+  whitelist excludes them, and its channel-layout model already rejects any
+  spatial surface (a plain `add` on `[1, 64, 8, 8]` fails with "incorrect
+  physical layout"). Extending the package reader is separate work.
