@@ -21,6 +21,9 @@ struct OracleTaskTemplate {
     ElementwiseKind kind;
     std::uint8_t operation;
     ElementwiseShape shape;
+    /// The second runtime operand's surface, which the decoded broadcast
+    /// forms let differ from the result surface; equal to `shape` otherwise.
+    ElementwiseShape operand;
     const std::uint32_t *text;
     std::size_t textWords;
     std::uint32_t taskCount;
@@ -42,8 +45,38 @@ struct OracleMatvecTemplate {
     std::uint32_t unresolvedDescriptorWord;
 };
 
+/// Which LUT layout a decoded normalization program's constant section holds.
+/// The generator derives this from the recorded section hash, so the encoder
+/// rebuilds the same bytes instead of guessing them from the operation.
+enum class NormConstants : std::uint8_t {
+    Zero,
+    Exponential,
+    ExponentialReciprocal,
+};
+
+struct OracleNormTemplate {
+    NormOperation operation;
+    ElementwiseShape input;
+    ElementwiseShape output;
+    std::uint32_t axisMask;
+    bool keepDims;
+    NormConstants constants;
+    const std::uint32_t *text;
+    std::size_t textWords;
+    std::uint32_t taskCount;
+    std::size_t constantBytes;
+    std::uint32_t programRecordCount;
+    std::uint32_t unresolvedDescriptorWord;
+    std::uint32_t scratchDescriptorWord;
+};
+
 #include "H14ElementwiseTemplates.inc"
 #include "H14MatvecTemplates.inc"
+#include "H14NormTemplates.inc"
+// H14's exponential and reciprocal sections are the H13 tables byte-for-byte:
+// research/mint_h14_norm_probes.py resolves every decoded H14 section against
+// these words by SHA-256 before it emits a NormConstants kind.
+#include "H13ElementwiseConstants.inc"
 
 bool sameShape(ElementwiseShape left, ElementwiseShape right) {
     return left.channels == right.channels && left.height == right.height &&
@@ -52,10 +85,12 @@ bool sameShape(ElementwiseShape left, ElementwiseShape right) {
 
 const OracleTaskTemplate *elementwiseTemplate(ElementwiseKind kind,
                                               std::uint8_t operation,
-                                              ElementwiseShape shape) {
+                                              ElementwiseShape shape,
+                                              ElementwiseShape operand) {
     for (const auto &candidate : kElementwiseTasks)
         if (candidate.kind == kind && candidate.operation == operation &&
-            sameShape(candidate.shape, shape)) return &candidate;
+            sameShape(candidate.shape, shape) &&
+            sameShape(candidate.operand, operand)) return &candidate;
     return nullptr;
 }
 
@@ -65,6 +100,40 @@ const OracleMatvecTemplate *matvecTemplate(MatvecShape shape) {
             candidate.reduction == shape.reduction &&
             candidate.columns == shape.columns) return &candidate;
     return nullptr;
+}
+
+const OracleNormTemplate *normTemplate(NormOperation operation,
+                                       NormShape shape) {
+    for (const auto &candidate : kH14NormTasks)
+        if (candidate.operation == operation &&
+            candidate.axisMask == shape.axisMask &&
+            candidate.keepDims == shape.keepDims &&
+            sameShape(candidate.input, shape.input) &&
+            sameShape(candidate.output, shape.output)) return &candidate;
+    return nullptr;
+}
+
+template <std::size_t N>
+void putWords(std::vector<std::uint8_t> &bytes, std::size_t offset,
+              const std::uint32_t (&words)[N]) {
+    if (offset + N * sizeof(std::uint32_t) > bytes.size())
+        throw std::logic_error("H14 constant table exceeds its decoded section");
+    for (std::size_t index = 0; index != N; ++index)
+        for (std::size_t byte = 0; byte != sizeof(std::uint32_t); ++byte)
+            bytes[offset + index * sizeof(std::uint32_t) + byte] =
+                static_cast<std::uint8_t>(words[index] >> (byte * 8));
+}
+
+/// Apple's H14 softmax sections hold the exponential table at offset 0 and,
+/// when the reduced axis is not the last one, the reciprocal table in the
+/// final 128 bytes; layer_norm and every reduction leave the section zero.
+std::vector<std::uint8_t> normConstants(NormConstants kind, std::size_t size) {
+    std::vector<std::uint8_t> bytes(size, 0);
+    if (kind == NormConstants::Zero) return bytes;
+    putWords(bytes, 0, kExpKERNWords);
+    if (kind == NormConstants::ExponentialReciprocal)
+        putWords(bytes, size - sizeof(kRecipKERNWords), kRecipKERNWords);
+    return bytes;
 }
 
 std::vector<std::uint8_t> streamBytes(const std::uint32_t *text,
@@ -136,14 +205,16 @@ Program streamProgram(const std::uint32_t *text, std::size_t textWords,
 }
 
 Program oracleProgram(const OracleTaskTemplate &source, std::size_t inputCount) {
+    if (inputCount != 1 && inputCount != 2)
+        throw std::logic_error("H14 elementwise programs take one or two inputs");
     Program program = streamProgram(source.text, source.textWords,
                                     source.taskCount, source.programRecordCount,
                                     source.unresolvedDescriptorWord);
     program.constants = constantBytes(source);
     program.inputs.reserve(inputCount);
-    for (std::size_t index = 0; index != inputCount; ++index)
-        program.inputs.push_back(elementwiseTensor(
-            static_cast<std::uint32_t>(5 + index), source.shape));
+    program.inputs.push_back(elementwiseTensor(5, source.shape));
+    if (inputCount == 2)
+        program.inputs.push_back(elementwiseTensor(6, source.operand));
     program.output = elementwiseTensor(4, source.shape);
     return program;
 }
@@ -247,23 +318,25 @@ std::vector<std::size_t> taskSizes(const std::vector<std::uint8_t> &stream) {
 }
 
 bool supportsElementwise(BinaryOperation operation, ElementwiseShape shape,
-                         bool scalarConstant) {
+                         ElementwiseShape operand, bool scalarConstant) {
     const auto kind = scalarConstant ? ElementwiseKind::BinaryScalar
                                      : ElementwiseKind::BinaryRuntime;
-    return elementwiseTemplate(kind, static_cast<std::uint8_t>(operation), shape);
+    return elementwiseTemplate(kind, static_cast<std::uint8_t>(operation), shape,
+                               operand);
 }
 
 bool supportsElementwise(UnaryOperation operation, ElementwiseShape shape) {
     return elementwiseTemplate(ElementwiseKind::Unary,
-                               static_cast<std::uint8_t>(operation), shape);
+                               static_cast<std::uint8_t>(operation), shape, shape);
 }
 
 Program encodeElementwise(BinaryOperation operation, ElementwiseShape shape,
-                          bool scalarConstant, std::uint16_t scalarBits) {
+                          ElementwiseShape operand, bool scalarConstant,
+                          std::uint16_t scalarBits) {
     const auto kind = scalarConstant ? ElementwiseKind::BinaryScalar
                                      : ElementwiseKind::BinaryRuntime;
     const auto *source = elementwiseTemplate(
-        kind, static_cast<std::uint8_t>(operation), shape);
+        kind, static_cast<std::uint8_t>(operation), shape, operand);
     if (!source)
         throw std::invalid_argument("H14 binary operation is outside the decoded parity envelope");
     if (scalarConstant && scalarBits != 0x3800)
@@ -273,7 +346,7 @@ Program encodeElementwise(BinaryOperation operation, ElementwiseShape shape,
 
 Program encodeElementwise(UnaryOperation operation, ElementwiseShape shape) {
     const auto *source = elementwiseTemplate(
-        ElementwiseKind::Unary, static_cast<std::uint8_t>(operation), shape);
+        ElementwiseKind::Unary, static_cast<std::uint8_t>(operation), shape, shape);
     if (!source)
         throw std::invalid_argument("H14 unary operation is outside the decoded parity envelope");
     return oracleProgram(*source, 1);
@@ -336,6 +409,26 @@ Program encodeMatvecParity(MatvecShape shape, const std::uint8_t *weights,
     program.constants = packMatvecWeights(shape, weights, weightBytes);
     program.inputs = {matvecTensor(5, shape.rows, shape.reduction)};
     program.output = matvecTensor(4, shape.rows, shape.columns);
+    return program;
+}
+
+bool supportsNormParity(NormOperation operation, NormShape shape) {
+    return normTemplate(operation, shape);
+}
+
+Program encodeNormParity(NormOperation operation, NormShape shape) {
+    const auto *source = normTemplate(operation, shape);
+    if (!source)
+        throw std::invalid_argument(
+            "H14 normalization geometry is outside the decoded parity envelope");
+    Program program = streamProgram(source->text, source->textWords,
+                                    source->taskCount,
+                                    source->programRecordCount,
+                                    source->unresolvedDescriptorWord);
+    program.constants = normConstants(source->constants, source->constantBytes);
+    program.scratchDescriptorWord = source->scratchDescriptorWord;
+    program.inputs = {elementwiseTensor(5, source->input)};
+    program.output = elementwiseTensor(4, source->output);
     return program;
 }
 

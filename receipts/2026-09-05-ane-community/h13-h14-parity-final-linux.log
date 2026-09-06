@@ -1,0 +1,87 @@
+build/test_h13_encoding
+H13_ENCODING_OK
+build/test_h13_anec
+python3 tests/test_h13_cli.py build/mil-hwxc
+H13 MIL-to-ANEC/HWX CLI: PASS (device-free)
+python3 tests/test_hwx_inspection.py
+HWX inspection: PASS (multi-task H13 plus source-derived H14 fixtures)
+python3 tests/test_h13_reference.py build/mil-hwxc
+PASS test_blob_matmul_transposes
+PASS test_chunked_accumulation_difference_bound
+PASS test_fp16_rounding_and_ops
+PASS test_intermediate_physical_buffer_composition
+PASS test_linux_runner_dry_run
+PASS test_shape_ops_linear_and_binary_ops
+PASS 6 H13 reference tests
+python3 tests/test_h13_package_simulation.py
+OK macOS writePhysical/readPhysical matches inspect_anec.convert_tensor (run_h13.mm writePhysical/readPhysical)
+OK elemwise add-mul-relu chain 96
+OK add
+OK mul
+OK maximum
+OK minimum
+OK sub
+OK real_div
+OK matmul-add-relu N=96 programs=5
+OK matmul K=1 N=1 programs=1 chunked=False
+OK matmul K=1 N=64 programs=1 chunked=False
+OK matmul K=1 N=300 programs=1 chunked=False
+OK matmul K=1 N=512 programs=1 chunked=False
+OK matmul K=1 N=1000 programs=2 chunked=False
+OK matmul K=200 N=1 programs=1 chunked=False
+OK matmul K=200 N=64 programs=1 chunked=False
+OK matmul K=200 N=300 programs=1 chunked=False
+OK matmul K=200 N=512 programs=1 chunked=False
+OK matmul K=200 N=1000 programs=2 chunked=False
+OK matmul K=256 N=1 programs=1 chunked=False
+OK matmul K=256 N=64 programs=1 chunked=False
+OK matmul K=256 N=300 programs=1 chunked=False
+OK matmul K=256 N=512 programs=1 chunked=False
+OK matmul K=256 N=1000 programs=2 chunked=False
+OK matmul K=257 N=1 programs=1 chunked=False
+OK matmul K=257 N=64 programs=1 chunked=False
+OK matmul K=257 N=300 programs=1 chunked=False
+OK matmul K=257 N=512 programs=1 chunked=False
+OK matmul K=257 N=1000 programs=2 chunked=False
+OK matmul K=512 N=1 programs=1 chunked=False
+OK matmul K=512 N=64 programs=1 chunked=False
+OK matmul K=512 N=300 programs=1 chunked=False
+OK matmul K=512 N=512 programs=1 chunked=False
+OK matmul K=512 N=1000 programs=2 chunked=False
+OK matmul K=700 N=1 programs=3 chunked=True
+OK matmul K=700 N=64 programs=3 chunked=True
+OK matmul K=700 N=300 programs=7 chunked=True
+OK matmul K=700 N=512 programs=3 chunked=True
+OK matmul K=700 N=1000 programs=20 chunked=True
+OK matmul K=1024 N=1 programs=3 chunked=True
+OK matmul K=1024 N=64 programs=3 chunked=True
+OK matmul K=1024 N=300 programs=7 chunked=True
+OK matmul K=1024 N=512 programs=1 chunked=False
+OK matmul K=1024 N=1000 programs=20 chunked=True
+OK softmax 1x512x1x1 -> 1x512x1x1 (5 tasks, reference agrees on 512 elements)
+OK softmax 1x1x1x128 -> 1x1x1x128 (5 tasks, reference agrees on 128 elements)
+OK layer_norm 1x512x1x1 -> 1x512x1x1 (5 tasks, reference agrees on 512 elements)
+OK reduce_sum 1x64x8x8 -> 1x64x1x1 (1 task, reference agrees on 64 elements)
+OK reduce_mean 1x64x8x8 -> 1x1x8x8 (2 tasks, reference agrees on 64 elements)
+OK reduce_max 1x64x8x8 -> 1x64 (1 task, reference agrees on 64 elements)
+OK broadcast add 1x64x8x8 const 1x64x1x1 (2 tasks, 4096 elements)
+OK broadcast mul 1x64x8x8 const 1x64x1x1 (2 tasks, 4096 elements)
+OK broadcast add 1x768x8x8 const 1x768x1x1 (2 tasks, 49152 elements)
+OK broadcast add 1x64x8x8 runtime 1x64x1x1 (2 tasks, 4096 elements)
+OK broadcast mul 1x64x8x8 runtime 1x1x8x8 (2 tasks, 4096 elements)
+OK broadcast add 1x64x16x16 runtime 1x1x1x1 (2 tasks, 16384 elements)
+OK broadcast add 2x64x8x8 runtime 1x64x1x1 (2 tasks, 8192 elements)
+OK broadcast mul 8x64x8x8 runtime 1x64x1x1 (2 tasks, 32768 elements)
+OK runtime-runtime matmul M64 K64 N64 ty0 (2 tasks)
+OK runtime-runtime matmul M64 K64 N64 ty1 (3 tasks)
+OK runtime-runtime matmul M64 K64 N128 ty0 (2 tasks)
+OK runtime-runtime matmul M128 K128 N128 ty1 (3 tasks)
+ALL SIM CHECKS PASSED
+python3 tests/test_h13_parity.py build/mil-hwxc
+H13 oracle parity: PASS (635 cases, 216 matmul, 113 broadcast, 105 softmax/layer_norm, 114 reduction, 1270 artifacts)
+python3 research/generate_h14_templates.py --check
+H14 templates: up to date (/home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler/plugins/H14/H14ElementwiseTemplates.inc)
+H14 templates: up to date (/home/joshuawarren/src/ane-research-mirror/mil-hwx-compiler/plugins/H14/H14MatvecTemplates.inc)
+python3 tests/test_h14_parity.py build/mil-hwxc
+H14 matvec probes: 125 sections rebuilt byte-for-byte (0 Apple rejections)
+H14 oracle parity: PASS (434 cases, 165 elementwise, 36 matvec, 14 known-weight matvec probes over 9 (K, N) grid points, 105 softmax/layer_norm, 114 reduction over 186 norm templates, 868 artifacts)

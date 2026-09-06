@@ -424,8 +424,14 @@ def _binary(name, left, right, result_type):
 def _matmul(left, right, transpose_x, transpose_y, result_type):
     left = _tensor(left)
     right = _tensor(right)
-    if left.dtype != "fp16" or right.dtype != "fp16" or len(right.shape) != 2:
-        raise ValueError("matmul requires fp16 tensors and rank-2 y")
+    if left.dtype != "fp16" or right.dtype != "fp16" or len(right.shape) < 2:
+        raise ValueError("matmul requires fp16 tensors and a rank-2 or higher y")
+    if len(right.shape) > 2:
+        # A runtime second operand carries x's leading axes; Apple accepts
+        # only a leading batch of 1, which is the same matrix either way.
+        if math.prod(right.shape[:-2]) != 1:
+            raise ValueError("matmul y supports a leading batch of 1")
+        right = Tensor(right.dtype, right.shape[-2:], right.values)
     if len(left.shape) == 1:
         if transpose_x:
             raise ValueError("transpose_x is invalid for rank-one x")

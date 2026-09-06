@@ -378,3 +378,92 @@ fp16 `0.5` weight, which cannot distinguish one permutation from another.
   emitter's exact host transpose onto the same encoder has no parity evidence;
   `tests/test_h14_parity.py` proves only that both forms of one non-square
   matrix produce a single identical artifact.
+
+## Appendix: H14 softmax, layer_norm, and reduction parity
+
+**Hand-maintained.** `research/h14-oracle-analysis.py` regenerates everything
+above the first appendix and does not emit this one; re-apply it after
+regenerating. A regeneration now also sees the 209 decoded `h14norm_*` records
+as `normalization` and `reduction` families and folds their tasks into the
+block-coverage totals.
+
+`research/mint_h14_norm_probes.py` minted the H13 probe grid against H14 on
+`macstudio` (case prefix `h14norm_`, target `h14` only): the flat
+`[1, C, 1, 1]` sweep for C in 64..4096, the sequence and attention-score
+geometries, the spatial shapes, layer_norm with and without gamma/beta, and
+the channel-versus-spatial reductions including the `keep_dims = false` forms.
+226 cases, 209 decoded, 17 rejected.
+
+- **Affine layer_norm is rejected on H14 exactly as on H13.** All 17
+  rejections are the `*_affine` cases, each with `callback_status=1`, so no
+  oracle covers a gamma/beta form on either target and the encoder refuses
+  one. The rejected records are checked in with their error text.
+- **Envelope.** 219 decoded H14 normalization and reduction oracles — the
+  campaign's 4 normalization and 6 reduction shapes plus the probe grid — all
+  reproduce their two surfaces from the encoder's own CHW formula
+  (`row = max(64, W * 2)`, `plane = row * H`, `bytes = plane * C`), and
+  collapse to 186 distinct `(operation, input CHW, axis mask, keep_dims)`
+  templates. Duplicates are proven identical, not assumed: two records sharing
+  a template key must carry the same tasks, constants, tensors, and program
+  descriptor.
+- **Task counts follow the reduced axis, not the shape.** Softmax over the
+  last axis is 5 tasks (7 cases decode 6 and one decodes 8, at the largest
+  attention scores); softmax over the channel axis is 5, except 3 flat cases
+  at 4. layer_norm is 3 tasks over every non-batch axis, 5 or 6 over the
+  channel axis alone. Every reduction over the channel or last axis is one
+  task; `reduce_*` over the height axis is 3, and the `keep_dims = false`
+  channel form is 2.
+- **The LUT sections are the H13 tables byte-for-byte.** Constant sections are
+  128, 256, or 16384 bytes. 142 templates carry an all-zero section
+  (layer_norm and every reduction), 23 carry the exponential table at offset
+  0, and 21 carry the exponential table plus the reciprocal table in the final
+  128 bytes. `mint_h14_norm_probes.py` resolves each kind by SHA-256 against
+  the words already in `plugins/H13/H13ElementwiseConstants.inc` before it
+  emits a `NormConstants` value, so `plugins/H14/H14Program.cpp` includes that
+  H13 header rather than restating the tables:
+  `kExpKERNWords` is
+  `b7b6085a1edc7def0f0bb2fc1fe345f1ba9d9a1a47e55b4516273149323b54d2` and
+  `kRecipKERNWords` is
+  `8a5840509d79c95c6e5a80bdb5938d55624a29211ab6f71f8c069191bef1538b`, and the
+  first hash is exactly the section of every last-axis H14 softmax. Which
+  table appears follows the reduced axis, not the operation: last-axis softmax
+  is exponential only, channel-axis and height-axis softmax also carry the
+  reciprocal table.
+- **Program-descriptor word `0x858`.** The H14 kind-4 descriptor carries a
+  second unmodelled word beyond `0x880`. It is zero in every decoded
+  elementwise, matvec, convolution, softmax, and reduction program, and
+  nonzero in exactly 13 of the 219 normalization records: the three-task
+  layer_norm-over-every-axis form on a multi-channel surface, where it equals
+  the input surface byte count (`[1, 8, 1, 64]` gives `0x400`, `[1, 4096, 1,
+  1]` gives `0x40000`). The same form on a one-channel surface leaves it zero.
+  It does not shift any surface address: `text_address` is still the scratch
+  base plus the 16 KiB-tiled surfaces. The template carries the decoded value
+  and `HWXObjectProgramInfo.h14ScratchDescriptorWord` writes it; the
+  generators reject any elementwise or matvec oracle whose `0x858` is nonzero
+  rather than silently dropping it.
+
+## Appendix: H14 elementwise envelope coverage
+
+**Hand-maintained**, on the same terms as the appendices above.
+
+`research/generate_h14_templates.py` now keys elementwise templates on
+`(kind, operation, result CHW, second-operand CHW)` and covers 165 decoded
+oracles as 165 distinct templates, up from the shipped campaign's 87: 50
+runtime binaries, 12 scalar-constant binaries, 25 unary, 13 `env_activation`
+shapes, and 65 `env_broadcast` cases. 36 of those templates are true broadcast
+forms whose runtime operand surface differs from the result surface
+(`[1, 1, 1, 1]`, `[1, C, 1, 1]`, and `[1, 1, H, W]` against a
+`[1, C, H, W]` result).
+
+- **gelu is three operations, not one.** Apple emits a different program per
+  `mode`, so `EXACT`, `SIGMOID_APPROXIMATION`, and `TANH_APPROXIMATION` are
+  separate encoder operations; keying them together made two oracles collide
+  on one template.
+- **Not covered, with the reason.** 20 batched `env_bcast_*` records
+  (`N = 2` and `N = 8`) record one batch element's bytes in `total_bytes`
+  against a rank-4 shape, which the encoder's single-batch surface formula
+  does not spell. 8 `BLOBFILE`-operand broadcast records carry a constant
+  section that is not the operand payload — a `[1, 64, 1, 1]` fp16 `0.5`
+  operand yields a 256-byte section with 72 nonzero bytes, and half of those
+  records keep only a section hash — so no packing rule is proven and the
+  encoder claims none.

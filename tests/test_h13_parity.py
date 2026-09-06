@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import struct
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -22,9 +23,8 @@ ORACLES = ROOT / "research/oracles/h13"
 RUNTIME_BINARY = {"add", "mul", "maximum", "minimum", "sub"}
 UNARY = {"abs", "exp", "gelu", "leaky_relu", "relu", "rsqrt", "sigmoid", "silu",
          "sqrt", "tanh"}
-ENCODERS = {"matmul": "apple-parity-matvec",
-            "normalization": "apple-parity-norm",
-            "reduction": "apple-parity-norm"}
+BROADCAST_FAMILIES = {"env_broadcast", "rrmm_broadcast"}
+MATMUL_FAMILIES = {"env_matmul", "rrmm_matmul", "rrmm_matvec"}
 DEFAULT_ENCODER = "h13-oracle-parity"
 
 
@@ -47,11 +47,26 @@ def selected_oracles():
             selected.append(oracle)
         elif family in ("normalization", "reduction"):
             selected.append(oracle)
+        elif family in BROADCAST_FAMILIES:
+            selected.append(oracle)
+        elif family in MATMUL_FAMILIES and parameters["x_storage"] == "runtime":
+            # A constant `x` leaves `y` as the runtime operand; no encoder
+            # lowers that form, so it stays outside the envelope.
+            selected.append(oracle)
     return selected
 
 
 def encoder(oracle):
-    return ENCODERS.get(oracle["family"], DEFAULT_ENCODER)
+    family = oracle["family"]
+    if family in MATMUL_FAMILIES:
+        return "apple-parity-matmul" \
+            if oracle["parameters"]["w_storage"] == "runtime" \
+            else "apple-parity-matvec"
+    if family in BROADCAST_FAMILIES:
+        return "apple-parity-broadcast"
+    return {"matmul": "apple-parity-matvec",
+            "normalization": "apple-parity-norm",
+            "reduction": "apple-parity-norm"}.get(family, DEFAULT_ENCODER)
 
 
 def write_weights(oracle, root):
@@ -72,7 +87,7 @@ def compile_oracle(oracle, output, artifact_format):
     result = subprocess.run(
         [str(COMPILER), "--mil", str(mil), "--model-root", str(output.parent),
          "--target", "H13", "--format", artifact_format, "--output", str(output)],
-        capture_output=True, text=True, timeout=60, check=False)
+        capture_output=True, text=True, timeout=600, check=False)
     assert result.returncode == 0, \
         f"{oracle['case']} {artifact_format}: {result.stdout}{result.stderr}"
     return json.loads((output / "manifest.json").read_text())
@@ -181,7 +196,14 @@ def check_hwx(oracle, output, manifest):
     assert record["encoder"] == encoder(oracle), oracle["case"]
     payload = (output / record["file"]).read_bytes()
     sections, program, tensors = unpack_commands(payload)
-    assert program == oracle["program_descriptor"], oracle["case"]
+    expected = dict(oracle["program_descriptor"])
+    # The envelope campaign records which slice of __TEXT/__text each program
+    # descriptor owns; a single-program object owns all of it.
+    section = expected.pop("task_section", None)
+    assert program == expected, oracle["case"]
+    assert section in (None, {"offset": 0,
+                              "size": expected_task_stream_bytes(oracle)}), \
+        oracle["case"]
     assert tensors == oracle["tensor_descriptors"], oracle["case"]
     assert sections[("__TEXT", "__text")]["size"] == \
         expected_task_stream_bytes(oracle), oracle["case"]
@@ -198,7 +220,11 @@ def main():
     oracles = selected_oracles()
     families = collections.Counter(oracle["family"] for oracle in oracles)
     expected = {"binary_runtime": 50, "binary_constant": 12, "unary": 25,
-                "matmul": 36, "normalization": 105, "reduction": 114}
+                "matmul": 36, "normalization": 105, "reduction": 114,
+                "env_broadcast": 93, "env_matmul": 110}
+    for family in ("rrmm_broadcast", "rrmm_matmul", "rrmm_matvec"):
+        if families[family]:
+            expected[family] = families[family]
     assert families == collections.Counter(expected), \
         f"decoded parity oracles per family: {dict(families)}"
     with tempfile.TemporaryDirectory(prefix="h13-parity-") as directory:
@@ -207,8 +233,16 @@ def main():
             for artifact_format, check in (("anec", check_anec), ("hwx", check_hwx)):
                 output = root / f"{oracle['case']}-{artifact_format}"
                 check(oracle, output, compile_oracle(oracle, output, artifact_format))
+                # The constant-weight grid reaches 134 MiB per artifact, so a
+                # case is discarded as soon as it has been compared.
+                shutil.rmtree(output)
+            for stale in root.glob(f"{oracle['case']}-*.mil"):
+                stale.unlink()
+    matmul = families["matmul"] + families["env_matmul"] + \
+        families["rrmm_matmul"] + families["rrmm_matvec"]
+    broadcast = families["env_broadcast"] + families["rrmm_broadcast"]
     print(f"H13 oracle parity: PASS ({len(oracles)} cases, "
-          f"{families['matmul']} matmul, "
+          f"{matmul} matmul, {broadcast} broadcast, "
           f"{families['normalization']} softmax/layer_norm, "
           f"{families['reduction']} reduction, {len(oracles) * 2} artifacts)")
 

@@ -68,13 +68,15 @@ def segment(name: bytes, section_name: bytes, size: int, offset: int,
     return command + section
 
 
-def tensor_descriptor() -> bytes:
+def tensor_descriptor(batch: int = 1, total: int | None = None) -> bytes:
+    """One H13 surface. Apple records a batched surface's total size as one
+    batch element's span, so `total` defaults to the batch stride."""
     command = bytearray(0x80)
     struct.pack_into("<III", command, 0, 4, len(command), 3)
     struct.pack_into("<I", command, 0x24, 5)
-    struct.pack_into("<4I", command, 0x28, 1, 64, 1, 1)
+    struct.pack_into("<4I", command, 0x28, batch, 64, 1, 1)
     struct.pack_into("<4Q", command, 0x50, 128, 2, 2, 2)
-    struct.pack_into("<Q", command, 0x70, 128)
+    struct.pack_into("<Q", command, 0x70, 128 if total is None else total)
     return bytes(command)
 
 
@@ -87,7 +89,7 @@ def h13_task(next_offset: int, next_words: int = 0) -> bytes:
     return struct.pack("<13I", *words)
 
 
-def h13_multi_task_hwx() -> bytes:
+def h13_multi_task_hwx(batch: int = 1, total: int | None = None) -> bytes:
     first = h13_task(0x40, 12)
     second = h13_task(0)
     text = first + bytes(0x40 - len(first)) + second
@@ -112,7 +114,8 @@ def h13_multi_task_hwx() -> bytes:
     commands = b"".join([
         segment(b"__FVMLIB", b"__const", 0, 0, 0x1000),
         segment(b"__FVMLIB", b"__data", 0, 0, 0x1000),
-        bytes(text_segment), bytes(program), tensor_descriptor(), tensor_descriptor(),
+        bytes(text_segment), bytes(program),
+        tensor_descriptor(batch, total), tensor_descriptor(batch, total),
     ])
     assert len(commands) == commands_size
     header = struct.pack("<8I", MAGIC, 0x80, 4, 1, 6, commands_size, 0, 0)
@@ -178,5 +181,16 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-inspection-") as directory:
     broken_path.write_bytes(broken)
     result = inspect(broken_path, success=False)
     assert "H13 final task points to 0x4" in result.stderr, result.stderr
+
+    batched_path = root / "synthetic-h13-batched.hwx"
+    batched_path.write_bytes(h13_multi_task_hwx(batch=8))
+    result = inspect(batched_path)
+    assert "architecture subtype=0x0004 name=H13 isa=7" in result.stdout
+    assert "shape=(8, 64, 1, 1)" in result.stdout, result.stdout
+
+    oversized_path = root / "synthetic-h13-batched-total.hwx"
+    oversized_path.write_bytes(h13_multi_task_hwx(batch=8, total=8 * 128))
+    result = inspect(oversized_path, success=False)
+    assert "invalid layout" in result.stderr, result.stderr
 
 print("HWX inspection: PASS (multi-task H13 plus source-derived H14 fixtures)")

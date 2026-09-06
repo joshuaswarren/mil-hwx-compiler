@@ -183,8 +183,11 @@ def h13_anec(data: bytes) -> tuple[bytes, dict[str, int]]:
     for index, ((shape, strides, total, element_code), allocation) in enumerate(
             zip(tensors, allocations)):
         batch, plane, row, element = strides
+        # Apple's batched surfaces declare one batch element's span as the
+        # descriptor's total size and reserve the whole batch in the surface
+        # allocation, so the batch only shows up in the shape.
         if element_code != 5 or element != 2 or batch != shape[1] * plane or \
-                total != shape[0] * batch or total > allocation:
+                total != batch or shape[0] * batch > allocation:
             raise ValueError(f"H13 tensor descriptor[{index}] has an invalid layout")
     content_size = constant_offset + constants["size"]
     content = data[text["offset"]:text["offset"] + content_size]

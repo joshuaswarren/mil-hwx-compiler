@@ -1,0 +1,5 @@
+    raise ValueError(message)
+ValueError: package file must be a regular file within the package
+make: *** [test-h13-simulation] Error 1
+H13 MIL-to-ANEC/HWX CLI: PASS (device-free)
+H13 oracle parity: PASS (635 cases, 216 matmul, 113 broadcast, 105 softmax/layer_norm, 114 reduction, 1270 artifacts)

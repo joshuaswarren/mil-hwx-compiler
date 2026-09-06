@@ -355,7 +355,110 @@ template still reproduces Apple's words exactly.
   from `tools/h13_reference.py`, which accumulates in float32 and rounds once.
   The reference is the numerical contract; the oracle bytes are the parity
   contract. They are not the same claim.
-- `research/inspect_anec.py` cannot read these packages: its operation
-  whitelist excludes them, and its channel-layout model already rejects any
-  spatial surface (a plain `add` on `[1, 64, 8, 8]` fails with "incorrect
-  physical layout"). Extending the package reader is separate work.
+- `research/inspect_anec.py` reads a spatial or batched surface now: one
+  formula, `row = max(64, W * 2)` with `plane = row * H`, covers the
+  elementwise 64-byte lane, the padded spatial plane, and the matmul's dense
+  rows. Its operation whitelist still excludes softmax and the reductions, so
+  those packages remain unreadable by it; that is separate work.
+
+# Runtime-runtime matmul, extended matvec, and broadcast
+
+## Provenance
+
+`research/mint_rrmm_probes.py` mints the probes behind this section and emits
+`plugins/H13/H13EnvelopeTemplates.inc` from what decoded: 90 `rrmm_*` records
+minted on `MacStudio.local` (Apple M1 Ultra, macOS 26.6.2 arm64) with Apple's
+`/tmp/h13-oracle/bin/ane-compile-hwx`, alongside the 224 `env_*` matmul and
+broadcast records from the envelope campaign. No HWX bytes are retained. The
+generator verifies each record's surfaces, VM layout, scratch, binding order,
+and constant-section hash against the encoder's own formulas before it writes
+a template, so a template never encodes a case the encoder would build
+differently.
+
+## Program shape
+
+| Form | Surfaces | Descriptor order | Address order | Constant section |
+|---|---|---|---|---|
+| Constant weight | `x`, result | `x`, result | result, `x` | `K * N * 2` packed weight |
+| Both operands runtime | `y`, `x`, result | `y`, `x`, result | result, `y`, `x` | 16 KiB zero |
+| Identical-shape binary | `x`, `y`, result | `x`, `y`, result | `x`, `y`, result | 16 KiB zero |
+| Broadcast binary | `x`, `y`, result | `x`, `y`, result | `x`, result, `y` | 16 KiB zero |
+| Scalar or per-channel constant | `x`, result | `x`, result | `x`, result | 16 KiB zero, or `4 * C` |
+
+The address order is not the declaration order, and Apple varies it per
+family: a matmul lays the result out below both operands, and a broadcast puts
+the result between them. Both orders are derived, not assumed — the generator
+reproduces every recorded `resource_addresses` list from the surface sizes and
+the `__DATA/__bss` scratch below them, and fails the case if it cannot.
+
+Every surface follows `row = max(64, W * 2)`, `plane = row * H`,
+`element = plane * C`. A batched surface records `element` as its
+tensor-descriptor total size, one batch element, while the object spaces
+surfaces by `N * element`: `[8, 64, 8, 8]` records strides
+`[32768, 512, 64, 2]` and total 32,768 bytes but occupies 0x40000. The runners
+must size buffers from the manifest's `allocationBytes` for that reason, and
+`HWXObjectBinding.allocationByteLength` carries it separately from
+`storageByteLength` in the writer.
+
+## Task structure
+
+A runtime-runtime matmul emits a 126-word staging task per partition followed
+by one 157-word compute task, and the compute task uses the extended header:
+`header[9] & 3 == 3` adds one word between the fixed header and the first
+register record, so the compute task is 158 words. `transpose_y=true` costs
+exactly one task more than `transpose_y=false` at the same geometry (2 against
+1 at M=16, 3 against 2 at M=128), the reverse of the constant-weight case.
+Task counts over the minted M sweep at K = N = 64, `transpose_y=false`, are
+1, 2, 3, 2, 4, 2, 4, 3, 4, 5 for M of 16, 32, 48, 64, 96, 128, 192, 256, 384,
+512: the count is not monotonic in M, and no closed form reproduces it.
+
+Rank does not change the stream. `rrmm_r2rr_m64_k64_n64_tx0_ty0` and
+`rrmm_r3rr_m64_k64_n64_tx0_ty0_b1` decode to identical words, descriptors, and
+section hashes, which is why the encoder normalizes rank before lookup.
+
+## Constant sections
+
+- A runtime second operand leaves the section 16 KiB of zeros: nothing is
+  packed, because both operands arrive as surfaces.
+- A constant weight is the `[columns, reduction]` fp16 matrix in Apple's
+  permutation: `group` rows interleave at halfword granularity, each group is
+  one contiguous reduction-major plane, and the planes are ordered by
+  `(plane % 16) * (groups / 16) + plane / 16`. `group` is
+  `min(16, N / 16)`, and above 128 x rows also `min(group, 32768 / K)`.
+  Measured: M = 128 with K = 4096 packs 16 rows per group, M = 144, 160, 176,
+  192, 224, 256 and 512 pack 8, and M = 192 with K = 8192 packs 4. Every
+  decoded constant-weight section hash is reproduced by that rule and by no
+  other rule in the corpus.
+- A per-channel constant becomes `4 * C` bytes: `C` fp16 bias values then `C`
+  fp16 scale values. `add` stores the operand as the bias and 1.0 as the
+  scale; `mul` leaves the bias zero and stores the operand as the scale. Both
+  layouts are proven against the recorded section hash at C = 64, 256, 768,
+  1024 and 3072.
+
+## Unresolved words
+
+Parity does not depend on any of these: the encoder emits Apple's decoded
+stream for a covered geometry and refuses anything else, so an unresolved word
+limits extrapolation, not correctness.
+
+- The geometry-scaled register words have no derived closed form. Between
+  K = N = 2048 and K = N = 4096 at M = 128 (`transpose_y=false`), 58 of the
+  284 stream words change; between `transpose_x=false` and `transpose_x=true`
+  at one geometry, 24 of 410 change. The templates carry the measured words
+  instead.
+- Apple's task count for a runtime-runtime matmul (above) and the exact row
+  count between 129 and 144 at which the packing group starts tracking
+  `32768 / K` are both unresolved; every probed row count is a multiple of 16.
+- The 16 KiB all-zero constant section every runtime broadcast and every
+  runtime-runtime matmul carries is unexplained: no register in the decoded
+  stream references it, and its size does not move with any swept dimension.
+- `transpose_y=false` with a BLOBFILE constant weight stays refused. Three
+  fresh probes at (M, K, N) of (1, 256, 256), (32, 2048, 2048) and
+  (128, 2048, 2048) return `ANE internal validation error: Metadata data type
+  does not match requested type.`, matching the first campaign's 36 refusals,
+  so the host transpose to the accepted `transpose_y=true` program is a
+  deliberate deviation rather than parity.
+- The three envelope refusals at M = 128 with K = 8192 (N of 2048, 4096 and
+  8192) are recorded as rejections with `callback_status=1` and no validation
+  report; they remain unexplained, and the same K and N compile at every other
+  probed M.
