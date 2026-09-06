@@ -4,13 +4,14 @@
 #import "ANEDiagnostic.h"
 #import "ANEExecutableBundle.h"
 #import "ANEH13Compiler.h"
+#import "ANEH14Compiler.h"
 
 #include <stdio.h>
 
 static void printUsage(const char *program) {
     fprintf(stderr,
         "usage: %s --mil FILE --model-root DIR "
-        "--output DIR [--target H16G|H13] [--format anec|hwx]\n", program);
+        "--output DIR [--target H16G|H13|H14] [--format anec|hwx]\n", program);
 }
 
 static NSString *severityName(ANEDiagnosticSeverity severity) {
@@ -76,17 +77,22 @@ int main(int argc, const char *argv[]) {
             return 66;
         }
         ANEDiagnosticEngine *diagnostics = [[ANEDiagnosticEngine alloc] init];
-        if ([target isEqualToString:@"H13"]) {
+        if ([target isEqualToString:@"H13"] || [target isEqualToString:@"H14"]) {
+            BOOL h14 = [target isEqualToString:@"H14"];
             NSError *error = nil;
-            BOOL success = [ANEH13Compiler compileMILData:milData
-                modelRoot:[NSURL fileURLWithPath:modelRoot isDirectory:YES]
-                format:format
-                outputDirectory:[NSURL fileURLWithPath:output isDirectory:YES]
-                diagnostics:diagnostics error:&error];
+            NSURL *root = [NSURL fileURLWithPath:modelRoot isDirectory:YES];
+            NSURL *outputURL = [NSURL fileURLWithPath:output isDirectory:YES];
+            BOOL success = h14
+                ? [ANEH14Compiler compileMILData:milData modelRoot:root
+                    format:format outputDirectory:outputURL
+                    diagnostics:diagnostics error:&error]
+                : [ANEH13Compiler compileMILData:milData modelRoot:root
+                    format:format outputDirectory:outputURL
+                    diagnostics:diagnostics error:&error];
             printDiagnostics(diagnostics);
             if (!success) {
-                if (error) fprintf(stderr, "cannot write H13 package: %s\n",
-                    error.description.UTF8String);
+                if (error) fprintf(stderr, "cannot write %s package: %s\n",
+                    target.UTF8String, error.description.UTF8String);
                 return error ? 74 : 65;
             }
             NSUInteger artifacts = 0;
@@ -94,8 +100,9 @@ int main(int argc, const char *argv[]) {
             for (NSString *name in [NSFileManager.defaultManager
                      contentsOfDirectoryAtPath:output error:nil])
                 artifacts += [name hasPrefix:@"program-"] && [name hasSuffix:suffix];
-            printf("compiled target=H13 artifacts=%lu format=%s output=%s\n",
-                (unsigned long)artifacts, format.UTF8String, output.UTF8String);
+            printf("compiled target=%s artifacts=%lu format=%s output=%s\n",
+                target.UTF8String, (unsigned long)artifacts, format.UTF8String,
+                output.UTF8String);
             return 0;
         }
         ANECompiler *compiler = [[ANECompiler alloc] init];
