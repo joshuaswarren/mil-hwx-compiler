@@ -451,6 +451,9 @@ macOS releases.
 
 ## Provenance
 
+See the [source-cited ANE knowledge base](docs/ane/README.md) for generation,
+software-stack, container, register-map, numerical, and memory-model references.
+
 The HWX container, Task Descriptor fields, and compiler stages were recovered
 by compiling author-written MIL with Apple's compiler, comparing generated
 objects, tracing compiler execution, and testing edited objects on hardware.

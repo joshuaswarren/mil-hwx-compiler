@@ -1,0 +1,69 @@
+# Annotated bibliography
+
+Sources are grouped by the claim they can support. A fixed commit link supports only that revision. A live documentation page can change after this bibliography is written.
+
+## Apple primary sources
+
+### Public APIs and engineering guidance
+
+- [Core ML documentation](https://developer.apple.com/documentation/coreml). The supported application-level model deployment surface. Use it for public API claims, not private compiler or HWX details. **Evidence: high.**
+- [`MLComputeUnits`](https://developer.apple.com/documentation/coreml/mlcomputeunits). Defines which processing units an application permits Core ML to use. It does not prove placement of each graph operation. **Evidence: high.**
+- [IOSurface documentation](https://developer.apple.com/documentation/iosurface). Defines shareable surface allocations. It does not document ANE internal memory. **Evidence: high.**
+- [WWDC 2019 session 426, “Optimizing On-Device Machine Learning Inference with Core ML and the Accelerate Framework”](https://developer.apple.com/videos/play/wwdc2019/426/). Public guidance on model execution and optimization. It is useful for the Core ML boundary, not register layouts. **Evidence: high.**
+- [“Deploying Transformers on the Apple Neural Engine”](https://machinelearning.apple.com/research/neural-engine-transformers). Apple's account of mapping transformer workloads through Core ML tools. It supports public deployment techniques, not a direct-programming ABI. **Evidence: high.**
+
+### Product announcements
+
+- [A12, iPhone XS](https://www.apple.com/newsroom/2018/09/iphone-xs-and-iphone-xs-max-bring-the-best-and-biggest-displays-to-iphone/): 8-core Neural Engine and 5 trillion operations/s. **Evidence: high for Apple's stated specification.**
+- [A13, iPhone 11 Pro](https://www.apple.com/newsroom/2019/09/iphone-11-pro-and-iphone-11-pro-max-the-most-powerful-and-advanced-smartphones/): 8-core Neural Engine and relative performance claims. **Evidence: high for the stated specification.**
+- [A14, iPad Air](https://www.apple.com/newsroom/2020/09/apple-unveils-all-new-ipad-air-with-a14-bionic-apples-most-advanced-chip/): 16-core Neural Engine and 11 trillion operations/s. **Evidence: high for Apple's stated specification.**
+- [M1](https://www.apple.com/newsroom/2020/11/apple-unleashes-m1/): 16-core Neural Engine and 11 trillion operations/s. **Evidence: high for Apple's stated specification.**
+- [A15, iPhone 13](https://www.apple.com/newsroom/2021/09/apple-introduces-iphone-13-and-iphone-13-mini/): 16-core Neural Engine and 15.8 trillion operations/s. **Evidence: high for Apple's stated specification.**
+- [M2](https://www.apple.com/newsroom/2022/06/apple-unveils-m2-with-breakthrough-performance-and-capabilities/): 16-core Neural Engine and 15.8 trillion operations/s. **Evidence: high for Apple's stated specification.**
+- [A16, iPhone 14 Pro](https://www.apple.com/newsroom/2022/09/apple-debuts-iphone-14-pro-and-iphone-14-pro-max/): 16-core Neural Engine and nearly 17 trillion operations/s. **Evidence: high for Apple's stated specification.**
+- [M3 family](https://www.apple.com/newsroom/2023/10/apple-unveils-m3-m3-pro-and-m3-max-the-most-advanced-chips-for-a-personal-computer/): describes a faster Neural Engine but does not provide a directly comparable TOPS figure. **Evidence: high for what the page states.**
+- [A17 Pro, iPhone 15 Pro](https://www.apple.com/newsroom/2023/09/apple-unveils-iphone-15-pro-and-iphone-15-pro-max/): gives relative Neural Engine performance. **Evidence: high for what the page states.**
+- [M4](https://www.apple.com/newsroom/2024/05/apple-introduces-m4-chip/): 16-core Neural Engine and 38 trillion operations/s. **Evidence: high for Apple's stated specification.**
+- [A18, iPhone 16](https://www.apple.com/newsroom/2024/09/apple-introduces-iphone-16-and-iphone-16-plus/) and [A18 Pro, iPhone 16 Pro](https://www.apple.com/newsroom/2024/09/apple-debuts-iphone-16-pro-and-iphone-16-pro-max/): 16-core Neural Engine and generation-relative claims. **Evidence: high for Apple's stated specifications.**
+- [M5](https://www.apple.com/newsroom/2025/10/apple-unleashes-m5-the-next-big-leap-in-ai-performance-for-apple-silicon/): improved 16-core Neural Engine without a directly comparable TOPS figure. **Evidence: high for what the page states.**
+- [A19, iPhone 17](https://www.apple.com/newsroom/2025/09/apple-debuts-iphone-17/) and [A19 Pro, iPhone 17 Pro](https://www.apple.com/newsroom/2025/09/apple-unveils-iphone-17-pro-and-iphone-17-pro-max/): current product association and 16-core Neural Engine. **Evidence: high for Apple's stated specifications.**
+
+Apple's product numbers are peak claims. These pages do not provide a common precision and operation-counting contract, so use them for generation context rather than model-latency prediction. **Evidence: high for the page contents; open question for the omitted contract.**
+
+### Patents
+
+- [US20190340491A1, “Scalable neural network processing engine”](https://patents.google.com/patent/US20190340491A1/en). Describes tiles, data buffers, and buffer-DMA structure. It is useful architectural vocabulary but not proof of a shipping register map. **Evidence: high for the disclosure; low for direct mapping.**
+- [US20190340490A1, “Task assignment and tile processing”](https://patents.google.com/patent/US20190340490A1/en). Describes task distribution and tile processing concepts. **Evidence: high for the disclosure; low for direct mapping.**
+- [US20210103803A1, “Multi-Mode Planar Engine For Neural Processor”](https://patents.google.com/patent/US20210103803A1/en). Describes planar-engine modes for elementwise, pooling, and related work. **Evidence: high for the disclosure; medium when correlated with independent PE traces.**
+- [US20180046900A1, “Neural processor circuit”](https://patents.google.com/patent/US20180046900A1/en). Earlier neural-processor architecture. Use it for historical concepts, not current capacities. **Evidence: high for the disclosure; low for current chips.**
+
+## Reverse-engineering sources
+
+- [freedomtan/coreml_to_ane_hwx at `ce54664e787976b646c450ceabed1731b506a4cd`](https://github.com/freedomtan/coreml_to_ane_hwx/tree/ce54664e787976b646c450ceabed1731b506a4cd). Contains the HWX parser, H11 through H18 subtype/ISA associations, and generation-specific register maps. It is the main source for container and block-address claims. No Apple contract confirms all labels. **Evidence: medium.**
+- [allbilly/ane at `e159e2d18ce6cea100e8f19bb27a7f07acaa9c24`](https://github.com/allbilly/ane/tree/e159e2d18ce6cea100e8f19bb27a7f07acaa9c24). Contains direct H13/M1 register encoders and operation examples, including [elementwise](https://github.com/allbilly/ane/blob/e159e2d18ce6cea100e8f19bb27a7f07acaa9c24/examples/elementwise.py) and [GEMM](https://github.com/allbilly/ane/blob/e159e2d18ce6cea100e8f19bb27a7f07acaa9c24/examples/gemm.py). The revision has no license file, so this repository cites layout facts and does not import the code. **Evidence: medium.**
+- [tinygrad historical ANE tree at `1dcaecacc476ca6369b427961c578dddf2eb9f35`](https://github.com/tinygrad/tinygrad/tree/1dcaecacc476ca6369b427961c578dddf2eb9f35/ane). Contains historical stack traces, a private compiler caller, IOKit definitions, entitlements, and direct execution research. Use it as versioned historical evidence. Tinygrad removed the tree in [`641b1dbb40f95a478cddbdedd7ee312072e39254`](https://github.com/tinygrad/tinygrad/commit/641b1dbb40f95a478cddbdedd7ee312072e39254). **Evidence: high for source history; medium for private-interface interpretation.**
+- [hollance/neural-engine at `d0bb5305a595a59142df47a4581e8b0b765a7385`](https://github.com/hollance/neural-engine/tree/d0bb5305a595a59142df47a4581e8b0b765a7385). Documents runtime-engine identification with symbolic breakpoints and the limits of private direct programming. **Evidence: medium.**
+- [maderix/ANE at `d91c9845c0784dec7753048954fc6d0e8411fe29`](https://github.com/maderix/ANE/tree/d91c9845c0784dec7753048954fc6d0e8411fe29). Implements an in-memory MIL-to-private-runtime bridge and reports M4 FP16/INT8 benchmarks and training constraints. Use its numbers as project measurements, not Apple specifications. **Evidence: high for source behavior; medium for benchmark generalization.**
+- [ANEMLL README at `ff3b97783a64e5e59bb9da8a21f79290a1611142`](https://github.com/Anemll/Anemll/blob/ff3b97783a64e5e59bb9da8a21f79290a1611142/README.md). Records practical FP16 range, model conversion, state-shape, and quantization constraints. These are project observations. **Evidence: medium.**
+- [Project Zero, “Oops, I missed it again”](https://projectzero.google/2020/11/oops-i-missed-it-again.html). Security analysis that identifies ANE IOKit user-client surfaces and entitlement boundaries in the audited release. **Evidence: high for that release; low for current naming.**
+
+## Linux and Asahi sources
+
+- [Asahi SoC codenames](https://asahilinux.org/docs/hw/soc/soc-codenames/). Maps public product families to internal SoC identifiers. **Evidence: high.**
+- [Asahi accelerator documentation](https://asahilinux.org/docs/hw/soc/accelerators/). Describes accelerator firmware placement and platform context. **Evidence: high for the project's platform documentation.**
+- Asahi [M1](https://asahilinux.org/docs/platform/feature-support/m1/) and [M2](https://asahilinux.org/docs/platform/feature-support/m2/) feature matrices. These are the current support-status references and should be read live. **Evidence: high.**
+- [AsahiLinux/m1n1 at `940439b9a407fbfc499bea933269219f3f62d4c7`](https://github.com/AsahiLinux/m1n1/tree/940439b9a407fbfc499bea933269219f3f62d4c7). The [ANE experiment](https://github.com/AsahiLinux/m1n1/blob/940439b9a407fbfc499bea933269219f3f62d4c7/proxyclient/experiments/ane.py) demonstrates low-level task submission; the [firmware helper](https://github.com/AsahiLinux/m1n1/blob/940439b9a407fbfc499bea933269219f3f62d4c7/proxyclient/m1n1/fw/ane.py) shows DART-backed mappings. **Evidence: high for the code path.**
+- [eiln/ane at `0dcea9976fae0b500a236a62fca69cd4d39f0809`](https://github.com/eiln/ane/tree/0dcea9976fae0b500a236a62fca69cd4d39f0809). Out-of-tree DRM accelerator driver and userspace library for selected M1-family compatibles. It does not provide a graph compiler and does not claim current-generation support. **Evidence: high for the fixed revision.**
+
+## Repository evidence
+
+- [H13 HWX field ledger](../../research/h13-hwx-fields.md). Records known offsets, constants, field meanings, and unresolved fields. **Evidence: medium unless backed by a repository test or cited external source.**
+- [Verification guide](../../docs/VERIFICATION.md). Lists software and hardware verification commands and recorded results for this compiler. **Evidence: high for checked-in procedures; result claims require the associated receipts.**
+- [M1 Ultra runtime blocker](../../receipts/2026-09-05-ane-community/m1ultra-runtime-blocker.json). Bounded macOS 26.6.2 investigation of the protected `aned` cache and direct-load failure. **Evidence: medium; one host and operating-system build.**
+- [H13 operation evidence](../../receipts/2026-09-05-ane-community/h13-operation-evidence.json). Source-provenance ledger for H13 operations and fields. **Evidence: high for source identity; no device-execution claim.**
+- [oMLX evidence](../../receipts/2026-09-05-ane-community/omlx.json). Versioned issue, pull-request, and commit evidence for quantization, recurrent accuracy, compile caches, and memory accounting. **Evidence: high for cited project history; medium for broader ANE conclusions.**
+- [MLX evidence](../../receipts/2026-09-05-ane-community/mlx.json). Records the upstream MLX backend boundary and source identity. **Evidence: high for cited source statements.**
+
+## Reading discipline
+
+Use the narrowest source that supports a claim. Apple sources establish public APIs and advertised product specifications. Fixed source revisions establish what code did at that revision. Hardware receipts establish only the named hardware, operating-system build, input, and result. Patents explain possible architecture but do not prove a shipping implementation. **Evidence: high as the evidence policy used by this repository.**
