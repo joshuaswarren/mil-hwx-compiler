@@ -25,6 +25,8 @@ For the H13 objects currently decoded in this repository:
 
 These values describe observed H13 files. They are not universal HWX constants. **Evidence: medium.** H14 and H16 register layouts differ in the pinned [generation maps](https://github.com/freedomtan/coreml_to_ane_hwx/tree/ce54664e787976b646c450ceabed1731b506a4cd/hwx_dump).
 
+One Mac's compiler emits every generation from H13 through H17 for the same input, with the subtype changing per requested target. A single `add [1,64,1,1]` fp16 MIL compiled through the private entry point with `TargetArchitecture` set to `h13`, `h14`, `h15`, `h16`, and `h17` returned exit code 0 and CPU subtypes 4, 5, 6, 7, and 9; the `h11` request failed with exit code 1. The subtype-to-generation names still come from the reverse-engineered parser, not from this observation. **Evidence: medium; one host, one input, one compiler build.** See [`receipts/anecompile-cross-target.json`](../../receipts/2026-09-05-ane-community/anecompile-cross-target.json) and the [generation table](generations.md).
+
 ## Logical contents
 
 A decoded object contains these logical layers:
@@ -38,11 +40,19 @@ A decoded object contains these logical layers:
 
 The task descriptor is not a CPU instruction stream. It is a sequence of register blocks interpreted by ANE control hardware. **Evidence: medium.** The record decoder and address maps are visible in the pinned [parser and maps](https://github.com/freedomtan/coreml_to_ane_hwx/tree/ce54664e787976b646c450ceabed1731b506a4cd/hwx_dump); Apple patents describe task assignment and tile-processing machinery at a higher architectural level in [US20190340490A1](https://patents.google.com/patent/US20190340490A1/en).
 
+## How many programs one object carries
+
+Apple emitted exactly one program load command in every one of the 542 accepted objects of the envelope campaign, on both H13 and H14, including an object with 129 tasks and a 134,217,728-byte constant section. Work is partitioned into more tasks inside the single program, not into more programs. The minting driver parses multi-program objects and records `program_count` per object, so a second program would have been recorded rather than mis-parsed. **Evidence: high over that corpus; it does not prove Apple never emits two programs for some untested form.** See the partitioning section of [oracle-envelope.md](../../research/oracle-envelope.md).
+
+An object's task stream is therefore the interesting structure. H13 links tasks by a next-offset field with zero padding between sections; H14 has no link and instead 16-byte-aligns each task after a zero-size 16-byte frame. A reader must follow the generation's own rule. **Evidence: high for the decoded records.** See [task descriptors](task-descriptors.md) and [h14-td-fields.md](../../research/h14-td-fields.md).
+
 ## ANEC wrapper
 
 In the H13 wrapper decoded by this repository, the header occupies `0x1000` bytes, the task starts at file offset `0x1000`, and constants start at `0x1280`. The current channel assignments are output channel 4, required input channel 5, and optional input channel 6. The observed physical channel stride is 64 bytes. **Evidence: medium.** See the local [H13 field ledger](../../research/h13-hwx-fields.md).
 
 The older open `libane` implementation constructs an ANEC buffer with a `0x800`-byte header and performs explicit tile/untile conversion around a `0x4000` tile size. It must not be assumed compatible with this repository's newer H13 wrapper without field-by-field validation. **Evidence: high for that implementation; medium for compatibility risk.** See the pinned [`libane/ane.c`](https://github.com/eiln/ane/blob/0dcea9976fae0b500a236a62fca69cd4d39f0809/libane/ane.c).
+
+The H14 form this repository emits keeps the same `0x1000`-byte header as H13, followed by the H14 task stream at `0x1000` and the constant section at `align_up(text_bytes, 64)`. Channel 4 is the output and channels 5 and 6 the inputs, as on H13. The first-task length field is informational for H14, because a reader walks the stream by task-header size and 16-byte alignment. **Evidence: high for the emitted contract; medium for how a future driver will consume it.** See the [README](../../README.md#h14-task-stream-anec-and-hwx-layout).
 
 ## Parsing rules
 
@@ -51,6 +61,7 @@ A safe inspector should:
 - validate Mach-O magic, endianness, and architecture fields;
 - bound every load command and section within the file;
 - accept task lengths derived from section metadata rather than one fixture size;
+- honour the generation's extended-header flag before splitting the register stream: a missed extra word raises an unaligned-address error on H13 and, worse, decodes silently wrong words on H14;
 - validate each register-record header before consuming payload words;
 - identify unknown addresses without treating them as known zero-filled blocks;
 - keep logical tensor sizes separate from physical allocation and stride fields.
@@ -61,4 +72,5 @@ A safe inspector should:
 
 - **Open question:** What semantic contract covers every H13 program-descriptor and metadata field?
 - **Open question:** Which ANEC header revisions correspond to which driver and firmware revisions?
-- **Open question:** Are multiple tasks or architecture slices accepted in one current production wrapper, and how are they selected?
+- **Open question:** Does any current production wrapper carry more than one program? Apple emitted exactly one in all 542 accepted envelope objects, so the multi-program path is parsed but unobserved.
+- **Open question:** How would a runtime select among architecture slices if an object ever carried more than one?

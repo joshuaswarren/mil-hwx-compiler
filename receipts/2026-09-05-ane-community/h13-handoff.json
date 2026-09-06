@@ -1,29 +1,46 @@
 {
   "schema": "h13-hardware-handoff.v1",
   "purpose": "Everything the base-M1 owner needs to run the compiler's H13 packages once the ANE-enabled boot and driver are confirmed. Artifact readiness is not permission to submit.",
-  "source_revision": "6d39ef5+ on joshuaswarren/mil-hwx-compiler feat/h13-m1",
+  "source_revision": "f2fdabd on joshuaswarren/mil-hwx-compiler feat/h13-m1",
   "host_verification": [
+    "receipts/2026-09-05-ane-community/h13-norm-parity-linux.log (H13 oracle parity PASS, 342 cases / 684 artifacts; H14 oracle parity PASS, 137 cases / 274 artifacts; H14 matvec probes 125 sections rebuilt byte-for-byte)",
+    "receipts/2026-09-05-ane-community/h13-matvec-parity-linux.log",
+    "receipts/2026-09-05-ane-community/h13-parity-linux.log",
+    "receipts/2026-09-05-ane-community/h13-parity-macos.log",
+    "receipts/2026-09-05-ane-community/h13-hwx-linux.log",
+    "receipts/2026-09-05-ane-community/h13-hwx-macos.log",
     "receipts/2026-09-05-ane-community/h13-wide-linux.log",
     "receipts/2026-09-05-ane-community/h13-wide-macos.log",
     "receipts/2026-09-05-ane-community/h13-mlp-block-smoke.log"
   ],
+  "verification_command": "GNUSTEP_PREFIX=/tmp/mil-hwx-bootstrap-proof-prefix LD_LIBRARY_PATH=/tmp/mil-hwx-bootstrap-proof-prefix/lib make test-h13 test-hwx-inspection test-h13-reference test-h13-simulation test-h13-parity test-h14-parity",
   "package": {
     "schema": "mil-hwxc.h13-anec-package.v1",
     "files": "program-N.anec per operation plus manifest.json",
-    "anec_layout": "0x1000-byte header, 0x274-byte task descriptor at 0x1000, constants at content offset 0x280, 0x4000-byte tiles",
+    "anec_layout": "0x1000-byte header, task descriptor at 0x1000, constants at content offset 0x280 for the source-qualified encoder and at align_up(text_bytes, 64) for the Apple-parity encoders, 0x4000-byte tiles",
     "manifest": "tensors{}, programs[], dispatchPlan[], intermediates[]; bindings carry logical shape, ANEC channel index, physical nchw layout, logicalBytes, allocationBytes, and optional slice {tensor, elementOffset, elementCount, physicalElements}; folded constants appear as constantInputs hex plus binding=constant; shape-only aliases carry aliasOf; chunked matmul results carry accumulation=chunked-fp16",
-    "buffer_conversion": "python3 research/inspect_anec.py PACKAGE --pack-input NAME dense.fp16 --output PATH | --pack-constant NAME --output PATH | --unpack-output NAME PATH --output dense.fp16 (PATH is a directory of program-<i>.<binding>.buffer files when a tensor is sliced across programs; padded lanes are zero-filled and dropped)"
+    "buffer_conversion": "python3 research/inspect_anec.py PACKAGE --pack-input NAME dense.fp16 --output PATH | --pack-constant NAME --output PATH | --unpack-output NAME PATH --output dense.fp16 (PATH is a directory of program-<i>.<binding>.buffer files when a tensor is sliced across programs; padded lanes are zero-filled and dropped)",
+    "inspect_anec_limits": "the package reader is H13-only and its operation whitelist and channel-layout model exclude the Apple-parity softmax, layer_norm and reduction packages; a plain add on [1,64,8,8] also fails its physical-layout check. Extending it is separate work (research/h13-td-fields.md)"
   },
   "supported_now": [
     "add, mul, maximum, minimum, sub, real_div, relu, clip on any positive static fp16 shape (64-lane programs, zero-padded tail); constants folded on the host, sub via negation, real_div via exact reciprocals",
     "matmul and linear with any K and any N: 512-wide reduction chunks summed with add (chunked-fp16), 512-output chunks, zero padding, multiple rows as one program per row",
+    "Apple-parity H13 matvec for M in {1,2,8,64} and K,N in {256,512,1024}: Apple's 126-word preparation task plus 157-word compute task, dense [1,1,M,W] surfaces, __DATA/__bss scratch, and the K*N fp16 weight in Apple's packing permutation (research/h13-td-fields.md; oracle cases matmul_m1_k256_n512_ty1 through matmul_m64_k256_n1024_ty1)",
+    "Apple-parity H13 softmax, layer_norm, reduce_sum, reduce_max and reduce_mean over 186 templates keyed on (operation, input CHW, reduced-axis mask, keep_dims), with the fp16 exponential and reciprocal lookup tables in the constant section; affine layer_norm is refused because Apple's compiler rejects every affine form in this harness (research/h13-td-fields.md; norm_layer_norm_ax1_1x2048x1x1_affine)",
+    "H14/M2 elementwise, unary, scalar-constant and matvec parity backend emitting H14 task streams, ANEC containers and HWX objects (README 'Experimental M2/H14 compilation'; research/h14-td-fields.md)",
     "DAGs with fan-out (residuals, mul(x,x)); reshape, squeeze, expand_dims as zero-program aliases",
     "example: a 768->1024->768 MLP block with relu and residual compiles to 92 programs (8 matvec, 84 elementwise)"
+  ],
+  "not_claimed": [
+    "No H13 or H14 program in this repository has executed on an M1 or M2 ANE. Byte parity with Apple's compiler is not device execution; see docs/ane/parity-method.md",
+    "Numerical agreement with tools/h13_reference.py is a tolerance, not an equality: Apple evaluates softmax's exponential and reciprocal through fp16 lookup tables, and chunked matmul rounds partial sums between chunks",
+    "Geometries off a decoded grid point are refused rather than interpolated; a neighbouring shape is not covered evidence"
   ],
   "first_hardware_checks": [
     "add with a=index*0.125 patterns and b=index*0.25 patterns; expect exact fp16 sums (same oracle as tests/hardware/run_alu.mm)",
     "matvec K=256 with the dense test weights from tests/test_h13_cli.py; compare against a CPU fp32-accumulated fp16 reference",
-    "a two-program chain add->mul; the intermediate buffer is the first program's output channel 4 and the second program's input channel 5"
+    "a two-program chain add->mul; the intermediate buffer is the first program's output channel 4 and the second program's input channel 5",
+    "then one Apple-parity program: a covered matvec geometry, which exercises the two-task linked stream and Apple's surface order (output laid out below input) rather than the source-qualified single task"
   ],
   "prerequisites_from_peer": [
     "Verified ANE-enabled Linux boot with the device-tree node present",
@@ -41,6 +58,16 @@
   },
   "macos_run": {
     "command": "bash tests/run_h13_hardware.sh MIL MODEL_ROOT x=input.fp16 (or make test-h13-hardware ...)",
-    "prerequisite": "an arm64 Mac whose /Library/Caches/com.apple.aned/<build>/InMemoryModelCache is writable by root; on macOS 26.6 (25G83) that requires SIP disabled from Recovery, an owner decision. HWX container fields derived from the H13 fixture are listed with their unknowns in research/h13-hwx-fields.md"
+    "prerequisite": "an arm64 Mac whose /Library/Caches/com.apple.aned/<build>/InMemoryModelCache is writable by root. On macOS 26.6 (25G83) that directory behaves like a data vault: root cannot stat, list or create entries even with sudo, and the runtime reports ANERuntimeErrorCacheMiss without a cache entry. Two recorded routes, both owner decisions: disable SIP from Recovery on the 26.6 host, or use a build whose cache is provisionable, recorded on macOS 26.3 build 25D125. None of the surveyed 26.6.x hosts (macstudio, laptop, jw14m2, 16m1mbp) is provisionable. Evidence: receipts/2026-09-05-ane-community/m1ultra-runtime-blocker.json, receipts/2026-09-05-ane-community/h13-hwx-macos.log, docs/ane/macos-stack.md",
+    "container_fields": "HWX container fields derived from the H13 fixture are listed with their unknowns in research/h13-hwx-fields.md"
+  },
+  "field_documentation": {
+    "task_descriptors": "docs/ane/task-descriptors.md",
+    "parity_boundary": "docs/ane/parity-method.md",
+    "h13_fields": "research/h13-td-fields.md",
+    "h14_fields": "research/h14-td-fields.md",
+    "h13_container_fields": "research/h13-hwx-fields.md",
+    "accepted_and_refused_geometry": "research/oracle-envelope.md",
+    "first_campaign": "research/oracle-diff.md"
   }
 }
