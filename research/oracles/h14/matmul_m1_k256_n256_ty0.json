@@ -1,0 +1,44 @@
+{
+  "case": "matmul_m1_k256_n256_ty0",
+  "compiler": {
+    "command": [
+      "/tmp/h13-oracle/bin/ane-compile-hwx",
+      "CAPTURE_DIR",
+      "OUTPUT_DIR",
+      "h14"
+    ],
+    "host": "MacStudio.local",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "tool": "/tmp/h13-oracle/bin/ane-compile-hwx",
+    "tool_sha256": "b1bab437e2da0d26e65799698b63d8ad592d5455eec5da64c5877799b08abcbe"
+  },
+  "constant_section_size": null,
+  "error": "MIL validation report: 1/4 invalid operations:\nIn Function \"main\", Invalid operation #3:\ntensor<fp16, [1, 256]> product = ios18.matmul(transpose_x = f, transpose_y = ty, x = x, y = w)[milId = uint64(3), name = string(\"product\")];\nValidation error: \"ANE internal validation error: Metadata data type does not match requested type.\"\ncallback_status=1",
+  "family": "matmul",
+  "hwx_bytes": null,
+  "hwx_sha256": null,
+  "mil": "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n  func main<ios18>(tensor<fp16, [1, 256]> x) {\n    bool f = const()[name = string(\"f\"), val = bool(false)];\n    bool ty = const()[name = string(\"ty\"), val = bool(false)];\n    tensor<fp16, [256, 256]> w = const()[name = string(\"w\"), val = tensor<fp16, [256, 256]>(BLOBFILE(path = string(\"@model_path/weights.bin\"), offset = uint64(64)))];\n    tensor<fp16, [1, 256]> product = matmul(transpose_x = f, transpose_y = ty, x = x, y = w)[name = string(\"product\")];\n  } -> (product);\n}\n",
+  "parameters": {
+    "bias": false,
+    "columns": 256,
+    "reduction": 256,
+    "relu": false,
+    "rows": 1,
+    "transpose_y": false
+  },
+  "program_descriptor": null,
+  "schema_version": 1,
+  "source_commit": "d140e0026bc8641b96c9f5580e923c00637c4fd1",
+  "target": "h14",
+  "task_descriptors": [],
+  "tensor_descriptors": [],
+  "weights": {
+    "payload_bytes": 131072,
+    "shape": [
+      256,
+      256
+    ],
+    "storage": "BLOBFILE",
+    "value": "fp16(0x1p-1)"
+  }
+}

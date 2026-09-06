@@ -1,0 +1,343 @@
+{
+  "case": "binary_minimum_c512_constant_blob",
+  "compiler": {
+    "command": [
+      "/tmp/h13-oracle/bin/ane-compile-hwx",
+      "CAPTURE_DIR",
+      "OUTPUT_DIR",
+      "h14"
+    ],
+    "host": "MacStudio.local",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "tool": "/tmp/h13-oracle/bin/ane-compile-hwx",
+    "tool_sha256": "b1bab437e2da0d26e65799698b63d8ad592d5455eec5da64c5877799b08abcbe"
+  },
+  "constant_section_size": 1024,
+  "error": null,
+  "family": "binary_constant",
+  "hwx_bytes": 32768,
+  "hwx_sha256": "1f52ff17a0a72294aca3372af0225c6d08ad63dd618a336ea7e0a4f715241e13",
+  "mil": "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n  func main<ios18>(tensor<fp16, [1, 512, 1, 1]> x) {\n    tensor<fp16, [1, 512, 1, 1]> z = const()[name = string(\"z\"), val = tensor<fp16, [1, 512, 1, 1]>(BLOBFILE(path = string(\"@model_path/weights.bin\"), offset = uint64(64)))];\n    tensor<fp16, [1, 512, 1, 1]> y = minimum(x = x, y = z)[name = string(\"y\")];\n  } -> (y);\n}\n",
+  "parameters": {
+    "constant": "blob",
+    "operation": "minimum",
+    "shape": [
+      1,
+      512,
+      1,
+      1
+    ]
+  },
+  "program_descriptor": {
+    "command_size": 2192,
+    "constant_address": "0x30010180",
+    "kind": 4,
+    "resource_addresses": [
+      "0x0",
+      "0x0",
+      "0x0",
+      "0x0",
+      "0x30000000"
+    ],
+    "task_count": 2,
+    "text_address": "0x30010000",
+    "text_words": 87,
+    "trailing_words": [
+      "0x30010000",
+      "0x00000000",
+      "0x00000000",
+      "0x00000000",
+      "0x00000004",
+      "0x00000057",
+      "0x00000000",
+      "0x00000000",
+      "0x00000002",
+      "0x00000000",
+      "0xffffffff",
+      "0xffffffff",
+      "0x00000000",
+      "0x0000ffff",
+      "0x00000888",
+      "0x00000000",
+      "0x00000000",
+      "0x00000000",
+      "0x00000000",
+      "0x00000000",
+      "0x00000015",
+      "0x00000000",
+      "0x00000003",
+      "0x00000000",
+      "0x00000001",
+      "0x00000000",
+      "0x00000009",
+      "0x00000008",
+      "0x00000002",
+      "0x00000000",
+      "0x6e69616d",
+      "0x00000000"
+    ]
+  },
+  "schema_version": 1,
+  "source_commit": "d140e0026bc8641b96c9f5580e923c00637c4fd1",
+  "target": "h14",
+  "task_descriptors": [
+    {
+      "blocks": {
+        "0x00000": {
+          "name": "common",
+          "words": {
+            "0x00000": "0x00010200",
+            "0x0000c": "0x00000001",
+            "0x00010": "0x00000001",
+            "0x00014": "0x00010200",
+            "0x0001c": "0x00000000",
+            "0x00028": "0x00014001",
+            "0x0002c": "0x00000001",
+            "0x0003c": "0x00100000"
+          }
+        },
+        "0x00500": {
+          "name": "l2",
+          "words": {
+            "0x00504": "0x00500172",
+            "0x00508": "0x00000400",
+            "0x0050c": "0x00000100",
+            "0x00510": "0x00000100",
+            "0x00514": "0x00000100",
+            "0x00518": "0x00000100",
+            "0x00530": "0x00500170"
+          }
+        },
+        "0x00d00": {
+          "name": "ne",
+          "words": {
+            "0x00d04": "0x00101c0c",
+            "0x00d10": "0x00003c00"
+          }
+        },
+        "0x01100": {
+          "name": "tile_dma_src",
+          "words": {
+            "0x01100": "0x00000e21",
+            "0x01108": "0x000000ce",
+            "0x01110": "0x00000000",
+            "0x01114": "0x00000000",
+            "0x01150": "0x01002031"
+          }
+        }
+      },
+      "header_words": [
+        "0x00240000",
+        "0x00000000",
+        "0x00000008",
+        "0x00000000",
+        "0x00000068",
+        "0x00000000",
+        "0x00000001",
+        "0x00010001"
+      ],
+      "records": [
+        {
+          "address": "0x00000",
+          "count": 8,
+          "header": "0xa32e0000"
+        },
+        {
+          "address": "0x01100",
+          "count": 2,
+          "header": "0x80010440"
+        },
+        {
+          "address": "0x01150",
+          "count": 1,
+          "header": "0x00000454"
+        },
+        {
+          "address": "0x00504",
+          "count": 7,
+          "header": "0x820f8141"
+        },
+        {
+          "address": "0x00d04",
+          "count": 2,
+          "header": "0x80020341"
+        },
+        {
+          "address": "0x01110",
+          "count": 2,
+          "header": "0x20808444"
+        }
+      ],
+      "size_bytes": 144
+    },
+    {
+      "blocks": {
+        "0x00000": {
+          "name": "common",
+          "words": {
+            "0x00000": "0x00010001",
+            "0x0000c": "0x00000200",
+            "0x00010": "0x00000200",
+            "0x00014": "0x00010001",
+            "0x0002c": "0x00000001",
+            "0x00030": "0x00000004",
+            "0x00034": "0x00000200",
+            "0x00038": "0x00000031",
+            "0x0003c": "0x00000000"
+          }
+        },
+        "0x00500": {
+          "name": "l2",
+          "words": {
+            "0x00504": "0x00000172",
+            "0x00508": "0x00000400",
+            "0x0050c": "0x00000010",
+            "0x00510": "0x00002020",
+            "0x00514": "0x00002000",
+            "0x00518": "0x00002000",
+            "0x00530": "0x0000014a",
+            "0x00534": "0x00002420"
+          }
+        },
+        "0x00900": {
+          "name": "pe",
+          "words": {
+            "0x00900": "0x0008000c"
+          }
+        },
+        "0x01100": {
+          "name": "tile_dma_src",
+          "words": {
+            "0x01100": "0x00010e21",
+            "0x01108": "0x000000ce",
+            "0x01110": "0x00000000",
+            "0x01114": "0x00000000",
+            "0x0111c": "0x00000040",
+            "0x01150": "0x01002031"
+          }
+        },
+        "0x01500": {
+          "name": "tile_dma_dst",
+          "words": {
+            "0x01500": "0x01010e31",
+            "0x01508": "0x00000000",
+            "0x0150c": "0x00000000",
+            "0x01514": "0x00000040",
+            "0x01520": "0x01302031"
+          }
+        },
+        "0x01900": {
+          "name": "kernel_dma_src",
+          "words": {
+            "0x01900": "0x00000080"
+          }
+        }
+      },
+      "header_words": [
+        "0x002f0001",
+        "0x00000002",
+        "0x00000022",
+        "0x00000000",
+        "0x00fff868",
+        "0x00000000",
+        "0x00000000",
+        "0x00000001"
+      ],
+      "records": [
+        {
+          "address": "0x01900",
+          "count": 1,
+          "header": "0x00000640"
+        },
+        {
+          "address": "0x00000",
+          "count": 9,
+          "header": "0xbe0e0000"
+        },
+        {
+          "address": "0x01100",
+          "count": 3,
+          "header": "0x80210440"
+        },
+        {
+          "address": "0x01150",
+          "count": 1,
+          "header": "0x00000454"
+        },
+        {
+          "address": "0x00504",
+          "count": 8,
+          "header": "0x860f8141"
+        },
+        {
+          "address": "0x00900",
+          "count": 1,
+          "header": "0x00000240"
+        },
+        {
+          "address": "0x01500",
+          "count": 3,
+          "header": "0x80480540"
+        },
+        {
+          "address": "0x01110",
+          "count": 2,
+          "header": "0x22008444"
+        },
+        {
+          "address": "0x01508",
+          "count": 2,
+          "header": "0x22808542"
+        }
+      ],
+      "size_bytes": 188
+    }
+  ],
+  "tensor_descriptors": [
+    {
+      "binding": 1,
+      "element_code": 5,
+      "shape": [
+        1,
+        512,
+        1,
+        1
+      ],
+      "strides": [
+        32768,
+        64,
+        64,
+        2
+      ],
+      "total_bytes": 32768
+    },
+    {
+      "binding": 2,
+      "element_code": 5,
+      "shape": [
+        1,
+        512,
+        1,
+        1
+      ],
+      "strides": [
+        32768,
+        64,
+        64,
+        2
+      ],
+      "total_bytes": 32768
+    }
+  ],
+  "weights": {
+    "payload_bytes": 1024,
+    "shape": [
+      1,
+      512,
+      1,
+      1
+    ],
+    "storage": "BLOBFILE",
+    "value": "fp16(0x1p-1)"
+  }
+}
