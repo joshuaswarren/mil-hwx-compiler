@@ -1,0 +1,78 @@
+{
+  "accepted": true,
+  "case": "chain_ceiling_mlp_m64_k256_n256_ty0",
+  "compiler": {
+    "command": [
+      "/tmp/h13-oracle/bin/ane-compile-hwx",
+      "CAPTURE_DIR",
+      "OUTPUT_DIR",
+      "h14"
+    ],
+    "driver_sha256": "ca0cb96a3a0d9e0a4eaa93dd9738ac9042d4c190b95829d4213521e4d8acbd17",
+    "host": "MacStudio.local",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "returncode": 0,
+    "seconds": 0.0,
+    "status": "callback_status=0",
+    "tool": "/tmp/h13-oracle/bin/ane-compile-hwx",
+    "tool_sha256": "b1bab437e2da0d26e65799698b63d8ad592d5455eec5da64c5877799b08abcbe"
+  },
+  "constant_bytes": 264192,
+  "family": "chain_ceiling",
+  "hwx_bytes": 294912,
+  "hwx_sha256": "75f30eebf49921be753ac4934c8f1969b6fcfe8c134c4e489ae249e1a39c6b49",
+  "mil_bytes": 891,
+  "mil_sha256": "008fbe6a52e8ffc1906dac1eac93af9d75b2f0aed6a811001cc8ef3130a40839",
+  "parameters": {
+    "columns": 256,
+    "constant_matrices": [
+      [
+        256,
+        256
+      ],
+      [
+        256,
+        256
+      ]
+    ],
+    "constant_matrix_bytes": 262144,
+    "depth": 1,
+    "input_shape": [
+      64,
+      256
+    ],
+    "operations": [
+      "matmul",
+      "gelu",
+      "matmul"
+    ],
+    "reduction": 256,
+    "rows": 64,
+    "transpose_y": false
+  },
+  "parse_error": null,
+  "program_count": 1,
+  "schema_version": 1,
+  "source_commit": "17fb8430282bfcd00fd55394aa1b383f29fcda3d",
+  "target": "h14",
+  "task_count": 3,
+  "weights": {
+    "payload_bytes": 262144,
+    "record_offsets": [
+      64,
+      88
+    ],
+    "shapes": [
+      [
+        256,
+        256
+      ],
+      [
+        256,
+        256
+      ]
+    ],
+    "storage": "BLOBFILE",
+    "value": "fp16 bits 0x3400 + index, one value per constant"
+  }
+}

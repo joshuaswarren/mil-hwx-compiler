@@ -224,6 +224,15 @@ without a BLOBFILE bias, `pad_type="same"`.
 | `k3_c64_n64_s16_st2_g4_bias0` | 18,432 | 28,544 | 10,112 |
 | `k3_c128_n128_s16_st2_g1_bias1` | 294,912 | 328,576 | 33,664 |
 
+`research/mint_conv_probes.py` closed this campaign's convolution gaps with a
+524-case grid and known-weight probes; `research/h13-td-fields.md` records the
+packing those probes recovered, which reproduces 284 decoded convolutions per
+target byte-for-byte. The added bytes this campaign left unexplained are now
+named: a bias is one extra row per plane rather than `Cout * 2` bytes, grouping
+pads every plane to 64 bytes, and stride 2 switches to a zero-skipping form
+whose per-row mask bytes and body count make the section size depend on which
+weights are zero.
+
 Three shapes of the constant section are visible. A stride-1, groups-1
 convolution stores exactly the weights. A bias adds a fixed 1,024 bytes for 64 or
 256 output channels and 2,048 for 768, not `outputs*2`. Grouping and stride 2 both
@@ -273,23 +282,52 @@ which confirms the table is independent of both shape and rank.
 | `matmul -> softmax -> matmul` | S=64 D=64; S=128 D=64 and D=128 | 9/9 | 2,048 / 128 |
 | `matmul -> softmax -> matmul` | S=256, D=64 | 11/9 | 2,048 / 128 |
 
-The fusion rules this exposes:
+The fusion rules this exposes, refined by the chain campaign in
+`research/fusion-rules.md` (127 `chain_*` records per target, minted on the
+same host and tool):
 
 - `x + relu(x)` collapses to a single task with an all-zero 16 KiB constant
-  section: Apple folds the residual add and the clamp into one operation. `gelu`
-  and `silu` cannot fold, because they need their lookup table, so those
+  section. The chain campaign shows why: a clamp is a post-operation field in
+  the compute task's NE block — `0x0c804` on H13, `0x00d04` on H14 — and
+  setting bit `0x00010000` there costs no task at all. `gelu` and `silu` set
+  bit `0x00020000` instead and need their lookup table, which is why those
   residuals cost two tasks.
+- A residual `add` against a runtime tensor does **not** fuse. A matmul
+  followed by such an add is 4 tasks against the lone matmul's 2, and rewrites
+  108 words. The `x + relu(x)` collapse is the elementwise engine's clamp, not
+  a general add fusion.
 - The feed-forward block `matmul -> gelu -> matmul` costs exactly one task more
   than a lone matmul at the same M: 3 tasks at M=1 and M=128, and 4 on H13 at
   M=32 where the lone matmul takes 3. The activation between two matmuls is
   nearly free, and both weight matrices plus the 2,048-byte gelu table live in
-  one constant section (`2*H*K*2 + 2048` bytes).
+  one constant section (`2*H*K*2 + 2048` bytes). The chain campaign measures
+  the same thing at transformer sizes: two compute tasks for the whole block at
+  every `d_model` from 256 to 1024, with a per-channel bias and the activation
+  both folded into the post-operation field.
 - Attention as one program — `matmul -> softmax -> matmul` over three runtime
   inputs — is accepted at every tested size and stays a single program with 9 to
-  11 tasks.
+  11 tasks. Adding the `1/sqrt(d_head)` scaling costs nothing: it lands in the
+  output-scale word `0x0c810` / `0x00d10` as an fp16 multiplier.
 - On H13 the softmax constant section scales with the head count, 128 bytes per
   head, while H14 stores 128 bytes regardless. This is the same padding split
   seen for the unary tables.
+- Two cautions for anyone reading the constant-section column above. Apple
+  stores one copy of a constant that repeats, so a chain whose weights share a
+  blob offset packs less than it declares — a projected block declaring
+  1,572,864 bytes packed 1,183,744. And the 16 KiB all-zero block is a floor,
+  not an addend: `layer_norm -> gelu` carries 128 bytes, 16,256 fewer than the
+  lone `layer_norm`.
+- Depth is not the limit. Stacked pre-norm blocks stay one program at 512
+  blocks and 10,240 tasks, and 8,192 weightless block units compile to an
+  85,934,080-byte object; the only chain refusal found is inherited from the
+  per-operation envelope (`M=128, K=8192` below), and depth 16,384 was not
+  refused but exceeded this repository's 900-second compile budget.
+- One correction the chain campaign forces on the refusal list below: a
+  `transpose_y=false` BLOBFILE matmul at `(32, 2048, 2048)` and
+  `(128, 2048, 2048)` — recorded refused as a lone matmul in
+  `research/h13-td-fields.md` — is accepted as the first matmul of a
+  feed-forward chain on both targets. The geometry alone does not predict the
+  refusal.
 
 ## 6. Every refusal
 

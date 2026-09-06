@@ -1,0 +1,73 @@
+{
+  "accepted": false,
+  "case": "chain_ceiling_mlp_m128_k8192_n8192_ty1",
+  "compiler": {
+    "command": [
+      "/tmp/h13-oracle/bin/ane-compile-hwx",
+      "CAPTURE_DIR",
+      "OUTPUT_DIR",
+      "h13"
+    ],
+    "driver_sha256": "ca0cb96a3a0d9e0a4eaa93dd9738ac9042d4c190b95829d4213521e4d8acbd17",
+    "host": "MacStudio.local",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "returncode": 1,
+    "seconds": 0.0,
+    "status": "callback_status=1",
+    "tool": "/tmp/h13-oracle/bin/ane-compile-hwx",
+    "tool_sha256": "b1bab437e2da0d26e65799698b63d8ad592d5455eec5da64c5877799b08abcbe"
+  },
+  "family": "chain_ceiling",
+  "hwx_bytes": null,
+  "mil_bytes": 907,
+  "mil_sha256": "0c5a17e065b19f5a04299486b57c4e4f2db4032b1adf95f593cf5b2dd7aef203",
+  "parameters": {
+    "columns": 8192,
+    "constant_matrices": [
+      [
+        8192,
+        8192
+      ],
+      [
+        8192,
+        8192
+      ]
+    ],
+    "constant_matrix_bytes": 268435456,
+    "depth": 1,
+    "input_shape": [
+      128,
+      8192
+    ],
+    "operations": [
+      "matmul",
+      "gelu",
+      "matmul"
+    ],
+    "reduction": 8192,
+    "rows": 128,
+    "transpose_y": true
+  },
+  "schema_version": 1,
+  "source_commit": "17fb8430282bfcd00fd55394aa1b383f29fcda3d",
+  "target": "h13",
+  "weights": {
+    "payload_bytes": 268435456,
+    "record_offsets": [
+      64,
+      88
+    ],
+    "shapes": [
+      [
+        8192,
+        8192
+      ],
+      [
+        8192,
+        8192
+      ]
+    ],
+    "storage": "BLOBFILE",
+    "value": "fp16 bits 0x3400 + index, one value per constant"
+  }
+}
