@@ -43,8 +43,17 @@ def _block(target: str, address: int) -> tuple[str, int] | None:
     return None
 
 
+def _extra_header_words(words: tuple[int, ...], header_count: int) -> int:
+    """Bit 1 of the last fixed header word announces one extra word before the records.
+
+    Observed in Apple attention chains: H13 header[9] 0x23 and H14 header[7]
+    0x00050003 instead of 0x21 and 0x00050001. The extra word held 0x0 or 0x7.
+    """
+    return 1 if len(words) >= header_count and words[header_count - 1] & 0x2 else 0
+
+
 def _h13_records(words: tuple[int, ...]) -> list[dict[str, Any]]:
-    index = H13_HEADER_WORDS
+    index = H13_HEADER_WORDS + _extra_header_words(words, H13_HEADER_WORDS)
     records = []
     while index < len(words):
         header = words[index]
@@ -63,7 +72,7 @@ def _h13_records(words: tuple[int, ...]) -> list[dict[str, Any]]:
 
 
 def _h14_records(words: tuple[int, ...]) -> list[dict[str, Any]]:
-    index = H14_HEADER_WORDS
+    index = H14_HEADER_WORDS + _extra_header_words(words, H14_HEADER_WORDS)
     records = []
     while index < len(words):
         header = words[index]
@@ -109,7 +118,8 @@ def decode_task(data: bytes, target: str) -> dict[str, Any]:
             block["words"][f"0x{address:05x}"] = f"0x{value:08x}"
     return {
         "size_bytes": len(data),
-        "header_words": [f"0x{word:08x}" for word in words[:header_count]],
+        "header_words": [f"0x{word:08x}" for word in
+                         words[:header_count + _extra_header_words(words, header_count)]],
         "records": [
             {
                 "header": f"0x{record['header']:08x}",
