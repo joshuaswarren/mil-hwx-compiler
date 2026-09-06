@@ -7,16 +7,185 @@
       "OUTPUT_DIR",
       "h14"
     ],
+    "decoder_sha256": "fc85d0664a4e567e617189d53d22252f46b6cbca2e4246976ee9ae4deaa8aed5",
+    "driver_sha256": "cda43658a57026468a90dc088909559e9fbb0c04597a691119da93338984b648",
     "host": "MacStudio.local",
     "platform": "macOS-26.6.2-arm64-arm-64bit",
     "tool": "/tmp/h13-oracle/bin/ane-compile-hwx",
     "tool_sha256": "b1bab437e2da0d26e65799698b63d8ad592d5455eec5da64c5877799b08abcbe"
   },
-  "constant_section_size": 128,
+  "constant_section": {
+    "chunk_bytes": 2048,
+    "chunk_count": 1,
+    "chunks": [
+      {
+        "nonzero_bytes": 68,
+        "offset": 0,
+        "sha256": "8a5840509d79c95c6e5a80bdb5938d55624a29211ab6f71f8c069191bef1538b",
+        "size": 128
+      }
+    ],
+    "nonzero_bytes": 68,
+    "nonzero_fp16_words": [
+      {
+        "index": 1,
+        "value": "+inf"
+      },
+      {
+        "index": 2,
+        "value": "+inf"
+      },
+      {
+        "index": 4,
+        "value": 2.0
+      },
+      {
+        "index": 5,
+        "value": 1.939453125
+      },
+      {
+        "index": 6,
+        "value": 1.8828125
+      },
+      {
+        "index": 7,
+        "value": 1.828125
+      },
+      {
+        "index": 8,
+        "value": 1.77734375
+      },
+      {
+        "index": 9,
+        "value": 1.7294921875
+      },
+      {
+        "index": 10,
+        "value": 1.6845703125
+      },
+      {
+        "index": 11,
+        "value": 1.640625
+      },
+      {
+        "index": 12,
+        "value": 1.599609375
+      },
+      {
+        "index": 13,
+        "value": 1.560546875
+      },
+      {
+        "index": 14,
+        "value": 1.5234375
+      },
+      {
+        "index": 15,
+        "value": 1.48828125
+      },
+      {
+        "index": 16,
+        "value": 1.4541015625
+      },
+      {
+        "index": 17,
+        "value": 1.421875
+      },
+      {
+        "index": 18,
+        "value": 1.3916015625
+      },
+      {
+        "index": 19,
+        "value": 1.361328125
+      },
+      {
+        "index": 20,
+        "value": 1.3330078125
+      },
+      {
+        "index": 21,
+        "value": 1.3056640625
+      },
+      {
+        "index": 22,
+        "value": 1.2802734375
+      },
+      {
+        "index": 23,
+        "value": 1.2548828125
+      },
+      {
+        "index": 24,
+        "value": 1.23046875
+      },
+      {
+        "index": 25,
+        "value": 1.2080078125
+      },
+      {
+        "index": 26,
+        "value": 1.185546875
+      },
+      {
+        "index": 27,
+        "value": 1.1640625
+      },
+      {
+        "index": 28,
+        "value": 1.142578125
+      },
+      {
+        "index": 29,
+        "value": 1.123046875
+      },
+      {
+        "index": 30,
+        "value": 1.103515625
+      },
+      {
+        "index": 31,
+        "value": 1.0849609375
+      },
+      {
+        "index": 32,
+        "value": 1.06640625
+      },
+      {
+        "index": 33,
+        "value": 1.048828125
+      },
+      {
+        "index": 34,
+        "value": 1.0322265625
+      },
+      {
+        "index": 35,
+        "value": 1.015625
+      },
+      {
+        "index": 36,
+        "value": 1.0
+      },
+      {
+        "index": 41,
+        "value": 3.5762786865234375e-07
+      },
+      {
+        "index": 42,
+        "value": 6.139278411865234e-06
+      }
+    ],
+    "prefix_128_nonzero_bytes": 68,
+    "prefix_128_sha256": "8a5840509d79c95c6e5a80bdb5938d55624a29211ab6f71f8c069191bef1538b",
+    "sha256": "8a5840509d79c95c6e5a80bdb5938d55624a29211ab6f71f8c069191bef1538b",
+    "size": 128,
+    "tail_after_128_nonzero_bytes": 0
+  },
   "error": null,
   "family": "binary_runtime",
   "hwx_bytes": 49152,
-  "hwx_sha256": "877fa31b4e856cabfc4a791c1d500f5bf78c420c2d0445c14b73d54032d0ee81",
+  "hwx_sha256": "4507a3cec70dd2019f5c6204d9a6f177b01bd89610b994acafebf5d975c06a68",
   "mil": "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n  func main<ios18>(tensor<fp16, [1, 3, 224, 224]> x, tensor<fp16, [1, 3, 224, 224]> z) {\n    tensor<fp16, [1, 3, 224, 224]> y = real_div(x = x, y = z)[name = string(\"y\")];\n  } -> (y);\n}\n",
   "parameters": {
     "operation": "real_div",
@@ -77,7 +246,7 @@
     ]
   },
   "schema_version": 1,
-  "source_commit": "d140e0026bc8641b96c9f5580e923c00637c4fd1",
+  "source_commit": "9483fe699b9416a2bd0537606b36f5b5014638b9",
   "target": "h14",
   "task_descriptors": [
     {

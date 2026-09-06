@@ -7,16 +7,333 @@
       "OUTPUT_DIR",
       "h14"
     ],
+    "decoder_sha256": "fc85d0664a4e567e617189d53d22252f46b6cbca2e4246976ee9ae4deaa8aed5",
+    "driver_sha256": "cda43658a57026468a90dc088909559e9fbb0c04597a691119da93338984b648",
     "host": "MacStudio.local",
     "platform": "macOS-26.6.2-arm64-arm-64bit",
     "tool": "/tmp/h13-oracle/bin/ane-compile-hwx",
     "tool_sha256": "b1bab437e2da0d26e65799698b63d8ad592d5455eec5da64c5877799b08abcbe"
   },
-  "constant_section_size": 256,
+  "constant_section": {
+    "chunk_bytes": 2048,
+    "chunk_count": 1,
+    "chunks": [
+      {
+        "nonzero_bytes": 137,
+        "offset": 0,
+        "sha256": "5950aafb17fb460128cbba1a8c4ecd402fc697c9ccaca18050fe72c7eb959842",
+        "size": 256
+      }
+    ],
+    "nonzero_bytes": 137,
+    "nonzero_fp16_words": [
+      {
+        "index": 1,
+        "value": "+inf"
+      },
+      {
+        "index": 2,
+        "value": "-inf"
+      },
+      {
+        "index": 4,
+        "value": -1.0
+      },
+      {
+        "index": 5,
+        "value": -0.95556640625
+      },
+      {
+        "index": 6,
+        "value": -0.91259765625
+      },
+      {
+        "index": 7,
+        "value": -0.87060546875
+      },
+      {
+        "index": 8,
+        "value": -0.830078125
+      },
+      {
+        "index": 9,
+        "value": -0.79052734375
+      },
+      {
+        "index": 10,
+        "value": -0.751953125
+      },
+      {
+        "index": 11,
+        "value": -0.71435546875
+      },
+      {
+        "index": 12,
+        "value": -0.67822265625
+      },
+      {
+        "index": 13,
+        "value": -0.642578125
+      },
+      {
+        "index": 14,
+        "value": -0.60791015625
+      },
+      {
+        "index": 15,
+        "value": -0.57373046875
+      },
+      {
+        "index": 16,
+        "value": -0.54052734375
+      },
+      {
+        "index": 17,
+        "value": -0.50830078125
+      },
+      {
+        "index": 18,
+        "value": -0.476318359375
+      },
+      {
+        "index": 19,
+        "value": -0.4453125
+      },
+      {
+        "index": 20,
+        "value": -0.4150390625
+      },
+      {
+        "index": 21,
+        "value": -0.38525390625
+      },
+      {
+        "index": 22,
+        "value": -0.356201171875
+      },
+      {
+        "index": 23,
+        "value": -0.32763671875
+      },
+      {
+        "index": 24,
+        "value": -0.299560546875
+      },
+      {
+        "index": 25,
+        "value": -0.27197265625
+      },
+      {
+        "index": 26,
+        "value": -0.2451171875
+      },
+      {
+        "index": 27,
+        "value": -0.2186279296875
+      },
+      {
+        "index": 28,
+        "value": -0.192626953125
+      },
+      {
+        "index": 29,
+        "value": -0.1671142578125
+      },
+      {
+        "index": 30,
+        "value": -0.1419677734375
+      },
+      {
+        "index": 31,
+        "value": -0.11737060546875
+      },
+      {
+        "index": 32,
+        "value": -0.0931396484375
+      },
+      {
+        "index": 33,
+        "value": -0.06927490234375
+      },
+      {
+        "index": 34,
+        "value": -0.045806884765625
+      },
+      {
+        "index": 35,
+        "value": -0.0227203369140625
+      },
+      {
+        "index": 41,
+        "value": 3.5762786865234375e-07
+      },
+      {
+        "index": 42,
+        "value": 1.1980533599853516e-05
+      },
+      {
+        "index": 64,
+        "value": -25.0
+      },
+      {
+        "index": 65,
+        "value": 16.0
+      },
+      {
+        "index": 67,
+        "value": "+inf"
+      },
+      {
+        "index": 68,
+        "value": 1.0
+      },
+      {
+        "index": 69,
+        "value": 1.021484375
+      },
+      {
+        "index": 70,
+        "value": 1.0439453125
+      },
+      {
+        "index": 71,
+        "value": 1.0673828125
+      },
+      {
+        "index": 72,
+        "value": 1.0908203125
+      },
+      {
+        "index": 73,
+        "value": 1.1142578125
+      },
+      {
+        "index": 74,
+        "value": 1.138671875
+      },
+      {
+        "index": 75,
+        "value": 1.1640625
+      },
+      {
+        "index": 76,
+        "value": 1.189453125
+      },
+      {
+        "index": 77,
+        "value": 1.21484375
+      },
+      {
+        "index": 78,
+        "value": 1.2421875
+      },
+      {
+        "index": 79,
+        "value": 1.26953125
+      },
+      {
+        "index": 80,
+        "value": 1.296875
+      },
+      {
+        "index": 81,
+        "value": 1.3251953125
+      },
+      {
+        "index": 82,
+        "value": 1.3544921875
+      },
+      {
+        "index": 83,
+        "value": 1.3837890625
+      },
+      {
+        "index": 84,
+        "value": 1.4140625
+      },
+      {
+        "index": 85,
+        "value": 1.4453125
+      },
+      {
+        "index": 86,
+        "value": 1.4765625
+      },
+      {
+        "index": 87,
+        "value": 1.5087890625
+      },
+      {
+        "index": 88,
+        "value": 1.5419921875
+      },
+      {
+        "index": 89,
+        "value": 1.576171875
+      },
+      {
+        "index": 90,
+        "value": 1.6103515625
+      },
+      {
+        "index": 91,
+        "value": 1.6455078125
+      },
+      {
+        "index": 92,
+        "value": 1.681640625
+      },
+      {
+        "index": 93,
+        "value": 1.71875
+      },
+      {
+        "index": 94,
+        "value": 1.755859375
+      },
+      {
+        "index": 95,
+        "value": 1.794921875
+      },
+      {
+        "index": 96,
+        "value": 1.833984375
+      },
+      {
+        "index": 97,
+        "value": 1.8740234375
+      },
+      {
+        "index": 98,
+        "value": 1.9150390625
+      },
+      {
+        "index": 99,
+        "value": 1.95703125
+      },
+      {
+        "index": 100,
+        "value": 2.0
+      },
+      {
+        "index": 105,
+        "value": 2.980232238769531e-07
+      },
+      {
+        "index": 106,
+        "value": 5.960464477539062e-07
+      }
+    ],
+    "prefix_128_nonzero_bytes": 67,
+    "prefix_128_sha256": "d6889430e6ba96f59e9581b83919f7dd159c22229e8e9060b4c5518702c3d284",
+    "sha256": "5950aafb17fb460128cbba1a8c4ecd402fc697c9ccaca18050fe72c7eb959842",
+    "size": 256,
+    "tail_after_128_nonzero_bytes": 70
+  },
   "error": null,
   "family": "binary_runtime",
   "hwx_bytes": 49152,
-  "hwx_sha256": "3171cff8e1a3d10ae0cfd3072621ac5b846f29b6dab1aa36183b76b85d69f62e",
+  "hwx_sha256": "d439ec03cfe7853ffd00c4536743cf3a61e3a3fc05adcac9e04c3cf7f4aacea4",
   "mil": "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n  func main<ios18>(tensor<fp16, [1, 128, 1, 1]> x, tensor<fp16, [1, 128, 1, 1]> z) {\n    tensor<fp16, [1, 128, 1, 1]> y = pow(x = x, y = z)[name = string(\"y\")];\n  } -> (y);\n}\n",
   "parameters": {
     "operation": "pow",
@@ -77,7 +394,7 @@
     ]
   },
   "schema_version": 1,
-  "source_commit": "d140e0026bc8641b96c9f5580e923c00637c4fd1",
+  "source_commit": "9483fe699b9416a2bd0537606b36f5b5014638b9",
   "target": "h14",
   "task_descriptors": [
     {

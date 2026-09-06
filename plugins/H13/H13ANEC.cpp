@@ -62,11 +62,23 @@ void validateTensor(const TensorLayout &tensor, std::uint32_t expectedIndex,
         throw std::invalid_argument(kind);
 }
 
+void validateProgram(const Program &program) {
+    if (program.task.empty() || program.task.size() % sizeof(std::uint32_t))
+        throw std::invalid_argument("H13 ANEC requires a nonempty word-aligned task stream");
+    if (!program.taskCount)
+        throw std::invalid_argument("H13 ANEC requires at least one task");
+    if (!program.firstTaskBytes || program.firstTaskBytes % sizeof(std::uint32_t) ||
+        program.firstTaskBytes > program.task.size())
+        throw std::invalid_argument("H13 ANEC first task size is invalid");
+    if (program.constantOffsetBytes < program.task.size() ||
+        program.constantOffsetBytes % 0x40)
+        throw std::invalid_argument("H13 ANEC constant offset is invalid");
+}
+
 } // namespace
 
 std::vector<std::uint8_t> encodeANEC(const Program &program) {
-    if (program.task.size() != taskBytes)
-        throw std::invalid_argument("H13 ANEC requires one 0x274-byte task descriptor");
+    validateProgram(program);
     if (program.inputs.empty() || program.inputs.size() > 2)
         throw std::invalid_argument("H13 ANEC requires one or two input tensors");
 
@@ -76,7 +88,7 @@ std::vector<std::uint8_t> encodeANEC(const Program &program) {
                        "input allocation does not cover its physical span");
 
     const auto constantsSize = static_cast<std::uint64_t>(program.constants.size());
-    const auto contentSize = checkedAdd(constantOffset, constantsSize,
+    const auto contentSize = checkedAdd(program.constantOffsetBytes, constantsSize,
                                         "ANEC content size overflows");
     if (contentSize > std::numeric_limits<std::size_t>::max() - headerBytes)
         throw std::invalid_argument("ANEC output size overflows");
@@ -100,9 +112,9 @@ std::vector<std::uint8_t> encodeANEC(const Program &program) {
     std::vector<std::uint8_t> anec;
     anec.reserve(headerBytes + static_cast<std::size_t>(contentSize));
     appendLE(anec, contentSize, 8);
-    appendLE(anec, taskBytes, 4);
-    appendLE(anec, 1, 4);
-    appendLE(anec, taskBytes, 8);
+    appendLE(anec, program.firstTaskBytes, 4);
+    appendLE(anec, program.taskCount, 4);
+    appendLE(anec, program.task.size(), 8);
     appendLE(anec, constantsSize, 8);
     appendLE(anec, program.inputs.size(), 4);
     appendLE(anec, 1, 4);
@@ -114,7 +126,7 @@ std::vector<std::uint8_t> encodeANEC(const Program &program) {
         throw std::logic_error("ANEC header layout changed");
     anec.resize(headerBytes, 0);
     anec.insert(anec.end(), program.task.begin(), program.task.end());
-    anec.resize(headerBytes + constantOffset, 0);
+    anec.resize(headerBytes + program.constantOffsetBytes, 0);
     anec.insert(anec.end(), program.constants.begin(), program.constants.end());
     return anec;
 }

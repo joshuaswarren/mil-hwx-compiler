@@ -1,0 +1,4 @@
+PASS test_shape_ops_linear_and_binary_ops
+PASS 6 H13 reference tests
+H13 oracle parity: PASS (87 cases, 174 artifacts)
+H13 MIL-to-ANEC/HWX CLI: PASS (device-free)

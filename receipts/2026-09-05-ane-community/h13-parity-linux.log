@@ -1,0 +1,63 @@
+build/test_h13_encoding
+H13_ENCODING_OK
+build/test_h13_anec
+python3 tests/test_h13_cli.py build/mil-hwxc
+H13 MIL-to-ANEC/HWX CLI: PASS (device-free)
+python3 tests/test_hwx_inspection.py
+HWX inspection: PASS (multi-task H13 plus source-derived H14 fixtures)
+python3 tests/test_h13_reference.py build/mil-hwxc
+PASS test_blob_matmul_transposes
+PASS test_chunked_accumulation_difference_bound
+PASS test_fp16_rounding_and_ops
+PASS test_intermediate_physical_buffer_composition
+PASS test_linux_runner_dry_run
+PASS test_shape_ops_linear_and_binary_ops
+PASS 6 H13 reference tests
+python3 tests/test_h13_package_simulation.py
+OK macOS writePhysical/readPhysical matches inspect_anec.convert_tensor (run_h13.mm:51-86)
+OK elemwise add-mul-relu chain 96
+OK add
+OK mul
+OK maximum
+OK minimum
+OK sub
+OK real_div
+OK matmul-add-relu N=96 programs=5
+OK matmul K=1 N=1 programs=1 chunked=False
+OK matmul K=1 N=64 programs=1 chunked=False
+OK matmul K=1 N=300 programs=1 chunked=False
+OK matmul K=1 N=512 programs=1 chunked=False
+OK matmul K=1 N=1000 programs=2 chunked=False
+OK matmul K=200 N=1 programs=1 chunked=False
+OK matmul K=200 N=64 programs=1 chunked=False
+OK matmul K=200 N=300 programs=1 chunked=False
+OK matmul K=200 N=512 programs=1 chunked=False
+OK matmul K=200 N=1000 programs=2 chunked=False
+OK matmul K=256 N=1 programs=1 chunked=False
+OK matmul K=256 N=64 programs=1 chunked=False
+OK matmul K=256 N=300 programs=1 chunked=False
+OK matmul K=256 N=512 programs=1 chunked=False
+OK matmul K=256 N=1000 programs=2 chunked=False
+OK matmul K=257 N=1 programs=1 chunked=False
+OK matmul K=257 N=64 programs=1 chunked=False
+OK matmul K=257 N=300 programs=1 chunked=False
+OK matmul K=257 N=512 programs=1 chunked=False
+OK matmul K=257 N=1000 programs=2 chunked=False
+OK matmul K=512 N=1 programs=1 chunked=False
+OK matmul K=512 N=64 programs=1 chunked=False
+OK matmul K=512 N=300 programs=1 chunked=False
+OK matmul K=512 N=512 programs=1 chunked=False
+OK matmul K=512 N=1000 programs=2 chunked=False
+OK matmul K=700 N=1 programs=3 chunked=True
+OK matmul K=700 N=64 programs=3 chunked=True
+OK matmul K=700 N=300 programs=7 chunked=True
+OK matmul K=700 N=512 programs=3 chunked=True
+OK matmul K=700 N=1000 programs=20 chunked=True
+OK matmul K=1024 N=1 programs=3 chunked=True
+OK matmul K=1024 N=64 programs=3 chunked=True
+OK matmul K=1024 N=300 programs=7 chunked=True
+OK matmul K=1024 N=512 programs=3 chunked=True
+OK matmul K=1024 N=1000 programs=20 chunked=True
+ALL SIM CHECKS PASSED
+python3 tests/test_h13_parity.py build/mil-hwxc
+H13 oracle parity: PASS (87 cases, 174 artifacts)

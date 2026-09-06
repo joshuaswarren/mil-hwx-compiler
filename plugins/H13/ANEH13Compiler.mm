@@ -44,6 +44,47 @@ static BOOL tensorElementCount(ANEGraphValue *value, NSUInteger *count) {
     return YES;
 }
 
+static BOOL elementwiseShape(ANEGraphValue *value,
+                             ane::h13::ElementwiseShape *shape) {
+    if (!fp16Tensor(value) || value.type.shape.count != 4 ||
+        value.type.shape[0].unsignedIntegerValue != 1) return NO;
+    const uint64_t channels = value.type.shape[1].unsignedLongLongValue;
+    const uint64_t height = value.type.shape[2].unsignedLongLongValue;
+    const uint64_t width = value.type.shape[3].unsignedLongLongValue;
+    if (!channels || !height || !width || channels > UINT32_MAX ||
+        height > UINT32_MAX || width > UINT32_MAX) return NO;
+    *shape = {static_cast<std::uint32_t>(channels),
+              static_cast<std::uint32_t>(height),
+              static_cast<std::uint32_t>(width)};
+    return YES;
+}
+
+
+static BOOL binaryEncoding(NSString *name, ane::h13::BinaryOperation *encoding) {
+    if ([name isEqualToString:@"add"]) *encoding = ane::h13::BinaryOperation::Add;
+    else if ([name isEqualToString:@"mul"]) *encoding = ane::h13::BinaryOperation::Multiply;
+    else if ([name isEqualToString:@"maximum"]) *encoding = ane::h13::BinaryOperation::Maximum;
+    else if ([name isEqualToString:@"minimum"]) *encoding = ane::h13::BinaryOperation::Minimum;
+    else if ([name isEqualToString:@"sub"]) *encoding = ane::h13::BinaryOperation::Subtract;
+    else if ([name isEqualToString:@"real_div"]) *encoding = ane::h13::BinaryOperation::RealDivide;
+    else return NO;
+    return YES;
+}
+
+static BOOL unaryEncoding(NSString *name, ane::h13::UnaryOperation *encoding) {
+    if ([name isEqualToString:@"abs"]) *encoding = ane::h13::UnaryOperation::Absolute;
+    else if ([name isEqualToString:@"exp"]) *encoding = ane::h13::UnaryOperation::Exponential;
+    else if ([name isEqualToString:@"gelu"]) *encoding = ane::h13::UnaryOperation::Gelu;
+    else if ([name isEqualToString:@"leaky_relu"]) *encoding = ane::h13::UnaryOperation::LeakyRelu;
+    else if ([name isEqualToString:@"relu"]) *encoding = ane::h13::UnaryOperation::Relu;
+    else if ([name isEqualToString:@"rsqrt"]) *encoding = ane::h13::UnaryOperation::ReciprocalSquareRoot;
+    else if ([name isEqualToString:@"sigmoid"]) *encoding = ane::h13::UnaryOperation::Sigmoid;
+    else if ([name isEqualToString:@"silu"]) *encoding = ane::h13::UnaryOperation::Silu;
+    else if ([name isEqualToString:@"sqrt"]) *encoding = ane::h13::UnaryOperation::SquareRoot;
+    else if ([name isEqualToString:@"tanh"]) *encoding = ane::h13::UnaryOperation::Tanh;
+    else return NO;
+    return YES;
+}
 
 static uint64_t roundToNearestEven(double value) {
     double lower = std::floor(value);
@@ -110,6 +151,22 @@ static BOOL exactFP16Attribute(ANEGraphArgument *argument, uint16_t *bits,
     double decoded = (*bits & 0x8000u) ? -magnitude : magnitude;
     if (static_cast<double>(value) != decoded) return NO;
     *valueOut = value;
+    return YES;
+}
+
+static BOOL fp32Attribute(ANEGraphArgument *argument, float *valueOut) {
+    if (argument.kind != ANEGraphArgumentKindCall ||
+        ![argument.calleeName isEqualToString:@"fp32"] ||
+        argument.callArguments.count != 1) return NO;
+    argument = argument.callArguments[0].value;
+    if (argument.kind != ANEGraphArgumentKindFloatingPoint &&
+        argument.kind != ANEGraphArgumentKindInteger) return NO;
+    const char *text = argument.text.UTF8String;
+    if (!text) return NO;
+    char *end = nullptr;
+    double parsed = std::strtod(text, &end);
+    if (end == text || *end || !std::isfinite(parsed)) return NO;
+    *valueOut = static_cast<float>(parsed);
     return YES;
 }
 
@@ -233,10 +290,10 @@ static HWXObjectBinding *objectBinding(const ane::h13::TensorLayout &layout,
 }
 
 static NSArray<NSNumber *> *relocationOffsets(const ane::h13::Program &program) {
-    if (program.constants.empty()) return @[];
-    NSMutableArray<NSNumber *> *offsets = [NSMutableArray arrayWithCapacity:16];
-    for (NSUInteger index = 0; index < 16; ++index)
-        [offsets addObject:@(0x74 + index * sizeof(uint32_t))];
+    NSMutableArray<NSNumber *> *offsets =
+        [NSMutableArray arrayWithCapacity:program.kernelRelocations.size()];
+    for (std::size_t offset : program.kernelRelocations)
+        [offsets addObject:@(offset)];
     return offsets;
 }
 
@@ -252,7 +309,9 @@ static NSData *encodeHWX(const ane::h13::Program &program, NSError **error) {
     NSData *constants = [NSData dataWithBytes:program.constants.data()
                                        length:program.constants.size()];
     HWXObjectProgramInfo *info = [[HWXObjectProgramInfo alloc]
-        initWithTaskCount:1 recordCount:1 formatCode:0 scratchByteLength:0
+        initWithTaskCount:program.taskCount
+        firstTaskByteLength:program.firstTaskBytes recordCount:1
+        formatCode:0 scratchByteLength:0
         descriptorLayout:HWXProgramDescriptorLayoutLinear];
     return [HWXObjectWriter buildObjectForArchitecture:HWXObjectArchitectureH13
         taskDescriptor:task constantRegion:constants bindings:bindings
@@ -280,6 +339,111 @@ static void addSlice(NSMutableDictionary *record, ANEGraphValue *value,
 
 static BOOL constantValue(ANEGraphValue *value) {
     return [value.producer.operationName isEqualToString:@"const"];
+}
+
+static NSString *stringArgument(ANEGraphArgument *argument) {
+    if (argument.kind == ANEGraphArgumentKindCall &&
+        [argument.calleeName isEqualToString:@"string"] &&
+        argument.callArguments.count == 1)
+        argument = argument.callArguments[0].value;
+    return argument.kind == ANEGraphArgumentKindString ? argument.text : nil;
+}
+
+struct H13ParityPlan {
+    BOOL unary;
+    BOOL scalarConstant;
+    ane::h13::UnaryOperation unaryOperation;
+    ane::h13::BinaryOperation binaryOperation;
+    uint16_t scalarBits;
+    ane::h13::ElementwiseShape shape;
+    NSUInteger elements;
+    NSUInteger inputCount;
+};
+
+/// The decoded shapes a tensor may lower through: its literal NCHW geometry
+/// when spatial, and its channel-flattened form, which shares the physical
+/// 64-byte row layout the pipeline already packs logical tensors into.
+static NSUInteger parityShapes(ANEGraphValue *value,
+                               ane::h13::ElementwiseShape shapes[2]) {
+    NSUInteger elements = 0;
+    if (!tensorElementCount(value, &elements) || elements > UINT32_MAX) return 0;
+    NSUInteger count = 0;
+    ane::h13::ElementwiseShape literal{};
+    if (elementwiseShape(value, &literal) &&
+        (literal.height != 1 || literal.width != 1))
+        shapes[count++] = literal;
+    shapes[count++] = {static_cast<std::uint32_t>(elements), 1, 1};
+    return count;
+}
+
+/// Matches the operations whose H13 task streams are decoded byte-for-byte
+/// from Apple oracles, so they encode as one whole-tensor program.
+static BOOL parityPlan(ANEGraphOperation *operation,
+                       NSDictionary<NSString *, NSData *> *synthesizedConstants,
+                       H13ParityPlan *plan) {
+    ANEGraphValue *x = operation.operands[@"x"].value;
+    ANEGraphValue *y = operation.operands[@"y"].value;
+    NSString *name = operation.operationName;
+    H13ParityPlan candidate{};
+    ane::h13::ElementwiseShape shapes[2];
+    NSUInteger shapeCount = parityShapes(operation.result, shapes);
+    if (!shapeCount || !tensor(x, operation.result.type.shape)) return NO;
+    BOOL leaky = [name isEqualToString:@"leaky_relu"];
+    BOOL gelu = [name isEqualToString:@"gelu"];
+    BOOL rsqrt = [name isEqualToString:@"rsqrt"];
+    if (unaryEncoding(name, &candidate.unaryOperation)) {
+        uint16_t alphaBits = 0;
+        double alpha = 0.0;
+        float epsilon = 0.0f;
+        if (operation.arguments.count != (leaky || gelu || rsqrt ? 2u : 1u) ||
+            (leaky && (!exactFP16Attribute(operation.arguments[@"alpha"],
+                                           &alphaBits, &alpha) ||
+                       alphaBits != 0x3000)) ||
+            (gelu && ![stringArgument(operation.arguments[@"mode"])
+                          isEqualToString:@"EXACT"]) ||
+            (rsqrt && (!fp32Attribute(operation.arguments[@"epsilon"], &epsilon) ||
+                       epsilon != 1e-6f)))
+            return NO;
+        for (NSUInteger index = 0; index < shapeCount; ++index) {
+            if (!ane::h13::supportsElementwise(candidate.unaryOperation, shapes[index]))
+                continue;
+            candidate.shape = shapes[index];
+            candidate.elements = (NSUInteger)shapes[index].channels *
+                shapes[index].height * shapes[index].width;
+            candidate.unary = YES;
+            candidate.inputCount = 1;
+            *plan = candidate;
+            return YES;
+        }
+        return NO;
+    }
+    if (!binaryEncoding(name, &candidate.binaryOperation) ||
+        operation.arguments.count != 2 || !y) return NO;
+    if (synthesizedConstants[x.name] || constantValue(x)) return NO;
+    BOOL runtime = !synthesizedConstants[y.name] && !constantValue(y);
+    if (runtime) {
+        if (!tensor(y, operation.result.type.shape)) return NO;
+    } else if (synthesizedConstants[y.name] ||
+               y.type.kind != ANEValueTypeKindScalar ||
+               y.type.elementType != ANEElementTypeFP16 ||
+               y.producer.arguments.count ||
+               !fp16Scalar(y.producer.attributes[@"val"], &candidate.scalarBits) ||
+               candidate.scalarBits != 0x3800) {
+        return NO;
+    }
+    for (NSUInteger index = 0; index < shapeCount; ++index) {
+        if (!ane::h13::supportsElementwise(candidate.binaryOperation, shapes[index],
+                                           !runtime))
+            continue;
+        candidate.shape = shapes[index];
+        candidate.elements = (NSUInteger)shapes[index].channels *
+            shapes[index].height * shapes[index].width;
+        candidate.scalarConstant = !runtime;
+        candidate.inputCount = runtime ? 2 : 1;
+        *plan = candidate;
+        return YES;
+    }
+    return NO;
 }
 
 static NSData *linearBiasData(ANEGraphValue *bias, NSUInteger columns,
@@ -351,6 +515,19 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     ANEGraphValue *constantInput = nil;
     NSData *constantData = nil;
     NSString *manifestOperation = name;
+
+    H13ParityPlan plan{};
+    if (parityPlan(operation, synthesizedConstants, &plan)) {
+        program = plan.unary
+            ? ane::h13::encodeElementwise(plan.unaryOperation, plan.shape)
+            : ane::h13::encodeElementwise(plan.binaryOperation, plan.shape,
+                                          plan.scalarConstant, plan.scalarBits);
+        *inputsOut = plan.inputCount == 2 ? @[x, y] : @[x];
+        *constantInputOut = nil;
+        *constantDataOut = nil;
+        *manifestOperationOut = name;
+        return YES;
+    }
 
     if (binaryIndex != NSNotFound) {
         if (operation.arguments.count != 2 || !x || !y)
@@ -706,13 +883,26 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             if (candidate.arguments.count != 1 || !x)
                 return reject(diagnostics, @"H13 relu requires one x value operand",
                     candidate);
-            NSString *zeroName = [NSString stringWithFormat:@"$h13.%@.zero",
-                result.name];
-            ANEGraphValue *zero = [[ANEGraphValue alloc]
-                initWithName:zeroName type:x.type];
-            synthesizedConstants[zeroName] = splatFP16(0);
-            [operations addObject:binaryOperation(@"maximum", x, zero,
-                result, candidate.range)];
+            ane::h13::ElementwiseShape shapes[2];
+            NSUInteger shapeCount = parityShapes(result, shapes);
+            BOOL nativeRelu = NO;
+            for (NSUInteger index = 0; index < shapeCount; ++index)
+                nativeRelu = nativeRelu ||
+                    ane::h13::supportsElementwise(ane::h13::UnaryOperation::Relu,
+                                                  shapes[index]);
+            if (nativeRelu) {
+                [operations addObject:[[ANEGraphOperation alloc]
+                    initWithOperationName:name result:result arguments:arguments
+                    attributes:candidate.attributes range:candidate.range]];
+            } else {
+                NSString *zeroName = [NSString stringWithFormat:@"$h13.%@.zero",
+                    result.name];
+                ANEGraphValue *zero = [[ANEGraphValue alloc]
+                    initWithName:zeroName type:x.type];
+                synthesizedConstants[zeroName] = splatFP16(0);
+                [operations addObject:binaryOperation(@"maximum", x, zero,
+                    result, candidate.range)];
+            }
             [manifestValues addObject:result];
         } else if ([name isEqualToString:@"clip"]) {
             if (candidate.arguments.count != 3 || !x)
@@ -994,7 +1184,13 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 inputPhysicalElements = 0, outputSliceElements = 0,
                 outputPhysicalElements = 0, outputChunks = 1;
             BOOL matmul = [operation.operationName isEqualToString:@"matmul"];
-            if ([binaryNames containsObject:operation.operationName]) {
+            H13ParityPlan operationPlan{};
+            BOOL parity = parityPlan(operation, synthesizedConstants, &operationPlan);
+            if (parity) {
+                inputSliceElements = outputSliceElements =
+                    inputPhysicalElements = outputPhysicalElements =
+                        operationPlan.elements;
+            } else if ([binaryNames containsObject:operation.operationName]) {
                 NSUInteger elements = 0;
                 if (tensorElementCount(operation.result, &elements)) {
                     sliceCount = (elements - 1) / 64 + 1;
@@ -1034,6 +1230,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     inputOffset = row * reduction + reductionOffset.unsignedIntegerValue;
                     outputOffset = row * columns + chunk * 512;
                     outputSliceElements = MIN((NSUInteger)512, columns - chunk * 512);
+                } else if (parity) {
+                    outputOffset =
+                        [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
                 } else {
                     inputOffset = sliceIndex * 64;
                     outputOffset = inputOffset +
@@ -1120,10 +1319,12 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     (unsigned long)programIndex, format];
                 NSDictionary *record = @{
                     @"file": file, @"bytes": @(payload.length),
-                    @"taskDescriptors": @1, @"operation": manifestOperation,
+                    @"taskDescriptors": @(program.taskCount),
+                    @"encoder": parity ? @"h13-oracle-parity" : @"h13-source-qualified",
+                    @"operation": manifestOperation,
                     @"inputs": inputRecords, @"constantInputs": constantInputs,
                     @"outputs": @[outputRecord],
-                    @"constantOffset": @(ane::h13::constantOffset),
+                    @"constantOffset": @(program.constantOffsetBytes),
                     @"constantBytes": @(program.constants.size()),
                 };
                 [programRecords addObject:record];

@@ -313,18 +313,18 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         'y': {'shape': [1, 64, 1, 1], 'logicalBytes': 128, 'role': 'output'},
     }
     assert manifest['programs'] == [{key: manifest[key] for key in (
-        'file', 'bytes', 'taskDescriptors', 'operation', 'inputs', 'constantInputs',
-        'outputs', 'constantOffset', 'constantBytes')}]
+        'file', 'bytes', 'taskDescriptors', 'encoder', 'operation', 'inputs',
+        'constantInputs', 'outputs', 'constantOffset', 'constantBytes')}]
     assert manifest['inputs'][0]['name'] == 'a'
     assert manifest['inputs'][1]['name'] == 'b'
     assert manifest['outputs'][0]['name'] == 'y'
     data = (first / 'program-0.anec').read_bytes()
     size, td_size, count, task_size, kernel_size, inputs, outputs = struct.unpack_from('<QIIQQII', data)
     assert len(data) == 4096 + size
-    assert (td_size, count, task_size, inputs, outputs) == (0x274, 1, 0x274, 2, 1)
+    assert (td_size, count, task_size, inputs, outputs) == (0x1f8, 1, 0x1f8, 2, 1)
     inspection = json.loads(inspect(first))
     assert inspection["manifest"] == manifest
-    assert inspection["bufferAllocation"]["totalBytes"] == 65536
+    assert inspection["bufferAllocation"]["totalBytes"] == 81920
     dense = bytes(range(128))
     raw, padded, unpacked = root / "input.fp16", root / "input.buffer", root / "output.fp16"
     raw.write_bytes(dense)
@@ -401,17 +401,19 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     compile_text(alias_source(return_alias=True), 'returned-input-alias', False,
                  'h13.returned-input-alias')
 
-    tiled_add = compile_text(source(shape=(128,)), 'tiled-add')
+    tiled_add = compile_text(source(shape=(192,)), 'tiled-add')
     tiled_manifest = json.loads((tiled_add / 'manifest.json').read_text())
-    assert tiled_manifest['dispatchPlan'] == [0, 1]
-    assert len(tiled_manifest['programs']) == 2
+    assert tiled_manifest['dispatchPlan'] == [0, 1, 2]
+    assert len(tiled_manifest['programs']) == 3
+    tiled_reference = (tiled_add / tiled_manifest['programs'][0]['file']).read_bytes()
+    assert tiled_reference != data
     for index, program in enumerate(tiled_manifest['programs']):
-        assert (tiled_add / program['file']).read_bytes() == data
+        assert (tiled_add / program['file']).read_bytes() == tiled_reference
         assert [item['slice'] for item in program['inputs'] + program['outputs']] == [
             {'tensor': name, 'elementOffset': index * 64, 'elementCount': 64}
             for name in ('a', 'b', 'y')]
     assert tiled_manifest['tensors'] == {
-        name: {'shape': [128], 'logicalBytes': 256,
+        name: {'shape': [192], 'logicalBytes': 384,
                'role': 'output' if name == 'y' else 'input'}
         for name in ('a', 'b', 'y')
     }
@@ -427,20 +429,20 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     inspect(tiled_add, success=False)
     tiled_manifest_path.write_text(json.dumps(tiled_manifest))
 
-    tiled_dense = bytes(range(256))
+    tiled_dense = bytes(range(256)) + bytes(range(128))
     tiled_raw = root / 'tiled-input.fp16'
     tiled_raw.write_bytes(tiled_dense)
     tiled_buffers = root / 'tiled-input-buffers'
     inspect(tiled_add, '--pack-input', 'a', tiled_raw, '--output', tiled_buffers)
-    for index in range(2):
+    for index in range(3):
         expected_slice = bytearray(16384)
-        half = tiled_dense[index * 128:(index + 1) * 128]
+        third = tiled_dense[index * 128:(index + 1) * 128]
         for element in range(64):
-            expected_slice[element * 64:element * 64 + 2] = half[element * 2:element * 2 + 2]
+            expected_slice[element * 64:element * 64 + 2] = third[element * 2:element * 2 + 2]
         assert (tiled_buffers / f'program-{index}.a.buffer').read_bytes() == expected_slice
     tiled_outputs = root / 'tiled-output-buffers'
     tiled_outputs.mkdir()
-    for index in range(2):
+    for index in range(3):
         (tiled_outputs / f'program-{index}.y.buffer').write_bytes(
             (tiled_buffers / f'program-{index}.a.buffer').read_bytes())
     tiled_unpacked = root / 'tiled-output.fp16'
@@ -449,7 +451,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     padded_add = compile_text(source(shape=(96,)), 'padded-add')
     padded_manifest = json.loads((padded_add / 'manifest.json').read_text())
     assert padded_manifest['dispatchPlan'] == [0, 1]
-    assert all((padded_add / program['file']).read_bytes() == data
+    assert all((padded_add / program['file']).read_bytes() == tiled_reference
                for program in padded_manifest['programs'])
     assert [item['slice'] for item in
             padded_manifest['programs'][1]['inputs'] +
@@ -510,14 +512,17 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         assert bytes.fromhex(program['constantInputs']['c']) == expected_half
     maximum_data = (root / 'maximum-canonical' / 'program-0.anec').read_bytes()
     minimum_data = (root / 'minimum-canonical' / 'program-0.anec').read_bytes()
+    relu_reference = None
     for shape in ((64,), (1, 64), (2, 4, 8)):
         relu = compile_text(activation_source('relu', shape), f'relu-{len(shape)}d')
         relu_manifest = json.loads((relu / 'manifest.json').read_text())
-        assert (relu / 'program-0.anec').read_bytes() == maximum_data
-        assert relu_manifest['operation'] == 'maximum'
-        assert bytes.fromhex(relu_manifest['constantInputs']['$h13.y.zero']) == \
-            struct.pack('<H', 0) * 64
-        assert relu_manifest['inputs'][1]['binding'] == 'constant'
+        relu_data = (relu / 'program-0.anec').read_bytes()
+        relu_reference = relu_reference or relu_data
+        assert relu_data == relu_reference != maximum_data
+        assert relu_manifest['operation'] == 'relu'
+        assert relu_manifest['encoder'] == 'h13-oracle-parity'
+        assert relu_manifest['constantInputs'] == {}
+        assert len(relu_manifest['inputs']) == 1
 
     clipped = compile_text(activation_source('clip', alpha=-1, beta=2), 'clip')
     clipped_manifest = json.loads((clipped / 'manifest.json').read_text())
@@ -525,8 +530,10 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     assert clipped_manifest['intermediates'] == ['$h13.y.clipped-low']
     assert [program['operation'] for program in clipped_manifest['programs']] == [
         'maximum', 'minimum']
-    assert (clipped / 'program-0.anec').read_bytes() == maximum_data
-    assert (clipped / 'program-1.anec').read_bytes() == minimum_data
+    clip_low = (clipped / 'program-0.anec').read_bytes()
+    clip_high = (clipped / 'program-1.anec').read_bytes()
+    assert clip_low != clip_high
+    assert clip_low != maximum_data and clip_high != minimum_data
     assert bytes.fromhex(
         clipped_manifest['programs'][0]['constantInputs']['$h13.y.alpha']) == \
         struct.pack('<H', 0xbc00) * 64
@@ -541,7 +548,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         'maximum', 'maximum', 'minimum', 'minimum']
     assert [(tiled_clip / program['file']).read_bytes() for program in
             tiled_clip_manifest['programs']] == [
-                maximum_data, maximum_data, minimum_data, minimum_data]
+                clip_low, clip_low, clip_high, clip_high]
     assert json.loads(inspect(tiled_clip))['manifest'] == tiled_clip_manifest
     compile_text(activation_source('clip', alpha=0.1, beta=2), 'clip-inexact', False,
                  'h13.inexact-constant')
@@ -552,12 +559,12 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     add_relu = compile_text(activation_chain_source('relu'), 'add-relu')
     add_relu_manifest = json.loads((add_relu / 'manifest.json').read_text())
     assert [program['operation'] for program in add_relu_manifest['programs']] == [
-        'add', 'maximum']
+        'add', 'relu']
     assert add_relu_manifest['intermediates'] == ['sum']
     assert json.loads(inspect(add_relu))['manifest'] == add_relu_manifest
 
     for op, alpha, beta, operations in (
-            ('relu', None, None, ('add', 'maximum', 'mul')),
+            ('relu', None, None, ('add', 'relu', 'mul')),
             ('clip', -1, 2, ('add', 'maximum', 'minimum', 'mul'))):
         activation_chain = compile_text(
             activation_chain_source(op, alpha, beta, multiply=True), f'{op}-chain')
@@ -581,7 +588,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     assert (chain / 'program-0.anec').read_bytes() == data
     assert (chain / 'program-1.anec').read_bytes() == \
         (root / 'mul-canonical' / 'program-0.anec').read_bytes()
-    assert (chain / 'program-2.anec').read_bytes() == data
+    assert (chain / 'program-2.anec').read_bytes() == tiled_reference
     assert chain_manifest['programs'][0]['outputs'][0]['role'] == 'intermediate'
     assert chain_manifest['programs'][1]['inputs'][0]['role'] == 'intermediate'
     assert chain_manifest['programs'][1]['outputs'][0]['role'] == 'intermediate'
@@ -590,8 +597,8 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         struct.pack('<e', -1.0) * 64
     chain_inspection = json.loads(inspect(chain))
     assert chain_inspection['manifest'] == chain_manifest
-    assert chain_inspection['bufferAllocation']['programs'][0]['totalBytes'] == 65536
-    assert chain_inspection['bufferAllocation']['totalBytes'] == 147456
+    assert chain_inspection['bufferAllocation']['programs'][0]['totalBytes'] == 81920
+    assert chain_inspection['bufferAllocation']['totalBytes'] == 180224
     chain_raw, chain_buffer, chain_output = (
         root / 'chain-input.fp16', root / 'chain-input.buffer', root / 'chain-output.fp16')
     chain_raw.write_bytes(dense)
@@ -628,18 +635,22 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     unchanged_constants = b''.join(struct.pack('<e', value) for value in values)
     for op in ('add', 'mul', 'maximum', 'minimum'):
         canonical = first if op == 'add' else root / f'{op}-canonical'
+        canonical_bytes = (canonical / 'program-0.anec').read_bytes()
+        folded_bytes = None
         for const_first in (False, True):
             folded = compile_text(constant_source(op, values, const_first),
                                   f'{op}-constant-{"first" if const_first else "second"}')
             folded_manifest = json.loads((folded / 'manifest.json').read_text())
-            assert (folded / 'program-0.anec').read_bytes() == (canonical / 'program-0.anec').read_bytes()
+            current = (folded / 'program-0.anec').read_bytes()
+            folded_bytes = folded_bytes or current
+            assert current == folded_bytes != canonical_bytes
             assert bytes.fromhex(folded_manifest['constantInputs']['c']) == unchanged_constants
             assert folded_manifest['inputs'][0]['name'] == 'a'
             assert folded_manifest['inputs'][1]['binding'] == 'constant'
     sub = compile_text(constant_source('sub', values), 'sub-constant')
     sub_manifest = json.loads((sub / 'manifest.json').read_text())
     negated = b''.join(struct.pack('<e', -value) for value in values)
-    assert (sub / 'program-0.anec').read_bytes() == data
+    assert (sub / 'program-0.anec').read_bytes() == tiled_reference
     assert sub_manifest['operation'] == 'add'
     assert sub_manifest['inputs'][1]['binding'] == 'constant'
     assert bytes.fromhex(sub_manifest['constantInputs']['c']) == negated
@@ -689,7 +700,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     (root / 'constant.bin').write_bytes(blob)
     blob_sub = compile_text(constant_source('sub', None, blob='constant.bin'), 'blob-sub')
     blob_manifest = json.loads((blob_sub / 'manifest.json').read_text())
-    assert (blob_sub / 'program-0.anec').read_bytes() == data
+    assert (blob_sub / 'program-0.anec').read_bytes() == tiled_reference
     assert bytes.fromhex(blob_manifest['constantInputs']['c']) == negated
 
     invalid_manifest = json.loads((blob_sub / 'manifest.json').read_text())
@@ -708,7 +719,11 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
                  "lexical-error", False, "mil.lex.")
     (root / "empty-output").mkdir()
     compile_text(source(), "empty-output")
-    compile_text(source('sub'), 'two-input-sub', False, 'h13.nonfoldable-binary')
+    two_input_sub = compile_text(source('sub'), 'two-input-sub')
+    two_input_sub_manifest = json.loads((two_input_sub / 'manifest.json').read_text())
+    assert two_input_sub_manifest['operation'] == 'sub'
+    assert two_input_sub_manifest['encoder'] == 'h13-oracle-parity'
+    assert len(two_input_sub_manifest['inputs']) == 2
     compile_text(source('real_div'), 'two-input-real-div', False,
                  'h13.nonfoldable-binary')
     compile_text(source(extra='tensor<fp16, [1, 64, 1, 1]> z = relu(x = y)[name = string("z")];'),
@@ -818,7 +833,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     wide_reduction_manifest = json.loads(
         (wide_reduction / 'manifest.json').read_text())
     assert [program['operation'] for program in wide_reduction_manifest['programs']] == \
-        ['matmul', 'matmul'] + ['add'] * 8
+        ['matmul', 'matmul', 'add']
     assert [program['inputs'][0]['slice'] for program in
             wide_reduction_manifest['programs'][:2]] == [
         {'tensor': 'x', 'elementOffset': 0, 'elementCount': 512},
@@ -827,7 +842,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     assert [program['outputs'][0]['name'] for program in
             wide_reduction_manifest['programs'][:2]] == [
         '$h13.y.partial0', '$h13.y.partial1']
-    assert all((wide_reduction / program['file']).read_bytes() == data
+    assert all(program['encoder'] == 'h13-oracle-parity'
                for program in wide_reduction_manifest['programs'][2:])
     multirow_reduction = compile_text(
         matmul_source(1024, x_shape=(2, 1024), output_shape=(2, 512)),
@@ -976,7 +991,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             matmul_binary, f'matmul-binary-{reduction}')
         matmul_binary_manifest = json.loads(
             (matmul_binary_package / 'manifest.json').read_text())
-        assert len(matmul_binary_manifest['programs']) == 9
+        assert len(matmul_binary_manifest['programs']) == 2
         assert json.loads(inspect(matmul_binary_package))['manifest'] == \
             matmul_binary_manifest
         projection = compile_text(matmul, f'projection-{reduction}')
@@ -1018,10 +1033,10 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             (root / 'bias.bin').write_bytes(bias_blob)
             projected = compile_text(matmul_activation_chain_source(), 'matmul-add-relu')
             projected_manifest = json.loads((projected / 'manifest.json').read_text())
-            assert len(projected_manifest['programs']) == 17
+            assert len(projected_manifest['programs']) == 10
             assert [program['operation'] for program in projected_manifest['programs']] == \
-                ['matmul'] + ['add'] * 8 + ['maximum'] * 8
-            assert projected_manifest['dispatchPlan'] == list(range(17))
+                ['matmul'] + ['add'] * 8 + ['relu']
+            assert projected_manifest['dispatchPlan'] == list(range(10))
             projected_manifest_path = projected / 'manifest.json'
             invalid_projected_manifest = json.loads(json.dumps(projected_manifest))
             invalid_projected_manifest['dispatchPlan'][:2] = [1, 0]
@@ -1039,15 +1054,15 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             residual_manifest_path = residual / 'manifest.json'
             residual_manifest = json.loads(residual_manifest_path.read_text())
             assert [program['operation'] for program in residual_manifest['programs']] == \
-                ['matmul'] + ['maximum'] * 8 + ['add'] * 8
-            assert residual_manifest['dispatchPlan'] == list(range(17))
+                ['matmul', 'relu', 'add']
+            assert residual_manifest['dispatchPlan'] == list(range(3))
             assert residual_manifest['intermediates'] == ['t', 'u']
             assert sum(item['name'] == 't' for program in residual_manifest['programs']
-                       for item in program['inputs']) == 16
+                       for item in program['inputs']) == 2
             assert json.loads(inspect(residual))['manifest'] == residual_manifest
             invalid_residual_manifest = json.loads(json.dumps(residual_manifest))
             invalid_residual_manifest['dispatchPlan'][0], \
-                invalid_residual_manifest['dispatchPlan'][9] = 9, 0
+                invalid_residual_manifest['dispatchPlan'][1] = 1, 0
             residual_manifest_path.write_text(json.dumps(invalid_residual_manifest))
             inspect(residual, success=False)
             residual_manifest_path.write_text(json.dumps(residual_manifest))
@@ -1056,7 +1071,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             binary_matmul_manifest = json.loads(
                 (binary_matmul / 'manifest.json').read_text())
             assert [program['operation'] for program in binary_matmul_manifest['programs']] == \
-                ['add'] * 8 + ['matmul']
+                ['add', 'matmul']
             assert binary_matmul_manifest['programs'][-1]['inputs'][0].get('slice') is None
             assert json.loads(inspect(binary_matmul))['manifest'] == binary_matmul_manifest
         unrelated = matmul.replace(
@@ -1138,9 +1153,9 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     assert 'h13_anec_content' in inspected_hwx.stdout
 
     assert '__TEXT/__text' in inspected_hwx.stdout
-    assert 'size=0x274 offset=0x4000' in inspected_hwx.stdout
+    assert 'size=0x1f8 offset=0x4000' in inspected_hwx.stdout
     assert 'h13_program_descriptor code=0x21a' in inspected_hwx.stdout
-    assert 'task_words_minus_one=156 task_count=1 max_binding=65535' in inspected_hwx.stdout
+    assert 'task_words_minus_one=125 task_count=1 max_binding=65535' in inspected_hwx.stdout
     assert 'field850=0x11' in inspected_hwx.stdout
     assert 'field858=4' in inspected_hwx.stdout
     assert "field860=1 field868=9 field86c=8 name='net'" in inspected_hwx.stdout

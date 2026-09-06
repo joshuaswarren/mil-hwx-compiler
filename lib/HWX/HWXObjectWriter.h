@@ -42,12 +42,19 @@ typedef NS_ENUM(NSUInteger, HWXProgramDescriptorLayout) {
 
 @interface HWXObjectProgramInfo : NSObject
 @property(nonatomic, readonly) NSUInteger taskCount;
+@property(nonatomic, readonly) NSUInteger firstTaskByteLength;
 @property(nonatomic, readonly) NSUInteger recordCount;
 @property(nonatomic, readonly) uint32_t formatCode;
 @property(nonatomic, readonly) NSUInteger scratchByteLength;
 @property(nonatomic, readonly) NSUInteger scratchAllocationByteLength;
 @property(nonatomic, readonly) HWXProgramDescriptorLayout descriptorLayout;
 - (instancetype)initWithTaskCount:(NSUInteger)taskCount
+                       recordCount:(NSUInteger)recordCount
+                        formatCode:(uint32_t)formatCode
+                 scratchByteLength:(NSUInteger)scratchByteLength
+                  descriptorLayout:(HWXProgramDescriptorLayout)descriptorLayout;
+- (instancetype)initWithTaskCount:(NSUInteger)taskCount
+               firstTaskByteLength:(NSUInteger)firstTaskByteLength
                        recordCount:(NSUInteger)recordCount
                         formatCode:(uint32_t)formatCode
                  scratchByteLength:(NSUInteger)scratchByteLength

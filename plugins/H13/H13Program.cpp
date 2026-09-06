@@ -1,5 +1,8 @@
 #include "H13Program.h"
 
+#include <algorithm>
+#include <cstring>
+#include <iterator>
 #include <stdexcept>
 
 namespace ane::h13 {
@@ -290,6 +293,162 @@ std::vector<std::uint8_t> packWeights(std::uint32_t reduction,
     return packed;
 }
 
+enum class ElementwiseKind : std::uint8_t { BinaryRuntime, BinaryScalar, Unary };
+
+struct OracleTaskTemplate {
+    ElementwiseKind kind;
+    std::uint8_t operation;
+    ElementwiseShape shape;
+    const std::uint32_t *words;
+    std::size_t wordCount;
+    std::size_t firstTaskBytes;
+    std::uint32_t taskCount;
+    std::size_t constantBytes;
+};
+
+#include "H13ElementwiseTemplates.inc"
+#include "H13ElementwiseConstants.inc"
+
+bool sameShape(ElementwiseShape left, ElementwiseShape right) {
+    return left.channels == right.channels && left.height == right.height &&
+           left.width == right.width;
+}
+
+const OracleTaskTemplate *elementwiseTemplate(ElementwiseKind kind,
+                                               std::uint8_t operation,
+                                               ElementwiseShape shape) {
+    for (const auto &candidate : kElementwiseTasks)
+        if (candidate.kind == kind && candidate.operation == operation &&
+            sameShape(candidate.shape, shape)) return &candidate;
+    return nullptr;
+}
+
+std::vector<std::uint8_t> taskBytesFor(const OracleTaskTemplate &source) {
+    std::vector<std::uint8_t> bytes(source.wordCount * sizeof(std::uint32_t));
+    for (std::size_t index = 0; index != source.wordCount; ++index) {
+        const auto value = source.words[index];
+        for (std::size_t byte = 0; byte != sizeof(value); ++byte)
+            bytes[index * sizeof(value) + byte] =
+                static_cast<std::uint8_t>(value >> (byte * 8));
+    }
+    return bytes;
+}
+
+std::uint64_t alignTile(std::uint64_t value) {
+    return (value + tileBytes - 1) & ~(static_cast<std::uint64_t>(tileBytes) - 1);
+}
+
+TensorLayout elementwiseTensor(std::uint32_t index, ElementwiseShape shape) {
+    const std::uint64_t row = std::max<std::uint64_t>(64, shape.width * 2);
+    const std::uint64_t plane = row * shape.height;
+    const std::uint64_t bytes = plane * shape.channels;
+    return {index, {1, shape.channels, shape.height, shape.width, plane, row},
+            alignTile(bytes)};
+}
+
+template <std::size_t N>
+std::vector<std::uint8_t> paddedConstants(const std::uint32_t (&words)[N],
+                                          std::size_t size) {
+    if (N * sizeof(std::uint32_t) > size)
+        throw std::logic_error("H13 constant table exceeds its decoded section");
+    std::vector<std::uint8_t> bytes(size, 0);
+    for (std::size_t index = 0; index != N; ++index)
+        for (std::size_t byte = 0; byte != sizeof(std::uint32_t); ++byte)
+            bytes[index * sizeof(std::uint32_t) + byte] =
+                static_cast<std::uint8_t>(words[index] >> (byte * 8));
+    return bytes;
+}
+
+void putHalf(std::vector<std::uint8_t> &bytes, std::size_t index,
+             std::uint16_t value) {
+    bytes.at(index * 2) = static_cast<std::uint8_t>(value);
+    bytes.at(index * 2 + 1) = static_cast<std::uint8_t>(value >> 8);
+}
+
+std::vector<std::uint8_t> leakyReluConstants(std::size_t size) {
+    std::vector<std::uint8_t> bytes(size, 0);
+    putHalf(bytes, 0, 0xfc00); putHalf(bytes, 1, 0x7c00);
+    putHalf(bytes, 2, 0xfc00); putHalf(bytes, 3, 0x7c00);
+    putHalf(bytes, 37, 0x3000); putHalf(bytes, 39, 0x3c00);
+    putHalf(bytes, 41, 0x0040); putHalf(bytes, 42, 0x0001);
+    return bytes;
+}
+
+/// The exact fp16 reciprocal of a power-of-two divisor, the only real_div
+/// divisor class H13 lowers without rounding.
+std::uint16_t exactReciprocal(std::uint16_t bits) {
+    const std::uint16_t exponent = (bits >> 10) & 0x1f;
+    if (!exponent || exponent == 0x1f || (bits & 0x03ff))
+        throw std::invalid_argument("H13 real_div requires a power-of-two fp16 divisor");
+    const std::uint16_t sign = bits & 0x8000;
+    return exponent == 30 ? static_cast<std::uint16_t>(sign | 0x0200)
+                          : static_cast<std::uint16_t>(sign | ((30 - exponent) << 10));
+}
+
+std::vector<std::uint8_t> scalarConstants(BinaryOperation operation,
+                                          std::uint16_t value,
+                                          std::size_t size,
+                                          std::size_t elements) {
+    std::vector<std::uint8_t> bytes(size, 0);
+    if (operation == BinaryOperation::Maximum) {
+        for (std::size_t index = 0; index != 37; ++index) putHalf(bytes, index, value);
+        putHalf(bytes, 1, 0x7c00); putHalf(bytes, 3, 0x7c00);
+        putHalf(bytes, 37, 0x3c00); putHalf(bytes, 39, 0x3c00);
+        putHalf(bytes, 41, 0x0040); putHalf(bytes, 42, 0x0001);
+    } else if (operation == BinaryOperation::Minimum) {
+        putHalf(bytes, 0, 0xfc00); putHalf(bytes, 1, value);
+        putHalf(bytes, 2, 0xfc00); putHalf(bytes, 3, value);
+        putHalf(bytes, 37, 0x3c00); putHalf(bytes, 39, 0x3c00);
+        putHalf(bytes, 41, 0x0040); putHalf(bytes, 42, 0x0001);
+    } else if (operation == BinaryOperation::RealDivide) {
+        const auto reciprocal = exactReciprocal(value);
+        for (std::size_t index = 0; index != elements; ++index)
+            putHalf(bytes, elements + index, reciprocal);
+    }
+    return bytes;
+}
+
+std::vector<std::uint8_t> unaryConstants(UnaryOperation operation,
+                                         std::size_t size) {
+    switch (operation) {
+    case UnaryOperation::Absolute:
+    case UnaryOperation::Relu:
+        return std::vector<std::uint8_t>(size, 0);
+    case UnaryOperation::Exponential:
+        return paddedConstants(kExpKERNWords, size);
+    case UnaryOperation::Gelu:
+        return paddedConstants(kGeluKERNWords, size);
+    case UnaryOperation::LeakyRelu:
+        return leakyReluConstants(size);
+    case UnaryOperation::ReciprocalSquareRoot:
+        return paddedConstants(kRsqrtKERNWords, size);
+    case UnaryOperation::Sigmoid:
+        return paddedConstants(kSigmoidKERNWords, size);
+    case UnaryOperation::Silu:
+        return paddedConstants(kSiluKERNWords, size);
+    case UnaryOperation::SquareRoot:
+        return paddedConstants(kSqrtKERNWords, size);
+    case UnaryOperation::Tanh:
+        return paddedConstants(kTanhKERNWords, size);
+    }
+    throw std::invalid_argument("unsupported H13 unary operation");
+}
+
+Program oracleProgram(const OracleTaskTemplate &source,
+                      std::vector<std::uint8_t> constants,
+                      std::size_t inputCount) {
+    std::vector<TensorLayout> inputs;
+    inputs.reserve(inputCount);
+    for (std::size_t index = 0; index != inputCount; ++index)
+        inputs.push_back(elementwiseTensor(static_cast<std::uint32_t>(5 + index),
+                                           source.shape));
+    const auto constantOffsetBytes =
+        (source.wordCount * sizeof(std::uint32_t) + 0x3f) & ~std::size_t(0x3f);
+    return {taskBytesFor(source), std::move(constants), std::move(inputs),
+            elementwiseTensor(4, source.shape), source.firstTaskBytes,
+            source.taskCount, constantOffsetBytes, {}};
+}
+
 } // namespace
 
 Program encodeBinary(BinaryOperation operation) {
@@ -313,7 +472,43 @@ Program encodeBinary(BinaryOperation operation) {
     return {binaryTask(operationCode),
             {},
             {tensor(5, 64, tileBytes), tensor(6, 64, tileBytes)},
-            tensor(4, 64, tileBytes)};
+            tensor(4, 64, tileBytes), taskBytes, 1, constantOffset, {}};
+}
+
+bool supportsElementwise(BinaryOperation operation, ElementwiseShape shape,
+                         bool scalarConstant) {
+    const auto kind = scalarConstant ? ElementwiseKind::BinaryScalar
+                                     : ElementwiseKind::BinaryRuntime;
+    return elementwiseTemplate(kind, static_cast<std::uint8_t>(operation), shape);
+}
+
+bool supportsElementwise(UnaryOperation operation, ElementwiseShape shape) {
+    return elementwiseTemplate(ElementwiseKind::Unary,
+                               static_cast<std::uint8_t>(operation), shape);
+}
+Program encodeElementwise(BinaryOperation operation, ElementwiseShape shape,
+                          bool scalarConstant, std::uint16_t scalarBits) {
+    const auto kind = scalarConstant ? ElementwiseKind::BinaryScalar
+                                     : ElementwiseKind::BinaryRuntime;
+    const auto *source = elementwiseTemplate(
+        kind, static_cast<std::uint8_t>(operation), shape);
+    if (!source)
+        throw std::invalid_argument("H13 binary operation is outside the decoded parity envelope");
+    if (scalarConstant && scalarBits != 0x3800)
+        throw std::invalid_argument("H13 scalar operation requires the decoded fp16 0.5 operand");
+    const auto constants = scalarConstant
+        ? scalarConstants(operation, scalarBits, source->constantBytes,
+                          static_cast<std::size_t>(shape.channels) * shape.height *
+                              shape.width)
+        : std::vector<std::uint8_t>(source->constantBytes, 0);
+    return oracleProgram(*source, constants, scalarConstant ? 1 : 2);
+}
+Program encodeElementwise(UnaryOperation operation, ElementwiseShape shape) {
+    const auto *source = elementwiseTemplate(
+        ElementwiseKind::Unary, static_cast<std::uint8_t>(operation), shape);
+    if (!source)
+        throw std::invalid_argument("H13 unary operation is outside the decoded parity envelope");
+    return oracleProgram(*source, unaryConstants(operation, source->constantBytes), 1);
 }
 
 Program encodeMatvec(std::uint32_t reduction, const std::uint8_t *weights,
@@ -324,10 +519,17 @@ Program encodeMatvec(std::uint32_t reduction, const std::uint8_t *weights,
         throw std::invalid_argument("H13 matvec requires 512 * reduction fp16 weights");
     if (!weights)
         throw std::invalid_argument("H13 matvec weights must not be null");
+    std::vector<std::size_t> relocations(16);
+    for (std::size_t index = 0; index != relocations.size(); ++index)
+        relocations[index] = 0x74 + index * sizeof(std::uint32_t);
     return {matvecTask(),
             packWeights(reduction, weights, transposeY),
             {tensor(5, reduction, static_cast<std::uint64_t>(reduction) * 64)},
-            tensor(4, outputRows, 0x8000)};
+            tensor(4, outputRows, 0x8000),
+            taskBytes,
+            1,
+            constantOffset,
+            std::move(relocations)};
 }
 
 } // namespace ane::h13

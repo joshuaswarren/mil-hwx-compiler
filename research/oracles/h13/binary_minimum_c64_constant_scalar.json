@@ -7,16 +7,36 @@
       "OUTPUT_DIR",
       "h13"
     ],
+    "decoder_sha256": "fc85d0664a4e567e617189d53d22252f46b6cbca2e4246976ee9ae4deaa8aed5",
+    "driver_sha256": "cda43658a57026468a90dc088909559e9fbb0c04597a691119da93338984b648",
     "host": "MacStudio.local",
     "platform": "macOS-26.6.2-arm64-arm-64bit",
     "tool": "/tmp/h13-oracle/bin/ane-compile-hwx",
     "tool_sha256": "b1bab437e2da0d26e65799698b63d8ad592d5455eec5da64c5877799b08abcbe"
   },
-  "constant_section_size": 2048,
+  "constant_section": {
+    "chunk_bytes": 2048,
+    "chunk_count": 1,
+    "chunks": [
+      {
+        "nonzero_bytes": 8,
+        "offset": 0,
+        "sha256": "ce09200c6aa706965dbc08f7f74234c9145563914b6adb9df629857f4ce1844d",
+        "size": 2048
+      }
+    ],
+    "nonzero_bytes": 8,
+    "nonzero_fp16_words": null,
+    "prefix_128_nonzero_bytes": 8,
+    "prefix_128_sha256": "6583db31c7ca75f8bf1ed23e54995378db6b4e9c7de4551d58cc0bf395627d9d",
+    "sha256": "ce09200c6aa706965dbc08f7f74234c9145563914b6adb9df629857f4ce1844d",
+    "size": 2048,
+    "tail_after_128_nonzero_bytes": 0
+  },
   "error": null,
   "family": "binary_constant",
   "hwx_bytes": 32768,
-  "hwx_sha256": "13bda1e60f5981a404a31d57488ed2f263640ea8fe5a276eaa749530fe8ff691",
+  "hwx_sha256": "6d6585d9eb29a0c64df8486ea3283a0ec21f571552baa0d02104a47442c4e3ca",
   "mil": "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n  func main<ios18>(tensor<fp16, [1, 64, 1, 1]> x) {\n    fp16 z = const()[name = string(\"z\"), val = fp16(0x1p-1)];\n    tensor<fp16, [1, 64, 1, 1]> y = minimum(x = x, y = z)[name = string(\"y\")];\n  } -> (y);\n}\n",
   "parameters": {
     "constant": "scalar",
@@ -45,7 +65,7 @@
     "text_address": "0x30008000"
   },
   "schema_version": 1,
-  "source_commit": "d140e0026bc8641b96c9f5580e923c00637c4fd1",
+  "source_commit": "9483fe699b9416a2bd0537606b36f5b5014638b9",
   "target": "h13",
   "task_descriptors": [
     {

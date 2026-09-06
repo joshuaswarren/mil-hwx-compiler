@@ -7,16 +7,36 @@
       "OUTPUT_DIR",
       "h13"
     ],
+    "decoder_sha256": "fc85d0664a4e567e617189d53d22252f46b6cbca2e4246976ee9ae4deaa8aed5",
+    "driver_sha256": "cda43658a57026468a90dc088909559e9fbb0c04597a691119da93338984b648",
     "host": "MacStudio.local",
     "platform": "macOS-26.6.2-arm64-arm-64bit",
     "tool": "/tmp/h13-oracle/bin/ane-compile-hwx",
     "tool_sha256": "b1bab437e2da0d26e65799698b63d8ad592d5455eec5da64c5877799b08abcbe"
   },
-  "constant_section_size": 2048,
+  "constant_section": {
+    "chunk_bytes": 2048,
+    "chunk_count": 1,
+    "chunks": [
+      {
+        "nonzero_bytes": 1029,
+        "offset": 0,
+        "sha256": "c104effde117af8e38c38eb0e55ba8befb959ea2d13557a2e6745aac1cec13a0",
+        "size": 2048
+      }
+    ],
+    "nonzero_bytes": 1029,
+    "nonzero_fp16_words": null,
+    "prefix_128_nonzero_bytes": 69,
+    "prefix_128_sha256": "2f9499ab96995bee122ed640bf6ee27beb0545d4cc59ed3d65b83d188ad03f7a",
+    "sha256": "c104effde117af8e38c38eb0e55ba8befb959ea2d13557a2e6745aac1cec13a0",
+    "size": 2048,
+    "tail_after_128_nonzero_bytes": 960
+  },
   "error": null,
   "family": "binary_constant",
   "hwx_bytes": 32768,
-  "hwx_sha256": "71d26aac0c1e43fd78e0f951643ce8a35889a21a83df47b4bbf2a38be9bf3ce9",
+  "hwx_sha256": "c1835f4186aedad8e5b89c44f8912381846abe75cd18a2ac1828c3fc58c2d695",
   "mil": "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n  func main<ios18>(tensor<fp16, [1, 512, 1, 1]> x) {\n    tensor<fp16, [1, 512, 1, 1]> z = const()[name = string(\"z\"), val = tensor<fp16, [1, 512, 1, 1]>(BLOBFILE(path = string(\"@model_path/weights.bin\"), offset = uint64(64)))];\n    tensor<fp16, [1, 512, 1, 1]> y = sub(x = x, y = z)[name = string(\"y\")];\n  } -> (y);\n}\n",
   "parameters": {
     "constant": "blob",
@@ -45,7 +65,7 @@
     "text_address": "0x30010000"
   },
   "schema_version": 1,
-  "source_commit": "d140e0026bc8641b96c9f5580e923c00637c4fd1",
+  "source_commit": "9483fe699b9416a2bd0537606b36f5b5014638b9",
   "target": "h13",
   "task_descriptors": [
     {
