@@ -1,0 +1,17 @@
+{
+  "schema": "ane-oracle-observation.v1",
+  "observed": "2026-09-05",
+  "host": "macstudio (Mac13,2, Apple M1 Ultra, macOS 26.6.2 build 25G83)",
+  "tool": "/tmp/h13-oracle/bin/ane-compile-hwx built from ~/src/ane-linux-experiments/tools/ane-compile-hwx.mm; calls ANECCompile with flags {TargetArchitecture: TARGET}",
+  "input": "add [1,64,1,1] fp16 MIL (tests/test_h13_cli.py source()), empty weights.bin",
+  "results": [
+    {"target": "h13", "exit": 0, "hwx_bytes": 49152, "mach_o_cpusubtype": 4},
+    {"target": "h14", "exit": 0, "hwx_bytes": 49152, "mach_o_cpusubtype": 5},
+    {"target": "h15", "exit": 0, "hwx_bytes": 49152, "mach_o_cpusubtype": 6},
+    {"target": "h16", "exit": 0, "hwx_bytes": 65536, "mach_o_cpusubtype": 7},
+    {"target": "h17", "exit": 0, "hwx_bytes": 65536, "mach_o_cpusubtype": 9},
+    {"target": "h11", "exit": 1, "hwx_bytes": null, "mach_o_cpusubtype": null}
+  ],
+  "command": "for t in h13 h14 h15 h16 h17 h11; do d=$(mktemp -d /tmp/h13-oracle/add64/xt-$t.XXXX); ./ane-compile-hwx /tmp/h13-oracle/add64 $d $t; python3 -c 'import struct,sys;print(struct.unpack(\"<8I\",open(sys.argv[1],\"rb\").read(32))[2])' $d/model.hwx; done",
+  "meaning": "One Mac cross-compiles oracles for every generation from H13 through H17; the subtype values match the freedomtan parser table. No HWX bytes were retained; the h14 output's sha256 was 4f80b1bfd2ed31f87574af6b83d6a7c5780c02f13796824afb60d9fd92a180c6."
+}
