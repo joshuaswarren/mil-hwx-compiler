@@ -48,6 +48,9 @@ typedef NS_ENUM(NSUInteger, HWXProgramDescriptorLayout) {
 @property(nonatomic, readonly) NSUInteger scratchByteLength;
 @property(nonatomic, readonly) NSUInteger scratchAllocationByteLength;
 @property(nonatomic, readonly) HWXProgramDescriptorLayout descriptorLayout;
+/// H14 program descriptors carry one word at command offset 0x880 that the
+/// oracle campaign resolves no formula for; parity copies the decoded value.
+@property(nonatomic) uint32_t unresolvedDescriptorWord;
 - (instancetype)initWithTaskCount:(NSUInteger)taskCount
                        recordCount:(NSUInteger)recordCount
                         formatCode:(uint32_t)formatCode
@@ -69,6 +72,7 @@ typedef NS_ENUM(NSUInteger, HWXProgramDescriptorLayout) {
 
 typedef NS_ENUM(NSUInteger, HWXObjectArchitecture) {
     HWXObjectArchitectureH13 = 4,
+    HWXObjectArchitectureH14 = 5,
     HWXObjectArchitectureH16G = 7,
 };
 

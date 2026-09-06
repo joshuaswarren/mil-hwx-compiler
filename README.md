@@ -1,8 +1,9 @@
 # MIL-to-HWX compiler
 
 This repository contains a research compiler for the H16G Apple Neural Engine
-in the M4 and an experimental source-native H13/M1 backend. It reads textual
-MIL and emits H16G HWX objects or H13 ANEC and HWX packages without Apple's
+in the M4, an experimental source-native H13/M1 backend, and an
+oracle-parity H14/M2 elementwise backend. It reads textual MIL and emits
+H16G HWX objects, or H13 and H14 ANEC and HWX packages, without Apple's
 compiler.
 
 The project is a canary for the compiler pipeline recovered in *Inside the M4
@@ -12,8 +13,9 @@ understood well enough to reproduce in code and verify on hardware.
 ## Linux build
 
 This fork builds on Linux with GNUstep Foundation. H16G emits HWX; the
-experimental H13 backend emits ANEC by default and HWX with `--format hwx`.
-H13 performance and mlx-omarchy integration remain unqualified.
+experimental H13 and H14 backends emit ANEC by default and HWX with
+`--format hwx`. H13 and H14 performance and mlx-omarchy integration remain
+unqualified.
 
 Install Clang and LLD, CMake, Ninja, Make, pkg-config, Git, Python 3, and development packages for libffi, libxml2, ICU, OpenSSL, and zlib. Then run:
 
@@ -214,10 +216,109 @@ emit 529,024-byte ANEC files, with 33 command tiles.
 This is a file-size/allocation reduction, not a measured device speedup.
 
 `python3 research/inspect_hwx.py FILE.hwx` identifies H14/M2 (ISA 11) and
-H16G/M4 (ISA 17) from their headers. H14 task-stream inspection checks the
-published register ranges and record lengths. Its tests use synthetic,
-source-derived records, not a real H14 artifact; this is not an H14 emitter
-or a claim of M2 execution support. Run `make test-hwx-inspection`.
+H16G/M4 (ISA 17) from their headers, and decodes H14 task streams against the
+published register ranges and record lengths. Run `make test-hwx-inspection`.
+
+## Experimental M2/H14 compilation
+
+`--target H14` emits H14 task streams, ANEC containers, and HWX objects for
+the elementwise families Apple's own compiler was sampled on. Every emitted
+task is word-for-word identical to the decoded oracle for that case:
+`make test-h14-parity` compiles all 87 decoded H14 elementwise,
+scalar-constant, and unary oracles in both formats, decodes the emitted
+stream with `research/h13_td.py`, and compares each task's header words and
+register writes plus the constant-section sha256 with
+`research/oracles/h14/*.json`.
+
+```bash
+./build/mil-hwxc --target H14 --format hwx --mil /tmp/h14-add.mil \
+  --model-root /tmp --output build/h14-add
+python3 research/inspect_hwx.py build/h14-add/program-0.hwx
+```
+
+The parity envelope is exactly the decoded points, and nothing is
+interpolated between them:
+
+- `add`, `mul`, `maximum`, `minimum`, `sub` with two fp16 tensor operands at
+  `1x64x1x1`, `1x128x1x1`, `1x256x1x1`, `1x512x1x1`, `1x1024x1x1`,
+  `1x2048x1x1`, `1x4096x1x1`, `1x64x8x8`, `1x128x16x16`, and `1x3x224x224`.
+- The same operations plus `real_div` against the fp16 scalar constant `0.5`
+  at `1x64x1x1` and `1x512x1x1`. Scalar `real_div` lowers to two tasks.
+- `abs` at C = 64, 128, 256, 512, 1024, 2048, and 4096, and `exp`, `gelu`
+  (`EXACT`), `leaky_relu` (`alpha = 0.125`), `relu`, `rsqrt`
+  (`epsilon = 1e-6`), `sigmoid`, `silu`, `sqrt`, `tanh` at C = 64 and 512.
+
+Anything else is rejected with `h14.outside-parity-envelope`. Tensors lower
+through their literal NCHW geometry, or their channel-flattened form when that
+is the decoded point.
+
+`plugins/H14/H14ElementwiseTemplates.inc` holds the decoded task words,
+constant-section runs, and per-case program-descriptor metadata. It is
+generated, never edited by hand:
+
+```bash
+python3 research/generate_h14_templates.py          # regenerate
+python3 research/generate_h14_templates.py --check   # fail when stale
+```
+
+### H14 task stream, ANEC, and HWX layout
+
+An H14 task has eight header words; `header[0]` carries
+`task_words << 16 | task_id`, and there is no H13-style next-task pointer.
+Register records use word-index bases at the old non-Common block addresses
+(Common `0x0000`, L2 `0x0500`, PE `0x0900`, NE `0x0d00`, TileDMA source
+`0x1100`, TileDMA destination `0x1500`, KernelDMA `0x1900`); dense records
+carry a count minus one in bits 15:20 and scatter records set bit 31 plus a
+16-bit following-word mask in bits 15:30. `__TEXT/__text` holds one
+16-byte zero-size task frame and then every task 16-byte aligned, with the
+last task unpadded, which is what the program descriptor's text word count
+at command offset `0x824` measures.
+
+The H14 ANEC form is the same 0x1000-byte header H13 uses, followed by the
+H14 task stream at `0x1000` and the constant section at
+`align_up(text_bytes, 64)` after it. The header fields are content size,
+first task byte length, task count, task-stream byte length, constant byte
+length, input count, output count, 32 tile counts, and 32 six-field tensor
+layouts, with channel 4 the output and channels 5 and 6 the inputs. An H14
+reader walks the stream by task-header size and 16-byte alignment, skipping
+zero-size frames; the first-task field is informational. A future
+omarchy-ane M2 libane consumes this form. `research/inspect_anec.py` stays
+H13-only.
+
+The HWX container is Mach-O `cpusubtype` 5 (ISA 11) with the H13-style
+layout: surfaces as `__FVMLIB` segments from `0x30000000` in 16 KiB tiles,
+then `__TEXT/__text` and `__TEXT/__const`. Its program descriptor is a
+0x890-byte kind-4 command carrying the text address at `0x10`, the constant
+address at `0x20`, resource slots 0 to 3 zero with `0x30000000` in slot 4,
+the text word count at `0x824`, the task count at `0x830`, and a 32-word
+trailer whose function name is `main`. Tensor descriptors match H13
+byte-for-byte in every field the oracle campaign decodes.
+
+### Unresolved H14 words and envelope limits
+
+The oracles retain decoded fields and hashes, never HWX bytes, so these parts
+of the container are not evidence-backed:
+
+- The single 16-byte zero-size frame is required by the text word count, but
+  the oracles cannot say whether Apple places it before the first task or
+  after the last; both decode identically. This emitter places it first.
+- The descriptor word at `0x860` (`0x10`, `0x11`, or `0x15` here) and the
+  word at `0x880` (nine distinct values here) have no resolved formula.
+  Parity carries the decoded value per case. `0x880` tracks surface
+  allocation and `0x860` tracks task structure, but no sampled formula
+  reproduces either across shapes.
+- The descriptor word at `0xc` is not decoded at all; this emitter writes
+  `0x222`, the value the other kind-4 descriptor uses.
+- The campaign records no `__text` relocation table for H14, so none is
+  emitted. Buffer-reference commands, surface segments, symbol and string
+  tables, and the compiler-metadata command follow the H13 container.
+- Per-register meanings and the unresolved word counts per block are in
+  [`research/h14-td-fields.md`](research/h14-td-fields.md): Common 7 of 19,
+  L2 15 of 25, PE 2 of 5, NE 2 of 5, TileDMA source 6 of 53, TileDMA
+  destination 3 of 10, and KernelDMA 54 of 70 remain unresolved.
+
+No H14 program in this repository has been executed on M2 hardware. Parity
+with Apple's emitted stream is not proof of execution.
 
 ## macOS build and hardware tests
 
@@ -476,6 +577,13 @@ register-layout facts, not an imported dependency or relicensed source files.
 H14 inspection follows the [register map](https://github.com/freedomtan/coreml_to_ane_hwx/blob/ce54664e787976b646c450ceabed1731b506a4cd/hwx_dump/h14_register_map.md)
 and parser at freedomtan/coreml_to_ane_hwx revision
 `ce54664e787976b646c450ceabed1731b506a4cd`.
+
+`plugins/H14/H14ElementwiseTemplates.inc` is generated by
+`research/generate_h14_templates.py` from the decoded oracle JSON in
+`research/oracles/h14`. It stores task register words, constant-section
+halfword runs verified against the recorded sha256, and per-case
+program-descriptor metadata. No HWX container bytes are read or stored, and
+the checked-in oracles keep decoded fields and hashes only.
 
 See [DISCLAIMER.md](DISCLAIMER.md) for the full scope and private-API notes.
 
