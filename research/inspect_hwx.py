@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import struct
 import sys
+from h13_td import BLOCKS, decode_task, split_h13_tasks, split_h14_tasks
 
 HWX_MAGIC = 0xBEEFFACE
 ARCHITECTURES = {
@@ -11,15 +12,6 @@ ARCHITECTURES = {
     4: ("H13", 7),
     7: ("H16G", 17),
 }
-H14_BLOCKS = (
-    ("common", 0x0000, 19),
-    ("l2", 0x0500, 25),
-    ("pe", 0x0900, 5),
-    ("ne", 0x0D00, 5),
-    ("tile_dma_src", 0x1100, 53),
-    ("tile_dma_dst", 0x1500, 9),
-    ("kernel_dma_src", 0x1900, 70),
-)
 
 
 def cstring(raw: bytes) -> str:
@@ -39,93 +31,40 @@ def require_region(offset: int, size: int, limit: int, label: str) -> None:
             f"{label} range 0x{offset:x}+0x{size:x} exceeds file size 0x{limit:x}")
 
 
-def h14_block(word_address: int) -> tuple[str, int, int] | None:
-    for block in H14_BLOCKS:
-        _, start, count = block
-        if start // 4 <= word_address < start // 4 + count:
-            return block
-    return None
-
-
-def validate_h14_addresses(
-        task_index: int, record_index: int, addresses: list[int],
-        observed: dict[str, set[int]]) -> None:
-    blocks = [h14_block(address) for address in addresses]
-    first_block = blocks[0] if blocks else None
-    if first_block is None or any(block != first_block for block in blocks):
-        first = addresses[0] * 4
-        end = (addresses[-1] + 1) * 4
-        raise ValueError(
-            f"H14 task[{task_index}] record[{record_index}] register range "
-            f"0x{first:04x}-0x{end:04x} is outside source-backed H14 blocks")
-    observed[first_block[0]].update(addresses)
+def inspect_tasks(raw_tasks: list[bytes], target: str) -> int:
+    tasks = [decode_task(task, target) for task in raw_tasks]
+    observed = {name: set() for name, _, _ in BLOCKS[target]}
+    for task_index, task in enumerate(tasks):
+        print(
+            f"  {target}_task[{task_index}] "
+            f"size_words={task['size_bytes'] // 4} "
+            f"records={len(task['records'])}")
+        for key, block in task["blocks"].items():
+            if block["name"].startswith("unknown_"):
+                raise ValueError(
+                    f"{target.upper()} task[{task_index}] writes {key} outside "
+                    f"source-backed {target.upper()} blocks")
+            print(
+                f"    block address={key} name={block['name']} "
+                f"words={len(block['words'])}")
+            observed[block["name"]].update(block["words"])
+    for name, start, count in BLOCKS[target]:
+        print(
+            f"  {target}_block name={name} range=0x{start:05x}-"
+            f"0x{start + count * 4:05x} source_words={count} "
+            f"observed_words={len(observed[name])}")
+    print(f"  {target}_tasks count={len(tasks)}")
+    return len(tasks)
 
 
 def inspect_h14_tasks(section_data: bytes) -> int:
-    observed = {name: set() for name, _, _ in H14_BLOCKS}
-    offset = 0
-    task_index = 0
-    while offset < len(section_data):
-        remaining = section_data[offset:]
-        if not any(remaining):
-            break
-        if len(remaining) < 40:
-            raise ValueError(
-                f"H14 task[{task_index}] header is truncated in __TEXT/__text")
-        task_words = unpack_from(
-            "<H", section_data, offset + 2, "H14 task size")[0] & 0x7FF
-        if task_words == 0:
-            offset += 16
-            continue
-        if task_words < 10:
-            raise ValueError(
-                f"H14 task[{task_index}] has invalid size {task_words} words")
-        task_bytes = task_words * 4
-        if task_bytes > len(section_data) - offset:
-            raise ValueError(
-                f"H14 task[{task_index}] declares {task_words} words beyond "
-                "__TEXT/__text")
-        words = unpack_from(
-            f"<{task_words}I", section_data, offset, f"H14 task[{task_index}]")
-        word_index = 8
-        record_index = 0
-        while word_index < task_words:
-            header = words[word_index]
-            word_index += 1
-            base = header & 0x7FFF
-            if header >> 31:
-                mask = (header >> 15) & 0xFFFF
-                addresses = [base] + [
-                    base + bit + 1 for bit in range(16) if mask & (1 << bit)]
-            else:
-                count = ((header >> 15) & 0x3F) + 1
-                addresses = list(range(base, base + count))
-            if len(addresses) > task_words - word_index:
-                raise ValueError(
-                    f"H14 task[{task_index}] record[{record_index}] values are "
-                    "truncated")
-            validate_h14_addresses(task_index, record_index, addresses, observed)
-            word_index += len(addresses)
-            record_index += 1
-        print(
-            f"  h14_task[{task_index}] offset=0x{offset:x} "
-            f"size_words={task_words} records={record_index}")
-        task_end = offset + task_bytes
-        next_offset = offset + ((task_bytes + 15) & ~15)
-        padding_end = min(next_offset, len(section_data))
-        if any(section_data[task_end:padding_end]):
-            raise ValueError(f"H14 task[{task_index}] has nonzero alignment padding")
-        if next_offset > len(section_data) and task_end != len(section_data):
-            raise ValueError(f"H14 task[{task_index}] alignment padding is truncated")
-        offset = next_offset
-        task_index += 1
-    for name, start, count in H14_BLOCKS:
-        print(
-            f"  h14_block name={name} range=0x{start:04x}-"
-            f"0x{start + count * 4:04x} source_words={count} "
-            f"observed_words={len(observed[name])}")
-    print(f"  h14_tasks count={task_index}")
-    return task_index
+    return inspect_tasks(split_h14_tasks(section_data), "h14")
+
+
+def inspect_h13_tasks(
+        section_data: bytes, task_words_minus_one: int, task_count: int) -> int:
+    return inspect_tasks(
+        split_h13_tasks(section_data, task_words_minus_one, task_count), "h13")
 
 
 def inspect_segment(data: bytes, cursor: int, command_size: int, subtype: int) -> None:
@@ -179,7 +118,9 @@ def h13_anec(data: bytes) -> tuple[bytes, dict[str, int]]:
     command_end = cursor + command_bytes
     sections: dict[tuple[str, str], dict[str, int]] = {}
     surfaces: list[tuple[str, int]] = []
-    tensors: list[tuple[tuple[int, ...], tuple[int, ...], int]] = []
+    tensors: list[tuple[tuple[int, ...], tuple[int, ...], int, int]] = []
+    task_words_minus_one = None
+    task_count = None
     for command_index in range(command_count):
         command, command_size = unpack_from(
             "<2I", data, cursor, f"load command[{command_index}]")
@@ -203,6 +144,11 @@ def h13_anec(data: bytes) -> tuple[bytes, dict[str, int]]:
                 if segment == "__FVMLIB":
                     surfaces.append((section, segment_fields[4]))
                 section_cursor += 80
+        elif command == 4 and kind == 1 and command_size >= 0x820:
+            task_words_minus_one = unpack_from(
+                "<I", data, cursor + 0x818, "H13 task words")[0]
+            task_count = unpack_from(
+                "<I", data, cursor + 0x81c, "H13 task count")[0]
         elif command == 4 and kind == 3 and command_size >= 0x80:
             tensors.append((
                 unpack_from("<4I", data, cursor + 0x28, "H13 tensor shape"),
@@ -215,33 +161,42 @@ def h13_anec(data: bytes) -> tuple[bytes, dict[str, int]]:
         raise ValueError("H13 load command table size does not match its header")
     text = sections.get(("__TEXT", "__text"))
     constants = sections.get(("__TEXT", "__const"))
-    if not text or not constants or text["size"] != 0x274:
-        raise ValueError("H13 HWX requires a 0x274-byte __TEXT/__text task")
-    if constants["offset"] != text["offset"] + 0x280 or \
-            constants["address"] != text["address"] + 0x280:
-        raise ValueError("H13 __TEXT/__const must begin at task content offset 0x280")
-    if len(tensors) != len(surfaces) or len(tensors) not in (2, 3):
-        raise ValueError("H13 HWX requires one or two inputs followed by one output")
-    if any(name != "__const" for name, _ in surfaces[:-1]) or \
-            surfaces[-1][0] != "__data":
-        raise ValueError("H13 FVMLIB surfaces must list inputs before the output")
-    for index, ((shape, strides, total, element_code), (_, allocation)) in enumerate(
-            zip(tensors, surfaces)):
+    if not text or not constants:
+        raise ValueError("H13 HWX requires __TEXT/__text and __TEXT/__const")
+    if task_words_minus_one is None or task_count is None:
+        raise ValueError("H13 HWX requires a program task descriptor")
+    task_bytes = (task_words_minus_one + 1) * 4
+    text_data = data[text["offset"]:text["offset"] + text["size"]]
+    inspect_h13_tasks(text_data, task_words_minus_one, task_count)
+    constant_offset = constants["offset"] - text["offset"]
+    if constant_offset < text["size"] or \
+            constants["address"] - text["address"] != constant_offset:
+        raise ValueError("H13 __TEXT/__const overlaps or diverges from __text")
+    input_allocations = [allocation for name, allocation in surfaces
+                         if name == "__const"]
+    output_allocations = [allocation for name, allocation in surfaces
+                          if name == "__data"]
+    if len(output_allocations) != 1 or len(input_allocations) not in (1, 2) or \
+            len(tensors) != len(input_allocations) + 1:
+        raise ValueError("H13 HWX requires one or two inputs and one output")
+    allocations = [*input_allocations, output_allocations[0]]
+    for index, ((shape, strides, total, element_code), allocation) in enumerate(
+            zip(tensors, allocations)):
         batch, plane, row, element = strides
         if element_code != 5 or element != 2 or batch != shape[1] * plane or \
                 total != shape[0] * batch or total > allocation:
             raise ValueError(f"H13 tensor descriptor[{index}] has an invalid layout")
-    content_size = 0x280 + constants["size"]
+    content_size = constant_offset + constants["size"]
     content = data[text["offset"]:text["offset"] + content_size]
     if len(content) != content_size:
         raise ValueError("H13 task and constant content is truncated")
     header = bytearray(0x1000)
-    struct.pack_into("<QIIQQII", header, 0, content_size, 0x274, 1,
-                     0x274, constants["size"], len(tensors) - 1, 1)
+    struct.pack_into("<QIIQQII", header, 0, content_size, task_bytes, task_count,
+                     text["size"], constants["size"], len(tensors) - 1, 1)
     tiles = [0] * 32
     tiles[0] = (content_size + 0x3fff) // 0x4000
-    tiles[4] = (surfaces[-1][1] + 0x3fff) // 0x4000
-    for index, (_, allocation) in enumerate(surfaces[:-1], 5):
+    tiles[4] = (output_allocations[0] + 0x3fff) // 0x4000
+    for index, allocation in enumerate(input_allocations, 5):
         tiles[index] = (allocation + 0x3fff) // 0x4000
     struct.pack_into("<32I", header, 40, *tiles)
     layouts = [0] * (32 * 6)
@@ -253,7 +208,8 @@ def h13_anec(data: bytes) -> tuple[bytes, dict[str, int]]:
     struct.pack_into("<192Q", header, 0xa8, *layouts)
     return bytes(header) + content, {
         "contentOffset": text["offset"], "contentBytes": content_size,
-        "taskBytes": text["size"], "constantOffset": 0x280,
+        "taskBytes": task_bytes, "taskContentBytes": text["size"],
+        "tasks": task_count, "constantOffset": constant_offset,
         "constantBytes": constants["size"],
         "inputs": len(tensors) - 1, "outputs": 1,
     }
@@ -297,7 +253,20 @@ def main(path: str, extract_path: str | None = None) -> None:
                 "<Q", data, cursor + 0x10, "buffer reference address")[0]
             name = cstring(data[cursor + 0x18:cursor + 0x20])
             print(f"  buffer_reference address=0x{address:x} name={name!r}")
-        if command == 4 and kind == 4 and command_size >= 0x898:
+        if command == 4 and kind == 4 and subtype == 5 and command_size >= 0x838:
+            task_words = unpack_from(
+                "<I", data, cursor + 0x824, "H14 program task words")[0]
+            task_count = unpack_from(
+                "<I", data, cursor + 0x830, "H14 program task count")[0]
+            text_address = unpack_from(
+                "<Q", data, cursor + 0x10, "H14 text address")[0]
+            constant_address = unpack_from(
+                "<Q", data, cursor + 0x20, "H14 constant address")[0]
+            print(
+                "  h14_program_descriptor "
+                f"text=0x{text_address:x} text_const=0x{constant_address:x} "
+                f"task_words={task_words} task_count={task_count}")
+        if command == 4 and kind == 4 and subtype == 7 and command_size >= 0x898:
             record_count = unpack_from(
                 "<I", data, cursor + 0x860, "program record count")[0]
             format_code = unpack_from(
