@@ -34,6 +34,8 @@ Each definition is scoped to this repository and its cited research sources.
 
 **Extended task header.** The one extra word between a fixed task header and the first register record, present when the last header word's two low bits are both set (H13 `header[9]`, H14 `header[7]`). The declared task size already includes it, so only the register stream shifts. It appears only in runtime-runtime matmuls and attention chains. **Evidence: high over the decoded corpus.** [oracle-envelope.md](../../research/oracle-envelope.md), [task descriptors](task-descriptors.md).
 
+**Fusion (post-operation field).** The NE-block register word — `0x0c804` on H13, `0x00d04` on H14 — whose bits select an operation applied to a matmul's output inside the same task: bit `0x00010000` a clamp, bit `0x00020000` a lookup-table unary, low nibble `0x10` a per-channel bias; the output-scale word `0x0c810` / `0x00d10` carries a folded fp16 scalar multiplier. Fusion reaches exactly one operation forward from a matmul; residual adds, second matmuls, `layer_norm`, and `softmax` never fuse. **Evidence: high over the chain corpus.** [fusion-rules.md](../../research/fusion-rules.md), [transformer-layer.md](transformer-layer.md).
+
 **GEM.** The Linux DRM Graphics Execution Manager memory-object infrastructure used by the open ANE driver for device buffers. **Evidence: high for that driver.** [ane_drv.c](https://github.com/eiln/ane/blob/0dcea9976fae0b500a236a62fca69cd4d39f0809/ane/src/ane_drv.c).
 
 **HWX.** The conventional research name for a Mach-O object containing compiled ANE program data. Apple has not published it as an application ABI. **Evidence: medium.** [coreml_to_ane_hwx](https://github.com/freedomtan/coreml_to_ane_hwx/tree/ce54664e787976b646c450ceabed1731b506a4cd/hwx_dump).
@@ -63,6 +65,10 @@ Each definition is scoped to this repository and its cited research sources.
 **Physical layout.** The padded byte representation submitted to hardware, including row, plane, batch, tile, and allocation strides. It can be larger than the logical tensor. **Evidence: medium.** [H13 field ledger](../../research/h13-hwx-fields.md).
 
 **Scatter record.** An H14 register-record form with bit 31 set and a 16-bit mask in bits 30:15 selecting which following words are written. H13 has no equivalent; it uses dense records only. **Evidence: high for the decoded corpus.** [h14-td-fields.md](../../research/h14-td-fields.md).
+
+**Scratch (`__DATA/__bss`).** The region below the declared surfaces, based at `0x30000000`, where a multi-operation program's intermediates live. No intermediate is ever given a tensor descriptor or a resource address; H13 sizes the scratch from the largest live intermediate and reuses one allocation across the blocks of a stack, while H14 allocates none in the measured chains. **Evidence: high over the chain corpus.** [fusion-rules.md](../../research/fusion-rules.md).
+
+**Staging task.** A 126-word (504-byte) task emitted before a compute task to bring its operands into L2. Consecutive compute tasks reading already-resident operands share one staging task, and some forms end with a trailing staging task that writes the result surface back. **Evidence: high for the recorded sequences.** [fusion-rules.md](../../research/fusion-rules.md).
 
 **Task descriptor.** A header plus register-write records that configures one observed ANE task. It is not a host CPU instruction stream. **Evidence: medium.** [Task descriptor documentation](task-descriptors.md).
 
