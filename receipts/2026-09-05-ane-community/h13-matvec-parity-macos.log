@@ -1,0 +1,5 @@
+PASS test_linux_runner_dry_run
+PASS test_shape_ops_linear_and_binary_ops
+PASS 6 H13 reference tests
+H13 oracle parity: PASS (123 cases, 36 of them matmul, 246 artifacts)
+H13 MIL-to-ANEC/HWX CLI: PASS (device-free)

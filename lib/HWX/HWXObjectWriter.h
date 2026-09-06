@@ -46,7 +46,9 @@ typedef NS_ENUM(NSUInteger, HWXProgramDescriptorLayout) {
 @property(nonatomic, readonly) NSUInteger recordCount;
 @property(nonatomic, readonly) uint32_t formatCode;
 @property(nonatomic, readonly) NSUInteger scratchByteLength;
-@property(nonatomic, readonly) NSUInteger scratchAllocationByteLength;
+/// Writable so an H13 or H14 linear program can declare Apple's
+/// __DATA/__bss scratch allocation without a new initializer.
+@property(nonatomic) NSUInteger scratchAllocationByteLength;
 @property(nonatomic, readonly) HWXProgramDescriptorLayout descriptorLayout;
 /// H14 program descriptors carry one word at command offset 0x880 that the
 /// oracle campaign resolves no formula for; parity copies the decoded value.

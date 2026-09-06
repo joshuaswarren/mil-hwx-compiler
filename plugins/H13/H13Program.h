@@ -31,6 +31,14 @@ struct ElementwiseShape {
     std::uint32_t width;
 };
 
+/// One decoded Apple matmul geometry: `rows` logical x rows, a `reduction`
+/// long inner product, and `columns` output columns.
+struct MatvecShape {
+    std::uint32_t rows;
+    std::uint32_t reduction;
+    std::uint32_t columns;
+};
+
 struct TensorLayout {
     std::uint32_t index;
     std::array<std::uint64_t, 6> nchw;
@@ -48,6 +56,11 @@ struct Program {
     /// Task-descriptor byte offsets holding kernel-table addends the HWX
     /// writer must relocate; empty when the task carries absolute addresses.
     std::vector<std::size_t> kernelRelocations;
+    /// The zero-filled allocation Apple places below every surface; the HWX
+    /// writer emits it as __DATA/__bss and every surface address shifts by it.
+    std::uint64_t scratchAllocationBytes = 0;
+    /// Apple's matvec objects lay the output surface out before the input.
+    bool outputSurfaceFirst = false;
 };
 
 Program encodeBinary(BinaryOperation operation);
@@ -62,6 +75,16 @@ Program encodeElementwise(UnaryOperation operation, ElementwiseShape shape);
 Program encodeMatvec(std::uint32_t reduction,
                      const std::uint8_t *weights,
                      std::size_t weightBytes, bool transposeY);
+/// True when the decoded Apple corpus covers this geometry as one program.
+bool supportsMatvecParity(MatvecShape shape);
+/// Encodes Apple's two-task matvec form. `weights` is the [columns, reduction]
+/// row-major fp16 constant, exactly the bytes the MIL blob resolves to.
+Program encodeMatvecParity(MatvecShape shape, const std::uint8_t *weights,
+                           std::size_t weightBytes);
+/// Apple's constant-section permutation for a [columns, reduction] fp16 weight.
+std::vector<std::uint8_t> packMatvecWeights(MatvecShape shape,
+                                            const std::uint8_t *weights,
+                                            std::size_t weightBytes);
 std::vector<std::uint8_t> encodeANEC(const Program &program);
 
 }

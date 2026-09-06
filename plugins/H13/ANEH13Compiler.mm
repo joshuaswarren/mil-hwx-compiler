@@ -258,6 +258,35 @@ static BOOL matmulGeometry(ANEGraphValue *x, ANEGraphValue *result,
     return YES;
 }
 
+/// True when Apple's decoded corpus covers this geometry as one program, so
+/// the planner must not slice its reduction, rows, or columns.
+static BOOL matvecParityCovered(NSUInteger rows, NSUInteger reduction,
+                                NSUInteger columns) {
+    if (rows > UINT32_MAX || reduction > UINT32_MAX || columns > UINT32_MAX)
+        return NO;
+    return ane::h13::supportsMatvecParity({static_cast<std::uint32_t>(rows),
+        static_cast<std::uint32_t>(reduction),
+        static_cast<std::uint32_t>(columns)});
+}
+
+/// Matches the matmul geometries whose two-task H13 streams are decoded
+/// byte-for-byte from Apple oracles, so they encode as one whole-tensor
+/// program with every row and column in place. A transposed single-row x has
+/// the same contiguous fp16 surface, so it lowers through the same program.
+static BOOL matvecParityShape(ANEGraphValue *x, ANEGraphValue *result,
+                              BOOL transposeX, ane::h13::MatvecShape *shape) {
+    NSUInteger reduction = 0, rows = 0, columns = 0;
+    if (!fp16Tensor(x) ||
+        !matmulGeometry(x, result, transposeX, &reduction, &rows, &columns) ||
+        (transposeX && rows != 1) ||
+        !matvecParityCovered(rows, reduction, columns))
+        return NO;
+    if (shape) *shape = {static_cast<std::uint32_t>(rows),
+                         static_cast<std::uint32_t>(reduction),
+                         static_cast<std::uint32_t>(columns)};
+    return YES;
+}
+
 static NSDictionary *binding(ANEGraphValue *value,
                              NSArray<NSNumber *> *logicalShape,
                              const ane::h13::TensorLayout &layout) {
@@ -298,12 +327,17 @@ static NSArray<NSNumber *> *relocationOffsets(const ane::h13::Program &program) 
 }
 
 static NSData *encodeHWX(const ane::h13::Program &program, NSError **error) {
+    // The writer walks this array to assign surface addresses; Apple's matvec
+    // objects place the output surface below the input, while every other
+    // decoded object places the inputs first.
     NSMutableArray<HWXObjectBinding *> *bindings = [NSMutableArray array];
+    HWXObjectBinding *output = objectBinding(program.output,
+        HWXObjectBindingRoleOutput, 0);
+    if (program.outputSurfaceFirst) [bindings addObject:output];
     for (NSUInteger index = 0; index < program.inputs.size(); ++index)
         [bindings addObject:objectBinding(program.inputs[index],
             HWXObjectBindingRoleInput, index)];
-    [bindings addObject:objectBinding(program.output,
-        HWXObjectBindingRoleOutput, 0)];
+    if (!program.outputSurfaceFirst) [bindings addObject:output];
     NSData *task = [NSData dataWithBytes:program.task.data()
                                   length:program.task.size()];
     NSData *constants = [NSData dataWithBytes:program.constants.data()
@@ -313,6 +347,8 @@ static NSData *encodeHWX(const ane::h13::Program &program, NSError **error) {
         firstTaskByteLength:program.firstTaskBytes recordCount:1
         formatCode:0 scratchByteLength:0
         descriptorLayout:HWXProgramDescriptorLayoutLinear];
+    info.scratchAllocationByteLength =
+        static_cast<NSUInteger>(program.scratchAllocationBytes);
     return [HWXObjectWriter buildObjectForArchitecture:HWXObjectArchitectureH13
         taskDescriptor:task constantRegion:constants bindings:bindings
         kernelRelocationOffsets:relocationOffsets(program) programInfo:info
@@ -712,6 +748,34 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             if (!weights) return NO;
             resolvedConstants[y.name] = weights;
         }
+        ane::h13::MatvecShape parityShape{};
+        if (matvecParityShape(x, operation.result, transposeX, &parityShape) &&
+            inputElementCount == rows * reduction) {
+            // transpose_y=false weights are [K, N]; Apple rejects that form, so
+            // the exact host transpose feeds the same encoder.
+            NSData *rowMajor = weights;
+            if (!transposeY) {
+                NSMutableData *transposed =
+                    [NSMutableData dataWithLength:count * 2];
+                const uint16_t *source =
+                    static_cast<const uint16_t *>(weights.bytes);
+                uint16_t *destination =
+                    static_cast<uint16_t *>(transposed.mutableBytes);
+                for (NSUInteger column = 0; column < columns; ++column)
+                    for (NSUInteger index = 0; index < reduction; ++index)
+                        destination[column * reduction + index] =
+                            source[index * columns + column];
+                rowMajor = transposed;
+            }
+            program = ane::h13::encodeMatvecParity(parityShape,
+                static_cast<const std::uint8_t *>(rowMajor.bytes),
+                rowMajor.length);
+            *inputsOut = @[x];
+            *constantInputOut = nil;
+            *constantDataOut = nil;
+            *manifestOperationOut = name;
+            return YES;
+        }
         NSUInteger reductionStart = elementOffset % reduction;
         NSUInteger chunkReduction = inputElementCount;
         if (!chunkReduction || chunkReduction > 512 ||
@@ -988,7 +1052,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                         prefix];
                     ANEGraphValue *matrix = [[ANEGraphValue alloc]
                         initWithName:matrixName type:rowOutputType];
-                    if (reduction > 512) {
+                    if (reduction > 512 &&
+                        !matvecParityCovered(1, reduction, columns)) {
                         NSUInteger chunks = (reduction - 1) / 512 + 1;
                         NSMutableArray<ANEGraphValue *> *partials =
                             [NSMutableArray arrayWithCapacity:chunks];
@@ -1066,7 +1131,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     @"transpose_x": booleanArgument(NO, candidate.range),
                     @"transpose_y": booleanArgument(YES, candidate.range),
                 };
-            if (geometry && reduction > 512) {
+            if (geometry && reduction > 512 &&
+                !matvecParityCovered(rows, reduction, columns)) {
                 NSUInteger chunks = (reduction - 1) / 512 + 1;
                 NSMutableArray<ANEGraphValue *> *partials =
                     [NSMutableArray arrayWithCapacity:chunks];
@@ -1184,6 +1250,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 inputPhysicalElements = 0, outputSliceElements = 0,
                 outputPhysicalElements = 0, outputChunks = 1;
             BOOL matmul = [operation.operationName isEqualToString:@"matmul"];
+            BOOL matvecParity = matmul &&
+                matvecParityShape(operation.operands[@"x"].value, operation.result,
+                    boolean(operation.arguments[@"transpose_x"], YES), nullptr);
             H13ParityPlan operationPlan{};
             BOOL parity = parityPlan(operation, synthesizedConstants, &operationPlan);
             if (parity) {
@@ -1201,15 +1270,24 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 BOOL transposeX = boolean(operation.arguments[@"transpose_x"], YES);
                 if (matmulGeometry(operation.operands[@"x"].value, operation.result,
                                    transposeX, &reduction, &rows, &columns)) {
-                    outputChunks = (columns - 1) / 512 + 1;
-                    if (rows > NSUIntegerMax / outputChunks)
-                        return reject(diagnostics, @"H13 matmul program count overflows",
-                            operation);
-                    sliceCount = rows * outputChunks;
-                    NSNumber *count = [reductionCounts objectForKey:operation];
-                    inputSliceElements = count ? count.unsignedIntegerValue : reduction;
-                    inputPhysicalElements = inputSliceElements <= 256 ? 256 : 512;
-                    outputPhysicalElements = 512;
+                    if (matvecParity) {
+                        inputSliceElements = inputPhysicalElements =
+                            rows * reduction;
+                        outputSliceElements = outputPhysicalElements =
+                            rows * columns;
+                    } else {
+                        outputChunks = (columns - 1) / 512 + 1;
+                        if (rows > NSUIntegerMax / outputChunks)
+                            return reject(diagnostics,
+                                @"H13 matmul program count overflows", operation);
+                        sliceCount = rows * outputChunks;
+                        NSNumber *count = [reductionCounts objectForKey:operation];
+                        inputSliceElements =
+                            count ? count.unsignedIntegerValue : reduction;
+                        inputPhysicalElements =
+                            inputSliceElements <= 256 ? 256 : 512;
+                        outputPhysicalElements = 512;
+                    }
                 }
                 ANEGraphValue *weights = operation.operands[@"y"].value;
                 if (fp16Tensor(weights))
@@ -1224,12 +1302,18 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     matmulGeometry(operation.operands[@"x"].value, operation.result,
                                    transposeX, &reduction, &rows, &geometryColumns);
                     NSUInteger columns = operation.result.type.shape.lastObject.unsignedIntegerValue;
-                    NSUInteger row = sliceIndex / outputChunks;
-                    NSUInteger chunk = sliceIndex % outputChunks;
                     NSNumber *reductionOffset = [reductionOffsets objectForKey:operation];
-                    inputOffset = row * reduction + reductionOffset.unsignedIntegerValue;
-                    outputOffset = row * columns + chunk * 512;
-                    outputSliceElements = MIN((NSUInteger)512, columns - chunk * 512);
+                    if (matvecParity) {
+                        inputOffset = reductionOffset.unsignedIntegerValue;
+                    } else {
+                        NSUInteger row = sliceIndex / outputChunks;
+                        NSUInteger chunk = sliceIndex % outputChunks;
+                        inputOffset =
+                            row * reduction + reductionOffset.unsignedIntegerValue;
+                        outputOffset = row * columns + chunk * 512;
+                        outputSliceElements =
+                            MIN((NSUInteger)512, columns - chunk * 512);
+                    }
                 } else if (parity) {
                     outputOffset =
                         [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
@@ -1320,7 +1404,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 NSDictionary *record = @{
                     @"file": file, @"bytes": @(payload.length),
                     @"taskDescriptors": @(program.taskCount),
-                    @"encoder": parity ? @"h13-oracle-parity" : @"h13-source-qualified",
+                    @"encoder": matvecParity ? @"apple-parity-matvec"
+                        : (parity ? @"h13-oracle-parity" : @"h13-source-qualified"),
                     @"operation": manifestOperation,
                     @"inputs": inputRecords, @"constantInputs": constantInputs,
                     @"outputs": @[outputRecord],

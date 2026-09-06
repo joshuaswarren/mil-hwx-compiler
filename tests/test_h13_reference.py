@@ -142,6 +142,7 @@ def test_intermediate_physical_buffer_composition():
     binding = {
         "name": "h", "dtype": "float16", "shape": [512],
         "logicalBytes": 1024, "allocationBytes": 32768, "index": 5,
+        "nchw": [1, 512, 1, 1, 64, 64],
         "slice": {"tensor": "h", "elementOffset": 0, "elementCount": 512},
     }
     regions = []
@@ -149,7 +150,14 @@ def test_intermediate_physical_buffer_composition():
         data = bytearray(16384)
         for element in range(64):
             struct.pack_into("<H", data, element * 64, chunk * 64 + element)
-        regions.append((chunk * 64, 64, bytes(data)))
+        producer = {
+            "name": "h", "dtype": "float16", "shape": [64],
+            "logicalBytes": 128, "allocationBytes": 16384, "index": 4,
+            "nchw": [1, 256, 1, 1, 64, 64],
+            "slice": {"tensor": "h", "elementOffset": chunk * 64,
+                      "elementCount": 64, "physicalElements": 256},
+        }
+        regions.append((producer, bytes(data)))
     result = h13_run_linux._intermediate_buffer(binding, tensors, regions)
     assert len(result) == 32768
     assert [struct.unpack_from("<H", result, index * 64)[0] for index in range(512)] == list(range(512))

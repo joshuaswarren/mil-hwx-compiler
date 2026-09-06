@@ -12,9 +12,32 @@ HEADER_BYTES = 0x1000
 TASK_BYTES = 0x274
 CONSTANT_OFFSET = 0x280
 TILE_BYTES = 0x4000
+PARITY_MATVEC = 'apple-parity-matvec'
 PROGRAM_FIELDS = (
     'file', 'bytes', 'taskDescriptors', 'encoder', 'operation', 'inputs',
     'constantInputs', 'outputs', 'constantOffset', 'constantBytes')
+
+
+def physical_layout(rows, width):
+    """Apple's matvec surface: `rows` dense fp16 rows of `width` elements."""
+    row = width * 2
+    return [1, 1, rows, width, row * rows, row]
+
+
+def channel_layout(elements):
+    """The elementwise surface: one 64-byte physical lane per element."""
+    return [1, elements, 1, 1, 64, 64]
+
+
+def dense_layout(binding):
+    """The declared dense-row layout of one parity matvec surface."""
+    nchw = binding.get('nchw') if isinstance(binding, dict) else None
+    require(isinstance(nchw, list) and len(nchw) == 6 and
+            all(type(value) is int for value in nchw) and
+            nchw[2] > 0 and nchw[3] > 0 and
+            nchw == physical_layout(nchw[2], nchw[3]),
+            'parity matvec surfaces must be dense fp16 rows')
+    return nchw
 
 
 def require(condition, message):
@@ -104,7 +127,8 @@ def exact_tiling(bindings, tensors, message, allow_repeats=False):
             message)
 
 
-def check_binding(binding, index, physical_elements, tiles, layouts, tensors):
+def check_binding(binding, index, physical_elements, tiles, layouts, tensors,
+                  layout=None):
     require(isinstance(binding, dict), 'binding must be an object')
     require(isinstance(binding.get('name'), str) and binding['name'],
             'binding needs a non-empty name')
@@ -116,7 +140,7 @@ def check_binding(binding, index, physical_elements, tiles, layouts, tensors):
     logical_elements = math.prod(shape)
     require(type(binding.get('index')) is int and binding['index'] == index,
             'binding index does not match ANEC channel')
-    layout = [1, physical_elements, 1, 1, 64, 64]
+    layout = layout or channel_layout(physical_elements)
     require(binding.get('nchw') == layout and
             all(type(n) is int for n in binding['nchw']), 'incorrect physical layout')
     require(list(layouts[index * 6:(index + 1) * 6]) == layout,
@@ -124,7 +148,8 @@ def check_binding(binding, index, physical_elements, tiles, layouts, tensors):
     require(type(binding.get('logicalBytes')) is int and
             binding['logicalBytes'] == logical_elements * 2,
             'incorrect logical byte count')
-    allocation = -(-physical_elements * 64 // TILE_BYTES) * TILE_BYTES
+    span = layout[0] * layout[1] * layout[4]
+    allocation = -(-span // TILE_BYTES) * TILE_BYTES
     require(type(binding.get('allocationBytes')) is int and
             binding['allocationBytes'] == allocation, 'incorrect allocation size')
     require(tiles[index] * TILE_BYTES == allocation,
@@ -181,7 +206,14 @@ def validate_program(directory, program, tensors):
                     'unexpected tensor channel')
             if index != 0:
                 require(tiles[index] == 0, 'unexpected channel allocation')
-    if matmul:
+    parity = program.get('encoder') == PARITY_MATVEC
+    input_layout = output_layout = None
+    if matmul and parity:
+        input_layout, output_layout = (dense_layout(item)
+                                       for item in (inputs[0], outputs[0]))
+        input_channels = input_layout[2] * input_layout[3]
+        output_channels = output_layout[2] * output_layout[3]
+    elif matmul:
         require(isinstance(inputs[0], dict), 'unsupported matvec input size')
         input_channels = binding_interval(inputs[0], tensors)[3]
         output_channels = binding_interval(outputs[0], tensors)[3]
@@ -191,8 +223,10 @@ def validate_program(directory, program, tensors):
         input_channels = binding_interval(inputs[0], tensors)[3]
         output_channels = binding_interval(outputs[0], tensors)[3]
     for index, item in enumerate(inputs, start=5):
-        check_binding(item, index, input_channels, tiles, layouts, tensors)
-    check_binding(outputs[0], 4, output_channels, tiles, layouts, tensors)
+        check_binding(item, index, input_channels, tiles, layouts, tensors,
+                      input_layout)
+    check_binding(outputs[0], 4, output_channels, tiles, layouts, tensors,
+                  output_layout)
     if not matmul:
         output_is_returned_alias = any(
             tensor.get('aliasOf') == outputs[0]['name'] and
@@ -373,15 +407,23 @@ def find_bindings(manifest, name, direction, constants=False):
 
 
 def convert_tensor(binding, data, pack):
+    """Packs dense fp16 into, or reads it back from, the physical surface.
+
+    The elementwise surface holds one element per 64-byte lane; the parity
+    matvec surface holds dense rows, so the row stride comes from the binding.
+    """
     logical, physical = binding['logicalBytes'], binding['allocationBytes']
     require(len(data) == (logical if pack else physical), 'incorrect tensor byte count')
+    nchw = binding.get('nchw')
+    width, row = (nchw[3], nchw[5]) if nchw else (1, 64)
     result = bytearray(physical if pack else logical)
-    for channel in range(logical // 2):
-        dense, padded = channel * 2, channel * 64
+    for element in range(logical // 2):
+        dense = element * 2
+        offset = (element // width) * row + (element % width) * 2
         if pack:
-            result[padded:padded + 2] = data[dense:dense + 2]
+            result[offset:offset + 2] = data[dense:dense + 2]
         else:
-            result[dense:dense + 2] = data[padded:padded + 2]
+            result[dense:dense + 2] = data[offset:offset + 2]
     return result
 
 

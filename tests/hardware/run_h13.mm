@@ -54,6 +54,16 @@ static ANEHWXBinding *runtimeBinding(NSDictionary *binding, ANESurfaceRole role)
         planeStrideBytes:plane batchStrideBytes:batch];
 }
 
+/// The physical byte offset of one logical element on this surface: the
+/// elementwise surface uses one 64-byte lane per element, and the parity
+/// matvec surface uses dense rows, so both come from the binding's layout.
+static NSUInteger physicalOffset(NSDictionary *binding, NSUInteger element) {
+    NSArray *nchw = binding[@"nchw"];
+    NSUInteger width = [nchw[3] unsignedIntegerValue];
+    NSUInteger row = [nchw[5] unsignedIntegerValue];
+    return (element / width) * row + (element % width) * 2;
+}
+
 static BOOL writePhysical(ANEIOSurfaceBuffer *buffer, NSData *dense,
                           NSDictionary *binding, BOOL localSlice,
                           NSError **error) {
@@ -70,7 +80,8 @@ static BOOL writePhysical(ANEIOSurfaceBuffer *buffer, NSData *dense,
     memset(destination, 0, buffer.allocationByteLength);
     const uint8_t *source = static_cast<const uint8_t *>(dense.bytes) + offset * 2;
     for (NSUInteger element = 0; element < count; ++element)
-        memcpy(destination + element * 64, source + element * 2, 2);
+        memcpy(destination + physicalOffset(binding, element),
+               source + element * 2, 2);
     IOSurfaceUnlock(buffer.ioSurface, 0, nullptr);
     return YES;
 }
@@ -87,7 +98,8 @@ static BOOL readPhysical(ANEIOSurfaceBuffer *buffer, NSMutableData *dense,
         IOSurfaceGetBaseAddress(buffer.ioSurface));
     uint8_t *destination = static_cast<uint8_t *>(dense.mutableBytes) + offset * 2;
     for (NSUInteger element = 0; element < count; ++element)
-        memcpy(destination + element * 2, source + element * 64, 2);
+        memcpy(destination + element * 2,
+               source + physicalOffset(binding, element), 2);
     IOSurfaceUnlock(buffer.ioSurface, kIOSurfaceLockReadOnly, nullptr);
     return YES;
 }
