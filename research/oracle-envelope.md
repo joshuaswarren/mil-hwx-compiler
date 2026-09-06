@@ -321,15 +321,17 @@ recorded here because it changes how a task stream must be read.
 
 The last fixed header word — H13 `header[9]`, H14 `header[7]` — carries a flag in
 its two low bits. When both are set, one extra word sits between the fixed header
-and the first register record. Across the 4,928 decoded tasks in the corpus the
+and the first register record. Across the 5,549 decoded tasks in the checked-in
+corpus (2,677 H13, 2,872 H14, probe sets included) the
 word takes four values on H13 (`0x0`, `0x21`, `0x23`, `0x26`) and six on H14
 (`0x1`, `0x10001`, `0x30001`, `0x40001`, `0x50001`, `0x50003`); only `0x23` and
 `0x50003` carry the extra word. Bit 1 alone is not the predicate: H13 `0x26` and
 H14 `0x30001` have bit 1 set and no extra word.
 
-The extra word held `0x00000000` or `0x00000007` in every observed case, and the
-task's declared size already includes it, so task splitting is unaffected — a
-157-word compute task becomes 158 words. Only the register stream shifts.
+The extra word held `0x0` (43 H13 / 26 H14 tasks), `0x7` (3 / 4), or `0x8` (tasks
+9 and 10 of `env_chain_attention_s256_d64` on H13), and the task's declared size
+already includes it, so task splitting is unaffected — a 157-word compute task
+becomes 158 words. Only the register stream shifts.
 
 Two failure modes made this worth chasing. On H13 the misread raised
 `H13 record[N] has unaligned address 0x7`, which `run_case` had been recording as
@@ -343,8 +345,9 @@ task whose register stream cannot be split is stored with its header words and a
 `task_decode_errors` count. In the final corpus that count is zero for all 542
 accepted cases.
 
-The forms that use the extended header are the ones this sweep added: attention
-chains, and runtime-runtime matmuls at M=16 and above.
+The forms that use the extended header are the attention chains and every
+runtime-runtime matmul except rank-2 M=16 (rank-2 from M=128, rank-3 from M=64):
+48 of 2,677 H13 tasks and 30 of 2,872 H14 tasks, 26 cases per target.
 
 ## Reproducing
 
