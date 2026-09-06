@@ -17,6 +17,18 @@ IEEE binary16 has a narrow dynamic range and less precision than FP32. Overflow,
 
 Training adds a gradient-range problem. Loss scaling can keep small FP16 gradients representable, but scaling does not make every operator or update numerically stable. **Evidence: high for the numerical mechanism; medium for the private-ANE implementation.** The pinned [maderix/ANE repository](https://github.com/maderix/ANE/tree/d91c9845c0784dec7753048954fc6d0e8411fe29) documents its FP16 training constraints and scaling approach.
 
+## Transcendentals come from fp16 lookup tables
+
+Apple's compiler does not emit a polynomial for a nonlinearity; it ships a table in the object's constant section. Seven unary operations — `sigmoid`, `tanh`, `gelu`, `silu`, `exp`, `sqrt`, `rsqrt` — carry a 128-byte fp16 block, and `softmax` carries the exponential table plus, when it reduces the channel or height axis, a reciprocal table. **Evidence: high for the recorded sections.** See [oracle-diff.md](../../research/oracle-diff.md) and the normalization section of [h13-td-fields.md](../../research/h13-td-fields.md).
+
+Three consequences matter for accuracy work:
+
+1. **The table is the numerical contract, not an approximation of one.** Device output carries the table's interpolation error, so a float32 reference that evaluates `exp` and `1/x` exactly will not match bit for bit. This repository states the reference as a tolerance and byte parity as a separate claim; see [parity is not numerics](parity-method.md#parity-is-not-numerics).
+2. **The table does not depend on shape or rank.** `gelu` produces the same 128-byte block at `[1,64,8,8]`, `[1,128,16,16]`, `[1,256,32,32]`, `[1,768,16,16]`, and `[1,3072,1,1]`. Accuracy therefore does not improve or degrade with tensor size for these operations. **Evidence: high for the recorded hashes.** See section 4 of [oracle-envelope.md](../../research/oracle-envelope.md).
+3. **A requested mode may be ignored.** `gelu` with `mode="TANH_APPROXIMATION"` produces a byte-identical table to `mode="EXACT"`; only `SIGMOID_APPROXIMATION` differs. Asking for the "exact" form of that operation does not select different arithmetic. **Evidence: high for the two identical hashes.** See section 4 of [oracle-envelope.md](../../research/oracle-envelope.md).
+
+Accumulation order is a separate source of divergence from tables. Where a reduction is split across chunks, partial sums are rounded to fp16 between chunks, so the result is not bit-identical to one unbroken accumulation and must be compared with a stated tolerance. **Evidence: high for the repository's own chunked matmul contract.** See the [README](../../README.md#h13-reference-and-linux-dispatch).
+
 ## BF16
 
 BF16 preserves an FP32-sized exponent field but has fewer significand bits than FP16. That usually trades precision for dynamic range. **Evidence: high.** See Google Cloud's [bfloat16 format description](https://cloud.google.com/tpu/docs/bfloat16).
@@ -65,3 +77,4 @@ For each operation, data type, geometry, and generation:
 - **Open question:** Which denormal, NaN, infinity, saturation, and overflow behaviors are hardware, firmware, or compiler choices?
 - **Open question:** What native quantized encodings exist beyond the paths independently reconstructed in current projects?
 - **Open question:** Which accuracy thresholds predict end-to-end model quality rather than only local tensor agreement?
+- **Open question:** How does the hardware interpolate between the 64 fp16 entries of a unary lookup table, and what error bound does that give per operation?

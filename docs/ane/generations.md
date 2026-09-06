@@ -23,6 +23,23 @@ A shared row does not prove that two products have identical clocks, memory syst
 
 The numeric subtype sequence has gaps and the ISA numbers are not monotonic. Treat both fields as identifiers selected by the compiler, not as generation counters. **Evidence: medium.** The parser cases above decode exactly the listed values; they do not define why Apple assigned them.
 
+## One Mac cross-compiles five generations
+
+The subtype values above are not only parser table entries. On an M1 Ultra running macOS 26.6.2 (build 25G83), one `add [1,64,1,1]` fp16 MIL program compiled through the private compile entry point with `TargetArchitecture` set per request produced:
+
+| Requested target | Exit code | HWX bytes | Mach-O CPU subtype |
+|---|---:|---:|---:|
+| `h13` | 0 | 49,152 | 4 |
+| `h14` | 0 | 49,152 | 5 |
+| `h15` | 0 | 49,152 | 6 |
+| `h16` | 0 | 65,536 | 7 |
+| `h17` | 0 | 65,536 | 9 |
+| `h11` | 1 | — | — |
+
+The five accepted subtypes match the parser table rows for H13, H14, H15, H16, and H17, and the `h11` request failed. So a single Mac can mint oracles for generations it does not contain, which is how the H14/M2 corpus in this repository exists without M2 hardware. Two limits: this is one host, one input, and one compiler build, and it says nothing about whether the emitted object executes on the corresponding device. **Evidence: medium for the observation; medium for the generation names, which still come from the [fixed parser revision](https://github.com/freedomtan/coreml_to_ane_hwx/blob/ce54664e787976b646c450ceabed1731b506a4cd/hwx_dump/hwx_parsing.m).** See [`receipts/anecompile-cross-target.json`](../../receipts/2026-09-05-ane-community/anecompile-cross-target.json).
+
+The H14 records minted this way behave as a coherent generation rather than as relabelled H13 output: they use different header sizes, record encodings, and block bases, and 41 of 271 decoded pairs split work into different task counts. **Evidence: high over the corpus.** See [task descriptors](task-descriptors.md) and [h14-td-fields.md](../../research/h14-td-fields.md).
+
 ## SoC identifiers
 
 Asahi's hardware table maps the mobile and base Mac SoCs below. Apple does not publish the H-label column as an application contract. **Evidence: high for the Asahi table; medium for using these labels as HWX-family boundaries.** See the live [SoC codename table](https://asahilinux.org/docs/hw/soc/soc-codenames/) and its [versioned source](https://github.com/AsahiLinux/docs/blob/a7d0a3dd31ac6c4238b6b4994d036a753db87824/docs/hw/soc/soc-codenames.md).
@@ -53,3 +70,5 @@ The M4 benchmark in maderix/ANE reports about 18.6 FP16 trillion operations/s an
 - **Open question:** Which marketing products share identical ANE implementations rather than only the same HWX generation label?
 - **Open question:** What exact operation-counting and precision contract underlies each Apple peak figure?
 - **Open question:** Do future compiler releases preserve the H11 through H18 subtype and ISA associations?
+- **Open question:** Why does the `h11` target fail on this compiler build while `h13` through `h17` succeed — dropped support, a different target string, or an unrelated error?
+- **Open question:** Do `h15` and `h17` objects from this cross-compile decode with the same block bases and record forms their parser rows predict? No H15 or H17 oracle has been decoded here.

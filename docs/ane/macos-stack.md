@@ -50,6 +50,8 @@ Historical research code calls a private `ANECCompile` entry point with an Espre
 
 A newer private route constructs `_ANEInMemoryModelDescriptor` from MIL text and a weights blob, then uses `_ANEInMemoryModel` to compile and load it. **Evidence: medium.** See maderix/ANE's pinned [`ane_bridge.m`](https://github.com/maderix/ANE/blob/d91c9845c0784dec7753048954fc6d0e8411fe29/bridge/ane_bridge.m).
 
+That private compile route also cross-targets. On one M1 Ultra running macOS 26.6.2, the same `add [1,64,1,1]` fp16 MIL compiled with `TargetArchitecture` set to `h13`, `h14`, `h15`, `h16`, and `h17` returned five objects with CPU subtypes 4, 5, 6, 7, and 9; the `h11` request failed. Compilation for a generation therefore does not require that generation's hardware, which is how this repository holds an H14/M2 oracle corpus with no M2 device. **Evidence: medium; one host, one input, one compiler build.** See [`receipts/anecompile-cross-target.json`](../../receipts/2026-09-05-ane-community/anecompile-cross-target.json) and the [generation table](generations.md).
+
 This repository deliberately does not call `ANECCompile` in its delivered compiler. It emits the container and task bytes from source-native encoders. **Evidence: high.** See the repository [disclaimer](../../DISCLAIMER.md) and [verification guide](../../docs/VERIFICATION.md).
 
 ## Loading and execution
@@ -58,7 +60,23 @@ Private runtimes commonly bind tensors through IOSurface objects. IOSurface prov
 
 The source-native runtime in this repository creates IOSurfaces from a binding manifest and calls the private framework. The manifest distinguishes logical tensor dimensions from padded physical rows, planes, batches, and allocation sizes. **Evidence: high.** See the local [runtime boundary](../../README.md#runtime-boundary) and [verification guide](../../docs/VERIFICATION.md).
 
-On the tested macOS 26.6.2 M1 Ultra host, direct load of a source-native H13 object missed the `aned` in-memory model cache, while the cache directory was protected against creation by the test process. No direct private API that accepts arbitrary compiled bytes was found in the bounded source search. This is a host-specific blocker, not proof that no such route exists. **Evidence: medium.** See [`receipts/m1ultra-runtime-blocker.json`](../../receipts/2026-09-05-ane-community/m1ultra-runtime-blocker.json).
+## The `aned` cache is a data vault on current builds
+
+Compiling is not the blocker; loading is. On the tested macOS 26.6.2 M1 Ultra host, a direct load of a compiled object missed the `aned` in-memory model cache, and the cache directory could not be provisioned to fix that. The failure is not ordinary permissions:
+
+- `sudo` works, but **root** cannot stat, list, or create entries under `/Library/Caches/com.apple.aned` or `com.apple.aneuserd`, even though `/Library/Caches` itself is `drwxrwxrwt`.
+- `mkdir` of the model-cache path returns `Operation not permitted`. A neighbouring `com.apple.amsengagementd.classicdatavault` directory fails identically, which is what identifies the behaviour as a data vault rather than a mode bit.
+- Without a cache entry the runtime reports `ANERuntimeErrorCacheMiss`; no model load or evaluation occurs.
+- No private API that accepts arbitrary compiled bytes without a cache entry was found in the bounded source search.
+
+**Evidence: medium; one host and operating-system build.** See [`receipts/m1ultra-runtime-blocker.json`](../../receipts/2026-09-05-ane-community/m1ultra-runtime-blocker.json).
+
+Two routes past it are recorded, and both are owner decisions rather than code changes:
+
+1. **Disable SIP from Recovery** on the 26.6 host, which is what the H13 macOS hardware gate documents as its prerequisite for the `InMemoryModelCache/<key>` path to be writable by root. **Evidence: medium.** See the [handoff receipt](../../receipts/2026-09-05-ane-community/h13-handoff.json).
+2. **Use a build whose cache is provisionable**, which the repository recorded on macOS 26.3 build `25D125` — the build behind the H16G hardware results. None of the surveyed 26.6.x hosts behaves that way. **Evidence: high for the recorded H16G runs on 25D125; medium for the 26.6.x survey.** See the [verification guide](../../docs/VERIFICATION.md) and [`receipts/m1ultra-runtime-blocker.json`](../../receipts/2026-09-05-ane-community/m1ultra-runtime-blocker.json).
+
+This is a host-and-build blocker, not proof that no load route exists. The Linux path avoids it entirely by talking to the open driver instead of `aned`; see the [Linux stack](linux-stack.md).
 
 ## Entitlements and stability
 
@@ -71,3 +89,4 @@ Private class names, selectors, entitlements, cache paths, and accepted binary l
 - **Open question:** Which service owns compilation and cache population on each current macOS build?
 - **Open question:** Is there a current, entitlement-accessible API that loads arbitrary source-native HWX bytes without an `aned` cache entry?
 - **Open question:** Which Core ML graph partitions and data transfers occur for a specific mixed CPU/GPU/ANE model? Measure them per model and operating-system build.
+- **Open question:** Which macOS builds vault `/Library/Caches/com.apple.aned`, and what changed between 26.3 `25D125`, where provisioning worked, and 26.6.x, where root is refused?
