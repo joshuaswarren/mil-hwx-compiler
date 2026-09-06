@@ -5,7 +5,7 @@ Simulates each program's arithmetic on physical buffers with fp16 rounding,
 using manifest slices/constants. No hardware.
 """
 from __future__ import annotations
-import json, math, struct, subprocess, sys, tempfile
+import json, math, re, struct, subprocess, sys, tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,9 +124,15 @@ def simulate_matvec(xin: bytes, weight_const: bytes, reduction: int, out_alloc: 
     return write_lanes(out, out_alloc)
 
 
-def parity_weights(kernel: bytes, reduction: int, columns: int) -> list[list[float]]:
-    """Invert ane::h13::packMatvecWeights: Apple's constant-section permutation."""
+def parity_weights(kernel: bytes, rows: int, reduction: int,
+                   columns: int) -> list[list[float]]:
+    """Invert ane::h13::packMatvecWeights: Apple's constant-section
+    permutation, whose row-group size depends on the columns and, above 128 x
+    rows, on the reduction."""
     group = min(16, columns // 16)
+    if rows > 128:
+        group = min(group, 32768 // reduction)
+    group = max(1, group)
     groups = columns // group
     weights = [[0.0] * reduction for _ in range(columns)]
     for column in range(columns):
@@ -139,13 +145,87 @@ def parity_weights(kernel: bytes, reduction: int, columns: int) -> list[list[flo
     return weights
 
 
+def matrix_from_surface(binding, buffer: bytes, rows: int,
+                        columns: int) -> list[list[float]]:
+    """One dense-row surface as `rows` lists of `columns` values."""
+    values = dense_values(dense_of_surface(binding, buffer))
+    assert len(values) >= rows * columns, (len(values), rows, columns)
+    return [values[row * columns:(row + 1) * columns] for row in range(rows)]
+
+
+def simulate_runtime_matmul(x_binding, y_binding, out_binding,
+                            x_surface: bytes, y_surface: bytes,
+                            transpose_x: bool, transpose_y: bool) -> bytearray:
+    """Both operands runtime, the attention form. A square geometry leaves the
+    surfaces alone ambiguous, so the flags come from the MIL."""
+    rows, columns = out_binding['nchw'][2], out_binding['nchw'][3]
+    reduction = x_binding['nchw'][2] if transpose_x else x_binding['nchw'][3]
+    x = matrix_from_surface(x_binding, x_surface,
+                            reduction if transpose_x else rows,
+                            rows if transpose_x else reduction)
+    y = matrix_from_surface(y_binding, y_surface,
+                            columns if transpose_y else reduction,
+                            reduction if transpose_y else columns)
+    values = []
+    for row in range(rows):
+        lhs = [x[index][row] for index in range(reduction)] if transpose_x \
+            else x[row]
+        for column in range(columns):
+            rhs = y[column] if transpose_y \
+                else [y[index][column] for index in range(reduction)]
+            values.append(dot_fp32(lhs, rhs))
+    return bytearray(surface(out_binding, dense_bytes(values)))
+
+
+def matmul_transposes(text: str) -> tuple[bool, bool]:
+    """The transpose flags one MIL matmul carries, resolved through its bool
+    constants."""
+    constants = {name: value == 'true' for name, value in re.findall(
+        r'bool (\w+) = const\(\)\[name = string\("\w+"\), '
+        r'val = bool\((true|false)\)\]', text)}
+    match = re.search(r'matmul\(transpose_x = (\w+), transpose_y = (\w+)', text)
+    if not match:
+        raise ValueError('MIL has no matmul with explicit transpose flags')
+    return (constants[match.group(1)], constants[match.group(2)])
+
+
+def broadcast_index(shape, position):
+    """The flat index a broadcast operand contributes to one result position."""
+    index = 0
+    for extent, coordinate in zip(shape, position):
+        index = index * extent + (0 if extent == 1 else coordinate)
+    return index
+
+
+def simulate_broadcast(op: str, out_binding, operands) -> bytearray:
+    """`operands` are (binding, surface) pairs, or (None, per-channel values)
+    for the constant Apple folds into the section's bias and scale blocks."""
+    shape = out_binding['nchw'][:4]
+    values = []
+    resolved = []
+    for binding, data in operands:
+        if binding is None:
+            resolved.append(([1, shape[1], 1, 1], data))
+        else:
+            resolved.append((binding['nchw'][:4],
+                             dense_values(dense_of_surface(binding, data))))
+    positions = [(batch, channel, row, column)
+                 for batch in range(shape[0]) for channel in range(shape[1])
+                 for row in range(shape[2]) for column in range(shape[3])]
+    for position in positions:
+        operand_values = [operand[broadcast_index(operand_shape, position)]
+                          for operand_shape, operand in resolved]
+        values.append(binary_op(op, operand_values[0], operand_values[1]))
+    return bytearray(surface(out_binding, dense_bytes(values)))
+
+
 def simulate_parity_matvec(in_binding, out_binding, x_surface: bytes,
                            kernel: bytes) -> bytearray:
     """Apple's two-task form: `rows` dense x rows against every output column."""
     rows, reduction = in_binding['nchw'][2], in_binding['nchw'][3]
     columns = out_binding['nchw'][3]
     x = dense_values(dense_of_surface(in_binding, x_surface))
-    weights = parity_weights(kernel, reduction, columns)
+    weights = parity_weights(kernel, rows, reduction, columns)
     values = []
     for row in range(rows):
         lane = x[row * reduction:(row + 1) * reduction]
@@ -178,7 +258,8 @@ def run_sim(package: Path, mil: Path, model_root: Path, inputs: dict[str, bytes]
     for pi in manifest['dispatchPlan']:
         program = manifest['programs'][pi]
         op = program['operation']
-        parity_matvec = program['encoder'] == inspect_anec.PARITY_MATVEC
+        encoder = program['encoder']
+        parity_matvec = encoder == inspect_anec.PARITY_MATVEC
         in_bufs = []
         for binding in program['inputs']:
             name = binding['name']
@@ -196,19 +277,39 @@ def run_sim(package: Path, mil: Path, model_root: Path, inputs: dict[str, bytes]
         # produce output physical
         out_binding = program['outputs'][0]
         out_phys = inspect_anec.binding_interval(out_binding, tensors)[3]
-        if op in ('add', 'mul', 'maximum', 'minimum'):
+        section = None
+        if program['constantBytes']:
+            anec = inspect_anec.local_file(package, program['file'], program['bytes'])
+            start = inspect_anec.HEADER_BYTES + program['constantOffset']
+            section = anec[start:start + program['constantBytes']]
+        if encoder == inspect_anec.PARITY_BROADCAST:
+            operands = list(zip(program['inputs'], in_bufs))
+            if len(operands) == 1 and program['constantBytes'] == \
+                    out_binding['nchw'][1] * 4:
+                # Apple folds a per-channel constant into the section's bias
+                # and scale blocks; `add` keeps it as the bias, `mul` as the
+                # scale.
+                channels = out_binding['nchw'][1]
+                block = section[:channels * 2] if op == 'add' \
+                    else section[channels * 2:]
+                operands.append((None, dense_values(block)))
+            out_buf = simulate_broadcast(op, out_binding, operands)
+        elif encoder == inspect_anec.PARITY_MATMUL:
+            transpose_x, transpose_y = matmul_transposes(Path(mil).read_text())
+            out_buf = simulate_runtime_matmul(program['inputs'][1],
+                                              program['inputs'][0], out_binding,
+                                              in_bufs[1], in_bufs[0],
+                                              transpose_x, transpose_y)
+        elif op in ('add', 'mul', 'maximum', 'minimum'):
             assert len(in_bufs) == 2
             out_buf = simulate_binary(op, in_bufs[0], in_bufs[1], out_phys, out_binding['allocationBytes'])
         elif op == 'matmul':
-            anec = inspect_anec.local_file(package, program['file'], program['bytes'])
-            kstart = inspect_anec.HEADER_BYTES + program['constantOffset']
-            kernel = anec[kstart:kstart + program['constantBytes']]
             if parity_matvec:
                 out_buf = simulate_parity_matvec(program['inputs'][0], out_binding,
-                                                 in_bufs[0], kernel)
+                                                 in_bufs[0], section)
             else:
                 in_phys = inspect_anec.binding_interval(program['inputs'][0], tensors)[3]
-                out_buf = simulate_matvec(in_bufs[0], kernel, in_phys, out_binding['allocationBytes'])
+                out_buf = simulate_matvec(in_bufs[0], section, in_phys, out_binding['allocationBytes'])
         else:
             raise ValueError(op)
 
@@ -526,6 +627,148 @@ def norm_source(op, shape, result_shape, axis=None, axes=None, keep_dims=True):
 '''
 
 
+def broadcast_source(operation, x_shape, y_shape, constant):
+    def kind(dimensions):
+        return f"tensor<fp16, [{', '.join(map(str, dimensions))}]>"
+    out_shape = [max(pair) for pair in zip(x_shape, y_shape)]
+    if constant:
+        declaration = (
+            f'    {kind(y_shape)} z = const()[name = string("z"), val = '
+            f'{kind(y_shape)}(BLOBFILE(path = string("@model_path/bias.bin"), '
+            'offset = uint64(64)))];')
+        arguments = f'{kind(x_shape)} x'
+    else:
+        declaration = ''
+        arguments = f'{kind(x_shape)} x, {kind(y_shape)} z'
+    return f'''program(1.3)
+[buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>({arguments}) {{
+{declaration}
+    {kind(out_shape)} y = {operation}(x = x, y = z)[name = string("y")];
+  }} -> (y);
+}}
+'''
+
+
+def check_broadcast_packages():
+    """Per-channel and spatial broadcasts package as one program, and their
+    arithmetic on the packaged surfaces matches h13_reference."""
+    failures = []
+    cases = [
+        ('add', (1, 64, 8, 8), (1, 64, 1, 1), True),
+        ('mul', (1, 64, 8, 8), (1, 64, 1, 1), True),
+        ('add', (1, 768, 8, 8), (1, 768, 1, 1), True),
+        ('add', (1, 64, 8, 8), (1, 64, 1, 1), False),
+        ('mul', (1, 64, 8, 8), (1, 1, 8, 8), False),
+        ('add', (1, 64, 16, 16), (1, 1, 1, 1), False),
+        ('add', (2, 64, 8, 8), (1, 64, 1, 1), False),
+        ('mul', (8, 64, 8, 8), (1, 64, 1, 1), False),
+    ]
+    for operation, x_shape, y_shape, constant in cases:
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            label = (f'{operation} {"x".join(map(str, x_shape))} '
+                     f'{"const" if constant else "runtime"} '
+                     f'{"x".join(map(str, y_shape))}')
+            values = [fp16(0.25 * (index % 9) - 1.0)
+                      for index in range(math.prod(y_shape))]
+            blobs = {'bias.bin': blobfile(encode_fp16(values))} if constant else None
+            source = broadcast_source(operation, x_shape, y_shape, constant)
+            package = directory / 'pkg'
+            mil_path = compile_mil(source, directory, package, blobs)
+            manifest = json.loads((package / 'manifest.json').read_text())
+            if len(manifest['programs']) != 1:
+                failures.append(f'{label}: {len(manifest["programs"])} programs')
+                continue
+            program = manifest['programs'][0]
+            if program['encoder'] != inspect_anec.PARITY_BROADCAST:
+                failures.append(f'{label}: encoder {program["encoder"]}')
+            if any(item.get('slice') for item in
+                   program['inputs'] + program['outputs']):
+                failures.append(f'{label}: whole-tensor program was sliced')
+            if len(program['inputs']) != (1 if constant else 2):
+                failures.append(f'{label}: {len(program["inputs"])} inputs')
+            inputs = {'x': encode_fp16([fp16(0.5 + (index % 5) * 0.25)
+                                        for index in range(math.prod(x_shape))])}
+            if not constant:
+                inputs['z'] = encode_fp16(values)
+            actual, expected, _ = run_sim(package, mil_path, directory, inputs)
+            if actual['y'] != expected['y']:
+                got, want = decode_fp16(actual['y']), decode_fp16(expected['y'])
+                bad = [(index, want[index], got[index])
+                       for index in range(len(want))
+                       if want[index] != got[index]][:5]
+                failures.append(f'{label}: broadcast mismatch {bad}')
+            elif not failures:
+                print(f'OK broadcast {label} ({program["taskDescriptors"]} tasks, '
+                      f'{len(want if False else expected["y"]) // 2} elements)')
+    return failures
+
+
+def runtime_matmul_source(rows, reduction, columns, transpose_y):
+    x_shape = (1, rows, reduction)
+    y_shape = (1, columns, reduction) if transpose_y else (1, reduction, columns)
+    def kind(dimensions):
+        return f"tensor<fp16, [{', '.join(map(str, dimensions))}]>"
+    flag = 'true' if transpose_y else 'false'
+    return f'''program(1.3)
+[buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>({kind(x_shape)} x, {kind(y_shape)} w) {{
+    bool tx = const()[name = string("tx"), val = bool(false)];
+    bool ty = const()[name = string("ty"), val = bool({flag})];
+    {kind((1, rows, columns))} y = matmul(transpose_x = tx, transpose_y = ty, x = x, y = w)[name = string("y")];
+  }} -> (y);
+}}
+'''
+
+
+def check_runtime_matmul_packages():
+    """Attention's two shapes -- scores and context -- package as one program
+    with both operands as runtime surfaces on channels 5 and 6."""
+    failures = []
+    cases = [(64, 64, 64, False), (64, 64, 64, True), (64, 64, 128, False),
+             (128, 128, 128, True)]
+    for rows, reduction, columns, transpose_y in cases:
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            label = f'M{rows} K{reduction} N{columns} ty{int(transpose_y)}'
+            source = runtime_matmul_source(rows, reduction, columns, transpose_y)
+            package = directory / 'pkg'
+            mil_path = compile_mil(source, directory, package)
+            manifest = json.loads((package / 'manifest.json').read_text())
+            if len(manifest['programs']) != 1:
+                failures.append(f'{label}: {len(manifest["programs"])} programs')
+                continue
+            program = manifest['programs'][0]
+            if program['encoder'] != inspect_anec.PARITY_MATMUL:
+                failures.append(f'{label}: encoder {program["encoder"]}')
+            channels = [item['index'] for item in program['inputs']]
+            names = [item['name'] for item in program['inputs']]
+            if channels != [5, 6] or names != ['w', 'x']:
+                failures.append(f'{label}: channels {channels} carry {names}, '
+                                'expected the second operand on 5 and x on 6')
+            if program['constantBytes'] != 16384:
+                failures.append(f'{label}: {program["constantBytes"]} constant bytes')
+            x = encode_fp16([fp16(0.25 * ((index % 7) - 3))
+                             for index in range(rows * reduction)])
+            w = encode_fp16([fp16(0.125 * ((index % 5) - 2))
+                             for index in range(reduction * columns)])
+            actual, expected, _ = run_sim(package, mil_path, directory,
+                                          {'x': x, 'w': w})
+            if actual['y'] != expected['y']:
+                got, want = decode_fp16(actual['y']), decode_fp16(expected['y'])
+                bad = [(index, want[index], got[index])
+                       for index in range(len(want))
+                       if want[index] != got[index]][:5]
+                failures.append(f'{label}: runtime matmul mismatch {bad}')
+            elif not failures:
+                print(f'OK runtime-runtime matmul {label} '
+                      f'({program["taskDescriptors"]} tasks)')
+    return failures
+
+
 def check_norm_packages():
     """Softmax, layer_norm, and the reductions package as one whole-tensor
     program per operation.
@@ -607,6 +850,8 @@ def main():
     all_f += check_reader_vs_linux_intermediate()
     all_f += check_matmul_grid()
     all_f += check_norm_packages()
+    all_f += check_broadcast_packages()
+    all_f += check_runtime_matmul_packages()
     if all_f:
         print('FAILURES:')
         for f in all_f:

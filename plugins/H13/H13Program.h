@@ -33,12 +33,39 @@ struct ElementwiseShape {
     std::uint32_t width;
 };
 
+/// One decoded Apple elementwise surface with its batch. Apple records the
+/// batch in the tensor descriptor's shape while its declared size covers a
+/// single batch element, so the batch never enters the row or plane stride.
+struct BatchedShape {
+    std::uint32_t batch;
+    std::uint32_t channels;
+    std::uint32_t height;
+    std::uint32_t width;
+};
+
+/// How a binary operation's second operand reaches the program: another
+/// runtime surface, an inline fp16 scalar, or a per-channel constant Apple
+/// folds into the bias and scale blocks of the constant section.
+enum class BroadcastOperand : std::uint8_t { Runtime, Scalar, Constant };
+
+/// One decoded Apple broadcast geometry. `y` is zero for a scalar operand;
+/// otherwise it is the second operand's NCHW surface, which may differ from
+/// `x` in any axis Apple broadcasts.
+struct BroadcastShape {
+    BatchedShape x;
+    BatchedShape y;
+};
+
 /// One decoded Apple matmul geometry: `rows` logical x rows, a `reduction`
-/// long inner product, and `columns` output columns.
-struct MatvecShape {
+/// long inner product, `columns` output columns, the two MIL transpose flags,
+/// and whether the second operand is a runtime surface instead of a constant.
+struct MatmulShape {
     std::uint32_t rows;
     std::uint32_t reduction;
     std::uint32_t columns;
+    bool transposeX = false;
+    bool transposeY = true;
+    bool runtimeWeight = false;
 };
 
 /// One decoded Apple normalization or reduction geometry: the input and output
@@ -71,8 +98,10 @@ struct Program {
     /// The zero-filled allocation Apple places below every surface; the HWX
     /// writer emits it as __DATA/__bss and every surface address shifts by it.
     std::uint64_t scratchAllocationBytes = 0;
-    /// Apple's matvec objects lay the output surface out before the input.
-    bool outputSurfaceFirst = false;
+    /// Where the output surface sits in Apple's surface order: `inputs.size()`
+    /// for last, 0 for a matmul, which lays the output out first, 1 for a
+    /// broadcast, which puts it between the two operands.
+    std::size_t outputBindingIndex = static_cast<std::size_t>(-1);
 };
 
 Program encodeBinary(BinaryOperation operation);
@@ -88,15 +117,28 @@ Program encodeMatvec(std::uint32_t reduction,
                      const std::uint8_t *weights,
                      std::size_t weightBytes, bool transposeY);
 /// True when the decoded Apple corpus covers this geometry as one program.
-bool supportsMatvecParity(MatvecShape shape);
-/// Encodes Apple's two-task matvec form. `weights` is the [columns, reduction]
-/// row-major fp16 constant, exactly the bytes the MIL blob resolves to.
-Program encodeMatvecParity(MatvecShape shape, const std::uint8_t *weights,
+bool supportsMatmulParity(MatmulShape shape);
+/// Encodes Apple's own matmul task stream for the geometry. `weights` is the
+/// [columns, reduction] row-major fp16 constant, exactly the bytes the MIL
+/// blob resolves to, and must be null when the second operand is runtime.
+Program encodeMatmulParity(MatmulShape shape, const std::uint8_t *weights,
                            std::size_t weightBytes);
-/// Apple's constant-section permutation for a [columns, reduction] fp16 weight.
-std::vector<std::uint8_t> packMatvecWeights(MatvecShape shape,
+/// Apple's constant-section permutation for a [columns, reduction] fp16
+/// weight, whose row-group size depends on `rows` and `reduction`.
+std::vector<std::uint8_t> packMatvecWeights(MatmulShape shape,
                                             const std::uint8_t *weights,
                                             std::size_t weightBytes);
+/// True when the decoded Apple corpus covers this broadcast as one program.
+bool supportsBroadcast(BinaryOperation operation, BroadcastOperand operand,
+                       BroadcastShape shape);
+/// Encodes Apple's broadcast task stream. `constant` holds one fp16 value per
+/// channel for `BroadcastOperand::Constant` and is null otherwise;
+/// `scalarBits` carries the inline fp16 operand for `BroadcastOperand::Scalar`.
+Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
+                        BroadcastShape shape,
+                        const std::uint8_t *constant = nullptr,
+                        std::size_t constantBytes = 0,
+                        std::uint16_t scalarBits = 0x3800);
 /// True when the decoded Apple corpus covers this softmax, layer_norm, or
 /// reduction geometry as one multi-task program.
 bool supportsNormParity(NormOperation operation, NormShape shape);

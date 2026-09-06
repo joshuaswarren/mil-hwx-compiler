@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Compares emitted H14 task streams word-for-word with decoded Apple oracles."""
+import collections
 import contextlib
 import hashlib
 import io
@@ -15,6 +16,8 @@ sys.path.insert(0, str(ROOT / "research"))
 from h13_td import decode_task, split_h14_tasks  # noqa: E402
 import inspect_hwx  # noqa: E402
 import mint_h14_matvec_probes as probes  # noqa: E402
+import mint_h14_norm_probes as norm_templates  # noqa: E402
+import mint_norm_probes as norm_probes  # noqa: E402
 import mint_oracles  # noqa: E402
 from generate_h14_templates import (selected_matvec_oracles,  # noqa: E402
                                     selected_oracles)
@@ -22,12 +25,17 @@ from generate_h14_templates import (selected_matvec_oracles,  # noqa: E402
 COMPILER = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "build/mil-hwxc").resolve()
 TILE_BYTES = 0x4000
 MATVEC_ENCODER = "apple-parity-matvec"
+NORM_ENCODER = "apple-parity-norm"
 ELEMENTWISE_ENCODER = "h14-oracle-parity"
 
 
 def encoder(oracle):
-    return ELEMENTWISE_ENCODER if oracle["family"] in {
-        "binary_runtime", "binary_constant", "unary"} else MATVEC_ENCODER
+    if oracle["family"] in {"binary_runtime", "binary_constant", "unary",
+                            "env_activation", "env_broadcast"}:
+        return ELEMENTWISE_ENCODER
+    if oracle["family"] in {"normalization", "reduction"}:
+        return NORM_ENCODER
+    return MATVEC_ENCODER
 
 
 def write_weights(oracle, root):
@@ -62,6 +70,33 @@ def grid_probe_oracles():
                  parameters["columns"]) in covered:
             selected.append(oracle)
     return selected
+
+
+def norm_oracles():
+    """Every decoded H14 softmax, layer_norm, and reduction oracle, including
+    the shipped campaign's two shapes and the `h14norm_` probe grid. The
+    encoder covers each one: `mint_h14_norm_probes.py` builds its template
+    table from exactly this predicate."""
+    selected = []
+    for path in sorted((ROOT / "research/oracles/h14").glob("*.json")):
+        oracle = json.loads(path.read_text())
+        if oracle["family"] in ("normalization", "reduction") and \
+                norm_probes.covered(oracle):
+            selected.append(oracle)
+    return selected
+
+
+def check_norm_templates():
+    """The checked-in norm table must be what the decoded oracles generate, the
+    way `generate_h14_templates.py --check` guards the elementwise table."""
+    generated = io.StringIO()
+    records = norm_templates.selected("h14")
+    norm_templates.emit(records, generated)
+    checked_in = (ROOT / "plugins/H14/H14NormTemplates.inc").read_text()
+    assert checked_in == generated.getvalue(), \
+        "plugins/H14/H14NormTemplates.inc is stale; regenerate it with " \
+        "research/mint_h14_norm_probes.py --emit-templates"
+    return records
 
 
 def compile_oracle(oracle, output, artifact_format):
@@ -244,7 +279,13 @@ def check_hwx(oracle, output, manifest):
     path = output / record["file"]
     payload = path.read_bytes()
     sections, program, tensors = unpack_commands(payload)
-    assert program == oracle["program_descriptor"], oracle["case"]
+    # The recorder learned `task_section` after the first H14 campaign, so the
+    # older elementwise and matmul records carry one descriptor key fewer.
+    expected = oracle["program_descriptor"]
+    if "task_section" in expected:
+        program["task_section"] = {
+            "offset": 0, "size": sections[("__TEXT", "__text")]["size"]}
+    assert program == expected, oracle["case"]
     assert tensors == oracle["tensor_descriptors"], oracle["case"]
     text = sections[("__TEXT", "__text")]
     constants = sections[("__TEXT", "__const")]
@@ -275,16 +316,22 @@ def main():
     elementwise = selected_oracles()
     matvec = selected_matvec_oracles()
     probe = grid_probe_oracles()
-    assert len(elementwise) == 87, \
-        f"expected 87 decoded elementwise oracles, found {len(elementwise)}"
+    norm = norm_oracles()
+    families = collections.Counter(oracle["family"] for oracle in norm)
+    templates = check_norm_templates()
+    assert len(elementwise) == 165, \
+        f"expected 165 decoded elementwise oracles, found {len(elementwise)}"
     assert len(matvec) == 36, \
         f"expected 36 decoded matvec oracles, found {len(matvec)}"
+    assert families == collections.Counter(
+        {"normalization": 105, "reduction": 114}), \
+        f"decoded H14 norm oracles per family: {dict(families)}"
     grid = {(oracle["parameters"]["reduction"], oracle["parameters"]["columns"])
             for oracle in probe}
     assert grid == {(reduction, columns)
                     for reduction in probes.GRID_SIDES
                     for columns in probes.GRID_SIDES}, sorted(grid)
-    oracles = elementwise + matvec + probe
+    oracles = elementwise + matvec + probe + norm
     with tempfile.TemporaryDirectory(prefix="h14-parity-") as directory:
         root = Path(directory)
         for oracle in oracles:
@@ -299,7 +346,9 @@ def main():
     print(f"H14 oracle parity: PASS ({len(oracles)} cases, "
           f"{len(elementwise)} elementwise, {len(matvec)} matvec, "
           f"{len(probe)} known-weight matvec probes over {len(grid)} (K, N) "
-          f"grid points, {len(oracles) * 2} artifacts)")
+          f"grid points, {families['normalization']} softmax/layer_norm, "
+          f"{families['reduction']} reduction over {len(templates)} norm "
+          f"templates, {len(oracles) * 2} artifacts)")
 
 
 if __name__ == "__main__":

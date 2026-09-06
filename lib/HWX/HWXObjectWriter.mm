@@ -150,6 +150,7 @@ static NSData *programDescriptor(uint64_t textAddress,uint64_t textConstAddress,
         writeU32(d,0x830,(uint32_t)info.taskCount);
         writeU32(d,0x838,UINT32_MAX); writeU32(d,0x83c,UINT32_MAX);
         writeU32(d,0x844,0xffff); writeU32(d,0x848,0x888);
+        writeU32(d,0x858,info.h14ScratchDescriptorWord);
         writeU32(d,0x860,(uint32_t)info.recordCount); writeU32(d,0x868,3);
         writeU32(d,0x870,1); writeU32(d,0x878,9); writeU32(d,0x87c,8);
         writeU32(d,0x880,info.unresolvedDescriptorWord);
@@ -322,6 +323,7 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
         _elementType=elementType; _shape=[shape copy];
         _rowStrideBytes=rowStrideBytes; _planeStrideBytes=planeStrideBytes;
         _batchStrideBytes=batchStrideBytes; _storageByteLength=storageByteLength;
+        _allocationByteLength=storageByteLength;
     }
     return self;
 }
@@ -457,12 +459,16 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
                                     &minimumBatch) &&
             multiplyWithoutOverflow(n, binding.batchStrideBytes,
                                     &minimumStorage);
+        // Apple's batched surfaces record one batch element's stride as the
+        // descriptor's total size, so the whole-batch span is checked against
+        // the VM allocation and the descriptor's own size against one element.
         bindingLayoutsValid = bindingLayoutsValid && productsValid &&
             denseRow != 0 &&
             binding.rowStrideBytes >= denseRow &&
             binding.planeStrideBytes >= minimumPlane &&
             binding.batchStrideBytes >= minimumBatch &&
-            binding.storageByteLength >= minimumStorage;
+            binding.storageByteLength >= minimumBatch &&
+            binding.allocationByteLength >= minimumStorage;
     }
     BOOL relocationsValid = (textConstants ? hasConstants : hasKernel) ||
         kernelRelocationOffsets.count == 0;
@@ -494,10 +500,16 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
         rejection = @"H13 and H14 HWX require a nonempty word-aligned linear task stream";
     else if (!resourceCountValid)
         rejection = @"writer requires one output, at least one input, at most four surfaces and five total resources";
-    else if (taskDescriptor.length == 0 || taskDescriptor.length > 0x3fc0)
-        rejection = @"writer requires a nonempty task descriptor of at most 0x3fc0 bytes";
-    else if (constantRegion.length > 0x200000)
-        rejection = @"writer requires a constant region of at most 2 MiB";
+    // Apple partitions one program into up to 129 tasks rather than emitting a
+    // second program; the largest decoded H13 stream is 80,888 bytes, for
+    // [512,8192] x const[8192,8192].
+    else if (taskDescriptor.length == 0 || taskDescriptor.length > 0x20000)
+        rejection = @"writer requires a nonempty task descriptor of at most 0x20000 bytes";
+    // Apple keeps a whole matmul weight in one program's __TEXT/__const: the
+    // largest decoded section is 134,217,728 bytes, for [512,8192] x
+    // const[8192,8192]. The cap is twice that.
+    else if (constantRegion.length > 0x10000000)
+        rejection = @"writer requires a constant region of at most 256 MiB";
     else if (programInfo.descriptorLayout == HWXProgramDescriptorLayoutLinear &&
              programInfo.scratchByteLength != 0)
         rejection = @"a linear program cannot declare scratch";
@@ -529,7 +541,7 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
     NSMutableArray<NSNumber *> *bindingSizes = [NSMutableArray array];
     for (HWXObjectBinding *binding in bindings) {
         uint64_t size = 0, next = 0;
-        if (!alignUpWithoutOverflow(binding.storageByteLength, 0x4000, &size) ||
+        if (!alignUpWithoutOverflow(binding.allocationByteLength, 0x4000, &size) ||
             !addWithoutOverflow(nextBindingVM, size, &next)) {
             if (error) *error=[NSError errorWithDomain:HWXObjectWriterErrorDomain
                 code:1 userInfo:@{NSLocalizedDescriptionKey:

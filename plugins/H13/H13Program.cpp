@@ -343,10 +343,44 @@ struct OracleNormTemplate {
     std::uint64_t scratchAllocationBytes;
 };
 
+/// One decoded Apple matmul program, keyed by everything the compiler knows
+/// before it picks a program: the geometry, both transpose flags, and whether
+/// the second operand is runtime.
+struct OracleMatmulTemplate {
+    std::uint32_t rows;
+    std::uint32_t reduction;
+    std::uint32_t columns;
+    bool transposeX;
+    bool transposeY;
+    bool runtimeWeight;
+    const std::uint32_t *words;
+    std::size_t wordCount;
+    std::size_t firstTaskBytes;
+    std::uint32_t taskCount;
+    std::size_t constantOffsetBytes;
+    std::size_t constantBytes;
+    std::uint64_t scratchAllocationBytes;
+};
+
+struct OracleBroadcastTemplate {
+    std::uint8_t operation;
+    BroadcastOperand operand;
+    BatchedShape x;
+    BatchedShape y;
+    const std::uint32_t *words;
+    std::size_t wordCount;
+    std::size_t firstTaskBytes;
+    std::uint32_t taskCount;
+    std::size_t constantOffsetBytes;
+    std::size_t constantBytes;
+    std::uint64_t scratchAllocationBytes;
+};
+
 #include "H13ElementwiseTemplates.inc"
 #include "H13ElementwiseConstants.inc"
 #include "H13MatvecTemplates.inc"
 #include "H13NormTemplates.inc"
+#include "H13EnvelopeTemplates.inc"
 
 bool sameShape(ElementwiseShape left, ElementwiseShape right) {
     return left.channels == right.channels && left.height == right.height &&
@@ -362,11 +396,43 @@ const OracleTaskTemplate *elementwiseTemplate(ElementwiseKind kind,
     return nullptr;
 }
 
-const OracleMatvecTemplate *matvecTemplate(MatvecShape shape) {
+/// The decoded matmul program for a geometry: the envelope tables first, which
+/// carry both transpose flags, then the first campaign's `transpose_y=true`
+/// constant-weight table, which only ever compiled untransposed x.
+const OracleMatmulTemplate *matmulTemplate(MatmulShape shape) {
+    for (const auto &candidate : kMatmulEnvelopeTasks)
+        if (candidate.rows == shape.rows &&
+            candidate.reduction == shape.reduction &&
+            candidate.columns == shape.columns &&
+            candidate.transposeX == shape.transposeX &&
+            candidate.transposeY == shape.transposeY &&
+            candidate.runtimeWeight == shape.runtimeWeight) return &candidate;
+    return nullptr;
+}
+
+const OracleMatvecTemplate *matvecTemplate(MatmulShape shape) {
+    if (shape.transposeX || !shape.transposeY || shape.runtimeWeight)
+        return nullptr;
     for (const auto &candidate : kMatvecTasks)
         if (candidate.rows == shape.rows &&
             candidate.reduction == shape.reduction &&
             candidate.columns == shape.columns) return &candidate;
+    return nullptr;
+}
+
+bool sameShape(BatchedShape left, BatchedShape right) {
+    return left.batch == right.batch && left.channels == right.channels &&
+           left.height == right.height && left.width == right.width;
+}
+
+const OracleBroadcastTemplate *broadcastTemplate(BinaryOperation operation,
+                                                 BroadcastOperand operand,
+                                                 BroadcastShape shape) {
+    for (const auto &candidate : kBroadcastTasks)
+        if (candidate.operation == static_cast<std::uint8_t>(operation) &&
+            candidate.operand == operand && sameShape(candidate.x, shape.x) &&
+            (operand == BroadcastOperand::Scalar ||
+             sameShape(candidate.y, shape.y))) return &candidate;
     return nullptr;
 }
 
@@ -397,19 +463,29 @@ std::uint64_t alignTile(std::uint64_t value) {
     return (value + tileBytes - 1) & ~(static_cast<std::uint64_t>(tileBytes) - 1);
 }
 
-TensorLayout elementwiseTensor(std::uint32_t index, ElementwiseShape shape) {
+/// Apple's elementwise surface: 64-byte padded rows, and an allocation that
+/// covers every batch element even though the descriptor's declared size
+/// covers only one.
+TensorLayout elementwiseTensor(std::uint32_t index, BatchedShape shape) {
     const std::uint64_t row = std::max<std::uint64_t>(64, shape.width * 2);
     const std::uint64_t plane = row * shape.height;
-    const std::uint64_t bytes = plane * shape.channels;
-    return {index, {1, shape.channels, shape.height, shape.width, plane, row},
-            alignTile(bytes)};
+    const std::uint64_t element = plane * shape.channels;
+    return {index,
+            {shape.batch, shape.channels, shape.height, shape.width, plane, row},
+            alignTile(element * shape.batch)};
+}
+
+TensorLayout elementwiseTensor(std::uint32_t index, ElementwiseShape shape) {
+    return elementwiseTensor(index, BatchedShape{1, shape.channels,
+                                                 shape.height, shape.width});
 }
 
 /// Apple's matvec surface: one dense [1, 1, rows, width] fp16 plane whose row
-/// stride is the logical row, without the 64-byte elementwise row padding.
+/// stride is the logical row, padded up to the 64-byte floor every H13
+/// surface uses.
 TensorLayout matvecTensor(std::uint32_t index, std::uint32_t rows,
                           std::uint32_t width) {
-    const std::uint64_t row = static_cast<std::uint64_t>(width) * 2;
+    const std::uint64_t row = std::max<std::uint64_t>(64, width * 2);
     const std::uint64_t plane = row * rows;
     return {index, {1, 1, rows, width, plane, row}, alignTile(plane)};
 }
@@ -521,6 +597,41 @@ std::vector<std::uint8_t> normConstants(NormConstants kind, std::size_t size) {
     return bytes;
 }
 
+/// Apple's per-channel section: one fp16 bias per channel, then one fp16
+/// scale per channel. `add` stores the constant as the bias and scales by
+/// 1.0; `mul` leaves the bias zero and stores the constant as the scale.
+std::vector<std::uint8_t> perChannelConstants(BinaryOperation operation,
+                                              std::uint32_t channels,
+                                              const std::uint8_t *constant,
+                                              std::size_t size) {
+    const std::size_t block = static_cast<std::size_t>(channels) * 2;
+    if (size != block * 2)
+        throw std::logic_error(
+            "H13 per-channel section is not a bias and a scale block");
+    std::vector<std::uint8_t> bytes(size, 0);
+    if (operation == BinaryOperation::Add) {
+        std::memcpy(bytes.data(), constant, block);
+        for (std::uint32_t index = 0; index != channels; ++index)
+            putHalf(bytes, channels + index, halfOne);
+    } else if (operation == BinaryOperation::Multiply) {
+        std::memcpy(bytes.data() + block, constant, block);
+    } else {
+        throw std::invalid_argument(
+            "H13 per-channel constants cover add and mul");
+    }
+    return bytes;
+}
+
+/// The broadcast result surface: every axis is the larger of the two
+/// operands', and a scalar or per-channel constant leaves `x` unchanged.
+BatchedShape broadcastOutput(BroadcastOperand operand, BroadcastShape shape) {
+    if (operand != BroadcastOperand::Runtime) return shape.x;
+    return {std::max(shape.x.batch, shape.y.batch),
+            std::max(shape.x.channels, shape.y.channels),
+            std::max(shape.x.height, shape.y.height),
+            std::max(shape.x.width, shape.y.width)};
+}
+
 Program oracleProgram(const OracleTaskTemplate &source,
                       std::vector<std::uint8_t> constants,
                       std::size_t inputCount) {
@@ -620,11 +731,11 @@ Program encodeMatvec(std::uint32_t reduction, const std::uint8_t *weights,
             std::move(relocations)};
 }
 
-bool supportsMatvecParity(MatvecShape shape) {
-    return matvecTemplate(shape);
+bool supportsMatmulParity(MatmulShape shape) {
+    return matmulTemplate(shape) || matvecTemplate(shape);
 }
 
-std::vector<std::uint8_t> packMatvecWeights(MatvecShape shape,
+std::vector<std::uint8_t> packMatvecWeights(MatmulShape shape,
                                             const std::uint8_t *weights,
                                             std::size_t weightBytes) {
     if (!weights)
@@ -640,8 +751,14 @@ std::vector<std::uint8_t> packMatvecWeights(MatvecShape shape,
             "H13 matvec requires columns * reduction fp16 weights");
     // Apple interleaves `group` weight rows at halfword granularity, packs
     // each group of rows as one contiguous reduction-major plane, and orders
-    // the planes by the low four bits of the group index.
-    const std::uint32_t group = std::min<std::uint32_t>(16, shape.columns / 16);
+    // the planes by the low four bits of the group index. The group is 16 rows
+    // until the column count falls below 256, and above 128 x rows -- the row
+    // count at which Apple starts partitioning the program into
+    // 1 + K * N / 2^19 tasks -- it also caps at 32768 / reduction halfwords.
+    std::uint32_t group = std::min<std::uint32_t>(16, shape.columns / 16);
+    if (shape.rows > 128)
+        group = std::min<std::uint32_t>(group, 32768 / shape.reduction);
+    group = std::max<std::uint32_t>(1, group);
     const std::uint32_t groups = shape.columns / group;
     std::vector<std::uint8_t> packed(weightBytes);
     for (std::uint32_t column = 0; column != shape.columns; ++column) {
@@ -662,22 +779,86 @@ std::vector<std::uint8_t> packMatvecWeights(MatvecShape shape,
     return packed;
 }
 
-Program encodeMatvecParity(MatvecShape shape, const std::uint8_t *weights,
+Program encodeMatmulParity(MatmulShape shape, const std::uint8_t *weights,
                            std::size_t weightBytes) {
-    const auto *source = matvecTemplate(shape);
-    if (!source)
+    const auto *envelope = matmulTemplate(shape);
+    const auto *legacy = envelope ? nullptr : matvecTemplate(shape);
+    if (!envelope && !legacy)
         throw std::invalid_argument(
             "H13 matmul geometry is outside the decoded parity envelope");
     Program program;
-    program.task = taskBytesFor(source->words, source->wordCount);
-    program.constants = packMatvecWeights(shape, weights, weightBytes);
-    program.inputs = {matvecTensor(5, shape.rows, shape.reduction)};
+    // Apple's matmul objects lay the output surface out first, then the second
+    // operand, then x, and declare the operands in the opposite order.
+    program.outputBindingIndex = 0;
+    if (shape.runtimeWeight) {
+        if (weights)
+            throw std::invalid_argument(
+                "H13 runtime-operand matmul takes no constant weight");
+        program.constants.assign(envelope->constantBytes, 0);
+        program.inputs = {
+            shape.transposeY ? matvecTensor(5, shape.columns, shape.reduction)
+                             : matvecTensor(5, shape.reduction, shape.columns),
+            shape.transposeX ? matvecTensor(6, shape.reduction, shape.rows)
+                             : matvecTensor(6, shape.rows, shape.reduction)};
+    } else {
+        program.constants = packMatvecWeights(shape, weights, weightBytes);
+        program.inputs = {
+            shape.transposeX ? matvecTensor(5, shape.reduction, shape.rows)
+                             : matvecTensor(5, shape.rows, shape.reduction)};
+    }
     program.output = matvecTensor(4, shape.rows, shape.columns);
+    program.task = envelope
+        ? taskBytesFor(envelope->words, envelope->wordCount)
+        : taskBytesFor(legacy->words, legacy->wordCount);
+    program.firstTaskBytes = envelope ? envelope->firstTaskBytes
+                                      : legacy->firstTaskBytes;
+    program.taskCount = envelope ? envelope->taskCount : legacy->taskCount;
+    program.constantOffsetBytes = envelope ? envelope->constantOffsetBytes
+                                           : legacy->constantOffsetBytes;
+    program.scratchAllocationBytes = envelope
+        ? envelope->scratchAllocationBytes : legacy->scratchAllocationBytes;
+    return program;
+}
+
+bool supportsBroadcast(BinaryOperation operation, BroadcastOperand operand,
+                       BroadcastShape shape) {
+    return broadcastTemplate(operation, operand, shape);
+}
+
+Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
+                        BroadcastShape shape, const std::uint8_t *constant,
+                        std::size_t constantBytes, std::uint16_t scalarBits) {
+    const auto *source = broadcastTemplate(operation, operand, shape);
+    if (!source)
+        throw std::invalid_argument(
+            "H13 broadcast is outside the decoded parity envelope");
+    if (operand == BroadcastOperand::Scalar && scalarBits != 0x3800)
+        throw std::invalid_argument(
+            "H13 scalar broadcast requires the decoded fp16 0.5 operand");
+    Program program;
+    program.task = taskBytesFor(source->words, source->wordCount);
+    if (operand == BroadcastOperand::Constant) {
+        if (!constant ||
+            constantBytes != static_cast<std::size_t>(shape.x.channels) * 2)
+            throw std::invalid_argument(
+                "H13 per-channel broadcast requires one fp16 constant per channel");
+        program.constants = perChannelConstants(operation, shape.x.channels,
+                                                constant, source->constantBytes);
+    } else {
+        program.constants.assign(source->constantBytes, 0);
+    }
+    program.inputs = {elementwiseTensor(5, shape.x)};
+    if (operand == BroadcastOperand::Runtime) {
+        program.inputs.push_back(elementwiseTensor(6, shape.y));
+        // Identical operands keep declaration order; any broadcast puts the
+        // output surface between the two operands.
+        if (!sameShape(shape.x, shape.y)) program.outputBindingIndex = 1;
+    }
+    program.output = elementwiseTensor(4, broadcastOutput(operand, shape));
     program.firstTaskBytes = source->firstTaskBytes;
     program.taskCount = source->taskCount;
     program.constantOffsetBytes = source->constantOffsetBytes;
     program.scratchAllocationBytes = source->scratchAllocationBytes;
-    program.outputSurfaceFirst = true;
     return program;
 }
 

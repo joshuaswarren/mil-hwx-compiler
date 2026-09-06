@@ -1138,8 +1138,19 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             logical = compile_text(
                 matmul_source(reduction, x_shape, output_shape, transpose_x),
                 f'{case}-{reduction}')
-            assert (logical / 'program-0.anec').read_bytes() == payload
             logical_manifest = json.loads((logical / 'manifest.json').read_text())
+            logical_program = logical_manifest['programs'][0]
+            if transpose_x:
+                # Apple emits a different program for a transposed x: the
+                # operand is a [K, 1] surface with the 64-byte row floor, and
+                # the decoded stream is one task instead of two.
+                assert logical_program['encoder'] == 'apple-parity-matvec', case
+                assert logical_program['inputs'][0]['nchw'] == \
+                    [1, 1, reduction, 1, 64 * reduction, 64], case
+                assert logical_program['taskDescriptors'] == 1, case
+                assert (logical / 'program-0.anec').read_bytes() != payload, case
+            else:
+                assert (logical / 'program-0.anec').read_bytes() == payload
             assert logical_manifest['inputs'][0]['shape'] == list(x_shape)
             assert logical_manifest['outputs'][0]['shape'] == list(output_shape)
         compile_text(matmul_source(reduction, (reduction,), (512,), True),

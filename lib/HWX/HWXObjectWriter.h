@@ -19,6 +19,11 @@ typedef NS_ENUM(NSUInteger, HWXObjectBindingRole) {
 @property(nonatomic, readonly) NSUInteger planeStrideBytes;
 @property(nonatomic, readonly) NSUInteger batchStrideBytes;
 @property(nonatomic, readonly) NSUInteger storageByteLength;
+/// Bytes the surface occupies in the object's VM layout. Apple's batched
+/// surfaces record `storageByteLength` as one batch element's stride in the
+/// tensor descriptor while spacing surfaces by the whole allocation, so this
+/// is settable and defaults to `storageByteLength`.
+@property(nonatomic) NSUInteger allocationByteLength;
 - (instancetype)initWithSymbol:(NSString *)symbol
                       shortName:(NSString *)shortName
                            role:(HWXObjectBindingRole)role
@@ -53,6 +58,10 @@ typedef NS_ENUM(NSUInteger, HWXProgramDescriptorLayout) {
 /// H14 program descriptors carry one word at command offset 0x880 that the
 /// oracle campaign resolves no formula for; parity copies the decoded value.
 @property(nonatomic) uint32_t unresolvedDescriptorWord;
+/// H14 program descriptors carry a second unmodelled word at command offset
+/// 0x858, which Apple sets to the input surface byte count for the three-task
+/// layer_norm form; parity copies the decoded value without allocating for it.
+@property(nonatomic) uint32_t h14ScratchDescriptorWord;
 - (instancetype)initWithTaskCount:(NSUInteger)taskCount
                        recordCount:(NSUInteger)recordCount
                         formatCode:(uint32_t)formatCode

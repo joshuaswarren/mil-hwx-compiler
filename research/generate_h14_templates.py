@@ -39,30 +39,76 @@ STREAM_PREFIX_BYTES = 16
 BINARY_OPERATIONS = {"add": 0, "mul": 1, "maximum": 2, "minimum": 3, "sub": 4,
                      "real_div": 5}
 UNARY_OPERATIONS = {"abs": 0, "exp": 1, "gelu": 2, "leaky_relu": 3, "relu": 4,
-                    "rsqrt": 5, "sigmoid": 6, "silu": 7, "sqrt": 8, "tanh": 9}
+                    "rsqrt": 5, "sigmoid": 6, "silu": 7, "sqrt": 8, "tanh": 9,
+                    # Apple emits a different program per gelu mode, so each
+                    # approximation is its own encoder operation.
+                    "gelu_sigmoid_approximation": 10,
+                    "gelu_tanh_approximation": 11}
+GELU_MODES = {"EXACT": "gelu",
+              "SIGMOID_APPROXIMATION": "gelu_sigmoid_approximation",
+              "TANH_APPROXIMATION": "gelu_tanh_approximation"}
 RUNTIME_BINARY = {"add", "mul", "maximum", "minimum", "sub"}
 UNARY = set(UNARY_OPERATIONS)
 KINDS = {"binary_runtime": "BinaryRuntime", "binary_constant": "BinaryScalar",
          "unary": "Unary"}
 
 
+def classify(oracle: dict[str, Any]) -> tuple[str, str, tuple[int, int, int],
+                                              tuple[int, int, int]] | None:
+    """The encoder key of a decoded elementwise oracle — kind, operation, the
+    CHW result surface, and the CHW surface of the second operand — or None
+    when the case sits outside what the H14 encoder models.
+
+    Two envelope forms stay outside: a batched surface (`N > 1`), whose
+    descriptor records one batch's bytes against a rank-4 shape the encoder's
+    surface formula does not spell, and a `BLOBFILE` broadcast operand, whose
+    constant section is not the operand payload (see research/h14-td-fields.md).
+    """
+    if oracle.get("error") is not None:
+        return None
+    parameters = oracle.get("parameters", {})
+    operation = parameters.get("operation")
+    family = oracle.get("family")
+    shape = parameters.get("shape")
+    if family not in ("binary_runtime", "binary_constant", "unary",
+                      "env_activation", "env_broadcast") or not shape:
+        return None
+    if shape[0] != 1:
+        return None
+    chw = (shape[1], shape[2], shape[3])
+    if family in ("unary", "env_activation"):
+        if operation == "gelu":
+            operation = GELU_MODES.get(parameters.get("mode") or "EXACT")
+        return ("Unary", operation, chw, chw) if operation in UNARY else None
+    if family == "binary_constant":
+        return ("BinaryScalar", operation, chw, chw) \
+            if parameters.get("constant") == "scalar" and \
+            operation in BINARY_OPERATIONS else None
+    if operation not in RUNTIME_BINARY:
+        return None
+    if family == "binary_runtime":
+        return ("BinaryRuntime", operation, chw, chw)
+    if parameters["output_shape"] != shape:
+        raise ValueError(f"{oracle['case']}: broadcast result is not the x shape")
+    operand = parameters.get("operand")
+    if operand == "scalar":
+        return ("BinaryScalar", operation, chw, chw)
+    if operand != "runtime":
+        return None
+    operand_shape = parameters["operand_shape"]
+    if operand_shape[0] != 1:
+        return None
+    return ("BinaryRuntime", operation, chw,
+            (operand_shape[1], operand_shape[2], operand_shape[3]))
+
+
 def selected_oracles() -> list[dict[str, Any]]:
-    """The H14 elementwise, scalar-constant, and unary cases Apple decoded."""
-    selected = []
-    for path in sorted(ORACLES.glob("*.json")):
-        oracle = json.loads(path.read_text())
-        if oracle.get("error") is not None:
-            continue
-        parameters = oracle.get("parameters", {})
-        operation = parameters.get("operation")
-        family = oracle.get("family")
-        if family == "binary_runtime" and operation in RUNTIME_BINARY:
-            selected.append(oracle)
-        elif family == "binary_constant" and parameters.get("constant") == "scalar":
-            selected.append(oracle)
-        elif family == "unary" and operation in UNARY:
-            selected.append(oracle)
-    return selected
+    """Every decoded H14 case the elementwise encoder covers: the shipped
+    binary, scalar-constant, and unary campaign plus the envelope campaign's
+    activation shapes and runtime broadcast forms."""
+    return [oracle for oracle in
+            (json.loads(path.read_text()) for path in sorted(ORACLES.glob("*.json")))
+            if classify(oracle) is not None]
 
 
 def task_words(task: dict[str, Any]) -> list[int]:
@@ -158,23 +204,43 @@ def word_rows(words: list[int], indent: str = "    ") -> str:
     return "\n".join(rows)
 
 
+def template_fields(oracle: dict[str, Any]) -> tuple:
+    """Everything the emitted template carries, so two oracles that share an
+    encoder key are proven to carry identical Apple output."""
+    trailer = oracle["program_descriptor"]["trailing_words"]
+    if int(trailer[18], 16):
+        raise ValueError(
+            f"{oracle['case']}: descriptor word 0x858 is "
+            f"{trailer[18]}, which the elementwise encoder does not carry")
+    return (tuple(task_stream(oracle)), tuple(constant_runs(oracle)),
+            oracle["constant_section"]["size"],
+            oracle["program_descriptor"]["task_count"],
+            int(trailer[20], 16), int(trailer[28], 16))
+
+
 def generate() -> str:
-    oracles = selected_oracles()
+    templates: dict[tuple, tuple[dict[str, Any], tuple]] = {}
+    for oracle in selected_oracles():
+        key = classify(oracle)
+        fields = template_fields(oracle)
+        previous = templates.setdefault(key, (oracle, fields))
+        if previous[1] != fields:
+            raise ValueError(
+                f"{oracle['case']} and {previous[0]['case']} share the encoder "
+                f"key {key} but Apple emitted different programs")
     lines = ["// Generated from decoded H14 oracle task words by",
              "// research/generate_h14_templates.py. No HWX container bytes.",
              ""]
     entries = []
-    for index, oracle in enumerate(oracles):
-        parameters = oracle["parameters"]
-        operation = parameters["operation"]
-        family = oracle["family"]
-        _, channels, height, width = parameters["shape"]
-        code = (UNARY_OPERATIONS if family == "unary" else BINARY_OPERATIONS)[operation]
-        stream = task_stream(oracle)
-        runs = constant_runs(oracle)
+    for index, key in enumerate(templates):
+        oracle, (stream, runs, constantBytes, taskCount, records,
+                 unresolved) = templates[key]
+        kind, operation, shape, operand = key
+        code = (UNARY_OPERATIONS if kind == "Unary"
+                else BINARY_OPERATIONS)[operation]
         lines.append(f"// {oracle['case']}")
         lines.append(f"static constexpr std::uint32_t kH14Text{index}[] = {{")
-        lines.append(word_rows(stream))
+        lines.append(word_rows(list(stream)))
         lines.append("};")
         constants = "nullptr, 0"
         if runs:
@@ -185,14 +251,13 @@ def generate() -> str:
             constants = (f"kH14Constants{index}, "
                          f"std::size(kH14Constants{index})")
         lines.append("")
-        trailer = oracle["program_descriptor"]["trailing_words"]
         entries.append(
-            f"    {{ElementwiseKind::{KINDS[family]}, {code}, "
-            f"{{{channels}, {height}, {width}}}, kH14Text{index}, "
-            f"std::size(kH14Text{index}), "
-            f"{oracle['program_descriptor']['task_count']}, "
-            f"{constants}, {oracle['constant_section']['size']}, "
-            f"0x{int(trailer[20], 16):08x}, 0x{int(trailer[28], 16):08x}}},")
+            f"    {{ElementwiseKind::{kind}, {code}, "
+            f"{{{shape[0]}, {shape[1]}, {shape[2]}}}, "
+            f"{{{operand[0]}, {operand[1]}, {operand[2]}}}, kH14Text{index}, "
+            f"std::size(kH14Text{index}), {taskCount}, "
+            f"{constants}, {constantBytes}, "
+            f"0x{records:08x}, 0x{unresolved:08x}}},")
     lines.append("static constexpr OracleTaskTemplate kElementwiseTasks[] = {")
     lines.extend(entries)
     lines.append("};")
@@ -244,6 +309,10 @@ def generate_matvec() -> str:
         lines.append("};")
         lines.append("")
         trailer = descriptor["trailing_words"]
+        if int(trailer[18], 16):
+            raise ValueError(
+                f"{oracle['case']}: descriptor word 0x858 is {trailer[18]}, "
+                "which the matvec encoder does not carry")
         entries.append(
             f"    {{{rows}, {reduction}, {columns}, kH14MatvecText{index}, "
             f"std::size(kH14MatvecText{index}), {descriptor['task_count']}, "

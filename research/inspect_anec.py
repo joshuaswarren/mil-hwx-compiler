@@ -13,31 +13,32 @@ TASK_BYTES = 0x274
 CONSTANT_OFFSET = 0x280
 TILE_BYTES = 0x4000
 PARITY_MATVEC = 'apple-parity-matvec'
+PARITY_MATMUL = 'apple-parity-matmul'
+PARITY_BROADCAST = 'apple-parity-broadcast'
 PROGRAM_FIELDS = (
     'file', 'bytes', 'taskDescriptors', 'encoder', 'operation', 'inputs',
     'constantInputs', 'outputs', 'constantOffset', 'constantBytes')
 
 
-def physical_layout(rows, width):
-    """Apple's matvec surface: `rows` dense fp16 rows of `width` elements."""
-    row = width * 2
-    return [1, 1, rows, width, row * rows, row]
+def surface_layout(shape):
+    """The physical layout H13 lays an NCHW surface out as: rows padded up to
+    64 bytes, one plane per channel, and the batch only in the shape. This is
+    one formula for all three decoded surface kinds -- the elementwise
+    64-byte lane, the padded spatial plane, and the matmul's dense rows.
+    """
+    batch, channels, height, width = shape
+    row = max(64, width * 2)
+    return [batch, channels, height, width, row * height, row]
 
 
-def channel_layout(elements):
-    """The elementwise surface: one 64-byte physical lane per element."""
-    return [1, elements, 1, 1, 64, 64]
-
-
-def dense_layout(binding):
-    """The declared dense-row layout of one parity matvec surface."""
+def check_layout(binding):
+    """Validates one binding's declared physical layout and returns the
+    element count that layout holds."""
     nchw = binding.get('nchw') if isinstance(binding, dict) else None
     require(isinstance(nchw, list) and len(nchw) == 6 and
-            all(type(value) is int for value in nchw) and
-            nchw[2] > 0 and nchw[3] > 0 and
-            nchw == physical_layout(nchw[2], nchw[3]),
-            'parity matvec surfaces must be dense fp16 rows')
-    return nchw
+            all(type(value) is int and value > 0 for value in nchw) and
+            nchw == surface_layout(nchw[:4]), 'incorrect physical layout')
+    return math.prod(nchw[:4])
 
 
 def require(condition, message):
@@ -127,12 +128,13 @@ def exact_tiling(bindings, tensors, message, allow_repeats=False):
             message)
 
 
-def check_binding(binding, index, physical_elements, tiles, layouts, tensors,
-                  layout=None):
+def check_binding(binding, index, tiles, layouts, tensors):
     require(isinstance(binding, dict), 'binding must be an object')
     require(isinstance(binding.get('name'), str) and binding['name'],
             'binding needs a non-empty name')
     require(binding.get('dtype') == 'float16', 'binding must use float16')
+    physical_elements = check_layout(binding)
+    layout = binding['nchw']
     shape = binding.get('shape')
     require(isinstance(shape, list) and shape and
             all(type(n) is int and 0 < n <= physical_elements for n in shape),
@@ -140,9 +142,6 @@ def check_binding(binding, index, physical_elements, tiles, layouts, tensors,
     logical_elements = math.prod(shape)
     require(type(binding.get('index')) is int and binding['index'] == index,
             'binding index does not match ANEC channel')
-    layout = layout or channel_layout(physical_elements)
-    require(binding.get('nchw') == layout and
-            all(type(n) is int for n in binding['nchw']), 'incorrect physical layout')
     require(list(layouts[index * 6:(index + 1) * 6]) == layout,
             'manifest layout differs from ANEC header')
     require(type(binding.get('logicalBytes')) is int and
@@ -159,6 +158,7 @@ def check_binding(binding, index, physical_elements, tiles, layouts, tensors,
     _, _, count, physical = binding_interval(binding, tensors)
     require(count == logical_elements and physical == physical_elements,
             'slice physical elements differ from its binding layout')
+    return physical_elements
 
 
 def validate_program(directory, program, tensors):
@@ -206,36 +206,36 @@ def validate_program(directory, program, tensors):
                     'unexpected tensor channel')
             if index != 0:
                 require(tiles[index] == 0, 'unexpected channel allocation')
-    parity = program.get('encoder') == PARITY_MATVEC
-    input_layout = output_layout = None
-    if matmul and parity:
-        input_layout, output_layout = (dense_layout(item)
-                                       for item in (inputs[0], outputs[0]))
-        input_channels = input_layout[2] * input_layout[3]
-        output_channels = output_layout[2] * output_layout[3]
-    elif matmul:
-        require(isinstance(inputs[0], dict), 'unsupported matvec input size')
-        input_channels = binding_interval(inputs[0], tensors)[3]
-        output_channels = binding_interval(outputs[0], tensors)[3]
-        require(input_channels in (256, 512) and output_channels == 512,
-                'unsupported matvec physical size')
-    else:
-        input_channels = binding_interval(inputs[0], tensors)[3]
-        output_channels = binding_interval(outputs[0], tensors)[3]
+    encoder = program.get('encoder')
+    require(isinstance(encoder, str) and encoder, 'program needs an encoder name')
     for index, item in enumerate(inputs, start=5):
-        check_binding(item, index, input_channels, tiles, layouts, tensors,
-                      input_layout)
-    check_binding(outputs[0], 4, output_channels, tiles, layouts, tensors,
-                  output_layout)
+        check_binding(item, index, tiles, layouts, tensors)
+    check_binding(outputs[0], 4, tiles, layouts, tensors)
+    if matmul and encoder not in (PARITY_MATVEC, PARITY_MATMUL):
+        # The chunked encoder pads every surface to its 256- or 512-lane tile.
+        require(binding_interval(inputs[0], tensors)[3] in (256, 512) and
+                binding_interval(outputs[0], tensors)[3] == 512,
+                'unsupported matvec physical size')
+    if encoder == PARITY_MATMUL:
+        require(matmul and len(inputs) == 2,
+                'a runtime-operand matmul binds both operands as inputs')
     if not matmul:
         output_is_returned_alias = any(
             tensor.get('aliasOf') == outputs[0]['name'] and
             tensor['role'] == 'output' and tensor['shape'] == outputs[0]['shape']
             for tensor in tensors.values())
-        require(all(item['shape'] == inputs[0]['shape'] for item in inputs) and
-                (outputs[0]['shape'] == inputs[0]['shape'] or
-                 output_is_returned_alias and
-                 math.prod(outputs[0]['shape']) == math.prod(inputs[0]['shape'])),
+        shapes = [item['shape'] for item in inputs]
+        require(len({len(shape) for shape in shapes}) == 1,
+                'elementwise operands must share a rank')
+        # Identical shapes are the degenerate broadcast; any other operand
+        # axis must be 1 or the result's extent.
+        broadcast = [max(extents) for extents in zip(*shapes)]
+        require(all(extent in (1, result) for shape in shapes
+                    for extent, result in zip(shape, broadcast)),
+                'elementwise operands must broadcast against each other')
+        require(outputs[0]['shape'] == broadcast or
+                (output_is_returned_alias and
+                 math.prod(outputs[0]['shape']) == math.prod(broadcast)),
                 'elementwise operation shapes must match')
     require(outputs[0]['name'] not in {item['name'] for item in inputs},
             'program output must differ from its inputs')

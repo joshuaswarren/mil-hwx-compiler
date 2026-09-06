@@ -55,8 +55,11 @@ static ANEHWXBinding *runtimeBinding(NSDictionary *binding, ANESurfaceRole role)
 }
 
 /// The physical byte offset of one logical element on this surface: the
-/// elementwise surface uses one 64-byte lane per element, and the parity
-/// matvec surface uses dense rows, so both come from the binding's layout.
+/// elementwise surface uses one 64-byte lane per element, the padded spatial
+/// surface a `max(64, W * 2)` row, and the parity matmul surface dense rows,
+/// so all three come from the binding's layout. A batched surface's IOSurface
+/// is sized from `allocationBytes`, never from the tensor descriptor's own
+/// size, which covers one batch element.
 static NSUInteger physicalOffset(NSDictionary *binding, NSUInteger element) {
     NSArray *nchw = binding[@"nchw"];
     NSUInteger width = [nchw[3] unsignedIntegerValue];

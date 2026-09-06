@@ -147,6 +147,9 @@ def _logical_outputs(tensors):
 
 
 def _binding_record(binding, tensors, source=None):
+    """One plan entry. `allocationBytes` is the surface's whole span, which is
+    what libane sizes a buffer from; a batched surface's tensor descriptor
+    declares only one batch element."""
     name, offset, count, physical = inspect_anec.binding_interval(binding, tensors)
     result = {
         "tensor": name,
