@@ -6,6 +6,10 @@ import json
 import math
 import struct
 from pathlib import Path
+try:
+    from .h13_td import split_h13_tasks
+except ImportError:
+    from h13_td import split_h13_tasks
 
 HEADER = struct.Struct('<QIIQQII32I192Q')
 HEADER_BYTES = 0x1000
@@ -15,6 +19,71 @@ TILE_BYTES = 0x4000
 PARITY_MATVEC = 'apple-parity-matvec'
 PARITY_MATMUL = 'apple-parity-matmul'
 PARITY_BROADCAST = 'apple-parity-broadcast'
+CHAIN_ENCODER = 'composed-chain'
+
+
+def h13_task_registers(task):
+    """One decoded H13 task image as {register byte address: word}: ten header
+    words, one extra word when header[9] bit 1 is set, then register records
+    headed by `((count - 1) << 26) | byte address`."""
+    require(len(task) >= 40 and len(task) % 4 == 0, 'invalid H13 task word count')
+    words = struct.unpack(f'<{len(task) // 4}I', task)
+    index = 10 + (1 if words[9] & 3 == 3 else 0)
+    require(index <= len(words), 'missing H13 task header extension')
+    registers = {}
+    while index < len(words):
+        header = words[index]
+        count = (header >> 26) + 1
+        base = header & 0x03FFFFFF
+        require(index + count < len(words), 'truncated H13 register record')
+        for offset in range(count):
+            registers[base + offset * 4] = words[index + 1 + offset]
+        index += 1 + count
+    return registers
+
+
+# Task DMA surface wiring decoded across the H13 oracle corpus: reads run
+# through Src1/Src2 (the input channels, or the matvec's L2 staging read),
+# writes through Dst to the output surface or stay in L2. Any other DMA
+# config in a composed chain would be an unrouted surface.
+H13_DMA_DISABLED = 0x00008880
+H13_SRC_ENABLE = (0x00033881, 0x00033880, 0x00048880)
+H13_DST_ENABLE = (0x040000c1, 0x000000c0)
+
+
+def validate_chain_routing(program, tasks):
+    """Validates the actual emitted DMA routing of a fused composed chain."""
+    fused = program.get('fused')
+    outputs = program.get('outputs')
+    require(isinstance(fused, list) and len(fused) == 1 and
+            isinstance(outputs, list) and len(outputs) == 1 and
+            isinstance(outputs[0], dict) and
+            fused == [outputs[0].get('name')],
+            'composed chain must name its sole fused output')
+    output_tasks = []
+    clamp_tasks = []
+    for index, task in enumerate(tasks):
+        registers = h13_task_registers(task)
+        for address, legal in ((0x13800, (H13_DMA_DISABLED,) + H13_SRC_ENABLE),
+                               (0x13804, (H13_DMA_DISABLED,) + H13_SRC_ENABLE),
+                               (0x17800, (H13_DMA_DISABLED,) + H13_DST_ENABLE)):
+            value = registers.get(address)
+            if value is not None:
+                require(value in legal,
+                        'composed chain carries an unrouted DMA surface config')
+        if registers.get(0x17800) == 0x040000c1:
+            output_tasks.append(index)
+        ne = registers.get(0x0c804)
+        pe = registers.get(0x08800)
+        if (ne is not None and ne & 0x00010000) or \
+                (pe is not None and pe & 0x20):
+            clamp_tasks.append(index)
+    final = len(tasks) - 1
+    require(output_tasks == [final],
+            'composed chain must write the output surface only from its final task')
+    require(clamp_tasks == [final],
+            'composed chain relu must apply only to the final accumulation task')
+
 PROGRAM_FIELDS = (
     'file', 'bytes', 'taskDescriptors', 'encoder', 'operation', 'inputs',
     'constantInputs', 'outputs', 'constantOffset', 'constantBytes')
@@ -115,15 +184,15 @@ def binding_interval(binding, tensors):
     return tensor_name, offset, count, physical
 
 
-def exact_tiling(bindings, tensors, message, allow_repeats=False):
-    intervals = [binding_interval(item, tensors)[1:3] for _, item in bindings]
-    if allow_repeats:
-        intervals = set(intervals)
-    intervals = sorted(intervals)
+def require_covering(bindings, tensors, message, exact=True):
+    """Every logical element of the bound tensor must be covered: with
+    `exact` the bindings tile it once in order, otherwise their union covers
+    it with no hole and no overrun."""
+    intervals = sorted(binding_interval(item, tensors)[1:3] for _, item in bindings)
     cursor = 0
     for offset, count in intervals:
-        require(offset == cursor, message)
-        cursor += count
+        require(offset == cursor if exact else offset <= cursor, message)
+        cursor = cursor + count if exact else max(cursor, offset + count)
     require(bindings and
             cursor == tensors[binding_interval(bindings[0][1], tensors)[0]]['logicalBytes'] // 2,
             message)
@@ -165,7 +234,8 @@ def check_binding(binding, index, tiles, layouts, tensors):
 def validate_program(directory, program, tensors):
     require(isinstance(program, dict), 'program must be an object')
     operation = program.get('operation')
-    require(operation in ('add', 'mul', 'maximum', 'minimum', 'sub', 'real_div',
+    require(operation in ('chain', 'add', 'mul', 'maximum', 'minimum', 'sub',
+                          'real_div',
                           'matmul', 'abs', 'exp', 'gelu', 'leaky_relu', 'relu',
                           'rsqrt', 'sigmoid', 'silu', 'sqrt', 'tanh',
                           'softmax', 'layer_norm', 'reduce_sum', 'reduce_max',
@@ -199,6 +269,14 @@ def validate_program(directory, program, tensors):
     require(not any(data[HEADER.size:HEADER_BYTES]) and
             not any(data[HEADER_BYTES + task_size:HEADER_BYTES + offset]),
             'nonzero reserved padding')
+    if operation == 'chain':
+        tasks = split_h13_tasks(data[HEADER_BYTES:HEADER_BYTES + task_size],
+                                td_size // 4 - 1, td_count)
+        require(len(tasks) == program['taskDescriptors'],
+                'chain task list differs from ANEC task stream')
+        require(program.get('encoder') == CHAIN_ENCODER,
+                'chain program must use the composed encoder')
+        validate_chain_routing(program, tasks)
     tiles, layouts = fields[7:39], fields[39:]
     require(tiles[0] == (size + TILE_BYTES - 1) // TILE_BYTES,
             'incorrect command allocation')
@@ -222,7 +300,7 @@ def validate_program(directory, program, tensors):
     if encoder == PARITY_MATMUL:
         require(matmul and len(inputs) == 2,
                 'a runtime-operand matmul binds both operands as inputs')
-    if not matmul:
+    if operation not in ('matmul', 'chain'):
         output_is_returned_alias = any(
             tensor.get('aliasOf') == outputs[0]['name'] and
             tensor['role'] == 'output' and tensor['shape'] == outputs[0]['shape']
@@ -318,8 +396,42 @@ def load_package(directory):
         require(not any(key in manifest for key in PROGRAM_FIELDS),
                 'multi-program packages must omit legacy top-level program fields')
 
+    chain = manifest.get('schedule') == 'chain'
+    if chain:
+        require(len(programs) == 1 and dispatch == [0] and
+                programs[0].get('operation') == 'chain',
+                'chain schedule must contain one dispatched chain program')
+        tasks = manifest.get('tasks')
+        require(isinstance(tasks, list) and len(tasks) ==
+                programs[0]['taskDescriptors'],
+                'chain tasks must name every task descriptor')
+        for index, task in enumerate(tasks):
+            require(isinstance(task, dict) and set(task) == {'index', 'operation'} and
+                    task['index'] == index and isinstance(task['operation'], str) and
+                    task['operation'] not in ('', 'chain', 'const'),
+                    'chain task record is invalid')
+        scratch = manifest.get('scratch')
+        regions = scratch.get('regions') if isinstance(scratch, dict) else None
+        scratch_bytes = scratch.get('bytes') if isinstance(scratch, dict) else None
+        storage_names = {name for name in intermediate_set if name not in alias_names}
+        require(set(scratch or {}) == {'bytes', 'regions'} and
+                type(scratch_bytes) is int and scratch_bytes >= 0 and
+                isinstance(regions, dict) and set(regions) == storage_names,
+                'chain scratch map must cover every storage intermediate')
+        for name, region in regions.items():
+            require(isinstance(region, dict) and set(region) == {'offset', 'bytes'} and
+                    type(region['offset']) is int and region['offset'] >= 0 and
+                    region['bytes'] == tensors[name]['logicalBytes'] and
+                    region['offset'] + region['bytes'] <= scratch_bytes,
+                    'chain scratch region exceeds its allocation')
+    else:
+        require('schedule' not in manifest and 'tasks' not in manifest and
+                'scratch' not in manifest,
+                'per-operation packages must omit chain metadata')
+
     allocations = [validate_program(directory, program, tensors) for program in programs]
-    storage_intermediates = [name for name in intermediates if name not in alias_names]
+    storage_intermediates = [] if chain else [
+        name for name in intermediates if name not in alias_names]
     producers = {name: [] for name in storage_intermediates}
     consumers = {name: [] for name in storage_intermediates}
     output_tensors = {name: [] for name, tensor in tensors.items()
@@ -355,14 +467,15 @@ def load_package(directory):
                         item.get('binding') is None,
                         'runtime input must have input tensor role')
     require(all(name in referenced or tensor['role'] == 'constant' or
-                name in alias_names for name, tensor in tensors.items()),
-            'only constants and aliases may be unreferenced by program bindings')
+                name in alias_names or chain and tensor['role'] == 'intermediate'
+                for name, tensor in tensors.items()),
+            'only chain scratch, constants, and aliases may be unreferenced')
     positions = {program_index: position for position, program_index in enumerate(dispatch)}
     for name in storage_intermediates:
-        exact_tiling(producers[name], tensors,
-                     'intermediate producer slices must exactly tile the tensor')
-        exact_tiling(consumers[name], tensors,
-                     'intermediate consumer slices must exactly tile the tensor', True)
+        require_covering(producers[name], tensors,
+                         'intermediate producer slices must exactly tile the tensor')
+        require_covering(consumers[name], tensors,
+                         'intermediate consumer slices must cover the tensor', exact=False)
         produced_ranges = sorted(
             (offset, offset + physical, program_index)
             for program_index, item in producers[name]
@@ -390,7 +503,7 @@ def load_package(directory):
             require(cursor >= consumed_end,
                     'intermediate consumer physical range exceeds producer writes')
     for name, bindings in output_tensors.items():
-        exact_tiling(bindings, tensors, 'output slices must exactly tile the tensor')
+        require_covering(bindings, tensors, 'output slices must exactly tile the tensor')
     return manifest, allocations
 
 
@@ -493,9 +606,9 @@ def main():
                     item = matches[0][2]
                     data = convert_tensor(item, Path(source_path).read_bytes(), False)
                 else:
-                    exact_tiling([(program_index, item) for program_index, _, item in matches],
-                                 manifest['tensors'],
-                                 'output slices must exactly tile the tensor')
+                    require_covering([(program_index, item) for program_index, _, item in matches],
+                                     manifest['tensors'],
+                                     'output slices must exactly tile the tensor')
                     data = bytearray(manifest['tensors'][name]['logicalBytes'])
                     source_directory = Path(source_path).resolve()
                     require(source_directory.is_dir(),

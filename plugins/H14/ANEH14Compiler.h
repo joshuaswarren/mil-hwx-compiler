@@ -10,6 +10,7 @@ NS_ASSUME_NONNULL_BEGIN
              modelRoot:(NSURL *)modelRoot
                 format:(NSString *)format
        outputDirectory:(NSURL *)directory
+              schedule:(NSString *)schedule
            diagnostics:(ANEDiagnosticEngine *)diagnostics
                  error:(NSError **)error;
 @end

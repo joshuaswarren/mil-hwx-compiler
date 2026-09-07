@@ -5,3 +5,6 @@ __pycache__/
 .worktrees/
 compile_commands.json
 .cache/clangd/
+.unlazy/
+receipts/2026-09-06-m1-readonly-window.json
+receipts/2026-09-06-m1-provenance.json

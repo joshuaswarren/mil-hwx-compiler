@@ -11,7 +11,8 @@
 static void printUsage(const char *program) {
     fprintf(stderr,
         "usage: %s --mil FILE --model-root DIR "
-        "--output DIR [--target H16G|H13|H14] [--format anec|hwx]\n", program);
+        "--output DIR [--target H16G|H13|H14] [--format anec|hwx] "
+        "[--schedule per-op|chain]\n", program);
 }
 
 static NSString *severityName(ANEDiagnosticSeverity severity) {
@@ -56,8 +57,10 @@ int main(int argc, const char *argv[]) {
         NSString *target = arguments[@"--target"] ?: @"H16G";
         NSString *requestedFormat = arguments[@"--format"];
         NSString *format = requestedFormat ?: @"anec";
+        NSString *schedule = arguments[@"--schedule"] ?: @"per-op";
         NSSet<NSString *> *accepted = [NSSet setWithArray:@[
             @"--mil", @"--model-root", @"--output", @"--target", @"--format",
+            @"--schedule",
         ]];
         for (NSString *key in arguments) {
             if (![accepted containsObject:key]) {
@@ -65,6 +68,11 @@ int main(int argc, const char *argv[]) {
                 printUsage(argv[0]);
                 return 64;
             }
+        }
+        if (arguments[@"--schedule"] &&
+            ![target isEqualToString:@"H13"] && ![target isEqualToString:@"H14"]) {
+            fprintf(stderr, "--schedule requires target H13 or H14\n");
+            return 64;
         }
         if (!milPath || !modelRoot || !output) {
             printUsage(argv[0]);
@@ -84,10 +92,10 @@ int main(int argc, const char *argv[]) {
             NSURL *outputURL = [NSURL fileURLWithPath:output isDirectory:YES];
             BOOL success = h14
                 ? [ANEH14Compiler compileMILData:milData modelRoot:root
-                    format:format outputDirectory:outputURL
+                    format:format outputDirectory:outputURL schedule:schedule
                     diagnostics:diagnostics error:&error]
                 : [ANEH13Compiler compileMILData:milData modelRoot:root
-                    format:format outputDirectory:outputURL
+                    format:format outputDirectory:outputURL schedule:schedule
                     diagnostics:diagnostics error:&error];
             printDiagnostics(diagnostics);
             if (!success) {

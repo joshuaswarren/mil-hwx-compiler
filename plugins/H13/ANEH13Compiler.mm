@@ -12,7 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
-
+#include <stdexcept>
 static BOOL reject(ANEDiagnosticEngine *diagnostics, NSString *message,
                    ANEGraphOperation *operation = nil,
                    NSString *code = @"h13.unsupported-program") {
@@ -378,13 +378,14 @@ static BOOL batchedShape(ANEGraphValue *value, ane::h13::BatchedShape *shape) {
 /// surface, so all three are part of the key.
 static BOOL matmulParityShape(ANEGraphValue *x, ANEGraphValue *result,
                               BOOL transposeX, BOOL transposeY,
-                              BOOL runtimeWeight,
+                              BOOL runtimeWeight, BOOL preferNative,
                               ane::h13::MatmulShape *shape) {
     NSUInteger reduction = 0, rows = 0, columns = 0;
     if (!fp16Tensor(x) ||
         !matmulGeometry(x, result, transposeX, &reduction, &rows, &columns) ||
         rows > UINT32_MAX || reduction > UINT32_MAX || columns > UINT32_MAX)
         return NO;
+    if (preferNative && rows == 1 && !runtimeWeight) return NO;
     const ane::h13::MatmulShape candidate{static_cast<std::uint32_t>(rows),
         static_cast<std::uint32_t>(reduction),
         static_cast<std::uint32_t>(columns), transposeX == YES,
@@ -412,7 +413,8 @@ static BOOL runtimeMatmulOperand(ANEGraphValue *y, NSUInteger reduction,
 /// the planner must not slice its reduction, rows, or columns.
 static BOOL matmulParityCovered(NSUInteger rows, NSUInteger reduction,
                                 NSUInteger columns, BOOL transposeX,
-                                BOOL transposeY, BOOL runtimeWeight) {
+                                BOOL transposeY, BOOL runtimeWeight, BOOL preferNative) {
+    if (preferNative && rows == 1 && !runtimeWeight) return NO;
     if (rows > UINT32_MAX || reduction > UINT32_MAX || columns > UINT32_MAX)
         return NO;
     return ane::h13::supportsMatmulParity({static_cast<std::uint32_t>(rows),
@@ -553,11 +555,28 @@ static NSUInteger parityShapes(ANEGraphValue *value,
     return count;
 }
 
+static BOOL nativeBinaryPlan(ANEGraphOperation *operation) {
+    NSString *name = operation.operationName;
+    BOOL multiply = [name isEqualToString:@"mul"];
+    if (operation.arguments.count != 2 ||
+        (!multiply && ![name isEqualToString:@"add"] &&
+         ![name isEqualToString:@"maximum"] &&
+         ![name isEqualToString:@"minimum"])) return NO;
+    ANEGraphValue *x = operation.operands[@"x"].value;
+    ANEGraphValue *y = operation.operands[@"y"].value;
+    if (!tensor(x, operation.result.type.shape)) return NO;
+    return tensor(y, x.type.shape) ||
+        (multiply && constantValue(y) &&
+         y.type.kind == ANEValueTypeKindScalar &&
+         y.type.elementType == ANEElementTypeFP16);
+}
+
 /// Matches the operations whose H13 task streams are decoded byte-for-byte
 /// from Apple oracles, so they encode as one whole-tensor program.
 static BOOL parityPlan(ANEGraphOperation *operation,
                        NSDictionary<NSString *, NSData *> *synthesizedConstants,
-                       H13ParityPlan *plan) {
+                       BOOL preferNative, H13ParityPlan *plan) {
+    if (preferNative && nativeBinaryPlan(operation)) return NO;
     ANEGraphValue *x = operation.operands[@"x"].value;
     ANEGraphValue *y = operation.operands[@"y"].value;
     NSString *name = operation.operationName;
@@ -644,8 +663,9 @@ static BOOL sameBatchedShape(ane::h13::BatchedShape left,
 /// constant Apple folds into the constant section's bias and scale blocks.
 static BOOL broadcastPlan(ANEGraphOperation *operation,
                           NSDictionary<NSString *, NSData *> *synthesizedConstants,
-                          H13BroadcastPlan *plan,
+                          BOOL preferNative, H13BroadcastPlan *plan,
                           ANEGraphValue *__autoreleasing *constantOut) {
+    if (preferNative && nativeBinaryPlan(operation)) return NO;
     ANEGraphValue *x = operation.operands[@"x"].value;
     ANEGraphValue *y = operation.operands[@"y"].value;
     H13BroadcastPlan candidate{};
@@ -959,7 +979,7 @@ static NSData *linearBiasData(ANEGraphValue *bias, NSUInteger columns,
 }
 
 static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
-                           ANEDiagnosticEngine *diagnostics,
+                           ANEDiagnosticEngine *diagnostics, BOOL preferNative,
                            NSDictionary<NSString *, NSData *> *synthesizedConstants,
                            NSMutableDictionary<NSString *, NSData *> *resolvedConstants,
                            NSUInteger elementOffset, NSUInteger inputElementCount,
@@ -981,7 +1001,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
 
     H13BroadcastPlan broadcast{};
     ANEGraphValue *broadcastConstant = nil;
-    if (broadcastPlan(operation, synthesizedConstants, &broadcast,
+    if (broadcastPlan(operation, synthesizedConstants, preferNative, &broadcast,
                       &broadcastConstant)) {
         NSData *values = nil;
         if (broadcast.operand == ane::h13::BroadcastOperand::Constant) {
@@ -1002,7 +1022,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     }
 
     H13ParityPlan plan{};
-    if (parityPlan(operation, synthesizedConstants, &plan)) {
+    if (parityPlan(operation, synthesizedConstants, preferNative, &plan)) {
         program = plan.unary
             ? ane::h13::encodeElementwise(plan.unaryOperation, plan.shape)
             : ane::h13::encodeElementwise(plan.binaryOperation, plan.shape,
@@ -1224,7 +1244,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             if (!runtimeMatmulOperand(y, reduction, columns, transposeY,
                                       x.type.shape.count) ||
                 !matmulParityShape(x, operation.result, transposeX, transposeY,
-                                   YES, &parityShape) ||
+                                   YES, preferNative, &parityShape) ||
                 inputElementCount != rows * reduction)
                 return reject(diagnostics,
                     @"H13 matmul with two runtime operands needs a decoded geometry: fp16 static shapes of matching rank, the second operand shaped by transpose_y, and rows, reduction, and columns inside the oracle parity envelope",
@@ -1263,14 +1283,14 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             resolvedConstants[y.name] = weights;
         }
         if (transposeX && rows > 1 &&
-            !matmulParityShape(x, operation.result, YES, YES, NO, nullptr))
+            !matmulParityShape(x, operation.result, YES, YES, NO, preferNative, nullptr))
             return reject(diagnostics,
                 @"H13 transpose_x=true matmul supports exactly one logical row outside the decoded parity envelope",
                 operation, @"h13.transpose-x-multirow");
         // Apple refuses a transpose_y=false constant weight, so the host
         // transpose below feeds the transpose_y=true program it accepts.
         if (matmulParityShape(x, operation.result, transposeX, YES, NO,
-                              &parityShape) &&
+                              preferNative, &parityShape) &&
             inputElementCount == rows * reduction) {
             // transpose_y=false weights are [K, N]; Apple rejects that form, so
             // the exact host transpose feeds the same encoder.
@@ -1362,6 +1382,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
              modelRoot:(NSURL *)modelRoot
                 format:(NSString *)format
        outputDirectory:(NSURL *)directory
+              schedule:(NSString *)schedule
            diagnostics:(ANEDiagnosticEngine *)diagnostics
                  error:(NSError **)error {
     BOOL hwx = [format isEqualToString:@"hwx"];
@@ -1373,7 +1394,13 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 @"H13 artifact format must be 'anec' or 'hwx'"}];
         return NO;
     }
-    MILLexer *lexer = [[MILLexer alloc] initWithData:milData diagnostics:diagnostics];
+    MILLexer *lexer = [[MILLexer alloc] initWithData:milData
+                                         diagnostics:diagnostics];
+    if (![schedule isEqualToString:@"per-op"] &&
+        ![schedule isEqualToString:@"chain"])
+        return reject(diagnostics,
+            @"H13 schedule must be 'per-op' or 'chain'", nil,
+            @"h13.unsupported-schedule");
     NSArray<MILToken *> *tokens = lexer.lexAllTokens;
     if (diagnostics.errorCount) return NO;
     MILParser *parser = [[MILParser alloc] initWithTokens:tokens
@@ -1424,6 +1451,48 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             return reject(diagnostics,
                 @"H13 operation results not returned must be consumed by a later operation",
                 sourceOperations[index], chainCode);
+    }
+
+    BOOL chainSchedule = [schedule isEqualToString:@"chain"];
+    if (chainSchedule) {
+        if (sourceOperations.count < 2 || function.inputs.count > 2)
+            return reject(diagnostics,
+                @"H13 composed scheduling needs at least two operations and at most two boundary inputs",
+                sourceOperations[0], @"h13.chain-outside-envelope");
+        ANEGraphOperation *first = sourceOperations[0];
+        if (sourceOperations.count != 2)
+            return reject(diagnostics,
+                @"h13.chain-unrepresentable-edge: composed scheduling supports exactly one producer followed by relu",
+                sourceOperations[0], @"h13.chain-unrepresentable-edge");
+        if (![lastSourceOperation.operationName isEqualToString:@"relu"])
+            return reject(diagnostics,
+                @"h13.chain-unrepresentable-edge: only a final relu has a decoded single-kernel fusion",
+                lastSourceOperation, @"h13.chain-unrepresentable-edge");
+        for (ANEGraphValue *input in function.inputs) {
+            BOOL firstUse = NO;
+            for (ANEGraphArgument *operand in first.operands.allValues)
+                firstUse = firstUse || operand.value == input;
+            if (!firstUse)
+                return reject(diagnostics,
+                    @"H13 composed scheduling needs every boundary input resident in the first operation",
+                    first, @"h13.chain-outside-envelope");
+        }
+        for (NSUInteger index = 0; index + 1 < sourceOperations.count; ++index) {
+            ANEGraphValue *value = sourceOperations[index].result;
+            BOOL nextUse = NO, laterUse = NO;
+            for (ANEGraphArgument *operand in
+                    sourceOperations[index + 1].operands.allValues)
+                nextUse = nextUse || operand.value == value;
+            for (NSUInteger later = index + 2; later < sourceOperations.count;
+                 ++later)
+                for (ANEGraphArgument *operand in
+                        sourceOperations[later].operands.allValues)
+                    laterUse = laterUse || operand.value == value;
+            if (!nextUse || laterUse)
+                return reject(diagnostics,
+                    @"H13 composed scheduling needs a straight-line chain with one live intermediate",
+                    sourceOperations[index], @"h13.chain-outside-envelope");
+        }
     }
 
     NSMutableArray<ANEGraphOperation *> *operations = [NSMutableArray array];
@@ -1593,7 +1662,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     ANEGraphValue *matrix = [[ANEGraphValue alloc]
                         initWithName:matrixName type:rowOutputType];
                     if (reduction > 512 &&
-                        !matmulParityCovered(1, reduction, columns, NO, YES, NO)) {
+                        !matmulParityCovered(1, reduction, columns, NO, YES, NO, !chainSchedule)) {
                         NSUInteger chunks = (reduction - 1) / 512 + 1;
                         NSMutableArray<ANEGraphValue *> *partials =
                             [NSMutableArray arrayWithCapacity:chunks];
@@ -1675,7 +1744,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 !constantValue(weight) && !synthesizedConstants[weight.name];
             if (geometry && !runtimeWeight && reduction > 512 &&
                 !matmulParityCovered(rows, reduction, columns, transposeX, YES,
-                                     NO)) {
+                                     NO, !chainSchedule)) {
                 NSUInteger chunks = (reduction - 1) / 512 + 1;
                 NSMutableArray<ANEGraphValue *> *partials =
                     [NSMutableArray arrayWithCapacity:chunks];
@@ -1779,7 +1848,10 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
 
     NSMutableArray<NSDictionary *> *programRecords = [NSMutableArray array];
     NSMutableArray<NSData *> *payloads = [NSMutableArray array];
+    std::vector<ane::h13::Program> chainPrograms;
     NSMutableArray<NSNumber *> *dispatchPlan = [NSMutableArray array];
+    NSMutableArray<NSDictionary *> *taskRecords = nil;
+    NSDictionary *scratch = nil;
     NSMutableDictionary<NSString *, NSDictionary *> *tensors =
         [NSMutableDictionary dictionary];
     for (ANEGraphValue *input in function.inputs)
@@ -1802,15 +1874,15 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     boolean(operation.arguments[@"transpose_x"], YES),
                     runtimeWeight
                         ? boolean(operation.arguments[@"transpose_y"], YES) : YES,
-                    runtimeWeight, nullptr);
+                    runtimeWeight, !chainSchedule, nullptr);
             H13ParityPlan operationPlan{};
             H13NormPlan normalizationPlan{};
             H13BroadcastPlan broadcastPlanned{};
             ANEGraphValue *broadcastConstant = nil;
             BOOL broadcast = broadcastPlan(operation, synthesizedConstants,
-                                           &broadcastPlanned, &broadcastConstant);
+                                           !chainSchedule, &broadcastPlanned, &broadcastConstant);
             BOOL parity = !broadcast &&
-                parityPlan(operation, synthesizedConstants, &operationPlan);
+                parityPlan(operation, synthesizedConstants, !chainSchedule, &operationPlan);
             H13ConvPlan convolutionPlan{};
             BOOL normalization = !parity && !broadcast &&
                 normParityPlan(operation, &normalizationPlan);
@@ -1926,7 +1998,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 ANEGraphValue *constantInput = nil;
                 NSData *constantData = nil;
                 NSString *manifestOperation = nil;
-                if (!lowerOperation(operation, modelRoot, diagnostics,
+                if (!lowerOperation(operation, modelRoot, diagnostics, !chainSchedule,
                                     synthesizedConstants, resolvedConstants,
                                     inputOffset, inputSliceElements, outputOffset,
                                     program, &inputs, &constantInput, &constantData,
@@ -2021,12 +2093,106 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     @"constantBytes": @(program.constants.size()),
                 };
                 [programRecords addObject:record];
-                [payloads addObject:payload];
                 [dispatchPlan addObject:@(programIndex)];
+                [payloads addObject:payload];
+                if (chainSchedule)
+                    chainPrograms.push_back(std::move(program));
             }
         }
+        if (chainSchedule) {
+            if (chainPrograms.size() != programRecords.count ||
+                chainPrograms.empty())
+                throw std::logic_error(
+                    "h13.chain-outside-envelope: chain program bookkeeping is inconsistent");
+            NSDictionary *firstRecord = programRecords.firstObject;
+            NSString *producerResult = sourceOperations[0].result.name;
+            NSUInteger producerPrograms = 0;
+            for (NSDictionary *record in programRecords)
+                for (NSDictionary *item in record[@"outputs"])
+                    producerPrograms += [item[@"name"] isEqualToString:producerResult];
+            NSArray *firstOutputs = firstRecord[@"outputs"];
+            if (producerPrograms != 1 || firstOutputs.count != 1 ||
+                ![firstOutputs[0][@"name"] isEqualToString:producerResult])
+                throw std::invalid_argument(
+                    "h13.chain-outside-envelope: the producer must encode as one whole-tensor program");
+            NSArray *boundaryInputs = firstRecord[@"inputs"];
+            if (boundaryInputs.count != function.inputs.count)
+                throw std::invalid_argument(
+                    "h13.chain-outside-envelope: first operation bindings differ from the function inputs");
+            NSMutableSet<NSString *> *boundaryNames = [NSMutableSet set];
+            for (NSDictionary *item in boundaryInputs) {
+                if (item[@"slice"] || item[@"binding"])
+                    throw std::invalid_argument(
+                        "h13.chain-outside-envelope: boundary inputs must be whole runtime tensors");
+                [boundaryNames addObject:item[@"name"]];
+            }
+            if (![boundaryNames isEqualToSet:inputNames] || firstOutputs[0][@"slice"])
+                throw std::invalid_argument(
+                    "h13.chain-outside-envelope: producer bindings must be whole boundary tensors");
+
+            const NSString *encoder = firstRecord[@"encoder"];
+            if ([encoder isEqualToString:@"apple-parity-matvec"])
+                ane::h13::fuseMatmulPostOperation(chainPrograms[0],
+                    ane::h13::PostOperation::Relu);
+            else if ([encoder isEqualToString:@"h13-oracle-parity"])
+                ane::h13::fuseElementwisePostOperation(chainPrograms[0],
+                    ane::h13::PostOperation::Relu);
+            else
+                throw std::invalid_argument(
+                    "h13.chain-unrepresentable-edge: this producer encoding carries no decoded post-operation field");
+            chainPrograms.resize(1);
+            ane::h13::Program combined = ane::h13::composePrograms(chainPrograms);
+            NSData *combinedPayload = nil;
+            if (hwx) {
+                combinedPayload = encodeHWX(combined, error);
+                if (!combinedPayload) return NO;
+            } else {
+                std::vector<std::uint8_t> bytes = ane::h13::encodeANEC(combined);
+                combinedPayload = [NSData dataWithBytes:bytes.data()
+                                                 length:bytes.size()];
+            }
+            taskRecords = [NSMutableArray arrayWithCapacity:combined.taskCount];
+            NSString *producerOperation = sourceOperations[0].operationName;
+            for (NSUInteger index = 0; index < combined.taskCount; ++index)
+                [taskRecords addObject:@{@"index": @(index),
+                    @"operation": producerOperation}];
+            scratch = @{@"bytes": @(combined.scratchAllocationBytes),
+                        @"regions": @{}};
+            [tensors removeObjectForKey:producerResult];
+            [intermediateNames removeObject:producerResult];
+            [intermediateStorageNames removeObject:producerResult];
+            NSString *finalResult = lastSourceOperation.result.name;
+            NSMutableDictionary *fusedOutput = [firstOutputs[0] mutableCopy];
+            fusedOutput[@"name"] = finalResult;
+            [fusedOutput removeObjectForKey:@"role"];
+            [fusedOutput removeObjectForKey:@"slice"];
+            NSString *file = [NSString stringWithFormat:@"program-0.%@", format];
+            NSDictionary *combinedRecord = @{
+                @"file": file, @"bytes": @(combinedPayload.length),
+                @"taskDescriptors": @(combined.taskCount),
+                @"encoder": @"composed-chain", @"operation": @"chain",
+                @"inputs": boundaryInputs, @"constantInputs": @{},
+                @"outputs": @[fusedOutput],
+                @"constantOffset": @(combined.constantOffsetBytes),
+                @"constantBytes": @(combined.constants.size()),
+                @"fused": @[finalResult],
+            };
+            [programRecords removeAllObjects];
+            [programRecords addObject:combinedRecord];
+            [payloads removeAllObjects];
+            [payloads addObject:combinedPayload];
+            [dispatchPlan removeAllObjects];
+            [dispatchPlan addObject:@0];
+        }
     } catch (const std::exception &exception) {
-        return reject(diagnostics, [NSString stringWithUTF8String:exception.what()], operation);
+        NSString *message = [NSString stringWithUTF8String:exception.what()];
+        NSString *code = chainSchedule ? @"h13.chain-outside-envelope"
+                                       : @"h13.unsupported-program";
+        NSRange codeEnd = [message rangeOfString:@": "];
+        if ([message hasPrefix:@"h13."] && codeEnd.location != NSNotFound &&
+            codeEnd.location <= 48)
+            code = [message substringToIndex:codeEnd.location];
+        return reject(diagnostics, message, operation, code);
     }
     for (NSString *name in aliases) {
         NSDictionary *alias = aliases[name];
@@ -2103,6 +2269,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         @"programs": programRecords, @"dispatchPlan": dispatchPlan,
         @"intermediates": intermediateNames, @"tensors": tensors,
     } mutableCopy];
+    if (chainSchedule)
+        [manifest addEntriesFromDictionary:@{@"schedule": @"chain",
+            @"tasks": taskRecords, @"scratch": scratch}];
     if (programRecords.count == 1)
         [manifest addEntriesFromDictionary:programRecords[0]];
     NSData *metadata = [NSJSONSerialization dataWithJSONObject:manifest

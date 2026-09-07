@@ -4,6 +4,7 @@
 #include <iterator>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 
 namespace ane::h14 {
 namespace {
@@ -245,6 +246,83 @@ std::uint32_t loadLE32(const std::vector<std::uint8_t> &bytes, std::size_t offse
     for (std::size_t index = 0; index != 4; ++index)
         value |= static_cast<std::uint32_t>(bytes[offset + index]) << (index * 8);
     return value;
+}
+
+void storeLE32(std::vector<std::uint8_t> &bytes, std::size_t offset,
+               std::uint32_t value) {
+    for (std::size_t index = 0; index != 4; ++index)
+        bytes[offset + index] = static_cast<std::uint8_t>(value >> (index * 8));
+}
+
+/// Byte offset of one 32-bit register word inside one H14 task image: eight
+/// header words, one extra word when header[7] bit 1 is set, then register
+/// records. A dense record (bit 31 clear) holds a base word index in bits
+/// 0:14 and a word count minus one in bits 15:20. A scatter record (bit 31
+/// set) holds the same base and a 16-bit following-word mask in bits 15:30;
+/// its payload is the base word followed by every masked word, ascending.
+std::size_t h14RegisterOffset(const std::vector<std::uint8_t> &stream,
+                              std::size_t offset, std::size_t bytes,
+                              std::uint32_t address) {
+    if (offset + 32 > stream.size() || bytes < 32 || offset + bytes > stream.size())
+        throw std::invalid_argument("h14.chain-unrepresentable-edge: task image is truncated");
+    if (address % sizeof(std::uint32_t))
+        throw std::invalid_argument("h14.chain-unrepresentable-edge: register address is not word-aligned");
+    const std::size_t extra =
+        (loadLE32(stream, offset + 28) & 3) == 3 ? sizeof(std::uint32_t) : 0;
+    std::size_t cursor = offset + 32 + extra;
+    const std::size_t end = offset + bytes;
+    while (cursor + sizeof(std::uint32_t) <= end) {
+        const auto header = loadLE32(stream, cursor);
+        const auto base = header & 0x7fff;
+        if (header & 0x80000000u) {
+            const auto mask = static_cast<std::uint16_t>((header >> 15) & 0xffff);
+            if (address == base * sizeof(std::uint32_t))
+                return cursor + sizeof(std::uint32_t);
+            if (address > base * sizeof(std::uint32_t)) {
+                const auto bit = address / sizeof(std::uint32_t) - base - 1;
+                if (bit < 16 && (mask >> bit) & 1) {
+                    std::size_t preceding = 1;
+                    for (std::size_t lower = 0; lower != bit; ++lower)
+                        preceding += (mask >> lower) & 1;
+                    return cursor + sizeof(std::uint32_t) +
+                           preceding * sizeof(std::uint32_t);
+                }
+            }
+            std::size_t payload = 1;
+            for (std::size_t bit = 0; bit != 16; ++bit) payload += (mask >> bit) & 1;
+            cursor += sizeof(std::uint32_t) + payload * sizeof(std::uint32_t);
+        } else {
+            const auto count = ((header >> 15) & 0x3f) + 1;
+            if (address >= base * sizeof(std::uint32_t) &&
+                address < (base + count) * sizeof(std::uint32_t))
+                return cursor + sizeof(std::uint32_t) + address -
+                       base * sizeof(std::uint32_t);
+            cursor += sizeof(std::uint32_t) + count * sizeof(std::uint32_t);
+        }
+    }
+    throw std::invalid_argument(
+        "h14.chain-unrepresentable-edge: task image does not carry the decoded "
+        "register record");
+}
+
+/// Byte span of one task inside the stream: H14 pads every task to 16 bytes
+/// and starts the stream with a zero-size prefix frame.
+std::pair<std::size_t, std::size_t> h14TaskSpan(
+    const std::vector<std::uint8_t> &stream, std::size_t index) {
+    std::size_t offset = 0, seen = 0;
+    while (offset != stream.size()) {
+        const auto words = (loadLE32(stream, offset) >> 16) & 0x7ff;
+        if (!words) {
+            offset = std::min(offset + taskAlignment, stream.size());
+            continue;
+        }
+        const std::size_t bytes = words * sizeof(std::uint32_t);
+        if (seen == index) return {offset, bytes};
+        ++seen;
+        offset = std::min((offset + bytes + taskAlignment - 1) &
+                              ~(taskAlignment - 1), stream.size());
+    }
+    throw std::invalid_argument("h14.chain-unrepresentable-edge: task index is out of range");
 }
 
 void appendLE(std::vector<std::uint8_t> &bytes, std::uint64_t value,
@@ -780,6 +858,61 @@ Program encodeConvParity(ConvShape shape, const std::uint8_t *weights,
     program.output = convTensor(4, shape.output);
     program.scratchDescriptorWord = source->scratchDescriptorWord;
     return program;
+}
+
+Program composePrograms(const std::vector<Program> &programs) {
+    if (programs.empty())
+        throw std::invalid_argument("H14 chain requires at least one program");
+    if (programs.size() == 1) return programs.front();
+    throw std::invalid_argument(
+        "h14.chain-unrepresentable-edge: relinking standalone programs keeps "
+        "every task's own surface routing; the decoded corpus wires task DMA to "
+        "the fixed boundary channels (reads through Src1/Src2, writes through "
+        "Dst to the output channel or L2) and provides no addressing for "
+        "declared intermediate surfaces, so no multi-program relink can be "
+        "emitted correctly");
+}
+
+void fuseElementwisePostOperation(Program &program, PostOperation operation) {
+    if (operation != PostOperation::Relu)
+        throw std::invalid_argument(
+            "h14.chain-unrepresentable-edge: only the relu post-operation has a "
+            "decoded elementwise epilogue");
+    if (program.taskCount != 1)
+        throw std::invalid_argument(
+            "h14.chain-unrepresentable-edge: elementwise post-operation fusion "
+            "is decoded only for one-task programs");
+    const auto span = h14TaskSpan(program.taskStream, 0);
+    const auto word = h14RegisterOffset(program.taskStream, span.first,
+                                        span.second, 0x900);
+    const auto value = loadLE32(program.taskStream, word);
+    if (value != 0x00080000)
+        throw std::invalid_argument(
+            "h14.chain-unrepresentable-edge: elementwise PE word is not the "
+            "decoded no-post-operation form 0x00080000");
+    storeLE32(program.taskStream, word, value | 0x20u);
+}
+
+void fuseMatmulPostOperation(Program &program, PostOperation operation) {
+    if (operation != PostOperation::Relu)
+        throw std::invalid_argument(
+            "h14.chain-unrepresentable-edge: only the relu post-operation has a "
+            "decoded matmul epilogue; lookup-table and bias epilogues extend the "
+            "per-lane kernel-DMA layout with section bytes the decoded records "
+            "do not retain");
+    if (program.taskCount != 2)
+        throw std::invalid_argument(
+            "h14.chain-unrepresentable-edge: matmul post-operation fusion is "
+            "decoded only for the two-task parity form");
+    const auto span = h14TaskSpan(program.taskStream, 1);
+    const auto word = h14RegisterOffset(program.taskStream, span.first,
+                                        span.second, 0xd04);
+    const auto value = loadLE32(program.taskStream, word);
+    if (value != 0x00101c00)
+        throw std::invalid_argument(
+            "h14.chain-unrepresentable-edge: matmul compute task is not the "
+            "decoded no-post-operation form 0x00101c00");
+    storeLE32(program.taskStream, word, value | 0x00010000u);
 }
 
 

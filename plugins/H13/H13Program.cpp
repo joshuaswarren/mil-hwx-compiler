@@ -6,10 +6,28 @@
 #include <stdexcept>
 
 namespace ane::h13 {
+
 namespace {
 
 // Field values follow allbilly/ane e159e2d examples/elementwise.py and
 // examples/gemm.py. Constants use the aligned 0x280 KDMA-base representation.
+
+std::uint32_t loadLE32(const std::vector<std::uint8_t> &bytes,
+                       std::size_t offset) {
+    if (offset + sizeof(std::uint32_t) > bytes.size())
+        throw std::invalid_argument("H13 task word is truncated");
+    std::uint32_t value = 0;
+    for (std::size_t byte = 0; byte != sizeof(std::uint32_t); ++byte)
+        value |= static_cast<std::uint32_t>(bytes[offset + byte]) << (byte * 8);
+    return value;
+}
+
+void storeLE32(std::vector<std::uint8_t> &bytes, std::size_t offset,
+               std::uint32_t value) {
+    for (std::size_t byte = 0; byte != sizeof(std::uint32_t); ++byte)
+        bytes[offset + byte] = static_cast<std::uint8_t>(value >> (byte * 8));
+}
+
 namespace reg {
 constexpr std::size_t taskWord0 = 0x00;
 constexpr std::size_t executionCycles = 0x08;
@@ -1168,6 +1186,102 @@ Program encodeConvParity(ConvShape shape, const std::uint8_t *weights,
     program.constantOffsetBytes = source->constantOffsetBytes;
     program.scratchAllocationBytes = source->scratchAllocationBytes;
     return program;
+}
+
+Program composePrograms(const std::vector<Program> &programs) {
+    if (programs.empty())
+        throw std::invalid_argument("H13 chain requires at least one program");
+    if (programs.size() == 1) return programs.front();
+    throw std::invalid_argument(
+        "h13.chain-unrepresentable-edge: relinking standalone programs keeps "
+        "every task's own surface routing; the decoded corpus wires task DMA to "
+        "the fixed boundary channels (reads through Src1/Src2 to the input "
+        "channels, writes through Dst to the output channel or L2) and provides "
+        "no addressing for declared intermediate surfaces, while Apple's own "
+        "chains keep intermediates L2-resident through the 0x04800-0x04844 "
+        "words, which have no resolved formula, so no multi-program relink can "
+        "be emitted correctly");
+}
+
+namespace {
+
+/// Byte offset of one 32-bit register word inside a decoded H13 task image:
+/// ten header words, one extra word when header[9] bit 1 is set, then
+/// register records headed by `((count - 1) << 26) | byte address`.
+std::size_t h13RegisterOffset(const std::vector<std::uint8_t> &task,
+                              std::size_t offset, std::size_t bytes,
+                              std::uint32_t address) {
+    if (offset + 40 > task.size() || bytes < 40 || offset + bytes > task.size())
+        throw std::invalid_argument("h13.chain-unrepresentable-edge: task image is truncated");
+    const std::size_t extra =
+        (loadLE32(task, offset + 36) & 3) == 3 ? sizeof(std::uint32_t) : 0;
+    std::size_t cursor = offset + 40 + extra;
+    const std::size_t end = offset + bytes;
+    while (cursor + sizeof(std::uint32_t) <= end) {
+        const auto header = loadLE32(task, cursor);
+        const auto count = (header >> 26) + 1;
+        const auto base = header & 0x03ffffff;
+        if (address >= base && address < base + count * sizeof(std::uint32_t)) {
+            if ((address - base) % sizeof(std::uint32_t))
+                break;
+            if (cursor + sizeof(std::uint32_t) + (address - base) + sizeof(std::uint32_t) >
+                end)
+                break;
+            return cursor + sizeof(std::uint32_t) + (address - base);
+        }
+        cursor += sizeof(std::uint32_t) + count * sizeof(std::uint32_t);
+    }
+    throw std::invalid_argument(
+        "h13.chain-unrepresentable-edge: task image does not carry the decoded "
+        "register record");
+}
+
+} // namespace
+
+void fuseMatmulPostOperation(Program &program, PostOperation operation) {
+    if (operation != PostOperation::Relu)
+        throw std::invalid_argument(
+            "h13.chain-unrepresentable-edge: only the relu post-operation has a "
+            "decoded matmul epilogue; lookup-table and bias epilogues extend the "
+            "per-lane kernel-DMA layout with section bytes the decoded records "
+            "do not retain");
+    if (program.taskCount != 2)
+        throw std::invalid_argument(
+            "h13.chain-unrepresentable-edge: matmul post-operation fusion is "
+            "decoded only for the two-task parity form");
+    const auto offset = loadLE32(program.task, 28);
+    if (offset <= 28 || offset >= program.task.size() ||
+        offset % sizeof(std::uint32_t))
+        throw std::invalid_argument(
+            "h13.chain-unrepresentable-edge: matmul compute task link is invalid");
+    const auto bytes = program.task.size() - offset;
+    const auto word =
+        h13RegisterOffset(program.task, offset, bytes, 0x0c804);
+    const auto value = loadLE32(program.task, word);
+    if (value != 0x00101c00)
+        throw std::invalid_argument(
+            "h13.chain-unrepresentable-edge: matmul compute task is not the "
+            "decoded no-post-operation form 0x00101c00");
+    storeLE32(program.task, word, value | 0x00010000u);
+}
+
+void fuseElementwisePostOperation(Program &program, PostOperation operation) {
+    if (operation != PostOperation::Relu)
+        throw std::invalid_argument(
+            "h13.chain-unrepresentable-edge: only the relu post-operation has a "
+            "decoded elementwise epilogue");
+    if (program.taskCount != 1)
+        throw std::invalid_argument(
+            "h13.chain-unrepresentable-edge: elementwise post-operation fusion "
+            "is decoded only for one-task programs");
+    const auto word = h13RegisterOffset(program.task, 0,
+                                        program.firstTaskBytes, 0x08800);
+    const auto value = loadLE32(program.task, word);
+    if (value != 0x00080000)
+        throw std::invalid_argument(
+            "h13.chain-unrepresentable-edge: elementwise PE word is not the "
+            "decoded no-post-operation form 0x00080000");
+    storeLE32(program.task, word, value | 0x20u);
 }
 
 } // namespace ane::h13
