@@ -576,7 +576,6 @@ static BOOL nativeBinaryPlan(ANEGraphOperation *operation) {
 static BOOL parityPlan(ANEGraphOperation *operation,
                        NSDictionary<NSString *, NSData *> *synthesizedConstants,
                        BOOL preferNative, H13ParityPlan *plan) {
-    if (preferNative && nativeBinaryPlan(operation)) return NO;
     ANEGraphValue *x = operation.operands[@"x"].value;
     ANEGraphValue *y = operation.operands[@"y"].value;
     NSString *name = operation.operationName;
@@ -584,6 +583,8 @@ static BOOL parityPlan(ANEGraphOperation *operation,
     ane::h13::ElementwiseShape shapes[2];
     NSUInteger shapeCount = parityShapes(operation.result, shapes);
     if (!shapeCount || !tensor(x, operation.result.type.shape)) return NO;
+    if (preferNative && nativeBinaryPlan(operation) &&
+        shapes[shapeCount - 1].channels <= 64) return NO;
     BOOL leaky = [name isEqualToString:@"leaky_relu"];
     BOOL gelu = [name isEqualToString:@"gelu"];
     BOOL rsqrt = [name isEqualToString:@"rsqrt"];
