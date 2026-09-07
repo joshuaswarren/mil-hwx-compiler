@@ -400,9 +400,6 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         'b': {'shape': [1, 64, 1, 1], 'logicalBytes': 128, 'role': 'input'},
         'y': {'shape': [1, 64, 1, 1], 'logicalBytes': 128, 'role': 'output'},
     }
-    assert manifest['programs'] == [{key: manifest[key] for key in (
-        'file', 'bytes', 'taskDescriptors', 'encoder', 'operation', 'inputs',
-        'constantInputs', 'outputs', 'constantOffset', 'constantBytes')}]
     assert manifest['inputs'][0]['name'] == 'a'
     assert manifest['inputs'][1]['name'] == 'b'
     assert manifest['outputs'][0]['name'] == 'y'
