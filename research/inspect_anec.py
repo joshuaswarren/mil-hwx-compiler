@@ -49,6 +49,8 @@ def h13_task_registers(task):
 H13_DMA_DISABLED = 0x00008880
 H13_SRC_ENABLE = (0x00033881, 0x00033880, 0x00048880)
 H13_DST_ENABLE = (0x040000c1, 0x000000c0)
+H13_DMA_SELECTORS = ((0x13800, 0), (0x13804, 6), (0x17800, 12))
+H13_ALLOCATED_CHANNELS = (3, 4, 5, 6)
 
 
 def validate_chain_routing(program, tasks):
@@ -84,9 +86,39 @@ def validate_chain_routing(program, tasks):
     require(clamp_tasks == [final],
             'composed chain relu must apply only to the final accumulation task')
 
+
+def validate_task_headers(program, tasks, tiles):
+    """Validate the request NID and each enabled DMA surface selector."""
+    for index, task in enumerate(tasks):
+        words = struct.unpack(f'<{len(task) // 4}I', task)
+        require((words[0] >> 16) & 0xff == 0x40,
+                f'H13 task[{index}] NID is not the Linux request NID')
+        registers = h13_task_registers(task)
+        for address, shift in H13_DMA_SELECTORS:
+            if registers.get(address, H13_DMA_DISABLED) == H13_DMA_DISABLED:
+                continue
+            channel = (words[8] >> shift) & 0x1f
+            if channel == 0:
+                continue
+            if channel == 1:
+                destination = registers.get(0x17800, H13_DMA_DISABLED)
+                destination_channel = (words[8] >> 12) & 0x1f
+                require(address in (0x13800, 0x13804) and
+                        program.get('encoder') == PARITY_BROADCAST and
+                        len(program.get('inputs', ())) == 1 and
+                        program.get('constantBytes', 0) > 0 and
+                        destination == 0x000000c0 and destination_channel == 0,
+                        f'H13 task[{index}] selects noncanonical channel 1')
+                continue
+            require(channel in H13_ALLOCATED_CHANNELS,
+                    f'H13 task[{index}] selects noncanonical channel {channel}')
+            require(tiles[channel] > 0,
+                    f'H13 task[{index}] selects unallocated channel {channel}')
+
+
 PROGRAM_FIELDS = (
     'file', 'bytes', 'taskDescriptors', 'encoder', 'operation', 'inputs',
-    'constantInputs', 'outputs', 'constantOffset', 'constantBytes')
+    'constantInputs', 'outputs', 'constantOffset', 'constantBytes', 'scratchBytes')
 
 
 def surface_layout(shape):
@@ -269,20 +301,21 @@ def validate_program(directory, program, tensors):
     require(not any(data[HEADER.size:HEADER_BYTES]) and
             not any(data[HEADER_BYTES + task_size:HEADER_BYTES + offset]),
             'nonzero reserved padding')
+    tasks = split_h13_tasks(data[HEADER_BYTES:HEADER_BYTES + task_size],
+                            td_size // 4 - 1, td_count)
+    require(len(tasks) == program['taskDescriptors'],
+            'task list differs from ANEC task stream')
     if operation == 'chain':
-        tasks = split_h13_tasks(data[HEADER_BYTES:HEADER_BYTES + task_size],
-                                td_size // 4 - 1, td_count)
-        require(len(tasks) == program['taskDescriptors'],
-                'chain task list differs from ANEC task stream')
         require(program.get('encoder') == CHAIN_ENCODER,
                 'chain program must use the composed encoder')
         validate_chain_routing(program, tasks)
     tiles, layouts = fields[7:39], fields[39:]
     require(tiles[0] == (size + TILE_BYTES - 1) // TILE_BYTES,
             'incorrect command allocation')
-    scratch = program.get('scratchBytes', 0)
-    require(type(scratch) is int and 0 <= scratch <= 0xffffffff * TILE_BYTES,
-            'invalid scratch allocation size')
+    scratch = program.get('scratchBytes')
+    require('scratchBytes' in program and type(scratch) is int and
+            0 <= scratch <= 0xffffffff * TILE_BYTES,
+            'invalid scratchBytes allocation size')
     require(tiles[3] == (scratch + TILE_BYTES - 1) // TILE_BYTES,
             'scratch allocation differs from ANEC header')
     occupied = {4, *range(5, 5 + len(inputs))}
@@ -292,6 +325,7 @@ def validate_program(directory, program, tensors):
                     'unexpected tensor channel')
             if index not in (0, 3):
                 require(tiles[index] == 0, 'unexpected channel allocation')
+    validate_task_headers(program, tasks, tiles)
     encoder = program.get('encoder')
     require(isinstance(encoder, str) and encoder, 'program needs an encoder name')
     for index, item in enumerate(inputs, start=5):
@@ -348,10 +382,12 @@ def validate_program(directory, program, tensors):
                      // TILE_BYTES) * TILE_BYTES
     input_bytes = sum(item['allocationBytes'] for item in inputs)
     output_bytes = sum(item['allocationBytes'] for item in outputs)
+    scratch_allocation = tiles[3] * TILE_BYTES
     return {
         'file': program['file'], 'commandAndConstantsBytes': command_bytes,
         'inputBytes': input_bytes, 'outputBytes': output_bytes,
-        'totalBytes': command_bytes + input_bytes + output_bytes,
+        'scratchBytes': scratch_allocation,
+        'totalBytes': command_bytes + input_bytes + output_bytes + scratch_allocation,
     }
 
 
@@ -631,6 +667,7 @@ def main():
             print(f'wrote {written} bytes to {args.output}; no device execution')
         else:
             command_bytes = sum(item['commandAndConstantsBytes'] for item in allocations)
+            scratch_bytes = sum(item['scratchBytes'] for item in allocations)
             input_bindings = {}
             output_bindings = {}
             for program in manifest['programs']:
@@ -646,13 +683,14 @@ def main():
             input_bytes = sum(item['allocationBytes'] for item in input_bindings.values())
             output_bytes = sum(item['allocationBytes'] for item in output_bindings.values())
             print(json.dumps({
-                'validation': 'container, tensor, binding, slice, and dispatch consistency only',
+                'validation': 'container, task routing, tensor, binding, slice, and dispatch consistency only',
                 'manifest': manifest,
                 'bufferAllocation': {
                     'programs': allocations,
                     'commandAndConstantsBytes': command_bytes,
                     'inputBytes': input_bytes, 'outputBytes': output_bytes,
-                    'totalBytes': command_bytes + input_bytes + output_bytes,
+                    'scratchBytes': scratch_bytes,
+                    'totalBytes': command_bytes + input_bytes + output_bytes + scratch_bytes,
                     'scope': 'encoded buffers only; shared tensor slices counted once; excludes driver and runtime overhead',
                 },
             }, indent=2, sort_keys=True))

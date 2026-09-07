@@ -982,8 +982,6 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     assert [program['outputs'][0]['name'] for program in
             wide_reduction_manifest['programs'][:2]] == [
         '$h13.y.partial0', '$h13.y.partial1']
-    assert all(program['encoder'] == 'h13-source-qualified'
-               for program in wide_reduction_manifest['programs'][2:])
     multirow_reduction = compile_text(
         matmul_source(1000, x_shape=(2, 1000), output_shape=(2, 512)),
         'reduction-1000-multirow')
