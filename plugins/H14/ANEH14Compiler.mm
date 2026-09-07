@@ -687,6 +687,7 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
              modelRoot:(NSURL *)modelRoot
                 format:(NSString *)format
        outputDirectory:(NSURL *)directory
+              schedule:(NSString *)schedule
            diagnostics:(ANEDiagnosticEngine *)diagnostics
                  error:(NSError **)error {
     BOOL hwx = [format isEqualToString:@"hwx"];
@@ -698,6 +699,11 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
                 @"H14 artifact format must be 'anec' or 'hwx'"}];
         return NO;
     }
+    if (![schedule isEqualToString:@"per-op"] &&
+        ![schedule isEqualToString:@"chain"])
+        return reject(diagnostics,
+            @"H14 schedule must be 'per-op' or 'chain'", nil,
+            @"h14.unsupported-schedule");
     MILLexer *lexer = [[MILLexer alloc] initWithData:milData
                                          diagnostics:diagnostics];
     MILParser *parser = [[MILParser alloc] initWithTokens:lexer.lexAllTokens
@@ -716,151 +722,362 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
     for (ANEGraphOperation *candidate in function.operations)
         if (![candidate.operationName isEqualToString:@"const"])
             [sourceOperations addObject:candidate];
-    if (sourceOperations.count != 1)
-        return reject(diagnostics,
-            @"H14 parity encodes exactly one elementwise, unary, matmul, "
-             "normalization, or reduction operation",
-            sourceOperations.lastObject);
-    ANEGraphOperation *operation = sourceOperations[0];
+    if (!sourceOperations.count)
+        return reject(diagnostics, @"H14 requires at least one operation");
+    BOOL chain = sourceOperations.count > 1;
+    BOOL chainSchedule = [schedule isEqualToString:@"chain"];
+    ANEGraphOperation *lastOperation = sourceOperations.lastObject;
     if (function.returnValues.count != 1 ||
-        function.returnValues[0] != operation.result)
+        function.returnValues[0] != lastOperation.result)
         return reject(diagnostics,
-            @"H14 requires one operation with its result returned", operation);
+            chain ? @"H14 chains must return only the last operation result"
+                  : @"H14 requires one operation with its result returned",
+            lastOperation, chain ? @"h14.unsupported-chain"
+                                 : @"h14.unsupported-program");
+    NSMutableSet<NSString *> *inputNames = [NSMutableSet set];
     for (ANEGraphValue *input in function.inputs) {
+        [inputNames addObject:input.name];
         BOOL used = NO;
-        for (ANEGraphArgument *operand in operation.operands.allValues)
-            if (operand.value == input) used = YES;
+        for (ANEGraphOperation *candidate in sourceOperations)
+            for (ANEGraphArgument *operand in candidate.operands.allValues)
+                used = used || operand.value == input;
         if (!used)
             return reject(diagnostics, @"H14 function inputs must all be used",
-                          operation);
+                          sourceOperations[0]);
     }
-
-    NSString *name = operation.operationName;
-    BOOL matvec = [name isEqualToString:@"matmul"] ||
-        [name isEqualToString:@"linear"];
-    H14ParityPlan plan{};
-    ane::h14::MatvecShape matvecShape{};
-    ane::h14::NormOperation normOperation{};
-    ane::h14::NormShape normShape{};
-    NSData *matvecWeights = nil;
-    NSData *convWeights = nil;
-    NSData *convBias = nil;
-    H14ConvPlan convolution{};
-    BOOL normalization = NO;
-    if (matvec) {
-        if (!matvecPlan(operation, modelRoot, diagnostics, &matvecShape,
-                        &matvecWeights)) return NO;
-    } else if (convParityPlan(operation, &convolution)) {
-        const std::uint32_t reduction = convolution.shape.input.channels /
-            convolution.shape.groups * convolution.shape.kernel *
-            convolution.shape.kernel;
-        convWeights = [ANEBlobResolver loadConstantForOperation:convolution.weight.producer
-            expectedBytes:convolution.shape.output.channels * reduction * 2
-            modelRoot:modelRoot diagnostics:diagnostics];
-        if (!convWeights) return NO;
-        if (convolution.bias) {
-            convBias = [ANEBlobResolver loadConstantForOperation:convolution.bias.producer
-                expectedBytes:convolution.shape.output.channels * 2
-                modelRoot:modelRoot diagnostics:diagnostics];
-            if (!convBias) return NO;
+    for (NSUInteger index = 0; index + 1 < sourceOperations.count; ++index) {
+        ANEGraphValue *value = sourceOperations[index].result;
+        BOOL used = NO;
+        for (NSUInteger consumer = index + 1; consumer < sourceOperations.count;
+             ++consumer)
+            for (ANEGraphArgument *operand in
+                    sourceOperations[consumer].operands.allValues)
+                used = used || operand.value == value;
+        if (!used)
+            return reject(diagnostics,
+                @"H14 operation results not returned must be consumed later",
+                sourceOperations[index], @"h14.unsupported-chain");
+    }
+    if (chainSchedule) {
+        if (!chain || function.inputs.count > 2)
+            return reject(diagnostics,
+                @"H14 composed scheduling needs at least two operations and at most two boundary inputs",
+                sourceOperations[0], @"h14.chain-outside-envelope");
+        ANEGraphOperation *first = sourceOperations[0];
+        if (sourceOperations.count != 2)
+            return reject(diagnostics,
+                @"h14.chain-unrepresentable-edge: composed scheduling supports exactly one producer followed by relu",
+                sourceOperations[0], @"h14.chain-unrepresentable-edge");
+        if (![lastOperation.operationName isEqualToString:@"relu"])
+            return reject(diagnostics,
+                @"h14.chain-unrepresentable-edge: only a final relu has a decoded single-kernel fusion",
+                lastOperation, @"h14.chain-unrepresentable-edge");
+        for (ANEGraphValue *input in function.inputs) {
+            BOOL firstUse = NO;
+            for (ANEGraphArgument *operand in first.operands.allValues)
+                firstUse = firstUse || operand.value == input;
+            if (!firstUse)
+                return reject(diagnostics,
+                    @"H14 composed scheduling needs every boundary input resident in the first operation",
+                    first, @"h14.chain-outside-envelope");
         }
-    } else if ([name isEqualToString:@"conv"]) {
-        return reject(diagnostics,
-            @"H14 conv needs a decoded geometry: an fp16 rank-4 input and "
-             "result with a batch of one, a constant [Cout, Cin/groups, k, k] "
-             "weight, unit dilations, zero explicit padding, pad_type 'same' or "
-             "'valid', and a kernel, stride, group count and surface pair "
-             "inside the oracle parity envelope",
-            operation, @"h14.conv-outside-envelope");
-    } else if (normParityPlan(operation, &normOperation, &normShape)) {
-        normalization = YES;
-    } else if (normEncoding(name, &normOperation)) {
-        return reject(diagnostics, [NSString stringWithFormat:
-            @"H14 '%@' needs a decoded geometry: fp16 static shapes, constant "
-             "axes, no gamma or beta, epsilon 1e-5, and an input and output "
-             "surface inside the oracle parity envelope", name],
-            operation, @"h14.norm-outside-envelope");
-    } else if (!parityPlan(operation, &plan)) {
-        return reject(diagnostics,
-            @"H14 supports only the decoded fp16 elementwise, scalar-constant, and unary parity envelope",
-            operation, @"h14.outside-parity-envelope");
+        for (NSUInteger index = 0; index + 1 < sourceOperations.count; ++index) {
+            ANEGraphValue *value = sourceOperations[index].result;
+            BOOL nextUse = NO, laterUse = NO;
+            for (ANEGraphArgument *operand in
+                    sourceOperations[index + 1].operands.allValues)
+                nextUse = nextUse || operand.value == value;
+            for (NSUInteger later = index + 2; later < sourceOperations.count;
+                 ++later)
+                for (ANEGraphArgument *operand in
+                        sourceOperations[later].operands.allValues)
+                    laterUse = laterUse || operand.value == value;
+            if (!nextUse || laterUse)
+                return reject(diagnostics,
+                    @"H14 composed scheduling needs a straight-line chain with one live intermediate",
+                    sourceOperations[index], @"h14.chain-outside-envelope");
+        }
     }
 
-    ane::h14::Program program;
-    NSData *payload = nil;
-    const BOOL convolutionProgram = convWeights != nil;
-    NSUInteger inputCount = matvec || normalization || convolutionProgram ||
-        plan.unary || plan.scalarConstant ? 1 : 2;
-    try {
-        program = convolutionProgram
-            ? ane::h14::encodeConvParity(convolution.shape,
-                static_cast<const std::uint8_t *>(convWeights.bytes),
-                convWeights.length,
-                static_cast<const std::uint8_t *>(convBias.bytes),
-                convBias.length)
-            : matvec
-            ? ane::h14::encodeMatvecParity(matvecShape,
-                static_cast<const std::uint8_t *>(matvecWeights.bytes),
-                matvecWeights.length)
-            : (normalization
-                ? ane::h14::encodeNormParity(normOperation, normShape)
-                : (plan.unary
-                    ? ane::h14::encodeElementwise(plan.unaryOperation, plan.shape)
-                    : ane::h14::encodeElementwise(plan.binaryOperation, plan.shape,
-                                                  plan.operand,
-                                                  plan.scalarConstant,
-                                                  plan.scalarBits)));
+    NSMutableArray<NSDictionary *> *programRecords = [NSMutableArray array];
+    NSMutableArray<NSData *> *payloads = [NSMutableArray array];
+    NSMutableArray<NSNumber *> *dispatchPlan = [NSMutableArray array];
+    NSMutableArray<NSString *> *intermediates = [NSMutableArray array];
+    NSMutableDictionary<NSString *, NSDictionary *> *tensors =
+        [NSMutableDictionary dictionary];
+    for (ANEGraphValue *input in function.inputs)
+        tensors[input.name] = @{@"shape": input.type.shape,
+            @"logicalBytes": @(logicalBytes(input)), @"role": @"input"};
+    std::vector<ane::h14::Program> chainPrograms;
+    NSMutableArray<NSDictionary *> *chainOpRecords = [NSMutableArray array];
+
+    for (ANEGraphOperation *operation in sourceOperations) {
+        NSString *name = operation.operationName;
+        if (chainSchedule && operation == lastOperation) {
+            ANEGraphValue *value = operation.operands[@"x"].value;
+            if (operation.arguments.count != 1 || !value)
+                return reject(diagnostics,
+                    @"h14.chain-unrepresentable-edge: final relu must have exactly one x argument",
+                    operation, @"h14.chain-unrepresentable-edge");
+            [chainOpRecords addObject:@{
+                @"result": operation.result.name,
+                @"operation": operation.operationName,
+                @"inputs": @[@{@"name": value.name}],
+            }];
+            tensors[operation.result.name] = @{
+                @"shape": operation.result.type.shape,
+                @"logicalBytes": @(logicalBytes(operation.result)),
+                @"role": @"output",
+            };
+            continue;
+        }
+        BOOL matvec = [name isEqualToString:@"matmul"] ||
+            [name isEqualToString:@"linear"];
+        H14ParityPlan plan{};
+        ane::h14::MatvecShape matvecShape{};
+        ane::h14::NormOperation normOperation{};
+        ane::h14::NormShape normShape{};
+        NSData *matvecWeights = nil;
+        NSData *convWeights = nil;
+        NSData *convBias = nil;
+        H14ConvPlan convolution{};
+        BOOL normalization = NO;
+        if (matvec) {
+            if (!matvecPlan(operation, modelRoot, diagnostics, &matvecShape,
+                            &matvecWeights)) return NO;
+        } else if (convParityPlan(operation, &convolution)) {
+            const std::uint32_t reduction = convolution.shape.input.channels /
+                convolution.shape.groups * convolution.shape.kernel *
+                convolution.shape.kernel;
+            convWeights = [ANEBlobResolver
+                loadConstantForOperation:convolution.weight.producer
+                expectedBytes:convolution.shape.output.channels * reduction * 2
+                modelRoot:modelRoot diagnostics:diagnostics];
+            if (!convWeights) return NO;
+            if (convolution.bias) {
+                convBias = [ANEBlobResolver
+                    loadConstantForOperation:convolution.bias.producer
+                    expectedBytes:convolution.shape.output.channels * 2
+                    modelRoot:modelRoot diagnostics:diagnostics];
+                if (!convBias) return NO;
+            }
+        } else if ([name isEqualToString:@"conv"]) {
+            return reject(diagnostics,
+                @"H14 conv needs a decoded geometry: an fp16 rank-4 input and result with a batch of one, a constant weight, unit dilations, zero explicit padding, supported padding, and a shape inside the oracle parity envelope",
+                operation, @"h14.conv-outside-envelope");
+        } else if (normParityPlan(operation, &normOperation, &normShape)) {
+            normalization = YES;
+        } else if (normEncoding(name, &normOperation)) {
+            return reject(diagnostics, [NSString stringWithFormat:
+                @"H14 '%@' needs a decoded geometry inside the normalization parity envelope",
+                name], operation, @"h14.norm-outside-envelope");
+        } else if (!parityPlan(operation, &plan)) {
+            return reject(diagnostics,
+                @"H14 supports only the decoded fp16 elementwise, scalar-constant, and unary parity envelope",
+                operation, @"h14.outside-parity-envelope");
+        }
+
+        const BOOL convolutionProgram = convWeights != nil;
+        NSUInteger inputCount = matvec || normalization || convolutionProgram ||
+            plan.unary || plan.scalarConstant ? 1 : 2;
+        ane::h14::Program program;
+        try {
+            program = convolutionProgram
+                ? ane::h14::encodeConvParity(convolution.shape,
+                    static_cast<const std::uint8_t *>(convWeights.bytes),
+                    convWeights.length,
+                    static_cast<const std::uint8_t *>(convBias.bytes),
+                    convBias.length)
+                : matvec
+                ? ane::h14::encodeMatvecParity(matvecShape,
+                    static_cast<const std::uint8_t *>(matvecWeights.bytes),
+                    matvecWeights.length)
+                : (normalization
+                    ? ane::h14::encodeNormParity(normOperation, normShape)
+                    : (plan.unary
+                        ? ane::h14::encodeElementwise(plan.unaryOperation,
+                                                      plan.shape)
+                        : ane::h14::encodeElementwise(plan.binaryOperation,
+                            plan.shape, plan.operand, plan.scalarConstant,
+                            plan.scalarBits)));
+        } catch (const std::exception &exception) {
+            return reject(diagnostics,
+                [NSString stringWithUTF8String:exception.what()], operation);
+        }
         if (program.inputs.size() != inputCount)
             return reject(diagnostics, @"H14 encoder returned unexpected inputs",
                           operation);
-        if (hwx) {
-            payload = encodeHWX(program, error);
-            if (!payload) return NO;
-        } else {
-            std::vector<std::uint8_t> anec = ane::h14::encodeANEC(program);
-            payload = [NSData dataWithBytes:anec.data() length:anec.size()];
+        NSData *payload = nil;
+        try {
+            if (hwx) {
+                payload = encodeHWX(program, error);
+                if (!payload) return NO;
+            } else {
+                std::vector<std::uint8_t> anec = ane::h14::encodeANEC(program);
+                payload = [NSData dataWithBytes:anec.data() length:anec.size()];
+            }
+        } catch (const std::exception &exception) {
+            return reject(diagnostics,
+                [NSString stringWithUTF8String:exception.what()], operation);
         }
-    } catch (const std::exception &exception) {
-        return reject(diagnostics,
-            [NSString stringWithUTF8String:exception.what()], operation);
+
+        NSMutableArray<ANEGraphValue *> *inputValues = [NSMutableArray array];
+        [inputValues addObject:operation.operands[@"x"].value];
+        if (inputCount == 2)
+            [inputValues addObject:operation.operands[@"y"].value];
+        NSMutableArray<NSDictionary *> *inputRecords = [NSMutableArray array];
+        for (NSUInteger index = 0; index < inputCount; ++index) {
+            ANEGraphValue *value = inputValues[index];
+            NSMutableDictionary *item = [binding(value, program.inputs[index])
+                mutableCopy];
+            if (![inputNames containsObject:value.name])
+                item[@"role"] = @"intermediate";
+            [inputRecords addObject:item];
+        }
+        BOOL final = operation == lastOperation;
+        NSMutableDictionary *outputRecord =
+            [binding(operation.result, program.output) mutableCopy];
+        NSString *outputRole = final ? @"output" : @"intermediate";
+        if (!final) {
+            outputRecord[@"role"] = @"intermediate";
+            [intermediates addObject:operation.result.name];
+        }
+        tensors[operation.result.name] = @{@"shape": operation.result.type.shape,
+            @"logicalBytes": @(logicalBytes(operation.result)), @"role": outputRole};
+        NSUInteger programIndex = programRecords.count;
+        NSDictionary *record = @{
+            @"file": [NSString stringWithFormat:@"program-%lu.%@",
+                (unsigned long)programIndex, format],
+            @"bytes": @(payload.length), @"taskDescriptors": @(program.taskCount),
+            @"encoder": convolutionProgram ? @"apple-parity-conv"
+                : (matvec ? @"apple-parity-matvec"
+                : (normalization ? @"apple-parity-norm" : @"h14-oracle-parity")),
+            @"operation": operation.operationName, @"inputs": inputRecords,
+            @"constantInputs": @{}, @"outputs": @[outputRecord],
+            @"constantOffset": @(program.constantOffsetBytes),
+            @"constantBytes": @(program.constants.size()),
+            @"firstTaskBytes": @(program.firstTaskBytes),
+        };
+        [programRecords addObject:record];
+        [payloads addObject:payload];
+        [dispatchPlan addObject:@(programIndex)];
+        if (chainSchedule) {
+            chainPrograms.push_back(std::move(program));
+            [chainOpRecords addObject:@{
+                @"result": operation.result.name,
+                @"operation": operation.operationName,
+                @"encoder": record[@"encoder"],
+                @"inputs": record[@"inputs"],
+                @"outputs": record[@"outputs"],
+            }];
+        }
     }
 
-    NSMutableArray<NSDictionary *> *inputRecords = [NSMutableArray array];
-    NSMutableDictionary<NSString *, NSDictionary *> *tensors =
-        [NSMutableDictionary dictionary];
-    NSMutableArray<ANEGraphValue *> *inputValues = [NSMutableArray array];
-    [inputValues addObject:operation.operands[@"x"].value];
-    if (inputCount == 2) [inputValues addObject:operation.operands[@"y"].value];
-    for (NSUInteger index = 0; index < inputCount; ++index) {
-        ANEGraphValue *value = inputValues[index];
-        [inputRecords addObject:binding(value, program.inputs[index])];
-        tensors[value.name] = @{@"shape": value.type.shape,
-            @"logicalBytes": @(logicalBytes(value)), @"role": @"input"};
+    NSMutableArray<NSDictionary *> *taskRecords = nil;
+    NSDictionary *scratch = nil;
+    if (chainSchedule) {
+        NSDictionary *firstRecord = programRecords.firstObject;
+        NSArray *boundaryInputs = firstRecord[@"inputs"];
+        NSMutableSet<NSString *> *boundaryNames = [NSMutableSet set];
+        for (NSDictionary *item in boundaryInputs)
+            [boundaryNames addObject:item[@"name"]];
+        if (boundaryInputs.count != function.inputs.count ||
+            ![boundaryNames isEqualToSet:inputNames])
+            return reject(diagnostics,
+                @"H14 first operation bindings differ from the function inputs",
+                sourceOperations[0], @"h14.chain-outside-envelope");
+        NSMutableArray<NSString *> *fusedConsumers = [NSMutableArray array];
+        ane::h14::Program combined;
+        NSData *combinedPayload = nil;
+        try {
+            for (NSUInteger index = 1; index < chainOpRecords.count; ++index) {
+                NSDictionary *consumer = chainOpRecords[index];
+                NSDictionary *producer = chainOpRecords[index - 1];
+                NSMutableArray<NSString *> *runtimeInputs = [NSMutableArray array];
+                for (NSDictionary *item in consumer[@"inputs"])
+                    if (!item[@"binding"]) [runtimeInputs addObject:item[@"name"]];
+                if (runtimeInputs.count != 1 ||
+                    ![runtimeInputs.firstObject isEqualToString:producer[@"result"]])
+                    return reject(diagnostics,
+                        @"h14.chain-unrepresentable-edge: composed scheduling covers a linear producer-consumer path, and this operation does not consume the previous operation's result",
+                        lastOperation, @"h14.chain-unrepresentable-edge");
+                if (![consumer[@"operation"] isEqualToString:@"relu"])
+                    return reject(diagnostics,
+                        @"h14.chain-unrepresentable-edge: no decoded fusion folds this operation into its producer; Apple's own chains keep such intermediates L2-resident through chaining words with no resolved formula",
+                        lastOperation, @"h14.chain-unrepresentable-edge");
+                const NSString *encoder = producer[@"encoder"];
+                if ([encoder isEqualToString:@"apple-parity-matvec"])
+                    ane::h14::fuseMatmulPostOperation(chainPrograms[0],
+                        ane::h14::PostOperation::Relu);
+                else if ([encoder isEqualToString:@"h14-oracle-parity"])
+                    ane::h14::fuseElementwisePostOperation(chainPrograms[0],
+                        ane::h14::PostOperation::Relu);
+                else
+                    return reject(diagnostics,
+                        @"h14.chain-unrepresentable-edge: this producer encoding carries no decoded post-operation field",
+                        lastOperation, @"h14.chain-unrepresentable-edge");
+                [fusedConsumers addObject:consumer[@"result"]];
+            }
+            combined = ane::h14::composePrograms(chainPrograms);
+            if (hwx) {
+                combinedPayload = encodeHWX(combined, error);
+                if (!combinedPayload) return NO;
+            } else {
+                std::vector<std::uint8_t> anec = ane::h14::encodeANEC(combined);
+                combinedPayload = [NSData dataWithBytes:anec.data()
+                                                 length:anec.size()];
+            }
+        } catch (const std::exception &exception) {
+            return reject(diagnostics,
+                [NSString stringWithUTF8String:exception.what()], lastOperation,
+                @"h14.chain-outside-envelope");
+        }
+        taskRecords = [NSMutableArray arrayWithCapacity:combined.taskCount];
+        NSString *producerOperation = chainOpRecords.firstObject[@"operation"];
+        for (NSUInteger index = 0; index < combined.taskCount; ++index)
+            [taskRecords addObject:@{@"index": @(index),
+                @"operation": producerOperation}];
+        scratch = @{@"bytes": @0, @"regions": @{}};
+        for (NSUInteger index = 0; index + 1 < chainOpRecords.count; ++index) {
+            NSString *name = chainOpRecords[index][@"result"];
+            [tensors removeObjectForKey:name];
+            [intermediates removeObject:name];
+        }
+        NSMutableDictionary *fusedOutput =
+            [chainOpRecords.firstObject[@"outputs"][0] mutableCopy];
+        fusedOutput[@"name"] = chainOpRecords.lastObject[@"result"];
+        [fusedOutput removeObjectForKey:@"role"];
+        NSMutableDictionary *combinedRecord = [@{
+            @"file": [@"program-0." stringByAppendingString:format],
+            @"bytes": @(combinedPayload.length),
+            @"taskDescriptors": @(combined.taskCount),
+            @"encoder": @"composed-chain", @"operation": @"chain",
+            @"inputs": boundaryInputs, @"constantInputs": @{},
+            @"outputs": @[fusedOutput],
+            @"constantOffset": @(combined.constantOffsetBytes),
+            @"constantBytes": @(combined.constants.size()),
+            @"firstTaskBytes": @(combined.firstTaskBytes),
+        } mutableCopy];
+        if (fusedConsumers.count) combinedRecord[@"fused"] = fusedConsumers;
+        [programRecords removeAllObjects];
+        [programRecords addObject:combinedRecord];
+        [payloads removeAllObjects];
+        [payloads addObject:combinedPayload];
+        [dispatchPlan removeAllObjects];
+        [dispatchPlan addObject:@0];
     }
-    tensors[operation.result.name] = @{@"shape": operation.result.type.shape,
-        @"logicalBytes": @(logicalBytes(operation.result)), @"role": @"output"};
-    NSDictionary *record = @{
-        @"file": [@"program-0." stringByAppendingString:format],
-        @"bytes": @(payload.length),
-        @"taskDescriptors": @(program.taskCount),
-        @"encoder": convolutionProgram ? @"apple-parity-conv"
-            : (matvec ? @"apple-parity-matvec"
-            : (normalization ? @"apple-parity-norm" : @"h14-oracle-parity")),
-        @"operation": operation.operationName,
-        @"inputs": inputRecords,
-        @"constantInputs": @{},
-        @"outputs": @[binding(operation.result, program.output)],
-        @"constantOffset": @(program.constantOffsetBytes),
-        @"constantBytes": @(program.constants.size()),
-        @"firstTaskBytes": @(program.firstTaskBytes),
-    };
+
     NSMutableDictionary *manifest = [@{
         @"schema": @"mil-hwxc.h14-anec-package.v1",
         @"target": @"H14", @"artifactFormat": format,
-        @"programs": @[record], @"dispatchPlan": @[@0],
-        @"intermediates": @[], @"tensors": tensors,
+        @"programs": programRecords, @"dispatchPlan": dispatchPlan,
+        @"intermediates": intermediates, @"tensors": tensors,
     } mutableCopy];
-    [manifest addEntriesFromDictionary:record];
+    if (chainSchedule)
+        [manifest addEntriesFromDictionary:@{@"schedule": @"chain",
+            @"tasks": taskRecords, @"scratch": scratch}];
+    if (programRecords.count == 1)
+        [manifest addEntriesFromDictionary:programRecords[0]];
     NSData *metadata = [NSJSONSerialization dataWithJSONObject:manifest
         options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:error];
     if (!metadata) return NO;
@@ -877,9 +1094,11 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
         }
     } else if (![manager createDirectoryAtURL:directory
         withIntermediateDirectories:YES attributes:nil error:error]) return NO;
-    if (![payload writeToURL:[directory URLByAppendingPathComponent:record[@"file"]]
-            options:NSDataWritingAtomic error:error])
-        return NO;
+    for (NSUInteger index = 0; index < payloads.count; ++index)
+        if (![payloads[index] writeToURL:[directory URLByAppendingPathComponent:
+                programRecords[index][@"file"]] options:NSDataWritingAtomic
+                error:error])
+            return NO;
     return [metadata writeToURL:
         [directory URLByAppendingPathComponent:@"manifest.json"]
         options:NSDataWritingAtomic error:error];

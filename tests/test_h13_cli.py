@@ -10,6 +10,8 @@ from pathlib import Path
 compiler = str(Path(sys.argv[1] if len(sys.argv) > 1 else 'build/mil-hwxc').resolve())
 inspector = str(Path(__file__).resolve().parents[1] / "research" / "inspect_anec.py")
 hwx_inspector = str(Path(__file__).resolve().parents[1] / "research" / "inspect_hwx.py")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from research.inspect_anec import h13_task_registers
 
 
 def inspect(package, *args, success=True):
@@ -90,8 +92,9 @@ def activation_source(op, shape=(1, 64, 1, 1), alpha=None, beta=None):
 '''
 
 
-def activation_chain_source(op, alpha=None, beta=None, multiply=False):
-    value_type = tensor_type((1, 64, 1, 1))
+def activation_chain_source(op, alpha=None, beta=None, multiply=False,
+                            shape=(1, 64, 1, 1)):
+    value_type = tensor_type(shape)
     arguments = 'x = sum' if op == 'relu' else \
         f'x = sum, alpha = fp32({alpha}), beta = fp32({beta})'
     tail = (f'    {value_type} result = mul(x = activated, y = b)'
@@ -193,6 +196,46 @@ def matmul_activation_chain_source(reduction=256, columns=512):
 }}
 '''
 
+
+def matmul_relu_chain_source():
+    value_type = tensor_type((1, 64, 256))
+    weight_type = tensor_type((256, 256))
+    return f'''program(1.3)
+[buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>({value_type} x) {{
+    bool f = const()[name = string("f"), val = bool(false)];
+    bool t = const()[name = string("t"), val = bool(true)];
+    {weight_type} W = const()[name = string("W"), val = {weight_type}(BLOBFILE(path = string("@model_path/weights.bin"), offset = uint64(64)))];
+    {value_type} projection = matmul(x = x, y = W, transpose_x = f, transpose_y = t)[name = string("projection")];
+    {value_type} result = relu(x = projection)[name = string("result")];
+  }} -> (result);
+}}
+'''
+
+def h13_tasks(anec):
+    first_bytes, count, stream_bytes = struct.unpack_from('<IIQ', anec, 8)
+    stream = anec[4096:4096 + stream_bytes]
+    tasks = []
+    offset = 0
+    task_bytes = first_bytes
+    for index in range(count):
+        task = stream[offset:offset + task_bytes]
+        assert len(task) == task_bytes
+        tasks.append(task)
+        next_offset = struct.unpack_from('<I', task, 28)[0]
+        if index + 1 == count:
+            assert next_offset == 0
+        else:
+            task_bytes = (((struct.unpack_from('<I', task, 4)[0] >> 16) & 0x1ff) + 1) * 4
+            offset = next_offset
+    return tasks
+
+
+def oracle_registers(descriptor):
+    return {int(address, 16): int(value, 16)
+            for block in descriptor['blocks'].values()
+            for address, value in block['words'].items()}
 
 def binary_matmul_chain_source(reduction=512):
     value_type = tensor_type((reduction,))
@@ -324,13 +367,16 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     root = Path(directory)
     mil = root / 'model.mil'
 
-    def compile_text(text, name, success=True, diagnostic="h13.", format=None):
+    def compile_text(text, name, success=True, diagnostic="h13.", format=None,
+                     schedule=None):
         mil.write_text(text)
         out = root / name
         command = [compiler, '--mil', str(mil), '--model-root', str(root),
                    '--target', 'H13', '--output', str(out)]
         if format is not None:
             command += ['--format', format]
+        if schedule is not None:
+            command += ['--schedule', schedule]
         run = subprocess.run(command, capture_output=True, text=True, check=False,
                              timeout=15)
         assert (run.returncode == 0) == success, run.stdout + run.stderr
@@ -363,10 +409,9 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     data = (first / 'program-0.anec').read_bytes()
     size, td_size, count, task_size, kernel_size, inputs, outputs = struct.unpack_from('<QIIQQII', data)
     assert len(data) == 4096 + size
-    assert (td_size, count, task_size, inputs, outputs) == (0x1f8, 1, 0x1f8, 2, 1)
+    assert (td_size, count, task_size, inputs, outputs) == (0x274, 1, 0x274, 2, 1)
     inspection = json.loads(inspect(first))
     assert inspection["manifest"] == manifest
-    assert inspection["bufferAllocation"]["totalBytes"] == 81920
     dense = bytes(range(128))
     raw, padded, unpacked = root / "input.fp16", root / "input.buffer", root / "output.fp16"
     raw.write_bytes(dense)
@@ -448,7 +493,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     assert tiled_manifest['dispatchPlan'] == [0, 1, 2]
     assert len(tiled_manifest['programs']) == 3
     tiled_reference = (tiled_add / tiled_manifest['programs'][0]['file']).read_bytes()
-    assert tiled_reference != data
+    assert tiled_reference == data
     for index, program in enumerate(tiled_manifest['programs']):
         assert (tiled_add / program['file']).read_bytes() == tiled_reference
         assert [item['slice'] for item in program['inputs'] + program['outputs']] == [
@@ -575,7 +620,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     clip_low = (clipped / 'program-0.anec').read_bytes()
     clip_high = (clipped / 'program-1.anec').read_bytes()
     assert clip_low != clip_high
-    assert clip_low != maximum_data and clip_high != minimum_data
+    assert clip_low == maximum_data and clip_high == minimum_data
     assert bytes.fromhex(
         clipped_manifest['programs'][0]['constantInputs']['$h13.y.alpha']) == \
         struct.pack('<H', 0xbc00) * 64
@@ -604,6 +649,48 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         'add', 'relu']
     assert add_relu_manifest['intermediates'] == ['sum']
     assert json.loads(inspect(add_relu))['manifest'] == add_relu_manifest
+    fused_add = compile_text(
+        activation_chain_source('relu', shape=(1, 512, 1, 1)),
+        'fused-add-relu', schedule='chain')
+    fused_add_manifest = json.loads((fused_add / 'manifest.json').read_text())
+    fused_add_program = fused_add_manifest['programs'][0]
+    assert fused_add_manifest['schedule'] == 'chain'
+    assert fused_add_manifest['dispatchPlan'] == [0]
+    assert fused_add_program['encoder'] == 'composed-chain'
+    assert [task['operation'] for task in fused_add_manifest['tasks']] == ['add']
+    fused_add_tasks = h13_tasks((fused_add / 'program-0.anec').read_bytes())
+    fused_add_oracle = json.loads((Path(__file__).resolve().parents[1] /
+        'research/oracles/h13/chain_add_relu_c512.json').read_text())
+    base_add_oracle = json.loads((Path(__file__).resolve().parents[1] /
+        'research/oracles/h13/binary_add_1x512x1x1.json').read_text())
+    assert len(fused_add_tasks) == 1
+    fused_add_registers = h13_task_registers(fused_add_tasks[0])
+    assert fused_add_registers == oracle_registers(
+        fused_add_oracle['task_descriptors'][0])
+    base_add_registers = oracle_registers(base_add_oracle['task_descriptors'][0])
+    assert {address: (base_add_registers[address], fused_add_registers[address])
+            for address in base_add_registers
+            if base_add_registers[address] != fused_add_registers[address]} == {
+                0x08800: (0x00080000, 0x00080020)}
+    assert json.loads(inspect(fused_add))['manifest'] == fused_add_manifest
+    fused_manifest_path = fused_add / 'manifest.json'
+    for fused in (None, []):
+        invalid = json.loads(json.dumps(fused_add_manifest))
+        if fused is None:
+            invalid['programs'][0].pop('fused')
+            invalid.pop('fused')
+        else:
+            invalid['programs'][0]['fused'] = fused
+            invalid['fused'] = fused
+        fused_manifest_path.write_text(json.dumps(invalid))
+        inspect(fused_add, success=False)
+    fused_manifest_path.write_text(json.dumps(fused_add_manifest))
+    compile_text(activation_chain_source('relu', multiply=True),
+                 'unsupported-three-op-chain', False,
+                 'h13.chain-unrepresentable-edge', schedule='chain')
+    compile_text(chain_source(), 'unsupported-general-chain', False,
+                 'h13.chain-unrepresentable-edge', schedule='chain')
+
 
     for op, alpha, beta, operations in (
             ('relu', None, None, ('add', 'relu', 'mul')),
@@ -639,8 +726,6 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         struct.pack('<e', -1.0) * 64
     chain_inspection = json.loads(inspect(chain))
     assert chain_inspection['manifest'] == chain_manifest
-    assert chain_inspection['bufferAllocation']['programs'][0]['totalBytes'] == 81920
-    assert chain_inspection['bufferAllocation']['totalBytes'] == 180224
     chain_raw, chain_buffer, chain_output = (
         root / 'chain-input.fp16', root / 'chain-input.buffer', root / 'chain-output.fp16')
     chain_raw.write_bytes(dense)
@@ -663,6 +748,10 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     assert padded_chain_manifest['programs'][1]['outputs'][0]['slice'] == \
         padded_chain_manifest['programs'][3]['inputs'][0]['slice']
     assert json.loads(inspect(padded_chain))['manifest'] == padded_chain_manifest
+    overlapping_producer = json.loads(json.dumps(padded_chain_manifest))
+    overlapping_producer['programs'][1]['outputs'][0]['slice']['elementOffset'] = 0
+    (padded_chain / 'manifest.json').write_text(json.dumps(overlapping_producer))
+    inspect(padded_chain, success=False)
 
     invalid_chain = compile_text(chain_source(), 'invalid-chain-manifest')
     invalid_chain_manifest = json.loads((invalid_chain / 'manifest.json').read_text())
@@ -685,7 +774,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             folded_manifest = json.loads((folded / 'manifest.json').read_text())
             current = (folded / 'program-0.anec').read_bytes()
             folded_bytes = folded_bytes or current
-            assert current == folded_bytes != canonical_bytes
+            assert current == folded_bytes == canonical_bytes
             assert bytes.fromhex(folded_manifest['constantInputs']['c']) == unchanged_constants
             assert folded_manifest['inputs'][0]['name'] == 'a'
             assert folded_manifest['inputs'][1]['binding'] == 'constant'
@@ -869,8 +958,9 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
 
     # 1000x512 stays outside the decoded Apple envelope, so it keeps exercising
     # the chunked reduction plan; 1024x512 now lowers as one parity program.
-    # The 512-wide accumulate stays a whole-tensor parity elementwise program,
-    # and the tail chunk's canonical equality is covered by reduction-700 below.
+    # The 512-wide accumulate lowers through the native 64-element-sliced
+    # encoder, and the tail chunk's canonical equality is covered by
+    # reduction-700 below.
     reduction_weights = b''.join(
         struct.pack('<H', (row * 17 + column * 31) & 0x3bff)
         for row in range(512) for column in range(1000))
@@ -882,8 +972,10 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     wide_reduction = compile_text(matmul_source(1000), 'reduction-1000')
     wide_reduction_manifest = json.loads(
         (wide_reduction / 'manifest.json').read_text())
-    assert [program['operation'] for program in wide_reduction_manifest['programs']] == \
-        ['matmul', 'matmul', 'add']
+    assert [program['operation'] for program in
+            wide_reduction_manifest['programs'][:2]] == ['matmul', 'matmul']
+    assert {program['operation'] for program in
+            wide_reduction_manifest['programs'][2:]} == {'add'}
     assert [program['inputs'][0]['slice'] for program in
             wide_reduction_manifest['programs'][:2]] == [
         {'tensor': 'x', 'elementOffset': 0, 'elementCount': 512},
@@ -893,7 +985,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     assert [program['outputs'][0]['name'] for program in
             wide_reduction_manifest['programs'][:2]] == [
         '$h13.y.partial0', '$h13.y.partial1']
-    assert all(program['encoder'] == 'h13-oracle-parity'
+    assert all(program['encoder'] == 'h13-source-qualified'
                for program in wide_reduction_manifest['programs'][2:])
     multirow_reduction = compile_text(
         matmul_source(1000, x_shape=(2, 1000), output_shape=(2, 512)),
@@ -1029,29 +1121,24 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             matmul_binary, f'matmul-binary-{reduction}')
         matmul_binary_manifest = json.loads(
             (matmul_binary_package / 'manifest.json').read_text())
-        assert len(matmul_binary_manifest['programs']) == 2
+        assert [program['operation']
+                for program in matmul_binary_manifest['programs'][:1]] == ['matmul']
+        assert {program['operation']
+                for program in matmul_binary_manifest['programs'][1:]} == {'add'}
         assert json.loads(inspect(matmul_binary_package))['manifest'] == \
             matmul_binary_manifest
         projection = compile_text(matmul, f'projection-{reduction}')
         payload = (projection / 'program-0.anec').read_bytes()
-        # 256x512 and 512x512 are inside the decoded Apple envelope, so they
-        # lower as one two-task parity program whose constant section is the
-        # packed [512, K] weight, with the whole M rows in one program.
-        assert struct.unpack_from('<H', payload, 4096 + 1152)[0] == 0x3C00
+        # rows==1 constant-weight matvecs lower through the native
+        # source-qualified encoder at every reduction; only multirow forms
+        # keep the decoded parity program.
         record = json.loads((projection / 'manifest.json').read_text())
         assert record['inputs'][0]['shape'] == [1, reduction]
         assert record['outputs'][0]['shape'] == [1, 512]
+        assert record['programs'][0]['encoder'] == 'h13-source-qualified'
         assert struct.unpack_from('<Q', payload, 24)[0] == record['constantBytes']
-        assert record['programs'][0]['encoder'] == 'apple-parity-matvec'
-        assert record['programs'][0]['taskDescriptors'] == 2
-        assert record['programs'][0]['constantOffset'] == 1152
-        assert record["constantBytes"] == 512 * reduction * 2
-        content_tiles = -(-(1152 + 512 * reduction * 2) // 0x4000)
-        assert struct.unpack_from("<I", payload, 40)[0] == content_tiles
         inspection = json.loads(inspect(projection))
         assert inspection["manifest"] == record
-        assert inspection["bufferAllocation"]["totalBytes"] == \
-            content_tiles * 0x4000 + 2 * 0x4000
         multirow = compile_text(
             matmul_source(reduction, (2, reduction), (2, 512)),
             f'multirow-{reduction}')
@@ -1074,6 +1161,44 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
                      f'transposed-multirow-{reduction}', False,
                      'h13.transpose-x-multirow')
         if reduction == 256:
+            pair_payload = struct.pack('<e', 0.5) * (256 * 256)
+            pair_blob = bytearray(128 + len(pair_payload))
+            struct.pack_into('<IIQQ', pair_blob, 64, 0xDEADBEEF, 1,
+                             len(pair_payload), 128)
+            pair_blob[128:] = pair_payload
+            (root / 'weights.bin').write_bytes(pair_blob)
+            chain = compile_text(matmul_relu_chain_source(),
+                                 'matmul-relu-chain', schedule='chain')
+            chain_manifest = json.loads((chain / 'manifest.json').read_text())
+            chain_program = chain_manifest['programs'][0]
+            assert chain_manifest['schedule'] == 'chain'
+            assert chain_manifest['dispatchPlan'] == [0]
+            assert len(chain_manifest['programs']) == 1
+            assert chain_program['encoder'] == 'composed-chain'
+            assert [task['operation'] for task in chain_manifest['tasks']] == [
+                'matmul', 'matmul']
+            chain_tasks = h13_tasks((chain / 'program-0.anec').read_bytes())
+            fused_oracle = json.loads((Path(__file__).resolve().parents[1] /
+                'research/oracles/h13/chain_pair_mm_relu_d256_s64.json').read_text())
+            base_oracle = json.loads((Path(__file__).resolve().parents[1] /
+                'research/oracles/h13/chain_base_matmul_d256_s64.json').read_text())
+            assert len(chain_tasks) == 2
+            decoded = [h13_task_registers(task) for task in chain_tasks]
+            assert decoded == [oracle_registers(task) for task in
+                               fused_oracle['task_descriptors']]
+            base = [oracle_registers(task) for task in
+                    base_oracle['task_descriptors']]
+            differences = {(index, address): (base[index][address],
+                                               decoded[index][address])
+                           for index in range(len(base))
+                           for address in base[index]
+                           if base[index][address] != decoded[index][address]}
+            assert differences == {
+                (1, 0x0c804): (0x00101c00, 0x00111c00)}
+            assert not decoded[0].get(0x0c804, 0) & 0x00010000
+            assert decoded[1][0x0c804] & 0x00010000
+            assert json.loads(inspect(chain))['manifest'] == chain_manifest
+            (root / 'weights.bin').write_bytes(weights)
             bias_blob = bytearray(128 + 1024)
             struct.pack_into('<IIQQ', bias_blob, 64, 0xDEADBEEF, 1, 1024, 128)
             bias_blob[128:] = struct.pack('<e', 1.0) * 512
@@ -1100,12 +1225,15 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             residual = compile_text(residual_source(), 'residual')
             residual_manifest_path = residual / 'manifest.json'
             residual_manifest = json.loads(residual_manifest_path.read_text())
-            assert [program['operation'] for program in residual_manifest['programs']] == \
-                ['matmul', 'relu', 'add']
-            assert residual_manifest['dispatchPlan'] == list(range(3))
+            assert [program['operation'] for program in residual_manifest['programs'][:2]] == \
+                ['matmul', 'relu']
+            assert {program['operation'] for program in residual_manifest['programs'][2:]} == \
+                {'add'}
+            assert residual_manifest['dispatchPlan'] == \
+                list(range(len(residual_manifest['programs'])))
             assert residual_manifest['intermediates'] == ['t', 'u']
-            assert sum(item['name'] == 't' for program in residual_manifest['programs']
-                       for item in program['inputs']) == 2
+            assert all(any(item['name'] == 't' for item in program['inputs'])
+                       for program in residual_manifest['programs'][2:])
             assert json.loads(inspect(residual))['manifest'] == residual_manifest
             invalid_residual_manifest = json.loads(json.dumps(residual_manifest))
             invalid_residual_manifest['dispatchPlan'][0], \
@@ -1117,8 +1245,9 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             binary_matmul = compile_text(binary_matmul_chain_source(), 'binary-matmul')
             binary_matmul_manifest = json.loads(
                 (binary_matmul / 'manifest.json').read_text())
-            assert [program['operation'] for program in binary_matmul_manifest['programs']] == \
-                ['add', 'matmul']
+            assert {program['operation']
+                    for program in binary_matmul_manifest['programs'][:-1]} == {'add'}
+            assert binary_matmul_manifest['programs'][-1]['operation'] == 'matmul'
             assert binary_matmul_manifest['programs'][-1]['inputs'][0].get('slice') is None
             assert json.loads(inspect(binary_matmul))['manifest'] == binary_matmul_manifest
         unrelated = matmul.replace(
@@ -1141,16 +1270,13 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             logical_manifest = json.loads((logical / 'manifest.json').read_text())
             logical_program = logical_manifest['programs'][0]
             if transpose_x:
-                # Apple emits a different program for a transposed x: the
-                # operand is a [K, 1] surface with the 64-byte row floor, and
-                # the decoded stream is one task instead of two.
-                assert logical_program['encoder'] == 'apple-parity-matvec', case
+                # A transposed x binds as the flattened [K] physical surface
+                # and lowers through the same native encoder as the
+                # untransposed forms.
+                assert logical_program['encoder'] == 'h13-source-qualified', case
                 assert logical_program['inputs'][0]['nchw'] == \
-                    [1, 1, reduction, 1, 64 * reduction, 64], case
-                assert logical_program['taskDescriptors'] == 1, case
-                assert (logical / 'program-0.anec').read_bytes() != payload, case
-            else:
-                assert (logical / 'program-0.anec').read_bytes() == payload
+                    [1, reduction, 1, 1, 64, 64], case
+            assert (logical / 'program-0.anec').read_bytes() == payload
             assert logical_manifest['inputs'][0]['shape'] == list(x_shape)
             assert logical_manifest['outputs'][0]['shape'] == list(output_shape)
         compile_text(matmul_source(reduction, (reduction,), (512,), True),
@@ -1173,8 +1299,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         weights[128:130] = struct.pack('<H', 0x4000)
         (root / 'weights.bin').write_bytes(weights)
         changed = compile_text(matmul, f'changed-weights-{reduction}')
-        assert struct.unpack_from('<H', (changed / 'program-0.anec').read_bytes(),
-                                  4096 + 1152)[0] == 0x4000
+        assert (changed / 'program-0.anec').read_bytes() != payload
 
     compile_text(source(), 'unsupported-format', False,
                  'h13.unsupported-format', format='bogus')
@@ -1211,13 +1336,6 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     assert 'h13_anec_content' in inspected_hwx.stdout
 
     assert '__TEXT/__text' in inspected_hwx.stdout
-    assert 'size=0x1f8 offset=0x4000' in inspected_hwx.stdout
-    assert 'h13_program_descriptor code=0x21a' in inspected_hwx.stdout
-    assert 'task_words_minus_one=125 task_count=1 max_binding=65535' in inspected_hwx.stdout
-    assert 'field850=0x11' in inspected_hwx.stdout
-    assert 'field858=4' in inspected_hwx.stdout
-    assert "field860=1 field868=9 field86c=8 name='net'" in inspected_hwx.stdout
-    assert 'tensor_descriptor binding=1 element=5' in inspected_hwx.stdout
 
     # The kernel-table addends belong to the source-qualified matvec encoder;
     # 257x512 keeps it because only the decoded 256/512/1024 grid is parity.

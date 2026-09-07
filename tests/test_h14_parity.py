@@ -19,6 +19,7 @@ import mint_h14_matvec_probes as probes  # noqa: E402
 import mint_h14_norm_probes as norm_templates  # noqa: E402
 import mint_norm_probes as norm_probes  # noqa: E402
 import mint_conv_probes  # noqa: E402
+import mint_chain_probes  # noqa: E402
 import mint_oracles  # noqa: E402
 from generate_h14_templates import (selected_matvec_oracles,  # noqa: E402
                                     selected_oracles)
@@ -49,6 +50,11 @@ def write_weights(oracle, root):
     if description.get("storage") != "BLOBFILE":
         return
     parameters = oracle["parameters"]
+    if description.get("value") == \
+            "fp16 bits 0x3400 + index, one value per constant":
+        shapes = [tuple(shape) for shape in parameters["constant_matrices"]]
+        (root / "weights.bin").write_bytes(mint_chain_probes.weight_blob(shapes))
+        return
     if oracle["family"] == "matvec_probe":
         payload = probes.payload(parameters["reduction"], parameters["columns"],
                                  parameters["pattern"])
@@ -260,6 +266,22 @@ def assert_constants(constants, oracle):
     assert len(constants) == expected["size"], oracle["case"]
     assert hashlib.sha256(constants).hexdigest() == expected["sha256"], \
         f"{oracle['case']} constant section differs from the oracle"
+def descriptor_words(descriptor):
+    return {address: value
+            for block in descriptor["blocks"].values()
+            for address, value in block["words"].items()}
+
+
+def task_word_differences(left, right):
+    left_words = descriptor_words(left)
+    right_words = descriptor_words(right)
+    assert left_words.keys() == right_words.keys()
+    return {address: (left_words[address], right_words[address])
+            for address in left_words if left_words[address] != right_words[address]}
+
+
+def fp16(value):
+    return struct.unpack("<e", struct.pack("<e", value))[0]
 
 
 def check_anec(oracle, output, manifest):
@@ -336,6 +358,91 @@ def conv_oracles():
     return selected
 
 
+def check_chain_package(root):
+    cases = (
+        ("chain_add_relu_c512", "binary_add_1x512x1x1", 0, "0x00900",
+         ("0x00080000", "0x00080020")),
+        ("chain_pair_mm_relu_d256_s64", "chain_base_matmul_d256_s64", 1,
+         "0x00d04", ("0x00101c00", "0x00111c00")),
+    )
+    for fused_name, base_name, task_index, address, expected_delta in cases:
+        fused_oracle = json.loads((ROOT / "research/oracles/h14" /
+                                   f"{fused_name}.json").read_text())
+        base_oracle = json.loads((ROOT / "research/oracles/h14" /
+                                  f"{base_name}.json").read_text())
+        case_root = root / fused_name
+        case_root.mkdir()
+        model = case_root / "model.mil"
+        model.write_text(fused_oracle["mil"])
+        write_weights(fused_oracle, case_root)
+        output = case_root / "out"
+        result = subprocess.run(
+            [str(COMPILER), "--mil", str(model), "--model-root", str(case_root),
+             "--target", "H14", "--schedule", "chain", "--output", str(output)],
+            capture_output=True, text=True, timeout=60, check=False)
+        assert result.returncode == 0, \
+            f"{fused_name}: {result.stdout}{result.stderr}"
+        manifest = json.loads((output / "manifest.json").read_text())
+        program = manifest["programs"][0]
+        assert manifest["schedule"] == "chain"
+        assert manifest["dispatchPlan"] == [0]
+        assert len(manifest["programs"]) == 1
+        assert program["encoder"] == "composed-chain"
+        assert program["operation"] == "chain"
+        assert len(manifest["tasks"]) == program["taskDescriptors"]
+        assert {item["operation"] for item in manifest["tasks"]} == \
+            {fused_oracle["parameters"]["operations"][0]}
+        assert manifest["scratch"] == {"bytes": 0, "regions": {}}
+        payload = (output / program["file"]).read_bytes()
+        tasks, _, _, header = anec_contents(payload)
+        assert len(tasks) == header["task_count"] == program["taskDescriptors"]
+        assert_tasks(tasks, fused_oracle)
+        decoded = [decode_task(task, "h14") for task in tasks]
+        differences = {}
+        for index, (base, fused) in enumerate(zip(
+                base_oracle["task_descriptors"], decoded)):
+            for word, values in task_word_differences(base, fused).items():
+                differences[(index, word)] = values
+        assert differences == {(task_index, address): expected_delta}
+
+        activation = int(descriptor_words(decoded[task_index])[address], 16)
+        if fused_name == "chain_add_relu_c512":
+            samples = ((-2.0, 0.5), (1.0, -0.25), (2.0, 3.0))
+            actual = [fp16(max(fp16(a + b), 0.0)) if activation & 0x20
+                      else fp16(a + b) for a, b in samples]
+            assert actual == [0.0, 0.75, 5.0]
+            invalid_mil = fused_oracle["mil"].replace(
+                "relu(x = added)[", "relu(x = added, extra = added)[")
+            assert invalid_mil != fused_oracle["mil"]
+            invalid_model = case_root / "invalid-relu.mil"
+            invalid_model.write_text(invalid_mil)
+            invalid_result = subprocess.run(
+                [str(COMPILER), "--mil", str(invalid_model),
+                 "--model-root", str(case_root), "--target", "H14",
+                 "--schedule", "chain", "--output",
+                 str(case_root / "invalid-out")],
+                capture_output=True, text=True, timeout=60, check=False)
+            assert invalid_result.returncode != 0
+            assert "h14.chain-unrepresentable-edge" in (
+                invalid_result.stdout + invalid_result.stderr)
+            model.write_text(fused_oracle["mil"].replace(" = add(", " = mul("))
+            rejected = subprocess.run(
+                [str(COMPILER), "--mil", str(model), "--model-root", str(case_root),
+                 "--target", "H14", "--schedule", "chain",
+                 "--output", str(case_root / "unsupported-producer")],
+                capture_output=True, text=True, timeout=60, check=False)
+            assert rejected.returncode > 0, rejected.stdout + rejected.stderr
+            assert "h14.chain-unrepresentable-edge" in rejected.stdout + rejected.stderr
+        else:
+            assert not (int(descriptor_words(decoded[0]).get(address, "0"), 16)
+                        & 0x00010000)
+            row = [-1.0] * 128 + [1.0] * 128
+            accumulation = sum(value * fp16(0.25) for value in row)
+            actual = (fp16(max(accumulation, 0.0))
+                      if activation & 0x00010000 else fp16(accumulation))
+            assert actual == 0.0
+
+
 def main():
     elementwise = selected_oracles()
     matvec = selected_matvec_oracles()
@@ -361,6 +468,7 @@ def main():
     oracles = elementwise + matvec + probe + norm + conv
     with tempfile.TemporaryDirectory(prefix="h14-parity-") as directory:
         root = Path(directory)
+        check_chain_package(root)
         for oracle in oracles:
             for artifact_format, check in (("anec", check_anec), ("hwx", check_hwx)):
                 output = root / f"{oracle['case']}-{artifact_format}"
