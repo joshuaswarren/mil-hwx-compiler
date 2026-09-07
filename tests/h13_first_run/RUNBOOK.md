@@ -1,6 +1,6 @@
 # H13 first-run kit
 
-This kit prepares eight H13 fixtures for device-free checks. Preparation does not authorize hardware submission, and native Linux H13 execution remains unqualified.
+This kit prepares eight H13 fixtures for device-free checks. Preparation does not authorize hardware submission. The listed models have native Linux M1 results in the [qualification receipt](../../receipts/2026-09-06-m1-native-progress.json).
 
 ## Device-free preparation
 
@@ -46,6 +46,8 @@ The benchmark evaluates the reference before timing, prepares every program befo
 
 ## Status
 
-Per-op scheduling prefers the source-qualified native encoder for same-shape add/mul/maximum/minimum, inline-scalar multiply, and constant-weight single-row matvec. Fresh compiler packages passed isolated M1 checks for all64 add/multiply outputs and all511/512 matrix-vector outputs. The old Apple-parity add failed on identical inputs. Explicit `--schedule chain` retains its decoded fusion encoders; it is not a Linux-qualified replacement for these native paths.
+Per-op scheduling uses source-qualified native encoders for small same-shape binaries, inline-scalar multiply, and constant-weight single-row matvec. Supported wider binaries use whole-tensor encodings rather than 64-element tiling. The qualification MLP now uses 77 programs instead of 92.
 
-Each native check used one request after a reboot, with DMA pages, mappings and power retained until the next reboot. These results do not establish safe repeated submission, general-chain correctness, cold-start repeatability or performance. Dry-run plans remain device-free; preflight is not permission to submit.
+The reviewed ABI-1 driver and library passed every output for all eight models, plus 512-element add-ReLU in per-op and fused schedules, on three warmups and 30 measured iterations. The driver waits for request-tagged terminal completion; the library never uses output values as completion signals. Signed zeros compare equal and NaNs are rejected. Chunked reductions retain their stated error envelope.
+
+Timing and build identities are recorded in the qualification receipt. Cold power-on repeatability, general chain fusion, and full mlx-omarchy model execution remain unqualified. Runtime power must stay on while using this reviewed driver. An uncertain completion requires reboot, not reload. Dry-run plans remain device-free; preflight is not permission to submit.

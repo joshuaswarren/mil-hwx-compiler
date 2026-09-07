@@ -14,13 +14,13 @@ understood well enough to reproduce in code and verify on hardware.
 
 This fork builds on Linux with GNUstep Foundation. H16G emits HWX; the
 experimental H13 and H14 backends emit ANEC by default and HWX with
-`--format hwx`. H13 and H14 performance and mlx-omarchy integration remain
-unqualified.
+`--format hwx`. The H13/M1 qualification models execute on Linux with measured
+performance; H14 native execution and end-to-end mlx-omarchy integration remain unqualified.
 
 Install Clang and LLD, CMake, Ninja, Make, pkg-config, Git, Python 3, and development packages for libffi, libxml2, ICU, OpenSSL, and zlib. Then run:
 
 ```sh
-git clone https://github.com/joshuaswarren/mil-hwx-compiler.git
+git clone --branch feat/h13-m1 https://github.com/joshuaswarren/mil-hwx-compiler.git
 cd mil-hwx-compiler
 scripts/verify-linux-compiler.sh all
 ```
@@ -195,6 +195,29 @@ composition between programs. Final output unpacking, numerical checks, referenc
 program setup are outside every measured window. See
 `tests/h13_first_run/RUNBOOK.md` for reviewed identity and exact-package
 provenance requirements.
+
+### Measured Linux M1 results
+
+The reviewed ABI-1 driver and library passed all eight first-run models plus
+512-element add-ReLU in per-op and fused schedules. Every output passed on
+three warmups and 30 measured iterations. These are transfer-to-readback times,
+including intermediate Python composition but excluding setup and reference evaluation.
+
+| Workload | Programs | Median |
+|---|---:|---:|
+| Runtime matmul, 64 by 64 | 1 | 0.066 ms |
+| Matvec, K256 N512 | 1 | 0.178 ms |
+| Softmax, 512 elements | 1 | 0.166 ms |
+| MLP, 768 to 1024 to 768 | 77 | 32.170 ms |
+| Add-ReLU, 512 elements, per-op | 2 | 0.679 ms |
+| Add-ReLU, 512 elements, `--schedule chain` | 1 | 0.160 ms |
+
+Whole-tensor binary selection reduced the MLP from 92 programs and 41.523 ms
+to 77 programs and 32.170 ms on the same driver boot. Native 64-element paths
+remain selected for small binaries; supported wider binaries avoid that tiling.
+The [native receipt](receipts/2026-09-06-m1-native-progress.json) records samples,
+build identities, numerical criteria and comparison runs. Cold power-on
+repeatability and general chain fusion remain unqualified.
 
 ### H13 Apple-parity programs
 
