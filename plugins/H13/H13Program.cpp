@@ -681,10 +681,11 @@ Program oracleProgram(const OracleTaskTemplate &source,
                                            source.shape));
     const auto constantOffsetBytes =
         (source.wordCount * sizeof(std::uint32_t) + 0x3f) & ~std::size_t(0x3f);
-    return {taskBytesFor(source.words, source.wordCount), std::move(constants),
-            std::move(inputs),
-            elementwiseTensor(4, source.shape), source.firstTaskBytes,
-            source.taskCount, constantOffsetBytes, {}};
+    Program program{taskBytesFor(source.words, source.wordCount), std::move(constants),
+                    std::move(inputs), elementwiseTensor(4, source.shape),
+                    source.firstTaskBytes, source.taskCount, constantOffsetBytes, {}};
+    program.taskSurfaceChannels = {5, 4, 6};
+    return program;
 }
 
 } // namespace
@@ -875,6 +876,7 @@ Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
         throw std::invalid_argument(
             "H13 scalar broadcast requires the decoded fp16 0.5 operand");
     Program program;
+    program.taskSurfaceChannels = {5, 4, 6};
     program.task = taskBytesFor(source->words, source->wordCount);
     if (operand == BroadcastOperand::Constant) {
         if (!constant ||
@@ -911,6 +913,7 @@ Program encodeNormParity(NormOperation operation, NormShape shape) {
         throw std::invalid_argument(
             "H13 normalization geometry is outside the decoded parity envelope");
     Program program;
+    program.taskSurfaceChannels = {5, 4, 6};
     program.task = taskBytesFor(source->words, source->wordCount);
     program.constants = normConstants(source->constants, source->constantBytes);
     program.inputs = {elementwiseTensor(5, source->input)};
@@ -1173,6 +1176,7 @@ Program encodeConvParity(ConvShape shape, const std::uint8_t *weights,
         throw std::invalid_argument(
             "H13 convolution geometry is outside the decoded parity envelope");
     Program program;
+    program.taskSurfaceChannels = {5, 4, 6};
     program.task = taskBytesFor(source->words, source->wordCount);
     program.constants =
         packConvWeights(shape, weights, weightBytes, bias, biasBytes);

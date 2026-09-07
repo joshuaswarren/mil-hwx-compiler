@@ -33,7 +33,7 @@ void rejects(Function &&function) {
 int main() {
     using namespace ane::h13;
     Program program;
-    program.task.assign(taskBytes, 0xa5);
+    program.task.assign(taskBytes, 0);
     program.constants = {0x11, 0x22, 0x33};
     program.output = tensor(4, 48);
     program.inputs = {tensor(5, 48), tensor(6, 48)};
@@ -55,7 +55,7 @@ int main() {
     assert(le(anec, 0xa8 + 4 * 48, 8) == 1);
     assert(le(anec, 0xa8 + 5 * 48, 8) == 1);
     assert(le(anec, 0xa8 + 6 * 48, 8) == 1);
-    assert(anec.at(0x1000) == 0xa5);
+    assert(anec.at(0x1000) == 0);
     assert(anec.at(0x1000 + taskBytes) == 0);
     assert(anec.at(0x1000 + 0x280) == 0x11);
     assert(anec.at(0x1000 + 0x282) == 0x33);
@@ -75,4 +75,33 @@ int main() {
     invalid = program;
     invalid.inputs.clear();
     rejects([&] { encodeANEC(invalid); });
+    program.taskSurfaceChannels = {5, 4, 6};
+    program.task[32] = 0xa4;
+    program.task[33] = 0x59;
+    program.task[34] = 0x02;
+    const auto routed = encodeANEC(program);
+    const auto selectors = le(routed, 0x1020, 4);
+    assert((selectors & 31) == 5);
+    assert(((selectors >> 6) & 31) == 6);
+    assert(((selectors >> 12) & 31) == 4);
+    assert(((le(routed, 0x1000, 4) >> 16) & 255) == 64);
+    assert(program.task[33] == 0x59);
+
+    program.task.assign(80, 0);
+    program.taskCount = 2;
+    program.firstTaskBytes = 40;
+    program.constantOffsetBytes = 128;
+    program.task[6] = 9;
+    program.task[28] = 40;
+    program.task[32] = 0x24;
+    program.task[40] = 1;
+    program.task[73] = 0x50;
+    program.task[74] = 0x02;
+    const auto linked = encodeANEC(program);
+    assert((le(linked, 0x1020, 4) & 31) == 5);
+    assert(((le(linked, 0x1048, 4) >> 12) & 31) == 4);
+    assert(((le(linked, 0x1028, 4) >> 16) & 255) == 64);
+    assert((le(linked, 0x1028, 4) & 65535) == 1);
+    program.task[28] = 36;
+    rejects([&] { encodeANEC(program); });
 }
