@@ -116,6 +116,8 @@ struct Program {
     /// for last, 0 for a matmul, which lays the output out first, 1 for a
     /// broadcast, which puts it between the two operands.
     std::size_t outputBindingIndex = static_cast<std::size_t>(-1);
+    /// Descriptor channels in output, input0, input1 order, before ANEC rebinding.
+    std::array<std::uint32_t, 3> taskSurfaceChannels{4, 5, 6};
 };
 
 Program encodeBinary(BinaryOperation operation);

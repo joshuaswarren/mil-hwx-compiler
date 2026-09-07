@@ -75,6 +75,59 @@ void validateProgram(const Program &program) {
         throw std::invalid_argument("H13 ANEC constant offset is invalid");
 }
 
+std::uint32_t loadWord(const std::vector<std::uint8_t> &bytes, std::size_t offset) {
+    std::uint32_t value = 0;
+    for (std::size_t i = 0; i != 4; ++i)
+        value |= static_cast<std::uint32_t>(bytes[offset + i]) << (i * 8);
+    return value;
+}
+
+void storeWord(std::vector<std::uint8_t> &bytes, std::size_t offset,
+               std::uint32_t value) {
+    for (std::size_t i = 0; i != 4; ++i)
+        bytes[offset + i] = static_cast<std::uint8_t>(value >> (i * 8));
+}
+
+void bindTasks(std::vector<std::uint8_t> &anec, const Program &program) {
+    auto channels = program.taskSurfaceChannels;
+    std::sort(channels.begin(), channels.end());
+    if (channels != std::array<std::uint32_t, 3>{4, 5, 6})
+        throw std::invalid_argument("H13 task surface channels must be a permutation of 4, 5, 6");
+    std::size_t offset = 0, size = program.firstTaskBytes;
+    for (std::uint32_t index = 0; index != program.taskCount; ++index) {
+        if (offset > program.task.size() || size < 40 ||
+            size > program.task.size() - offset)
+            throw std::invalid_argument("H13 linked task is truncated");
+        const auto base = headerBytes + offset;
+        auto selectors = loadWord(anec, base + 32);
+        for (unsigned shift : {0u, 6u, 12u}) {
+            const auto channel = (selectors >> shift) & 31;
+            if (channel < 4) continue;
+            const auto role = std::find(program.taskSurfaceChannels.begin(),
+                                        program.taskSurfaceChannels.end(), channel);
+            if (role == program.taskSurfaceChannels.end())
+                throw std::invalid_argument("H13 task selects an undeclared surface channel");
+            const auto bound = static_cast<std::uint32_t>(
+                4 + (role - program.taskSurfaceChannels.begin()));
+            selectors = (selectors & ~(31u << shift)) | (bound << shift);
+        }
+        storeWord(anec, base + 32, selectors);
+        storeWord(anec, base, (loadWord(anec, base) & ~0x00ff0000u) | 0x00400000u);
+        const auto next = loadWord(anec, base + 28);
+        if (index + 1 == program.taskCount) {
+            if (next || offset + size != program.task.size())
+                throw std::invalid_argument("H13 final task does not end the stream");
+        } else {
+            if (next % 4 || next < offset + size || next > program.task.size())
+                throw std::invalid_argument("H13 linked task pointer is invalid");
+            for (auto padding = offset + size; padding < next; ++padding)
+                if (program.task[padding])
+                    throw std::invalid_argument("H13 linked task padding is nonzero");
+            size = (((loadWord(anec, base + 4) >> 16) & 0x1ff) + 1) * 4;
+            offset = next;
+        }
+    }
+}
 } // namespace
 
 std::vector<std::uint8_t> encodeANEC(const Program &program) {
@@ -126,6 +179,7 @@ std::vector<std::uint8_t> encodeANEC(const Program &program) {
         throw std::logic_error("ANEC header layout changed");
     anec.resize(headerBytes, 0);
     anec.insert(anec.end(), program.task.begin(), program.task.end());
+    bindTasks(anec, program);
     anec.resize(headerBytes + program.constantOffsetBytes, 0);
     anec.insert(anec.end(), program.constants.begin(), program.constants.end());
     return anec;
