@@ -10,7 +10,9 @@ outputs are test data and never evidence about hardware.
 from __future__ import annotations
 
 import ctypes
+import json
 import os
+import struct
 import subprocess
 import sys
 import tempfile
@@ -300,6 +302,50 @@ def compile_add_package(root):
     return mil, package
 
 
+def compile_runtime_matmul_package(root):
+    mil = ROOT / "tests/h13_first_run/rungs/07-runtime-matmul-64/model.mil"
+    package = root / "runtime-matmul-package"
+    compiled = subprocess.run(
+        [str(COMPILER), "--mil", str(mil), "--model-root", str(root),
+         "--target", "H13", "--output", str(package)],
+        capture_output=True, text=True, timeout=30, check=False)
+    assert compiled.returncode == 0, compiled.stdout + compiled.stderr
+    return package
+
+
+def compile_constant_broadcast_package(root):
+    shape = (1, 64, 8, 8)
+    constant_shape = (1, 64, 1, 1)
+
+    def kind(dimensions):
+        return f"tensor<fp16, [{', '.join(map(str, dimensions))}]>"
+
+    mil = root / "constant-broadcast.mil"
+    package = root / "constant-broadcast-package"
+    mil.write_text(f'''program(1.3)
+[buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>({kind(shape)} x) {{
+    {kind(constant_shape)} z = const()[name = string("z"), val =
+        {kind(constant_shape)}(BLOBFILE(path = string("@model_path/bias.bin"),
+                                       offset = uint64(64)))];
+    {kind(shape)} y = add(x = x, y = z)[name = string("y")];
+  }} -> (y);
+}}
+''')
+    payload = struct.pack("<e", 0.5) * 64
+    blob = bytearray(128 + len(payload))
+    struct.pack_into("<IIQQ", blob, 64, 0xDEADBEEF, 1, len(payload), 128)
+    blob[128:] = payload
+    (root / "bias.bin").write_bytes(blob)
+    compiled = subprocess.run(
+        [str(COMPILER), "--mil", str(mil), "--model-root", str(root),
+         "--target", "H13", "--output", str(package)],
+        capture_output=True, text=True, timeout=30, check=False)
+    assert compiled.returncode == 0, compiled.stdout + compiled.stderr
+    return package
+
+
 def add_inputs(root):
     values = [fp16(0.5 + (index % 5) * 0.25) for index in range(4096)]
     others = [fp16(0.25 * (index % 9) - 1.0) for index in range(4096)]
@@ -346,6 +392,96 @@ def test_run_package_rejects_bad_request_before_device():
             raise AssertionError("a wrong output request was accepted")
 
         assert probe.execute_calls == 0
+
+
+def test_run_package_rejects_unsafe_task_metadata_before_device():
+    def reject(mutator, message):
+        with tempfile.TemporaryDirectory(prefix="h13-metadata-reject-") as directory:
+            root = Path(directory)
+            mil, package = compile_add_package(root)
+            mutator(package)
+            probe = DeviceProbe()
+            try:
+                h13_run_linux.run_package(
+                    package, mil, root, add_inputs(root), {"y": root / "y.fp16"}, probe)
+            except ValueError as error:
+                assert message in str(error)
+            else:
+                raise AssertionError("unsafe task metadata was accepted")
+            assert probe.execute_calls == 0
+
+    def remove_scratch(package):
+        path = package / "manifest.json"
+        manifest = json.loads(path.read_text())
+        manifest.pop("scratchBytes", None)
+        for program in manifest["programs"]:
+            program.pop("scratchBytes")
+        path.write_text(json.dumps(manifest))
+
+    def rewrite_task_word(package, index, transform):
+        manifest = json.loads((package / "manifest.json").read_text())
+        path = package / manifest["programs"][0]["file"]
+        payload = bytearray(path.read_bytes())
+        offset = inspect_anec.HEADER_BYTES + index * 4
+        struct.pack_into("<I", payload, offset,
+                         transform(struct.unpack_from("<I", payload, offset)[0]))
+        path.write_bytes(payload)
+
+    reject(remove_scratch, "scratchBytes")
+    reject(lambda package: rewrite_task_word(
+        package, 0, lambda word: word & ~0x00ff0000), "NID")
+    reject(lambda package: rewrite_task_word(
+        package, 8, lambda word: (word & ~0x1f) | 3), "channel 3")
+    reject(lambda package: rewrite_task_word(
+        package, 8, lambda word: (word & ~0x1f) | 1), "channel 1")
+    reject(lambda package: rewrite_task_word(
+        package, 8, lambda word: (word & ~0x1f) | 7), "channel 7")
+
+
+def test_inspector_accepts_only_kernel_backed_constant_source():
+    with tempfile.TemporaryDirectory(prefix="h13-kernel-source-") as directory:
+        package = compile_constant_broadcast_package(Path(directory))
+        manifest, _ = inspect_anec.load_package(package)
+        program = manifest["programs"][0]
+        assert program["encoder"] == inspect_anec.PARITY_BROADCAST
+        assert len(program["inputs"]) == 1 and program["constantBytes"] > 0
+
+        path = package / program["file"]
+        payload = bytearray(path.read_bytes())
+        offset = inspect_anec.HEADER_BYTES + 32
+        selectors = struct.unpack_from("<I", payload, offset)[0]
+        assert selectors & 0x1f == 1
+        struct.pack_into("<I", payload, offset,
+                         (selectors & ~(0x1f << 12)) | (1 << 12))
+        path.write_bytes(payload)
+        try:
+            inspect_anec.load_package(package)
+        except ValueError as error:
+            assert "noncanonical channel 1" in str(error)
+        else:
+            raise AssertionError("kernel BAR1 was accepted as a destination")
+
+
+def test_inspector_accounts_for_tile_rounded_scratch():
+    with tempfile.TemporaryDirectory(prefix="h13-scratch-accounting-") as directory:
+        package = compile_runtime_matmul_package(Path(directory))
+        manifest, allocations = inspect_anec.load_package(package)
+        scratch = manifest["programs"][0]["scratchBytes"]
+        allocation = allocations[0]
+        assert scratch == inspect_anec.TILE_BYTES
+        assert allocation["scratchBytes"] == inspect_anec.TILE_BYTES
+        assert allocation["totalBytes"] == sum(allocation[key] for key in (
+            "commandAndConstantsBytes", "inputBytes", "outputBytes", "scratchBytes"))
+
+        inspected = subprocess.run(
+            [sys.executable, str(ROOT / "research/inspect_anec.py"), str(package)],
+            capture_output=True, text=True, timeout=30, check=False)
+        assert inspected.returncode == 0, inspected.stdout + inspected.stderr
+        report = json.loads(inspected.stdout)["bufferAllocation"]
+        assert report["scratchBytes"] == inspect_anec.TILE_BYTES
+        assert report["totalBytes"] == sum(report[key] for key in (
+            "commandAndConstantsBytes", "inputBytes", "outputBytes", "scratchBytes"))
+
 
 class ScriptedProgram:
     """PreparedProgram stand-in with fixed output surfaces."""
