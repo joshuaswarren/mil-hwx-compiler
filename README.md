@@ -1,10 +1,11 @@
 # MIL-to-HWX compiler
 
-This repository contains a research compiler for the H16G Apple Neural Engine
-in the M4, an experimental source-native H13/M1 backend, and an
+This repository contains a source-native H13 backend for the M1 Apple Neural
+Engine, a research compiler for the H16G engine in the M4, and an
 oracle-parity H14/M2 elementwise, matvec, and normalization backend. It reads textual MIL and
 emits H16G HWX objects, or H13 and H14 ANEC and HWX packages, without Apple's
-compiler.
+compiler. The H13 packages execute on Linux M1 hardware; see the measured
+results below.
 
 The project is a canary for the compiler pipeline recovered in *Inside the M4
 Apple Neural Engine*, Part 4b. It shows which parts of that pipeline are
@@ -12,15 +13,15 @@ understood well enough to reproduce in code and verify on hardware.
 
 ## Linux build
 
-This fork builds on Linux with GNUstep Foundation. H16G emits HWX; the
-experimental H13 and H14 backends emit ANEC by default and HWX with
-`--format hwx`. The H13/M1 qualification models execute on Linux with measured
-performance; H14 native execution and end-to-end mlx-omarchy integration remain unqualified.
+This fork builds on Linux with GNUstep Foundation. H16G emits HWX; the H13 and
+H14 backends emit ANEC by default and HWX with `--format hwx`. The H13/M1
+qualification models execute on Linux with measured performance; H14 native
+execution and end-to-end mlx-omarchy integration remain unqualified.
 
 Install Clang and LLD, CMake, Ninja, Make, pkg-config, Git, Python 3, and development packages for libffi, libxml2, ICU, OpenSSL, and zlib. Then run:
 
 ```sh
-git clone --branch feat/h13-m1 https://github.com/joshuaswarren/mil-hwx-compiler.git
+git clone https://github.com/joshuaswarren/mil-hwx-compiler.git
 cd mil-hwx-compiler
 scripts/verify-linux-compiler.sh all
 ```
@@ -29,7 +30,7 @@ The script builds pinned libobjc2 and GNUstep sources under `$HOME/.local/mil-hw
 
 Use this verifier on Linux. The macOS hardware suites below require Apple runtime interfaces and do not run on Linux.
 
-## Experimental M1/H13 compilation
+## M1/H13 compilation
 
 The H13 path constructs descriptors from named register fields and packs the
 model's own weights. It does not rename H16G output, patch a binary template,
@@ -198,8 +199,11 @@ provenance requirements.
 
 ### Measured Linux M1 results
 
-The reviewed ABI-1 driver and library passed all eight first-run models plus
-512-element add-ReLU in per-op and fused schedules. Every output passed on
+Native execution uses the M1 driver and library in
+[joshuaswarren/omarchy-ane](https://github.com/joshuaswarren/omarchy-ane),
+which requires driver ABI 1: a successful submission guarantees terminal
+completion and CPU visibility. That stack passed all eight first-run models
+plus 512-element add-ReLU in per-op and fused schedules. Every output passed on
 three warmups and 30 measured iterations. These are transfer-to-readback times,
 including intermediate Python composition but excluding setup and reference evaluation.
 
