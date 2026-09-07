@@ -2091,6 +2091,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     @"outputs": @[outputRecord],
                     @"constantOffset": @(program.constantOffsetBytes),
                     @"constantBytes": @(program.constants.size()),
+                    @"scratchBytes": @(program.scratchAllocationBytes),
                 };
                 [programRecords addObject:record];
                 [dispatchPlan addObject:@(programIndex)];
@@ -2175,6 +2176,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 @"outputs": @[fusedOutput],
                 @"constantOffset": @(combined.constantOffsetBytes),
                 @"constantBytes": @(combined.constants.size()),
+                @"scratchBytes": @(combined.scratchAllocationBytes),
                 @"fused": @[finalResult],
             };
             [programRecords removeAllObjects];

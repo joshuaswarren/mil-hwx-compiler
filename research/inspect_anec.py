@@ -280,12 +280,17 @@ def validate_program(directory, program, tensors):
     tiles, layouts = fields[7:39], fields[39:]
     require(tiles[0] == (size + TILE_BYTES - 1) // TILE_BYTES,
             'incorrect command allocation')
+    scratch = program.get('scratchBytes', 0)
+    require(type(scratch) is int and 0 <= scratch <= 0xffffffff * TILE_BYTES,
+            'invalid scratch allocation size')
+    require(tiles[3] == (scratch + TILE_BYTES - 1) // TILE_BYTES,
+            'scratch allocation differs from ANEC header')
     occupied = {4, *range(5, 5 + len(inputs))}
     for index in range(32):
         if index not in occupied:
             require(not any(layouts[index * 6:(index + 1) * 6]),
                     'unexpected tensor channel')
-            if index != 0:
+            if index not in (0, 3):
                 require(tiles[index] == 0, 'unexpected channel allocation')
     encoder = program.get('encoder')
     require(isinstance(encoder, str) and encoder, 'program needs an encoder name')

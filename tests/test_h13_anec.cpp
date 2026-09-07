@@ -102,6 +102,11 @@ int main() {
     assert(((le(linked, 0x1048, 4) >> 12) & 31) == 4);
     assert(((le(linked, 0x1028, 4) >> 16) & 255) == 64);
     assert((le(linked, 0x1028, 4) & 65535) == 1);
+    program.scratchAllocationBytes = 2 * tileBytes;
+    const auto scratch = encodeANEC(program);
+    assert(le(scratch, 40 + 3 * 4, 4) == 2);
+    for (std::size_t field = 0; field != 6; ++field)
+        assert(le(scratch, 0xa8 + 3 * 48 + field * 8, 8) == 0);
     program.task[28] = 36;
     rejects([&] { encodeANEC(program); });
 }

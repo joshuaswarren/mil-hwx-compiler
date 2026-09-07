@@ -149,6 +149,9 @@ std::vector<std::uint8_t> encodeANEC(const Program &program) {
 
     std::array<std::uint32_t, channelCount> tiles{};
     tiles[0] = contentTiles;
+    if (program.scratchAllocationBytes)
+        tiles[3] = tileCount(program.scratchAllocationBytes,
+                             "scratch tile count overflows");
     tiles[4] = tileCount(program.output.allocationBytes,
                          "output tile count overflows");
     for (std::size_t i = 0; i != program.inputs.size(); ++i)
