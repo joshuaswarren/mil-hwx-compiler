@@ -205,6 +205,18 @@ def test_linux_runner_dry_run():
         assert not output_path.exists()
 
 
+def test_exact_fp16_values():
+    h13_run_linux.compare_fp16(fp16([0.0, -0.0, 1.0]), fp16([-0.0, 0.0, 1.0]))
+    for actual, expected in (([2 ** -24], [0.0]), ([1.0009765625], [1.0]),
+                             ([float('nan')], [float('nan')])):
+        try:
+            h13_run_linux.compare_fp16(fp16(actual), fp16(expected))
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('nonzero mismatch or NaN passed exact comparison')
+
+
 def main():
     tests = [value for name, value in sorted(globals().items())
              if name.startswith("test_") and callable(value)]

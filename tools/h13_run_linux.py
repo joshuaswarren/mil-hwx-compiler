@@ -33,11 +33,11 @@ def chunked_close(reference, actual):
 
 
 def compare_fp16(actual, expected, chunked=False):
+    actual_values, expected_values = decode_fp16(actual), decode_fp16(expected)
     if not chunked:
-        if actual != expected:
+        if actual_values != expected_values:
             raise ValueError("device output differs from the exact fp16 reference")
         return
-    actual_values, expected_values = decode_fp16(actual), decode_fp16(expected)
     if len(actual_values) != len(expected_values):
         raise ValueError("device output byte count differs from the reference")
     differences = [(index, wanted, got) for index, (wanted, got) in
@@ -251,7 +251,7 @@ def reference_criteria(manifest, reference_outputs):
         name: (f"|device - reference| <= {CHUNKED_ATOL} + "
                f"{CHUNKED_RTOL} * |reference|"
                if tensors[name].get("aliasOf", name) in chunked
-               else "byte-for-byte equal to the fp16 reference")
+               else "exact fp16 values; signed zeros equal, NaNs rejected")
         for name in sorted(reference_outputs)}
 
 

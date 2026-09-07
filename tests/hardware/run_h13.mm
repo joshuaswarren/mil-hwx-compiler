@@ -143,7 +143,7 @@ static BOOL compareOutput(NSData *actual, NSData *expected, BOOL chunked,
         maximumError = fmaxf(maximumError, difference);
         BOOL equal = chunked
             ? isfinite(got) && difference <= 0.02f + 0.02f * fabsf(want)
-            : actualBits[index] == expectedBits[index];
+            : got == want;
         if (!equal) {
             if (mismatches < 8)
                 printf("MISMATCH tensor=%s index=%lu expected=%g actual=%g\n",
@@ -152,7 +152,7 @@ static BOOL compareOutput(NSData *actual, NSData *expected, BOOL chunked,
         }
     }
     printf("COMPARE tensor=%s mode=%s elements=%lu mismatches=%lu max_abs_error=%g\n",
-        name.UTF8String, chunked ? "abs0.02-rel0.02" : "bit-exact",
+        name.UTF8String, chunked ? "abs0.02-rel0.02" : "fp16-value-exact",
         (unsigned long)count, (unsigned long)mismatches, maximumError);
     return mismatches == 0;
 }

@@ -167,7 +167,7 @@ It reads and writes dense little-endian fp16 files. Matmul accumulates in
 float32 and rounds once to fp16. Reductions larger than 512 elements on H13
 round each chunk before the add chain, so tensors marked `chunked-fp16` use
 `|device-reference| <= 0.02 + 0.02 * |reference|`; other outputs must be
-byte-for-byte equal to the fp16 reference.
+exactly equal as fp16 values. Signed zeros compare equal; NaNs are rejected.
 
 ```bash
 python3 tools/h13_reference.py model.mil --model-root models \
