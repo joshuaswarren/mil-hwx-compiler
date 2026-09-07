@@ -1,128 +1,3331 @@
 {
-  "status": "partial; isolated native observations only",
+  "status": "Native Linux M1 qualification passed for the listed models and schedules",
   "board": "Apple M1 T8103 / J293",
   "kernel": "7.1.6-1-1-ARCH",
-  "compiler_before_review_fixes_sha256": "eaa6b0c5a660f449fc86097ad2e5b3523f1290184fa31492931bff13c4f065d6",
-  "native_observations": [
+  "onlineCpuCount": 8,
+  "provenance": {
+    "compilerSourceCommit": "96217d6e0caa4b380ccffb39b88d981a095496b2",
+    "compilerSha256": "2cfa5cfd4f4b638b17b1a9ae33b5e07a5e5eee50b54bc600bbe75584fae98d3b",
+    "runtimeRepository": "https://github.com/joshuaswarren/omarchy-ane",
+    "runtimeSourceCommit": "efbfc9c67795a5a8d6823605e134ccd2cbfdd731",
+    "moduleVersion": "f2a3e5e+lifecycle6",
+    "moduleSrcversion": "DD43701FCB506056A340587",
+    "moduleSha256": "83819510cae37e5c748ff7586bf009d038866e5bfb657372646533a07b0ce0f0",
+    "libanePythonSha256": "8795e4c8d2b7b4440217ee5bebf342dc6795e909719e78bacbfc02e973231aa9",
+    "libaneArchiveSha256": "dd638073d8161924402cb6cea43b17e125f8072629d70d7a8c2d7ea69248137f",
+    "validatedInspectorCommit": "4252d76"
+  },
+  "timingScope": "Wall time around libane calls via time.perf_counter. Every program is prepared (pyane_init, size validation, buffer allocation) before the first measured iteration and reported as setupSeconds, so no timed window contains initialization. A program's totalSeconds spans that program's first transfer through its last readback. endToEnd spans the first program's first transfer through the last program's last readback per iteration and therefore includes Python intermediate composition between programs. Final output unpacking and correctness checks are outside every timed window. Reference evaluation is also outside every timed window.",
+  "cases": [
     {
-      "case": "oneshot-compiled-native-add",
-      "result": {
-        "boot_id": "d3c31588-f6f0-4732-99ef-7d30ebf08b91",
-        "module_version": "f2a3e5e+oneshot-diag1",
-        "rung": "02-add-runtime-native",
-        "exec_result": 0,
-        "errno": 0,
-        "outputs": {
-          "y": {
-            "comparison": "match",
-            "actual_hex": "00000036003a803c003e803f804040410042c042804320448044e0444045a04500466046c04620478047e047204850488048b048e048104940497049a049d049004a304a604a904ac04af04a204b504b804bb04be04b084c204c384c504c684c804c984cb04cc84ce04cf84c104d284d404d584d704d884da04db84dd04de84d",
-            "expected_hex": "00000036003a803c003e803f804040410042c042804320448044e0444045a04500466046c04620478047e047204850488048b048e048104940497049a049d049004a304a604a904ac04af04a204b504b804bb04be04b084c204c384c504c684c804c984cb04cc84ce04cf84c104d284d404d584d704d884da04db84dd04de84d"
+      "case": "01-add-legacy",
+      "result": "every output matched on every iteration",
+      "programCount": 1,
+      "warmup": 3,
+      "iterations": 30,
+      "referenceCriteria": {
+        "y": "exact fp16 values; signed zeros equal, NaNs rejected"
+      },
+      "endToEnd": {
+        "minSeconds": 4.061399999955029e-05,
+        "medianSeconds": 4.6805499948732177e-05,
+        "meanSeconds": 6.393526667049324e-05,
+        "maxSeconds": 0.0001351010000689712,
+        "samples": [
+          0.00010803899999700661,
+          0.00010762200008684886,
+          0.00011487700010093249,
+          0.00011529500000051485,
+          0.0001145439999845621,
+          0.00011466900002687908,
+          0.00011462700001629855,
+          0.0001351010000689712,
+          5.524999994577229e-05,
+          4.745199998978933e-05,
+          4.749400000036985e-05,
+          4.165600000760605e-05,
+          4.1072000044550805e-05,
+          4.0821999959916866e-05,
+          4.140600003665895e-05,
+          4.098900001281436e-05,
+          4.086399997049739e-05,
+          4.073899992818042e-05,
+          4.061399999955029e-05,
+          4.953699999532546e-05,
+          4.636799997115304e-05,
+          4.5700999976361345e-05,
+          4.549200002657017e-05,
+          4.724299992631131e-05,
+          4.553400003715069e-05,
+          4.557600004773121e-05,
+          4.53669999842532e-05,
+          4.986999999800901e-05,
+          4.8870000000533764e-05,
+          4.53679999736778e-05
+        ],
+        "note": "First program's first transfer through the last program's last readback per iteration; includes Python composition between programs, never program setup."
+      },
+      "programTiming": [
+        {
+          "file": "program-0.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 0.00036965100002817053,
+          "transferSeconds": {
+            "minSeconds": 3.0440000955422875e-06,
+            "medianSeconds": 5.108000038944738e-06,
+            "meanSeconds": 5.062166671147376e-06,
+            "maxSeconds": 6.880000000819564e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 2.1765999917988665e-05,
+            "medianSeconds": 2.6520000005803013e-05,
+            "meanSeconds": 2.899939999754982e-05,
+            "maxSeconds": 0.00010145099997771467
+          },
+          "readbackSeconds": {
+            "minSeconds": 1.0382999903413292e-05,
+            "medianSeconds": 1.1758500022551743e-05,
+            "meanSeconds": 2.9873700001796047e-05,
+            "maxSeconds": 8.90660001005017e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 4.061399999955029e-05,
+            "medianSeconds": 4.6805499948732177e-05,
+            "meanSeconds": 6.393526667049324e-05,
+            "maxSeconds": 0.0001351010000689712
           }
-        },
-        "diagnostic_only": true,
-        "numerical_match": true,
-        "resource_policy": "No pyane_free; diagnostic module retains all mappings/pages/power and rejects subsequent requests until reboot. Not completion-fence or reuse qualification."
-      }
+        }
+      ],
+      "throughputEvaluationsPerSecond": 21365.010545669582
     },
     {
-      "case": "oneshot-compiled-native-mul",
-      "result": {
-        "boot_id": "480d4186-4c63-4b75-954b-5c1487991e3a",
-        "module_version": "f2a3e5e+oneshot-diag1",
-        "rung": "03-mul-scalar",
-        "exec_result": 0,
-        "errno": 0,
-        "outputs": {
-          "y": {
-            "comparison": "match",
-            "actual_hex": "0000002c0030003200340035003600370038803800398039003a803a003b803b003c403c803cc03c003d403d803dc03d003e403e803ec03e003f403f803fc03f00402040404060408040a040c040e04000412041404160418041a041c041e04100422042404260428042a042c042e04200432043404360438043a043c043e043",
-            "expected_hex": "0000002c0030003200340035003600370038803800398039003a803a003b803b003c403c803cc03c003d403d803dc03d003e403e803ec03e003f403f803fc03f00402040404060408040a040c040e04000412041404160418041a041c041e04100422042404260428042a042c042e04200432043404360438043a043c043e043"
+      "case": "02-add-runtime-native",
+      "result": "every output matched on every iteration",
+      "programCount": 1,
+      "warmup": 3,
+      "iterations": 30,
+      "referenceCriteria": {
+        "y": "exact fp16 values; signed zeros equal, NaNs rejected"
+      },
+      "endToEnd": {
+        "minSeconds": 4.2656999994505895e-05,
+        "medianSeconds": 4.5617500063599437e-05,
+        "meanSeconds": 4.6893466666612464e-05,
+        "maxSeconds": 7.905900008609024e-05,
+        "samples": [
+          4.553399992346385e-05,
+          4.2656999994505895e-05,
+          4.44500000185144e-05,
+          4.895299991858337e-05,
+          4.586800002925884e-05,
+          4.53669999842532e-05,
+          4.653500002405053e-05,
+          4.599299995788897e-05,
+          4.5325999963097274e-05,
+          7.905900008609024e-05,
+          4.732699994747236e-05,
+          4.686900001615868e-05,
+          4.5575999934044376e-05,
+          4.5242000055623066e-05,
+          4.615900002136186e-05,
+          4.540899999483372e-05,
+          4.53669999842532e-05,
+          4.51170000133061e-05,
+          4.636799997115304e-05,
+          4.574299998694187e-05,
+          4.5451000005414244e-05,
+          4.574299998694187e-05,
+          4.661800005578698e-05,
+          4.5575000058306614e-05,
+          4.557600004773121e-05,
+          4.5451000005414244e-05,
+          4.674300009810395e-05,
+          4.565900007946766e-05,
+          4.524299993136083e-05,
+          4.582599990499148e-05
+        ],
+        "note": "First program's first transfer through the last program's last readback per iteration; includes Python composition between programs, never program setup."
+      },
+      "programTiming": [
+        {
+          "file": "program-0.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 0.0003876229999377756,
+          "transferSeconds": {
+            "minSeconds": 5.045000079917372e-06,
+            "medianSeconds": 6.046500061529514e-06,
+            "meanSeconds": 6.019733329291436e-06,
+            "maxSeconds": 6.378999955813924e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 2.610299998195842e-05,
+            "medianSeconds": 2.8000499980862514e-05,
+            "meanSeconds": 2.915796666608609e-05,
+            "maxSeconds": 6.0461999964900315e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 1.0842000051525247e-05,
+            "medianSeconds": 1.1675499990815297e-05,
+            "meanSeconds": 1.1715766671234936e-05,
+            "maxSeconds": 1.355200004127255e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 4.2656999994505895e-05,
+            "medianSeconds": 4.5617500063599437e-05,
+            "meanSeconds": 4.6893466666612464e-05,
+            "maxSeconds": 7.905900008609024e-05
           }
-        },
-        "diagnostic_only": true,
-        "numerical_match": true,
-        "resource_policy": "No pyane_free; diagnostic module retains all mappings/pages/power and rejects subsequent requests until reboot. Not completion-fence or reuse qualification."
-      }
+        }
+      ],
+      "throughputEvaluationsPerSecond": 21921.411708353386
     },
     {
-      "case": "oneshot-native-matvec-511",
-      "result": {
-        "boot_id": "1e62e233-0e1e-4e7b-8aff-a20787fe8000",
-        "module_version": "f2a3e5e+oneshot-diag1",
-        "rung": "m1-native-matvec-k256-n511",
-        "exec_result": 0,
-        "errno": 0,
-        "outputs": {
-          "y": {
-            "comparison": "match",
-            "actual_hex": "00a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a8",
-            "expected_hex": "00a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a8"
+      "case": "03-mul-scalar",
+      "result": "every output matched on every iteration",
+      "programCount": 1,
+      "warmup": 3,
+      "iterations": 30,
+      "referenceCriteria": {
+        "y": "exact fp16 values; signed zeros equal, NaNs rejected"
+      },
+      "endToEnd": {
+        "minSeconds": 4.0196999975705694e-05,
+        "medianSeconds": 4.075949993875838e-05,
+        "meanSeconds": 4.1788399990612864e-05,
+        "maxSeconds": 5.1080000048386864e-05,
+        "samples": [
+          4.1198000076292374e-05,
+          4.165699999703065e-05,
+          4.148899995470856e-05,
+          4.0698000020711333e-05,
+          4.090599998107791e-05,
+          4.086399997049739e-05,
+          4.061399999955029e-05,
+          4.6784999994997634e-05,
+          4.073899992818042e-05,
+          4.932899992127204e-05,
+          4.077999994933634e-05,
+          4.0489000070920156e-05,
+          4.115599995202501e-05,
+          4.061399999955029e-05,
+          4.073899992818042e-05,
+          4.0489000070920156e-05,
+          4.0196999975705694e-05,
+          4.103100002339488e-05,
+          5.1080000048386864e-05,
+          4.073799993875582e-05,
+          4.040500004975911e-05,
+          4.0446999946652795e-05,
+          4.1573000089556444e-05,
+          4.073899992818042e-05,
+          4.040500004975911e-05,
+          4.090599998107791e-05,
+          4.1323000004922505e-05,
+          4.524199994193623e-05,
+          4.053099996781384e-05,
+          4.048899995723332e-05
+        ],
+        "note": "First program's first transfer through the last program's last readback per iteration; includes Python composition between programs, never program setup."
+      },
+      "programTiming": [
+        {
+          "file": "program-0.anec",
+          "operation": "mul",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 0.0002490199999556353,
+          "transferSeconds": {
+            "minSeconds": 4.87800002701988e-06,
+            "medianSeconds": 4.962000048180926e-06,
+            "meanSeconds": 4.985799985964453e-06,
+            "maxSeconds": 5.213000008552626e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 2.501800008758437e-05,
+            "medianSeconds": 2.5227000037375547e-05,
+            "meanSeconds": 2.5987466684303703e-05,
+            "maxSeconds": 3.502699996715819e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 1.0090999921885668e-05,
+            "medianSeconds": 1.0507999945730262e-05,
+            "meanSeconds": 1.0815133320344709e-05,
+            "maxSeconds": 1.9305999899188464e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 4.0196999975705694e-05,
+            "medianSeconds": 4.075949993875838e-05,
+            "meanSeconds": 4.1788399990612864e-05,
+            "maxSeconds": 5.1080000048386864e-05
           }
-        },
-        "diagnostic_only": true,
-        "numerical_match": true,
-        "resource_policy": "No pyane_free; diagnostic module retains all mappings/pages/power and rejects subsequent requests until reboot. Not completion-fence or reuse qualification."
-      }
+        }
+      ],
+      "throughputEvaluationsPerSecond": 24534.15771789427
     },
     {
-      "case": "oneshot-compiled-native-matvec",
-      "result": {
-        "boot_id": "42a025fa-7441-496a-afff-0ee91af20201",
-        "module_version": "f2a3e5e+oneshot-diag1",
-        "rung": "04-matvec-k256-n512",
-        "exec_result": 0,
-        "errno": 0,
-        "outputs": {
-          "y": {
-            "comparison": "match",
-            "actual_hex": "00a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b3",
-            "expected_hex": "00a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b300ae8035000000a800b3"
+      "case": "04-matvec-k256-n512",
+      "result": "every output matched on every iteration",
+      "programCount": 1,
+      "warmup": 3,
+      "iterations": 30,
+      "referenceCriteria": {
+        "y": "exact fp16 values; signed zeros equal, NaNs rejected"
+      },
+      "endToEnd": {
+        "minSeconds": 0.00017646499998136278,
+        "medianSeconds": 0.00017832099996439865,
+        "meanSeconds": 0.00017971910000369462,
+        "maxSeconds": 0.00018713999997999053,
+        "samples": [
+          0.00018713999997999053,
+          0.0001773410000396325,
+          0.0001771749999761596,
+          0.00017729900002905197,
+          0.00017704900005810487,
+          0.0001771749999761596,
+          0.00017792500000268774,
+          0.00018176100002165185,
+          0.00018146900004012423,
+          0.00018359599994255404,
+          0.00018334500009586918,
+          0.0001836789999742905,
+          0.00018330300008528866,
+          0.0001807190000135961,
+          0.00018334599997160694,
+          0.0001834280000139188,
+          0.00017646499998136278,
+          0.00017684099998405145,
+          0.00017804999993131787,
+          0.0001771330000792659,
+          0.00017742400007136894,
+          0.0001774239999576821,
+          0.00017867500002921588,
+          0.00018526299993482098,
+          0.00017859199999747943,
+          0.00017884199996842653,
+          0.000177173999986735,
+          0.00017884199996842653,
+          0.00017713199997615448,
+          0.00017796600002384366
+        ],
+        "note": "First program's first transfer through the last program's last readback per iteration; includes Python composition between programs, never program setup."
+      },
+      "programTiming": [
+        {
+          "file": "program-0.anec",
+          "operation": "matmul",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 0.0004732710000325824,
+          "transferSeconds": {
+            "minSeconds": 1.1250000397922122e-06,
+            "medianSeconds": 1.209000060953258e-06,
+            "meanSeconds": 1.2244000117789256e-06,
+            "maxSeconds": 1.3340001032702276e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 3.1566000075144984e-05,
+            "medianSeconds": 3.317100004096574e-05,
+            "meanSeconds": 3.356119999959143e-05,
+            "maxSeconds": 3.9488000084020314e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 0.00014277299999321258,
+            "medianSeconds": 0.0001431699999443481,
+            "meanSeconds": 0.00014493349999232427,
+            "maxSeconds": 0.00015386600000510953
+          },
+          "totalSeconds": {
+            "minSeconds": 0.00017646499998136278,
+            "medianSeconds": 0.00017832099996439865,
+            "meanSeconds": 0.00017971910000369462,
+            "maxSeconds": 0.00018713999997999053
           }
-        },
-        "diagnostic_only": true,
-        "numerical_match": true,
-        "resource_policy": "No pyane_free; diagnostic module retains all mappings/pages/power and rejects subsequent requests until reboot. Not completion-fence or reuse qualification."
-      }
+        }
+      ],
+      "throughputEvaluationsPerSecond": 5607.8644702511065
     },
     {
-      "case": "oneshot-matched-finish-add",
-      "result": {
-        "boot_id": "2cc48462-e8f6-45e7-93cd-c11ac9910e9c",
-        "module_version": "f2a3e5e+oneshot-diag3",
-        "rung": "02-add-runtime-native",
-        "exec_result": 0,
-        "errno": 0,
-        "outputs": {
-          "y": {
-            "comparison": "match",
-            "actual_hex": "00000036003a803c003e803f804040410042c042804320448044e0444045a04500466046c04620478047e047204850488048b048e048104940497049a049d049004a304a604a904ac04af04a204b504b804bb04be04b084c204c384c504c684c804c984cb04cc84ce04cf84c104d284d404d584d704d884da04db84dd04de84d",
-            "expected_hex": "00000036003a803c003e803f804040410042c042804320448044e0444045a04500466046c04620478047e047204850488048b048e048104940497049a049d049004a304a604a904ac04af04a204b504b804bb04be04b084c204c384c504c684c804c984cb04cc84ce04cf84c104d284d404d584d704d884da04db84dd04de84d"
+      "case": "05-softmax-512",
+      "result": "every output matched on every iteration",
+      "programCount": 1,
+      "warmup": 3,
+      "iterations": 30,
+      "referenceCriteria": {
+        "y": "exact fp16 values; signed zeros equal, NaNs rejected"
+      },
+      "endToEnd": {
+        "minSeconds": 0.00016028599998207937,
+        "medianSeconds": 0.00016579050003429074,
+        "meanSeconds": 0.00016667886667012983,
+        "maxSeconds": 0.00017479799998909584,
+        "samples": [
+          0.00017004400001496833,
+          0.00016971000002286019,
+          0.0001697520000334407,
+          0.00017479799998909584,
+          0.0001702519999753349,
+          0.0001726290000760855,
+          0.00016704099994058197,
+          0.00016762600000674865,
+          0.00016529000004084082,
+          0.00016941800004133256,
+          0.00016512399997736793,
+          0.00016749999997500709,
+          0.00016520700000910438,
+          0.00016716700008601038,
+          0.00016491500002757675,
+          0.00016629100002774067,
+          0.00016474799997467926,
+          0.00016445699998257624,
+          0.0001648310000064157,
+          0.0001646649999429428,
+          0.00016487300001699623,
+          0.0001645820000248932,
+          0.00016474799997467926,
+          0.00016454000001431268,
+          0.00016478999998525978,
+          0.0001663330000383212,
+          0.00016737599992211472,
+          0.00016691600001195184,
+          0.00016445699998257624,
+          0.00016028599998207937
+        ],
+        "note": "First program's first transfer through the last program's last readback per iteration; includes Python composition between programs, never program setup."
+      },
+      "programTiming": [
+        {
+          "file": "program-0.anec",
+          "operation": "softmax",
+          "encoder": "apple-parity-norm",
+          "setupSeconds": 0.00013726899999255693,
+          "transferSeconds": {
+            "minSeconds": 1.4169999076329987e-06,
+            "medianSeconds": 1.5430000530614052e-06,
+            "meanSeconds": 1.5623333297298815e-06,
+            "maxSeconds": 1.70999999227206e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 2.3852000026636233e-05,
+            "medianSeconds": 2.4830999961977795e-05,
+            "meanSeconds": 2.5117400006517225e-05,
+            "maxSeconds": 2.7102999979433662e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 0.00013501700004781014,
+            "medianSeconds": 0.0001386664999927234,
+            "meanSeconds": 0.00013999913333388273,
+            "maxSeconds": 0.00014807000002292625
+          },
+          "totalSeconds": {
+            "minSeconds": 0.00016028599998207937,
+            "medianSeconds": 0.00016579050003429074,
+            "meanSeconds": 0.00016667886667012983,
+            "maxSeconds": 0.00017479799998909584
+          }
+        }
+      ],
+      "throughputEvaluationsPerSecond": 6031.708691349433
+    },
+    {
+      "case": "06-chain-add-mul",
+      "result": "every output matched on every iteration",
+      "programCount": 2,
+      "warmup": 3,
+      "iterations": 30,
+      "referenceCriteria": {
+        "y": "exact fp16 values; signed zeros equal, NaNs rejected"
+      },
+      "endToEnd": {
+        "minSeconds": 0.00016470599996409874,
+        "medianSeconds": 0.00016541599995889555,
+        "meanSeconds": 0.00016641596666886472,
+        "maxSeconds": 0.0001726699999835546,
+        "samples": [
+          0.00016645799996695132,
+          0.00017162800008918566,
+          0.00016541599995889555,
+          0.0001665830000092683,
+          0.00016529000004084082,
+          0.00016554000001178792,
+          0.00016562300004352437,
+          0.0001650819999667874,
+          0.00016558200002236845,
+          0.00016470700006721017,
+          0.0001726699999835546,
+          0.0001648310000064157,
+          0.00016470599996409874,
+          0.00016504000006989372,
+          0.00016891799998575152,
+          0.00016804200004116865,
+          0.00016508100009104965,
+          0.00016504000006989372,
+          0.00016528999992715399,
+          0.00017104400001244358,
+          0.0001650819999667874,
+          0.00016528999992715399,
+          0.00016516499999852385,
+          0.00016716600009658578,
+          0.00016570699995099858,
+          0.00016787599997769576,
+          0.00016541599995889555,
+          0.0001650819999667874,
+          0.0001677919999565347,
+          0.0001653319999377345
+        ],
+        "note": "First program's first transfer through the last program's last readback per iteration; includes Python composition between programs, never program setup."
+      },
+      "programTiming": [
+        {
+          "file": "program-0.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 0.00010236800005714031,
+          "transferSeconds": {
+            "minSeconds": 1.8350000345890294e-06,
+            "medianSeconds": 1.917999952638638e-06,
+            "meanSeconds": 1.9041333416680573e-06,
+            "maxSeconds": 1.959999963219161e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.805499994134152e-05,
+            "medianSeconds": 1.8138999962502567e-05,
+            "meanSeconds": 1.8620833316163043e-05,
+            "maxSeconds": 2.3224999949889025e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 3.07310000380312e-05,
+            "medianSeconds": 3.089799997724185e-05,
+            "meanSeconds": 3.087733335102409e-05,
+            "maxSeconds": 3.102300001955882e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 5.074600005627872e-05,
+            "medianSeconds": 5.0934000000779633e-05,
+            "meanSeconds": 5.140230000885519e-05,
+            "maxSeconds": 5.604199998288095e-05
           }
         },
-        "diagnostic_only": true,
-        "numerical_match": true,
-        "resource_policy": "No pyane_free; diagnostic module retains all mappings/pages/power and rejects subsequent requests until reboot. Not completion-fence or reuse qualification."
-      }
+        {
+          "file": "program-1.anec",
+          "operation": "mul",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 9.365300002173171e-05,
+          "transferSeconds": {
+            "minSeconds": 1.7930000240085064e-06,
+            "medianSeconds": 1.8350000345890294e-06,
+            "meanSeconds": 1.8513000062133263e-06,
+            "maxSeconds": 1.917999952638638e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7971000033867313e-05,
+            "medianSeconds": 1.805499994134152e-05,
+            "meanSeconds": 1.8123433335404115e-05,
+            "maxSeconds": 1.955600009750924e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 3.068899991376384e-05,
+            "medianSeconds": 3.075249998119034e-05,
+            "meanSeconds": 3.106193333148137e-05,
+            "maxSeconds": 3.5943000057159225e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 5.05379999822253e-05,
+            "medianSeconds": 5.066300002454227e-05,
+            "meanSeconds": 5.103666667309881e-05,
+            "maxSeconds": 5.5958000075406744e-05
+          }
+        }
+      ],
+      "throughputEvaluationsPerSecond": 6045.364416069131
+    },
+    {
+      "case": "07-runtime-matmul-64",
+      "result": "every output matched on every iteration",
+      "programCount": 1,
+      "warmup": 3,
+      "iterations": 30,
+      "referenceCriteria": {
+        "y": "exact fp16 values; signed zeros equal, NaNs rejected"
+      },
+      "endToEnd": {
+        "minSeconds": 6.542400001308124e-05,
+        "medianSeconds": 6.569500004616202e-05,
+        "meanSeconds": 6.625503333831753e-05,
+        "maxSeconds": 6.901000006109825e-05,
+        "samples": [
+          6.900999994741142e-05,
+          6.901000006109825e-05,
+          6.567400009771518e-05,
+          6.596599996555597e-05,
+          6.567399998402834e-05,
+          6.613200002902886e-05,
+          6.567399998402834e-05,
+          6.550800003424229e-05,
+          6.579900002634531e-05,
+          6.55899999628673e-05,
+          6.863500004783418e-05,
+          6.550699993113085e-05,
+          6.5840999923239e-05,
+          6.64670000105616e-05,
+          6.734199996571988e-05,
+          6.563200008713466e-05,
+          6.542400001308124e-05,
+          6.550699993113085e-05,
+          6.579900002634531e-05,
+          6.571599999460886e-05,
+          6.563199997344782e-05,
+          6.584100003692583e-05,
+          6.550800003424229e-05,
+          6.588300004750636e-05,
+          6.834299995261972e-05,
+          6.563200008713466e-05,
+          6.567399998402834e-05,
+          6.559000007655413e-05,
+          6.567399998402834e-05,
+          6.796699994993105e-05
+        ],
+        "note": "First program's first transfer through the last program's last readback per iteration; includes Python composition between programs, never program setup."
+      },
+      "programTiming": [
+        {
+          "file": "program-0.anec",
+          "operation": "matmul",
+          "encoder": "apple-parity-matmul",
+          "setupSeconds": 0.00011813000003257912,
+          "transferSeconds": {
+            "minSeconds": 1.917999952638638e-06,
+            "medianSeconds": 2.0010000412185036e-06,
+            "meanSeconds": 1.9944666670805114e-06,
+            "maxSeconds": 2.1679999235857395e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 2.0348000020931067e-05,
+            "medianSeconds": 2.0577999976012507e-05,
+            "meanSeconds": 2.0965700002761878e-05,
+            "maxSeconds": 2.3601000066264533e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 4.298999999718944e-05,
+            "medianSeconds": 4.317849999324608e-05,
+            "meanSeconds": 4.3294866668475154e-05,
+            "maxSeconds": 4.4867000042358995e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 6.542400001308124e-05,
+            "medianSeconds": 6.569500004616202e-05,
+            "meanSeconds": 6.625503333831753e-05,
+            "maxSeconds": 6.901000006109825e-05
+          }
+        }
+      ],
+      "throughputEvaluationsPerSecond": 15221.858578237738
+    },
+    {
+      "case": "08-mlp-768-1024-768",
+      "result": "every output matched on every iteration",
+      "programCount": 77,
+      "warmup": 3,
+      "iterations": 30,
+      "referenceCriteria": {
+        "y": "|device - reference| <= 0.02 + 0.02 * |reference|"
+      },
+      "endToEnd": {
+        "minSeconds": 0.03202335200001016,
+        "medianSeconds": 0.03216993950002234,
+        "meanSeconds": 0.03223829519998844,
+        "maxSeconds": 0.033326309999893056,
+        "samples": [
+          0.03214756900001703,
+          0.03207184599989432,
+          0.03203757099993254,
+          0.03211984000006396,
+          0.0320427420000442,
+          0.0320802689999482,
+          0.03202335200001016,
+          0.033326309999893056,
+          0.03214848599998277,
+          0.03223713499994574,
+          0.03219143399996938,
+          0.03222800200001075,
+          0.03217667299998084,
+          0.03228037500002756,
+          0.03223646800006463,
+          0.03215182199994615,
+          0.03216904300006718,
+          0.03221290799990584,
+          0.0321708359999775,
+          0.032161663000010776,
+          0.03214623400003802,
+          0.0322195380000494,
+          0.0330336439999428,
+          0.03215935699995498,
+          0.03219313199997487,
+          0.032286782000028325,
+          0.03241871199998059,
+          0.032178162000036536,
+          0.03216194300000552,
+          0.032137007999949674
+        ],
+        "note": "First program's first transfer through the last program's last readback per iteration; includes Python composition between programs, never program setup."
+      },
+      "programTiming": [
+        {
+          "file": "program-0.anec",
+          "operation": "matmul",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 0.0005858060000036858,
+          "transferSeconds": {
+            "minSeconds": 1.4590000319003593e-06,
+            "medianSeconds": 1.5429999393745675e-06,
+            "meanSeconds": 1.5497666557469831e-06,
+            "maxSeconds": 1.7520000028525828e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 3.0938999998397776e-05,
+            "medianSeconds": 3.2294999982696027e-05,
+            "meanSeconds": 3.287126666767411e-05,
+            "maxSeconds": 3.802799994900852e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 0.00013109600001826038,
+            "medianSeconds": 0.0001353910000148062,
+            "meanSeconds": 0.00013536416666966035,
+            "maxSeconds": 0.00014014400005635252
+          },
+          "totalSeconds": {
+            "minSeconds": 0.00016762100005962566,
+            "medianSeconds": 0.00016947850002679843,
+            "meanSeconds": 0.00016978519999308144,
+            "maxSeconds": 0.00017508700000234967
+          }
+        },
+        {
+          "file": "program-1.anec",
+          "operation": "matmul",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 0.0003862419999904887,
+          "transferSeconds": {
+            "minSeconds": 1.4590000319003593e-06,
+            "medianSeconds": 1.5010000424808823e-06,
+            "meanSeconds": 1.7262999904232857e-06,
+            "maxSeconds": 6.170999995447346e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 3.052200008824002e-05,
+            "medianSeconds": 3.137750002224493e-05,
+            "meanSeconds": 3.215403333266901e-05,
+            "maxSeconds": 3.92790000205423e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 0.00013072099989130948,
+            "medianSeconds": 0.00013293099993916258,
+            "meanSeconds": 0.00013340453333512414,
+            "maxSeconds": 0.00013776800005871337
+          },
+          "totalSeconds": {
+            "minSeconds": 0.00016316099993218813,
+            "medianSeconds": 0.00016695300001856594,
+            "meanSeconds": 0.00016728486665821643,
+            "maxSeconds": 0.00017275200002586644
+          }
+        },
+        {
+          "file": "program-2.anec",
+          "operation": "matmul",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 0.0004406979999203031,
+          "transferSeconds": {
+            "minSeconds": 1.0840000186362886e-06,
+            "medianSeconds": 1.1669999366858974e-06,
+            "meanSeconds": 1.154833315316258e-06,
+            "maxSeconds": 1.249999968422344e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 3.073099992434436e-05,
+            "medianSeconds": 3.3002999998643645e-05,
+            "meanSeconds": 3.2693366673205064e-05,
+            "maxSeconds": 3.8110999980744964e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 0.00013080400003673276,
+            "medianSeconds": 0.00013242999995100035,
+            "meanSeconds": 0.0001331655000020267,
+            "maxSeconds": 0.00013768400003755232
+          },
+          "totalSeconds": {
+            "minSeconds": 0.00016391199994814087,
+            "medianSeconds": 0.00016697699999213,
+            "meanSeconds": 0.00016701369999054804,
+            "maxSeconds": 0.00017129000002569228
+          }
+        },
+        {
+          "file": "program-3.anec",
+          "operation": "matmul",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 0.0004152210000256673,
+          "transferSeconds": {
+            "minSeconds": 1.0840000186362886e-06,
+            "medianSeconds": 1.1260000292168115e-06,
+            "meanSeconds": 1.134100000399485e-06,
+            "maxSeconds": 1.249999968422344e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 3.060599999571423e-05,
+            "medianSeconds": 3.3357500001329754e-05,
+            "meanSeconds": 3.3047833331541675e-05,
+            "maxSeconds": 3.6067999985789356e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 0.00013076300001557684,
+            "medianSeconds": 0.00013468200000943398,
+            "meanSeconds": 0.0001349596999981865,
+            "maxSeconds": 0.00014001900001403556
+          },
+          "totalSeconds": {
+            "minSeconds": 0.0001654960000223582,
+            "medianSeconds": 0.0001690199999870856,
+            "meanSeconds": 0.00016914163333012767,
+            "maxSeconds": 0.00017508399992038903
+          }
+        },
+        {
+          "file": "program-4.anec",
+          "operation": "add",
+          "encoder": "h13-oracle-parity",
+          "setupSeconds": 0.00016858200001479418,
+          "transferSeconds": {
+            "minSeconds": 4.4199999820193625e-06,
+            "medianSeconds": 4.524499956914951e-06,
+            "meanSeconds": 4.5297333372218415e-06,
+            "maxSeconds": 4.62899993181054e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 2.51430000162145e-05,
+            "medianSeconds": 2.587300002687698e-05,
+            "meanSeconds": 2.629283334272259e-05,
+            "maxSeconds": 2.9104999953233346e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 0.00026177600000210077,
+            "medianSeconds": 0.0002662164999946981,
+            "meanSeconds": 0.0002665880333173239,
+            "maxSeconds": 0.00027074099989476963
+          },
+          "totalSeconds": {
+            "minSeconds": 0.00029204800000570685,
+            "medianSeconds": 0.00029736199996932555,
+            "meanSeconds": 0.00029741059999726835,
+            "maxSeconds": 0.00030130499999359017
+          }
+        },
+        {
+          "file": "program-5.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 0.00010391000000709028,
+          "transferSeconds": {
+            "minSeconds": 1.917999952638638e-06,
+            "medianSeconds": 2.0009999843750848e-06,
+            "meanSeconds": 1.998666671928125e-06,
+            "maxSeconds": 2.1270000161166536e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7845999991550343e-05,
+            "medianSeconds": 1.8159999967792828e-05,
+            "meanSeconds": 1.8609499985207852e-05,
+            "maxSeconds": 2.097399999456684e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 5.783400001746486e-05,
+            "medianSeconds": 6.740349999745376e-05,
+            "meanSeconds": 6.5296400009629e-05,
+            "maxSeconds": 6.80499999816675e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 7.897499995124235e-05,
+            "medianSeconds": 8.745899998530149e-05,
+            "meanSeconds": 8.590456666676497e-05,
+            "maxSeconds": 9.044199998697877e-05
+          }
+        },
+        {
+          "file": "program-6.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 9.27759999740374e-05,
+          "transferSeconds": {
+            "minSeconds": 1.917999952638638e-06,
+            "medianSeconds": 2.126499964560935e-06,
+            "meanSeconds": 2.1182666576654204e-06,
+            "maxSeconds": 2.668999968591379e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.793000001271139e-05,
+            "medianSeconds": 1.818000004050191e-05,
+            "meanSeconds": 1.866510001491406e-05,
+            "maxSeconds": 2.0848000076512108e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 3.306600001451443e-05,
+            "medianSeconds": 4.870199995821167e-05,
+            "meanSeconds": 4.539843332243739e-05,
+            "maxSeconds": 5.212099995333119e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 5.3121999940231035e-05,
+            "medianSeconds": 6.919700001617457e-05,
+            "meanSeconds": 6.618179999501687e-05,
+            "maxSeconds": 7.409599993479787e-05
+          }
+        },
+        {
+          "file": "program-7.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 9.386099998209829e-05,
+          "transferSeconds": {
+            "minSeconds": 1.917999952638638e-06,
+            "medianSeconds": 1.960000076905999e-06,
+            "meanSeconds": 1.982066673159958e-06,
+            "maxSeconds": 2.0429999949556077e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.805499994134152e-05,
+            "medianSeconds": 1.830500002597546e-05,
+            "meanSeconds": 1.8467533338177114e-05,
+            "maxSeconds": 2.134900000783091e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.592399995497544e-05,
+            "medianSeconds": 6.78414999697452e-05,
+            "meanSeconds": 6.774413333232587e-05,
+            "maxSeconds": 6.825799994203408e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.614699993358954e-05,
+            "medianSeconds": 8.812749996423008e-05,
+            "meanSeconds": 8.819373334366295e-05,
+            "maxSeconds": 9.123400002408744e-05
+          }
+        },
+        {
+          "file": "program-8.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.456199998363445e-05,
+          "transferSeconds": {
+            "minSeconds": 1.918000066325476e-06,
+            "medianSeconds": 2.0009999843750848e-06,
+            "meanSeconds": 2.0028333437949184e-06,
+            "maxSeconds": 2.2100000478531e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7928999909599952e-05,
+            "medianSeconds": 1.8200999988948752e-05,
+            "meanSeconds": 2.0060599983177477e-05,
+            "maxSeconds": 6.250399997043132e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.567299999460374e-05,
+            "medianSeconds": 6.617299999334136e-05,
+            "meanSeconds": 6.647356667220569e-05,
+            "maxSeconds": 7.105199995294242e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.589500009748008e-05,
+            "medianSeconds": 8.660550003014578e-05,
+            "meanSeconds": 8.853699999917808e-05,
+            "maxSeconds": 0.0001320549999945797
+          }
+        },
+        {
+          "file": "program-9.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.393699999942328e-05,
+          "transferSeconds": {
+            "minSeconds": 1.959999963219161e-06,
+            "medianSeconds": 2.1055000161140924e-06,
+            "meanSeconds": 2.125233345395827e-06,
+            "maxSeconds": 2.376999987063755e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7970999920180475e-05,
+            "medianSeconds": 1.8242500004816975e-05,
+            "meanSeconds": 1.8402299989854024e-05,
+            "maxSeconds": 2.1055999923191848e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.617400003960938e-05,
+            "medianSeconds": 6.784200002130092e-05,
+            "meanSeconds": 6.79942333249528e-05,
+            "maxSeconds": 7.071899995025888e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.66889999997511e-05,
+            "medianSeconds": 8.82729999602816e-05,
+            "meanSeconds": 8.852176666020265e-05,
+            "maxSeconds": 9.148399999503454e-05
+          }
+        },
+        {
+          "file": "program-10.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.627099998648191e-05,
+          "transferSeconds": {
+            "minSeconds": 1.918000066325476e-06,
+            "medianSeconds": 2.0009999843750848e-06,
+            "meanSeconds": 1.993066659148705e-06,
+            "maxSeconds": 2.043999984380207e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.8095999962497444e-05,
+            "medianSeconds": 1.8284500015397498e-05,
+            "meanSeconds": 1.8509400013044798e-05,
+            "maxSeconds": 2.1139999944352894e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.709100000534818e-05,
+            "medianSeconds": 6.792450000148165e-05,
+            "meanSeconds": 6.795519999135043e-05,
+            "maxSeconds": 6.951000000299246e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.739800000512332e-05,
+            "medianSeconds": 8.829399996557186e-05,
+            "meanSeconds": 8.845766666354393e-05,
+            "maxSeconds": 9.123300003466284e-05
+          }
+        },
+        {
+          "file": "program-11.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.518699996784562e-05,
+          "transferSeconds": {
+            "minSeconds": 1.917999952638638e-06,
+            "medianSeconds": 2.0429999949556077e-06,
+            "meanSeconds": 2.04719999601366e-06,
+            "maxSeconds": 2.4189999976442778e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.793000001271139e-05,
+            "medianSeconds": 1.8117500019343424e-05,
+            "meanSeconds": 1.8344066677400406e-05,
+            "maxSeconds": 2.0682000013039215e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.588200005808176e-05,
+            "medianSeconds": 6.792400000676935e-05,
+            "meanSeconds": 6.787739999557137e-05,
+            "maxSeconds": 6.95920000453043e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.622999996532599e-05,
+            "medianSeconds": 8.810650001578324e-05,
+            "meanSeconds": 8.826866666898544e-05,
+            "maxSeconds": 9.077499998966232e-05
+          }
+        },
+        {
+          "file": "program-12.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.310199996230949e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0014999790873844e-06,
+            "meanSeconds": 2.015366662059629e-06,
+            "maxSeconds": 2.1690000266971765e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7763000073500734e-05,
+            "medianSeconds": 1.805450006031606e-05,
+            "meanSeconds": 1.8127100001189927e-05,
+            "maxSeconds": 1.8721999936133216e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.600599999728729e-05,
+            "medianSeconds": 6.796599996050645e-05,
+            "meanSeconds": 6.791489999310821e-05,
+            "maxSeconds": 6.926000003204535e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.677200003148755e-05,
+            "medianSeconds": 8.806350001577812e-05,
+            "meanSeconds": 8.805736665635777e-05,
+            "maxSeconds": 8.91490000185513e-05
+          }
+        },
+        {
+          "file": "program-13.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.289400000194291e-05,
+          "transferSeconds": {
+            "minSeconds": 2.0009999843750848e-06,
+            "medianSeconds": 2.0429999949556077e-06,
+            "meanSeconds": 2.055700000861786e-06,
+            "maxSeconds": 2.2099999341662624e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780499997039442e-05,
+            "medianSeconds": 1.7992499977026455e-05,
+            "meanSeconds": 1.852886667090085e-05,
+            "maxSeconds": 2.084799996282527e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.575700001576479e-05,
+            "medianSeconds": 6.602749999728985e-05,
+            "meanSeconds": 6.609420000055858e-05,
+            "maxSeconds": 6.767399997897883e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.577200003401231e-05,
+            "medianSeconds": 8.620900001687914e-05,
+            "meanSeconds": 8.667876667232122e-05,
+            "maxSeconds": 8.88980000581796e-05
+          }
+        },
+        {
+          "file": "program-14.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.42289999809509e-05,
+          "transferSeconds": {
+            "minSeconds": 1.918000066325476e-06,
+            "medianSeconds": 2.0009999843750848e-06,
+            "meanSeconds": 1.9930666705173885e-06,
+            "maxSeconds": 2.0850000055361306e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.8012999930760998e-05,
+            "medianSeconds": 1.8200999988948752e-05,
+            "meanSeconds": 1.8338533341951308e-05,
+            "maxSeconds": 2.159899997877801e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.579800003692071e-05,
+            "medianSeconds": 6.788400003188144e-05,
+            "meanSeconds": 6.790659999751369e-05,
+            "maxSeconds": 6.967600006646535e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.610500003669586e-05,
+            "medianSeconds": 8.814800003165146e-05,
+            "meanSeconds": 8.823820000998239e-05,
+            "maxSeconds": 9.164999994482059e-05
+          }
+        },
+        {
+          "file": "program-15.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.468700002595142e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0429999949556077e-06,
+            "meanSeconds": 2.0306333340158743e-06,
+            "maxSeconds": 2.0850000055361306e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.6679000054864446e-05,
+            "medianSeconds": 1.8096500070896582e-05,
+            "meanSeconds": 1.8268899987106123e-05,
+            "maxSeconds": 2.2891999947205477e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.554799995228677e-05,
+            "medianSeconds": 6.575700001576479e-05,
+            "meanSeconds": 6.594403334171753e-05,
+            "maxSeconds": 6.72990000794016e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.43950000444238e-05,
+            "medianSeconds": 8.600000001024455e-05,
+            "meanSeconds": 8.624356666283953e-05,
+            "maxSeconds": 9.069199995792587e-05
+          }
+        },
+        {
+          "file": "program-16.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.4478999951898e-05,
+          "transferSeconds": {
+            "minSeconds": 1.917999952638638e-06,
+            "medianSeconds": 2.0009999843750848e-06,
+            "meanSeconds": 1.99856665782742e-06,
+            "maxSeconds": 2.0850000055361306e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7845999991550343e-05,
+            "medianSeconds": 1.8096999951922044e-05,
+            "meanSeconds": 1.8325933334987592e-05,
+            "maxSeconds": 2.1890999960305635e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.775700001071527e-05,
+            "medianSeconds": 6.794550000677191e-05,
+            "meanSeconds": 6.804146666657591e-05,
+            "maxSeconds": 7.013499998720363e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.764599999722122e-05,
+            "medianSeconds": 8.80219999999099e-05,
+            "meanSeconds": 8.836596665939093e-05,
+            "maxSeconds": 9.194299991577282e-05
+          }
+        },
+        {
+          "file": "program-17.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.88980000581796e-05,
+          "transferSeconds": {
+            "minSeconds": 2.0429999949556077e-06,
+            "medianSeconds": 2.168000037272577e-06,
+            "meanSeconds": 2.166833341258704e-06,
+            "maxSeconds": 2.4180000082196784e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7845999991550343e-05,
+            "medianSeconds": 1.8096500014053163e-05,
+            "meanSeconds": 1.9612966669531793e-05,
+            "maxSeconds": 6.350499995733117e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.596499997613137e-05,
+            "medianSeconds": 6.782000002658606e-05,
+            "meanSeconds": 6.801353334443169e-05,
+            "maxSeconds": 7.059300003220415e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.652199994685361e-05,
+            "medianSeconds": 8.810600002107094e-05,
+            "meanSeconds": 8.979333335522218e-05,
+            "maxSeconds": 0.0001362670000162325
+          }
+        },
+        {
+          "file": "program-18.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.589699996264244e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0009999843750848e-06,
+            "meanSeconds": 2.0166000012977746e-06,
+            "maxSeconds": 2.4189999976442778e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7762999959813897e-05,
+            "medianSeconds": 1.8012999987604417e-05,
+            "meanSeconds": 1.819523333779216e-05,
+            "maxSeconds": 2.2598999976253253e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.600699998671189e-05,
+            "medianSeconds": 6.792500005303737e-05,
+            "meanSeconds": 6.787323332749415e-05,
+            "maxSeconds": 6.825900004514551e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.623000007901283e-05,
+            "medianSeconds": 8.80219999999099e-05,
+            "meanSeconds": 8.808506666658407e-05,
+            "maxSeconds": 9.327700001904304e-05
+          }
+        },
+        {
+          "file": "program-19.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.710599990990886e-05,
+          "transferSeconds": {
+            "minSeconds": 1.960000076905999e-06,
+            "medianSeconds": 2.0429999949556077e-06,
+            "meanSeconds": 2.0611666627701196e-06,
+            "maxSeconds": 2.2099999341662624e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7845999991550343e-05,
+            "medianSeconds": 1.805499999818494e-05,
+            "meanSeconds": 1.825516666637365e-05,
+            "maxSeconds": 2.172400002109498e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.625699995765899e-05,
+            "medianSeconds": 6.80075000332181e-05,
+            "meanSeconds": 6.806496666437549e-05,
+            "maxSeconds": 6.946799999241193e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.710599990990886e-05,
+            "medianSeconds": 8.81270000263612e-05,
+            "meanSeconds": 8.838129999351925e-05,
+            "maxSeconds": 9.194199992634822e-05
+          }
+        },
+        {
+          "file": "program-20.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.43950000444238e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.001999973799684e-06,
+            "meanSeconds": 2.0126666678758436e-06,
+            "maxSeconds": 2.1690000266971765e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7888000002130866e-05,
+            "medianSeconds": 1.805450000347264e-05,
+            "meanSeconds": 1.816456666195639e-05,
+            "maxSeconds": 2.0473000063248037e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.600699998671189e-05,
+            "medianSeconds": 6.677749996697457e-05,
+            "meanSeconds": 6.708800001054745e-05,
+            "maxSeconds": 7.159400001910399e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.623000007901283e-05,
+            "medianSeconds": 8.687650000638314e-05,
+            "meanSeconds": 8.726523334037969e-05,
+            "maxSeconds": 9.402700004557119e-05
+          }
+        },
+        {
+          "file": "program-21.anec",
+          "operation": "maximum",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.226900001773174e-05,
+          "transferSeconds": {
+            "minSeconds": 2.0009999843750848e-06,
+            "medianSeconds": 2.2099999341662624e-06,
+            "meanSeconds": 2.1906333283065277e-06,
+            "maxSeconds": 2.376999987063755e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780399998096982e-05,
+            "medianSeconds": 1.803349999818238e-05,
+            "meanSeconds": 1.9569766664062627e-05,
+            "maxSeconds": 6.275499993080302e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.579900002634531e-05,
+            "medianSeconds": 6.608999996160492e-05,
+            "meanSeconds": 6.624990001000697e-05,
+            "maxSeconds": 6.813300001340394e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.581300005516823e-05,
+            "medianSeconds": 8.631399998648703e-05,
+            "meanSeconds": 8.801030000237612e-05,
+            "maxSeconds": 0.0001329719999603185
+          }
+        },
+        {
+          "file": "program-22.anec",
+          "operation": "maximum",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.335300003636803e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0429999949556077e-06,
+            "meanSeconds": 2.083433328910663e-06,
+            "maxSeconds": 2.252000058433623e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7888000002130866e-05,
+            "medianSeconds": 1.8221999994239013e-05,
+            "meanSeconds": 1.853160000943414e-05,
+            "maxSeconds": 2.1557000081884325e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.59660000792428e-05,
+            "medianSeconds": 6.79040000477471e-05,
+            "meanSeconds": 6.795956666868126e-05,
+            "maxSeconds": 6.930100005320128e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.623000007901283e-05,
+            "medianSeconds": 8.82734999549939e-05,
+            "meanSeconds": 8.857460000702607e-05,
+            "maxSeconds": 9.177499998713756e-05
+          }
+        },
+        {
+          "file": "program-23.anec",
+          "operation": "maximum",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.139299995946203e-05,
+          "transferSeconds": {
+            "minSeconds": 1.959999963219161e-06,
+            "medianSeconds": 2.0429999949556077e-06,
+            "meanSeconds": 2.03343332714212e-06,
+            "maxSeconds": 2.168000037272577e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7845999991550343e-05,
+            "medianSeconds": 1.8012999987604417e-05,
+            "meanSeconds": 1.8190999999963726e-05,
+            "maxSeconds": 2.0807000055356184e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.59650000898182e-05,
+            "medianSeconds": 6.669500004363726e-05,
+            "meanSeconds": 6.668490000265593e-05,
+            "maxSeconds": 6.725799994455883e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.602200000495941e-05,
+            "medianSeconds": 8.677150003677525e-05,
+            "meanSeconds": 8.690933332976177e-05,
+            "maxSeconds": 8.9816000013343e-05
+          }
+        },
+        {
+          "file": "program-24.anec",
+          "operation": "maximum",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 9.00659999842901e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0009999843750848e-06,
+            "meanSeconds": 1.994399993539749e-06,
+            "maxSeconds": 2.0430001086424454e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780399998096982e-05,
+            "medianSeconds": 1.8034500044450397e-05,
+            "meanSeconds": 1.818693334977676e-05,
+            "maxSeconds": 2.101600000514736e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.613200002902886e-05,
+            "medianSeconds": 6.796600001734987e-05,
+            "meanSeconds": 6.808319999436207e-05,
+            "maxSeconds": 7.088400002430717e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.648000004995993e-05,
+            "medianSeconds": 8.800199998404423e-05,
+            "meanSeconds": 8.826453333767858e-05,
+            "maxSeconds": 9.152400002676586e-05
+          }
+        },
+        {
+          "file": "program-25.anec",
+          "operation": "maximum",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.764799997607042e-05,
+          "transferSeconds": {
+            "minSeconds": 2.0009999843750848e-06,
+            "medianSeconds": 2.043999984380207e-06,
+            "meanSeconds": 2.0779333378110702e-06,
+            "maxSeconds": 2.3350000901700696e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7888000002130866e-05,
+            "medianSeconds": 1.8138499967790267e-05,
+            "meanSeconds": 1.8435766677763846e-05,
+            "maxSeconds": 2.04729999495612e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.55889999734427e-05,
+            "medianSeconds": 6.788300004245684e-05,
+            "meanSeconds": 6.78467999894868e-05,
+            "maxSeconds": 6.946799999241193e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.602100001553481e-05,
+            "medianSeconds": 8.81679999906737e-05,
+            "meanSeconds": 8.836050000506172e-05,
+            "maxSeconds": 9.039999997639825e-05
+          }
+        },
+        {
+          "file": "program-26.anec",
+          "operation": "maximum",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.17689999621507e-05,
+          "transferSeconds": {
+            "minSeconds": 2.0009999843750848e-06,
+            "medianSeconds": 2.0429999949556077e-06,
+            "meanSeconds": 2.056966657922506e-06,
+            "maxSeconds": 2.292999965902709e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780499997039442e-05,
+            "medianSeconds": 1.8013499982316716e-05,
+            "meanSeconds": 1.79979333324809e-05,
+            "maxSeconds": 1.8264000004819536e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.629799997881491e-05,
+            "medianSeconds": 6.69240000092941e-05,
+            "meanSeconds": 6.710043333744883e-05,
+            "maxSeconds": 6.842599998435617e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.66880000103265e-05,
+            "medianSeconds": 8.700149999185669e-05,
+            "meanSeconds": 8.715533332785223e-05,
+            "maxSeconds": 8.835699998144264e-05
+          }
+        },
+        {
+          "file": "program-27.anec",
+          "operation": "maximum",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.12680000308319e-05,
+          "transferSeconds": {
+            "minSeconds": 1.959999963219161e-06,
+            "medianSeconds": 2.0429999949556077e-06,
+            "meanSeconds": 2.032133321942335e-06,
+            "maxSeconds": 2.168000037272577e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780399998096982e-05,
+            "medianSeconds": 1.8013500039160135e-05,
+            "meanSeconds": 1.810343333848626e-05,
+            "maxSeconds": 1.8930000010186632e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.546400004481256e-05,
+            "medianSeconds": 6.77990000212958e-05,
+            "meanSeconds": 6.78024333334785e-05,
+            "maxSeconds": 6.930100005320128e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.585399996263732e-05,
+            "medianSeconds": 8.787699999857068e-05,
+            "meanSeconds": 8.793799999390709e-05,
+            "maxSeconds": 8.927399994718144e-05
+          }
+        },
+        {
+          "file": "program-28.anec",
+          "operation": "maximum",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.518799995727022e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.002000030643103e-06,
+            "meanSeconds": 2.027799992750564e-06,
+            "maxSeconds": 2.1679999235857395e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7054000068128516e-05,
+            "medianSeconds": 1.805499994134152e-05,
+            "meanSeconds": 1.8138266659661896e-05,
+            "maxSeconds": 2.0723000034195138e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.579799992323387e-05,
+            "medianSeconds": 6.70274999947651e-05,
+            "meanSeconds": 6.705880000481556e-05,
+            "maxSeconds": 6.875799999761512e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.501999991494813e-05,
+            "medianSeconds": 8.716749994164275e-05,
+            "meanSeconds": 8.722486665722803e-05,
+            "maxSeconds": 9.014900001602655e-05
+          }
+        },
+        {
+          "file": "program-29.anec",
+          "operation": "maximum",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.06010000360402e-05,
+          "transferSeconds": {
+            "minSeconds": 2.0009999843750848e-06,
+            "medianSeconds": 2.1474999698511965e-06,
+            "meanSeconds": 2.1417999922353675e-06,
+            "maxSeconds": 2.334999976483232e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780399998096982e-05,
+            "medianSeconds": 1.8034499987606978e-05,
+            "meanSeconds": 1.9785300010729165e-05,
+            "maxSeconds": 6.413100004465377e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.592299996555084e-05,
+            "medianSeconds": 6.72789999498491e-05,
+            "meanSeconds": 6.735069999497985e-05,
+            "maxSeconds": 7.05100000004677e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.652200006054045e-05,
+            "medianSeconds": 8.741799996414557e-05,
+            "meanSeconds": 8.927779999794439e-05,
+            "maxSeconds": 0.00013685099997928774
+          }
+        },
+        {
+          "file": "program-30.anec",
+          "operation": "maximum",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 7.943299999624287e-05,
+          "transferSeconds": {
+            "minSeconds": 1.960000076905999e-06,
+            "medianSeconds": 2.0850000055361306e-06,
+            "meanSeconds": 2.1279666687708716e-06,
+            "maxSeconds": 2.54299993684981e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.792999989902455e-05,
+            "medianSeconds": 1.8096500014053163e-05,
+            "meanSeconds": 1.840786665828394e-05,
+            "maxSeconds": 2.3517000045103487e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.650699992860609e-05,
+            "medianSeconds": 6.78000000107204e-05,
+            "meanSeconds": 6.782330000305592e-05,
+            "maxSeconds": 6.942599998183141e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.71889999416453e-05,
+            "medianSeconds": 8.804299994835674e-05,
+            "meanSeconds": 8.835913333011073e-05,
+            "maxSeconds": 9.386099998209829e-05
+          }
+        },
+        {
+          "file": "program-31.anec",
+          "operation": "maximum",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.347799996499816e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0009999843750848e-06,
+            "meanSeconds": 1.9889000024401564e-06,
+            "maxSeconds": 2.043999984380207e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7845999991550343e-05,
+            "medianSeconds": 1.805499994134152e-05,
+            "meanSeconds": 1.8228666662404672e-05,
+            "maxSeconds": 1.9723000036719895e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.709099989166134e-05,
+            "medianSeconds": 6.78404999803206e-05,
+            "meanSeconds": 6.792049999451896e-05,
+            "maxSeconds": 6.967699994220311e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.73559999945428e-05,
+            "medianSeconds": 8.79190000091512e-05,
+            "meanSeconds": 8.813806665936378e-05,
+            "maxSeconds": 9.023299992350076e-05
+          }
+        },
+        {
+          "file": "program-32.anec",
+          "operation": "maximum",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.172599996214558e-05,
+          "transferSeconds": {
+            "minSeconds": 1.960000076905999e-06,
+            "medianSeconds": 2.064000000245869e-06,
+            "meanSeconds": 2.0890666670917806e-06,
+            "maxSeconds": 2.668999968591379e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780499997039442e-05,
+            "medianSeconds": 1.8034499987606978e-05,
+            "meanSeconds": 1.841900001030202e-05,
+            "maxSeconds": 2.4810000013530953e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.575599991265335e-05,
+            "medianSeconds": 6.604850000258011e-05,
+            "meanSeconds": 6.662643332144095e-05,
+            "maxSeconds": 7.75149999299174e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.58119999520568e-05,
+            "medianSeconds": 8.618799995474546e-05,
+            "meanSeconds": 8.713449999883474e-05,
+            "maxSeconds": 0.00010499399991203973
+          }
+        },
+        {
+          "file": "program-33.anec",
+          "operation": "maximum",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.748100003685977e-05,
+          "transferSeconds": {
+            "minSeconds": 1.959999963219161e-06,
+            "medianSeconds": 2.001999973799684e-06,
+            "meanSeconds": 2.0363333267899483e-06,
+            "maxSeconds": 2.584999947430333e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7845999991550343e-05,
+            "medianSeconds": 1.818050003521421e-05,
+            "meanSeconds": 1.8969366669807643e-05,
+            "maxSeconds": 2.134900000783091e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.55879999840181e-05,
+            "medianSeconds": 6.579800003692071e-05,
+            "meanSeconds": 6.625950000322215e-05,
+            "maxSeconds": 7.330400001137605e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.564500001284614e-05,
+            "medianSeconds": 8.608349997984988e-05,
+            "meanSeconds": 8.726519999981974e-05,
+            "maxSeconds": 9.623699997973745e-05
+          }
+        },
+        {
+          "file": "program-34.anec",
+          "operation": "maximum",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.723099995222583e-05,
+          "transferSeconds": {
+            "minSeconds": 1.917999952638638e-06,
+            "medianSeconds": 2.0225000412210647e-06,
+            "meanSeconds": 2.051466670612475e-06,
+            "maxSeconds": 2.7099999897473026e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.772200005234481e-05,
+            "medianSeconds": 1.8013999977029016e-05,
+            "meanSeconds": 1.810360000717992e-05,
+            "maxSeconds": 2.0098000049983966e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.604899999729241e-05,
+            "medianSeconds": 6.669500004363726e-05,
+            "meanSeconds": 6.730339999876378e-05,
+            "maxSeconds": 7.359599999290367e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.602200000495941e-05,
+            "medianSeconds": 8.677199997464413e-05,
+            "meanSeconds": 8.745846667655618e-05,
+            "maxSeconds": 9.640400003263494e-05
+          }
+        },
+        {
+          "file": "program-35.anec",
+          "operation": "maximum",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 7.939199997508695e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0429999949556077e-06,
+            "meanSeconds": 2.0654000043881145e-06,
+            "maxSeconds": 2.7520000003278255e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7845999991550343e-05,
+            "medianSeconds": 1.8095999962497444e-05,
+            "meanSeconds": 1.818966665799356e-05,
+            "maxSeconds": 2.0138999957453052e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.679899991013372e-05,
+            "medianSeconds": 6.788299998561342e-05,
+            "meanSeconds": 6.805253333368455e-05,
+            "maxSeconds": 7.280400006948184e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.677199991780071e-05,
+            "medianSeconds": 8.80229999893345e-05,
+            "meanSeconds": 8.830759999606622e-05,
+            "maxSeconds": 9.569500002726272e-05
+          }
+        },
+        {
+          "file": "program-36.anec",
+          "operation": "maximum",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.089200002814323e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0429999949556077e-06,
+            "meanSeconds": 2.055666671670527e-06,
+            "maxSeconds": 2.7520000003278255e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7763000073500734e-05,
+            "medianSeconds": 1.8013499982316716e-05,
+            "meanSeconds": 1.819806664495142e-05,
+            "maxSeconds": 1.9930999997086474e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.721600004766515e-05,
+            "medianSeconds": 6.788300004245684e-05,
+            "meanSeconds": 6.816096667989768e-05,
+            "maxSeconds": 7.242900005621777e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.73559999945428e-05,
+            "medianSeconds": 8.800199998404423e-05,
+            "meanSeconds": 8.841469999651964e-05,
+            "maxSeconds": 9.49870000113151e-05
+          }
+        },
+        {
+          "file": "program-37.anec",
+          "operation": "matmul",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 0.00043256800006474805,
+          "transferSeconds": {
+            "minSeconds": 1.417999897057598e-06,
+            "medianSeconds": 1.4600000213249587e-06,
+            "meanSeconds": 1.496966649483511e-06,
+            "maxSeconds": 1.7930000240085064e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 3.068899991376384e-05,
+            "medianSeconds": 3.1544000023586705e-05,
+            "meanSeconds": 3.197063333952125e-05,
+            "maxSeconds": 3.444100002525374e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 0.00013368199995511532,
+            "medianSeconds": 0.00013514099998701568,
+            "meanSeconds": 0.00013538649999797296,
+            "maxSeconds": 0.00013889299998481874
+          },
+          "totalSeconds": {
+            "minSeconds": 0.00016587199991136004,
+            "medianSeconds": 0.00016874900001084825,
+            "meanSeconds": 0.00016885409998697773,
+            "maxSeconds": 0.0001728770000681834
+          }
+        },
+        {
+          "file": "program-38.anec",
+          "operation": "matmul",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 0.00042964800002209813,
+          "transferSeconds": {
+            "minSeconds": 1.4589999182135216e-06,
+            "medianSeconds": 1.5009999287940445e-06,
+            "meanSeconds": 1.501266660852707e-06,
+            "maxSeconds": 1.7510000134279835e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 3.077200005918712e-05,
+            "medianSeconds": 3.331550004759265e-05,
+            "meanSeconds": 3.315050001522953e-05,
+            "maxSeconds": 3.723500003616209e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 0.0001331400000026406,
+            "medianSeconds": 0.00013397300000406176,
+            "meanSeconds": 0.00013461656666322597,
+            "maxSeconds": 0.0001387270000350327
+          },
+          "totalSeconds": {
+            "minSeconds": 0.0001659939999854032,
+            "medianSeconds": 0.00016926899996860811,
+            "meanSeconds": 0.0001692683333393082,
+            "maxSeconds": 0.00017371100000218576
+          }
+        },
+        {
+          "file": "program-39.anec",
+          "operation": "matmul",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 0.00041505500007588125,
+          "transferSeconds": {
+            "minSeconds": 1.4590000319003593e-06,
+            "medianSeconds": 1.5850000067985093e-06,
+            "meanSeconds": 1.6012000097968362e-06,
+            "maxSeconds": 1.876000055744953e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 3.064800000629475e-05,
+            "medianSeconds": 3.294099997219746e-05,
+            "meanSeconds": 3.2782166654972875e-05,
+            "maxSeconds": 3.815299999132549e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 0.00013080499991247052,
+            "medianSeconds": 0.00013209600001573563,
+            "meanSeconds": 0.0001327708333406008,
+            "maxSeconds": 0.000137141000095653
+          },
+          "totalSeconds": {
+            "minSeconds": 0.00016374599999835482,
+            "medianSeconds": 0.00016660050005157245,
+            "meanSeconds": 0.0001671542000053705,
+            "maxSeconds": 0.0001724600000443388
+          }
+        },
+        {
+          "file": "program-40.anec",
+          "operation": "matmul",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 0.00043285899994316424,
+          "transferSeconds": {
+            "minSeconds": 1.4590000319003593e-06,
+            "medianSeconds": 1.501499980349763e-06,
+            "meanSeconds": 1.5273666728414053e-06,
+            "maxSeconds": 1.7090000028474606e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 3.0771999945500284e-05,
+            "medianSeconds": 3.3232500015856203e-05,
+            "meanSeconds": 3.3858066656951755e-05,
+            "maxSeconds": 6.354699996791169e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 0.00013355599992337375,
+            "medianSeconds": 0.00013497249994998128,
+            "meanSeconds": 0.00013503350000216113,
+            "maxSeconds": 0.00013826800000060757
+          },
+          "totalSeconds": {
+            "minSeconds": 0.00016662000007272582,
+            "medianSeconds": 0.000169478499969955,
+            "meanSeconds": 0.00017041893333195426,
+            "maxSeconds": 0.00020235699992099399
+          }
+        },
+        {
+          "file": "program-41.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.1518000001779e-05,
+          "transferSeconds": {
+            "minSeconds": 1.960000076905999e-06,
+            "medianSeconds": 2.001999973799684e-06,
+            "meanSeconds": 2.045966664354637e-06,
+            "maxSeconds": 2.6680000928536174e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.805500005502836e-05,
+            "medianSeconds": 1.928550000229734e-05,
+            "meanSeconds": 2.004240002027776e-05,
+            "maxSeconds": 2.5309999955425155e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 3.102300001955882e-05,
+            "medianSeconds": 5.5811999914112675e-05,
+            "meanSeconds": 5.0389599978946836e-05,
+            "maxSeconds": 6.179500007874594e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 5.1330000019333966e-05,
+            "medianSeconds": 7.63479999932315e-05,
+            "meanSeconds": 7.247796666357924e-05,
+            "maxSeconds": 8.531299999958719e-05
+          }
+        },
+        {
+          "file": "program-42.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 7.889100004376814e-05,
+          "transferSeconds": {
+            "minSeconds": 1.876000055744953e-06,
+            "medianSeconds": 2.0009999843750848e-06,
+            "meanSeconds": 1.9917333361263444e-06,
+            "maxSeconds": 2.2519999447467853e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.8013000044447836e-05,
+            "medianSeconds": 1.8472000022029533e-05,
+            "meanSeconds": 1.9259866667198368e-05,
+            "maxSeconds": 2.5102000108745415e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 3.2024000006458664e-05,
+            "medianSeconds": 5.868850001888859e-05,
+            "meanSeconds": 5.337230000653411e-05,
+            "maxSeconds": 6.396200001290708e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 5.208000004586211e-05,
+            "medianSeconds": 7.914050002000295e-05,
+            "meanSeconds": 7.462390000985882e-05,
+            "maxSeconds": 8.656199997858494e-05
+          }
+        },
+        {
+          "file": "program-43.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.497900000747904e-05,
+          "transferSeconds": {
+            "minSeconds": 1.8770000451695523e-06,
+            "medianSeconds": 2.0009999843750848e-06,
+            "meanSeconds": 2.019500016103848e-06,
+            "maxSeconds": 2.584999947430333e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.8013000044447836e-05,
+            "medianSeconds": 1.830550002068776e-05,
+            "meanSeconds": 1.8925066657023613e-05,
+            "maxSeconds": 2.159999996820261e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 3.890400000727823e-05,
+            "medianSeconds": 6.09819999795036e-05,
+            "meanSeconds": 5.625640000062049e-05,
+            "maxSeconds": 6.271300003390934e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 5.896000004668167e-05,
+            "medianSeconds": 8.12685000255442e-05,
+            "meanSeconds": 7.720096667374795e-05,
+            "maxSeconds": 8.656399995743413e-05
+          }
+        },
+        {
+          "file": "program-44.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.385299997826223e-05,
+          "transferSeconds": {
+            "minSeconds": 1.917999952638638e-06,
+            "medianSeconds": 1.959999963219161e-06,
+            "meanSeconds": 1.972200012308652e-06,
+            "maxSeconds": 2.2100000478531e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780499997039442e-05,
+            "medianSeconds": 1.8221999994239013e-05,
+            "meanSeconds": 1.8512299982376133e-05,
+            "maxSeconds": 2.1182999944358016e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 5.6083000004036876e-05,
+            "medianSeconds": 6.644399991273531e-05,
+            "meanSeconds": 6.429413332398326e-05,
+            "maxSeconds": 6.846700000551209e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 7.613900004344032e-05,
+            "medianSeconds": 8.650099994156335e-05,
+            "meanSeconds": 8.477863331866805e-05,
+            "maxSeconds": 9.177599997656216e-05
+          }
+        },
+        {
+          "file": "program-45.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 7.701500010171003e-05,
+          "transferSeconds": {
+            "minSeconds": 1.917999952638638e-06,
+            "medianSeconds": 2.001999973799684e-06,
+            "meanSeconds": 2.0154333431795144e-06,
+            "maxSeconds": 2.2930000795895467e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.792900002328679e-05,
+            "medianSeconds": 1.8137999973077967e-05,
+            "meanSeconds": 1.9454433322607655e-05,
+            "maxSeconds": 5.4874000056770456e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.479699993633403e-05,
+            "medianSeconds": 6.765300003053198e-05,
+            "meanSeconds": 6.78538333280206e-05,
+            "maxSeconds": 7.39709998924809e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.485399996516207e-05,
+            "medianSeconds": 8.781399992585648e-05,
+            "meanSeconds": 8.932369999380778e-05,
+            "maxSeconds": 0.00013088799994420697
+          }
+        },
+        {
+          "file": "program-46.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 7.83909999881871e-05,
+          "transferSeconds": {
+            "minSeconds": 1.8770000451695523e-06,
+            "medianSeconds": 1.960000076905999e-06,
+            "meanSeconds": 1.987633330221191e-06,
+            "maxSeconds": 2.2099999341662624e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7845999991550343e-05,
+            "medianSeconds": 1.85339999916323e-05,
+            "meanSeconds": 1.925013333448078e-05,
+            "maxSeconds": 2.147399993646104e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 4.845199998726457e-05,
+            "medianSeconds": 6.658999996034254e-05,
+            "meanSeconds": 6.28278333427564e-05,
+            "maxSeconds": 7.280300008005725e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 6.859200004782906e-05,
+            "medianSeconds": 8.695899998656387e-05,
+            "meanSeconds": 8.406560000745837e-05,
+            "maxSeconds": 9.385999999267369e-05
+          }
+        },
+        {
+          "file": "program-47.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 7.897399996181775e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0429999949556077e-06,
+            "meanSeconds": 2.0514999960141723e-06,
+            "maxSeconds": 2.4600000188002014e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7846999980974942e-05,
+            "medianSeconds": 1.80760000034752e-05,
+            "meanSeconds": 1.835233331727674e-05,
+            "maxSeconds": 2.084799996282527e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 3.857000001517008e-05,
+            "medianSeconds": 5.818800002543867e-05,
+            "meanSeconds": 5.426460000990119e-05,
+            "maxSeconds": 6.012799997279217e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 5.866799995146721e-05,
+            "medianSeconds": 7.822349994057731e-05,
+            "meanSeconds": 7.46684333231921e-05,
+            "maxSeconds": 8.147599999119848e-05
+          }
+        },
+        {
+          "file": "program-48.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.66889999997511e-05,
+          "transferSeconds": {
+            "minSeconds": 1.918000066325476e-06,
+            "medianSeconds": 1.960000076905999e-06,
+            "meanSeconds": 1.988966664612235e-06,
+            "maxSeconds": 2.1679999235857395e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.792900002328679e-05,
+            "medianSeconds": 1.8096500014053163e-05,
+            "meanSeconds": 1.811179999625286e-05,
+            "maxSeconds": 1.868100002866413e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.775800000013987e-05,
+            "medianSeconds": 6.792450000148165e-05,
+            "meanSeconds": 6.80900666755709e-05,
+            "maxSeconds": 6.975899998451496e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.760600007917674e-05,
+            "medianSeconds": 8.795999997346371e-05,
+            "meanSeconds": 8.8190833336436e-05,
+            "maxSeconds": 9.04830000081347e-05
+          }
+        },
+        {
+          "file": "program-49.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 7.83899999987625e-05,
+          "transferSeconds": {
+            "minSeconds": 1.918000066325476e-06,
+            "medianSeconds": 2.001999973799684e-06,
+            "meanSeconds": 2.027999998214606e-06,
+            "maxSeconds": 2.2519999447467853e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7845999991550343e-05,
+            "medianSeconds": 1.805499994134152e-05,
+            "meanSeconds": 1.8099366661772366e-05,
+            "maxSeconds": 1.88050000815565e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.750800002919277e-05,
+            "medianSeconds": 6.771649998427165e-05,
+            "meanSeconds": 6.7953800006156e-05,
+            "maxSeconds": 6.955100002414838e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.744000001570384e-05,
+            "medianSeconds": 8.779349991527852e-05,
+            "meanSeconds": 8.808116666614296e-05,
+            "maxSeconds": 9.044200010066561e-05
+          }
+        },
+        {
+          "file": "program-50.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 7.918300002529577e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0225000412210647e-06,
+            "meanSeconds": 2.037633335779295e-06,
+            "maxSeconds": 2.4189999976442778e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780399998096982e-05,
+            "medianSeconds": 1.805499994134152e-05,
+            "meanSeconds": 1.9332233337839475e-05,
+            "maxSeconds": 5.6416000006720424e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.579900002634531e-05,
+            "medianSeconds": 6.652749993918405e-05,
+            "meanSeconds": 6.678346665770127e-05,
+            "maxSeconds": 7.305300005100435e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.573000002343178e-05,
+            "medianSeconds": 8.660400004600888e-05,
+            "meanSeconds": 8.815333333132003e-05,
+            "maxSeconds": 0.00013151200005268038
+          }
+        },
+        {
+          "file": "program-51.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 7.809900000665948e-05,
+          "transferSeconds": {
+            "minSeconds": 1.917999952638638e-06,
+            "medianSeconds": 2.0015000359308033e-06,
+            "meanSeconds": 2.0250999909876553e-06,
+            "maxSeconds": 2.4599999051133636e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.792900002328679e-05,
+            "medianSeconds": 1.8096500014053163e-05,
+            "meanSeconds": 1.845090000642813e-05,
+            "maxSeconds": 2.1264999986669864e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.76329999578229e-05,
+            "medianSeconds": 6.792499999619395e-05,
+            "meanSeconds": 6.806369999973564e-05,
+            "maxSeconds": 6.967499996335391e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.752299993375345e-05,
+            "medianSeconds": 8.808500001578068e-05,
+            "meanSeconds": 8.853969999715143e-05,
+            "maxSeconds": 9.314999999787688e-05
+          }
+        },
+        {
+          "file": "program-52.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.468700002595142e-05,
+          "transferSeconds": {
+            "minSeconds": 1.959999963219161e-06,
+            "medianSeconds": 2.0010000412185036e-06,
+            "meanSeconds": 2.0207666617958847e-06,
+            "maxSeconds": 2.2519999447467853e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.792900002328679e-05,
+            "medianSeconds": 1.8221499942683295e-05,
+            "meanSeconds": 1.8777766664849576e-05,
+            "maxSeconds": 2.097399999456684e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.571400001575967e-05,
+            "medianSeconds": 6.584049998537012e-05,
+            "meanSeconds": 6.619139999202162e-05,
+            "maxSeconds": 6.804900010592974e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.577199992032547e-05,
+            "medianSeconds": 8.610349999571554e-05,
+            "meanSeconds": 8.698993331866708e-05,
+            "maxSeconds": 8.902399997623434e-05
+          }
+        },
+        {
+          "file": "program-53.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.105899996735388e-05,
+          "transferSeconds": {
+            "minSeconds": 1.9590000874813995e-06,
+            "medianSeconds": 2.0850000055361306e-06,
+            "meanSeconds": 2.0889000059772418e-06,
+            "maxSeconds": 2.2930000795895467e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7763000073500734e-05,
+            "medianSeconds": 1.80755000087629e-05,
+            "meanSeconds": 1.8261966647514783e-05,
+            "maxSeconds": 2.2599999965677853e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.613199991534202e-05,
+            "medianSeconds": 6.704850000005536e-05,
+            "meanSeconds": 6.710323335331243e-05,
+            "maxSeconds": 6.896600007166853e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.614599994416494e-05,
+            "medianSeconds": 8.720950000906669e-05,
+            "meanSeconds": 8.745410000680447e-05,
+            "maxSeconds": 9.148300000560994e-05
+          }
+        },
+        {
+          "file": "program-54.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 7.859899994855368e-05,
+          "transferSeconds": {
+            "minSeconds": 1.917999952638638e-06,
+            "medianSeconds": 1.96000002006258e-06,
+            "meanSeconds": 1.988899998650595e-06,
+            "maxSeconds": 2.334999976483232e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7845999991550343e-05,
+            "medianSeconds": 1.7971499971736193e-05,
+            "meanSeconds": 1.9693433330303378e-05,
+            "maxSeconds": 6.26280000233237e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.671599999208411e-05,
+            "medianSeconds": 6.788300004245684e-05,
+            "meanSeconds": 6.800826666525003e-05,
+            "maxSeconds": 6.963400005588483e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.656299996800954e-05,
+            "medianSeconds": 8.787650000385838e-05,
+            "meanSeconds": 8.9690599994204e-05,
+            "maxSeconds": 0.00013376300000800256
+          }
+        },
+        {
+          "file": "program-55.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 7.97249999777705e-05,
+          "transferSeconds": {
+            "minSeconds": 1.9590000874813995e-06,
+            "medianSeconds": 2.0014999790873844e-06,
+            "meanSeconds": 2.012599994335081e-06,
+            "maxSeconds": 2.1689999130103388e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780499997039442e-05,
+            "medianSeconds": 1.8013999977029016e-05,
+            "meanSeconds": 1.8085466657187983e-05,
+            "maxSeconds": 1.8973000010191754e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.600699998671189e-05,
+            "medianSeconds": 6.767450003053455e-05,
+            "meanSeconds": 6.788153334582602e-05,
+            "maxSeconds": 7.030100005067652e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.585499995206192e-05,
+            "medianSeconds": 8.777300001838739e-05,
+            "meanSeconds": 8.797959999734909e-05,
+            "maxSeconds": 9.04820000187101e-05
+          }
+        },
+        {
+          "file": "program-56.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 7.926599994334538e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0009999843750848e-06,
+            "meanSeconds": 2.0015999969776505e-06,
+            "maxSeconds": 2.334999976483232e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7845999991550343e-05,
+            "medianSeconds": 1.805450000347264e-05,
+            "meanSeconds": 1.9519733329313263e-05,
+            "maxSeconds": 5.8500000022831955e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.771599998955935e-05,
+            "medianSeconds": 6.794549994992849e-05,
+            "meanSeconds": 6.801230002414134e-05,
+            "maxSeconds": 6.938400008493772e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.764799997607042e-05,
+            "medianSeconds": 8.796049996817601e-05,
+            "meanSeconds": 8.953363335043226e-05,
+            "maxSeconds": 0.00012963599999693542
+          }
+        },
+        {
+          "file": "program-57.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.418600009463262e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0009999843750848e-06,
+            "meanSeconds": 1.995833323083692e-06,
+            "maxSeconds": 2.043999984380207e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7845999991550343e-05,
+            "medianSeconds": 1.8014000033872435e-05,
+            "meanSeconds": 1.8579000008382234e-05,
+            "maxSeconds": 2.6311000056011835e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.567299999460374e-05,
+            "medianSeconds": 6.608949996689262e-05,
+            "meanSeconds": 6.62552666578146e-05,
+            "maxSeconds": 6.896800005051773e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.572900003400719e-05,
+            "medianSeconds": 8.610499992300902e-05,
+            "meanSeconds": 8.683009998928052e-05,
+            "maxSeconds": 9.65709999718456e-05
+          }
+        },
+        {
+          "file": "program-58.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 7.722300006207661e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.002000030643103e-06,
+            "meanSeconds": 2.0167000040297958e-06,
+            "maxSeconds": 2.1260000266920542e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7845999991550343e-05,
+            "medianSeconds": 1.8034499987606978e-05,
+            "meanSeconds": 1.844679998915429e-05,
+            "maxSeconds": 2.647799999522249e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.579900002634531e-05,
+            "medianSeconds": 6.784200002130092e-05,
+            "meanSeconds": 6.792476665395952e-05,
+            "maxSeconds": 7.092700002431229e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.623000007901283e-05,
+            "medianSeconds": 8.789799994701752e-05,
+            "meanSeconds": 8.838826664714361e-05,
+            "maxSeconds": 9.944800001449039e-05
+          }
+        },
+        {
+          "file": "program-59.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 7.884900003318762e-05,
+          "transferSeconds": {
+            "minSeconds": 1.917999952638638e-06,
+            "medianSeconds": 2.0009999843750848e-06,
+            "meanSeconds": 1.999966654390543e-06,
+            "maxSeconds": 2.0850000055361306e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780499997039442e-05,
+            "medianSeconds": 1.8013000044447836e-05,
+            "meanSeconds": 1.8633099997108124e-05,
+            "maxSeconds": 2.6685999955589068e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.575700001576479e-05,
+            "medianSeconds": 6.707000000005792e-05,
+            "meanSeconds": 6.708376667650858e-05,
+            "maxSeconds": 6.871700009014603e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.577200003401231e-05,
+            "medianSeconds": 8.71050000341711e-05,
+            "meanSeconds": 8.771683332800725e-05,
+            "maxSeconds": 9.736300000895426e-05
+          }
+        },
+        {
+          "file": "program-60.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 7.926700004645681e-05,
+          "transferSeconds": {
+            "minSeconds": 1.917999952638638e-06,
+            "medianSeconds": 2.0009999843750848e-06,
+            "meanSeconds": 2.0027666475167887e-06,
+            "maxSeconds": 2.1679999235857395e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780499997039442e-05,
+            "medianSeconds": 1.8012999987604417e-05,
+            "meanSeconds": 1.8373133336050766e-05,
+            "maxSeconds": 2.5517999915791734e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.504800001039257e-05,
+            "medianSeconds": 6.606950000787037e-05,
+            "meanSeconds": 6.625140000551255e-05,
+            "maxSeconds": 6.86760000689901e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.535400002074311e-05,
+            "medianSeconds": 8.610499997985244e-05,
+            "meanSeconds": 8.662729998908011e-05,
+            "maxSeconds": 9.598799999821495e-05
+          }
+        },
+        {
+          "file": "program-61.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.168500005467649e-05,
+          "transferSeconds": {
+            "minSeconds": 1.917999952638638e-06,
+            "medianSeconds": 2.0009999843750848e-06,
+            "meanSeconds": 1.9973333261683972e-06,
+            "maxSeconds": 2.1679999235857395e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780499997039442e-05,
+            "medianSeconds": 1.8012999930760998e-05,
+            "meanSeconds": 1.8143833331881374e-05,
+            "maxSeconds": 2.0306000010350544e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.575600002634019e-05,
+            "medianSeconds": 6.675700001324003e-05,
+            "meanSeconds": 6.679603333168416e-05,
+            "maxSeconds": 6.926000003204535e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.58129999414814e-05,
+            "medianSeconds": 8.672899997463901e-05,
+            "meanSeconds": 8.693719998973393e-05,
+            "maxSeconds": 9.140099996329809e-05
+          }
+        },
+        {
+          "file": "program-62.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 9.740500001953478e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.001999973799684e-06,
+            "meanSeconds": 2.0431666712283915e-06,
+            "maxSeconds": 2.5440000399612472e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780399998096982e-05,
+            "medianSeconds": 1.805499999818494e-05,
+            "meanSeconds": 1.838706667740553e-05,
+            "maxSeconds": 2.1516000060728402e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.563199997344782e-05,
+            "medianSeconds": 6.706950000534562e-05,
+            "meanSeconds": 6.692109998311935e-05,
+            "maxSeconds": 6.850800002666801e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.58129999414814e-05,
+            "medianSeconds": 8.710499997732768e-05,
+            "meanSeconds": 8.735133333175327e-05,
+            "maxSeconds": 9.22760000321432e-05
+          }
+        },
+        {
+          "file": "program-63.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 7.984999990640063e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0010000412185036e-06,
+            "meanSeconds": 2.0138666703436077e-06,
+            "maxSeconds": 2.252000058433623e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780399998096982e-05,
+            "medianSeconds": 1.8012999930760998e-05,
+            "meanSeconds": 1.8033999989105117e-05,
+            "maxSeconds": 1.8470999975761515e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.609000001844834e-05,
+            "medianSeconds": 6.78824999340577e-05,
+            "meanSeconds": 6.800673333297406e-05,
+            "maxSeconds": 7.23030000244762e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.627099998648191e-05,
+            "medianSeconds": 8.789700001443634e-05,
+            "meanSeconds": 8.805459999242279e-05,
+            "maxSeconds": 9.29430000269349e-05
+          }
+        },
+        {
+          "file": "program-64.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.08510000069873e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.001999973799684e-06,
+            "meanSeconds": 2.018033334631279e-06,
+            "maxSeconds": 2.168000037272577e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7763000073500734e-05,
+            "medianSeconds": 1.8012999930760998e-05,
+            "meanSeconds": 1.7996633334860235e-05,
+            "maxSeconds": 1.8471999965186114e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.567299999460374e-05,
+            "medianSeconds": 6.638150000526366e-05,
+            "meanSeconds": 6.65222333282145e-05,
+            "maxSeconds": 6.850900001609261e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.577099993090087e-05,
+            "medianSeconds": 8.63340000023527e-05,
+            "meanSeconds": 8.653689999770601e-05,
+            "maxSeconds": 8.91490000185513e-05
+          }
+        },
+        {
+          "file": "program-65.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.164300004409597e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0010000412185036e-06,
+            "meanSeconds": 2.0028333248471124e-06,
+            "maxSeconds": 2.0850000055361306e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7804000094656658e-05,
+            "medianSeconds": 1.7992499977026455e-05,
+            "meanSeconds": 1.956010000109624e-05,
+            "maxSeconds": 6.246300006296224e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.613200002902886e-05,
+            "medianSeconds": 6.792449994463823e-05,
+            "meanSeconds": 6.797893333138442e-05,
+            "maxSeconds": 7.005099996604258e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.639700001822348e-05,
+            "medianSeconds": 8.793900002501687e-05,
+            "meanSeconds": 8.954186665732777e-05,
+            "maxSeconds": 0.0001345150000133799
+          }
+        },
+        {
+          "file": "program-66.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.381099996768171e-05,
+          "transferSeconds": {
+            "minSeconds": 1.9590000874813995e-06,
+            "medianSeconds": 2.0429999949556077e-06,
+            "meanSeconds": 2.030599997245493e-06,
+            "maxSeconds": 2.2099999341662624e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780499997039442e-05,
+            "medianSeconds": 1.805500005502836e-05,
+            "meanSeconds": 1.8349499998748798e-05,
+            "maxSeconds": 2.1890999960305635e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.613200002902886e-05,
+            "medianSeconds": 6.790349999619139e-05,
+            "meanSeconds": 6.794980000298285e-05,
+            "maxSeconds": 6.9843000005676e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.664699998917058e-05,
+            "medianSeconds": 8.796000003030713e-05,
+            "meanSeconds": 8.832989999897715e-05,
+            "maxSeconds": 9.298499992382858e-05
+          }
+        },
+        {
+          "file": "program-67.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.393699999942328e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0014999790873844e-06,
+            "meanSeconds": 2.0667333387791586e-06,
+            "maxSeconds": 3.878000029544637e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780499997039442e-05,
+            "medianSeconds": 1.7971499914892775e-05,
+            "meanSeconds": 1.810206665974571e-05,
+            "maxSeconds": 2.0890999962830392e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.613200002902886e-05,
+            "medianSeconds": 6.788199999618882e-05,
+            "meanSeconds": 6.796373334433762e-05,
+            "maxSeconds": 7.05100000004677e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.631300011074927e-05,
+            "medianSeconds": 8.783450005012128e-05,
+            "meanSeconds": 8.81325333428625e-05,
+            "maxSeconds": 9.081600001081824e-05
+          }
+        },
+        {
+          "file": "program-68.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.785600005012384e-05,
+          "transferSeconds": {
+            "minSeconds": 1.9189999420632375e-06,
+            "medianSeconds": 2.001999973799684e-06,
+            "meanSeconds": 2.0195000198934093e-06,
+            "maxSeconds": 2.168000037272577e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7804000094656658e-05,
+            "medianSeconds": 1.7971500028579612e-05,
+            "meanSeconds": 1.817159998912151e-05,
+            "maxSeconds": 2.2767000018575345e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.584000004750123e-05,
+            "medianSeconds": 6.652799993389635e-05,
+            "meanSeconds": 6.672253332832649e-05,
+            "maxSeconds": 6.838300009803788e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.602200000495941e-05,
+            "medianSeconds": 8.652150000898473e-05,
+            "meanSeconds": 8.69136333373414e-05,
+            "maxSeconds": 9.231799992903689e-05
+          }
+        },
+        {
+          "file": "program-69.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 9.477799994783709e-05,
+          "transferSeconds": {
+            "minSeconds": 1.959999963219161e-06,
+            "medianSeconds": 2.1260000266920542e-06,
+            "meanSeconds": 2.1224000041305166e-06,
+            "maxSeconds": 2.4180000082196784e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7804000094656658e-05,
+            "medianSeconds": 1.8095999962497444e-05,
+            "meanSeconds": 1.9970133329631305e-05,
+            "maxSeconds": 6.525599997075915e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.567299999460374e-05,
+            "medianSeconds": 6.609000001844834e-05,
+            "meanSeconds": 6.638046668285824e-05,
+            "maxSeconds": 7.23040000139008e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.59380000974852e-05,
+            "medianSeconds": 8.641750002880144e-05,
+            "meanSeconds": 8.847300001662007e-05,
+            "maxSeconds": 0.00013951999994787911
+          }
+        },
+        {
+          "file": "program-70.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.510400004979601e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0015000359308033e-06,
+            "meanSeconds": 2.0293000034143917e-06,
+            "maxSeconds": 2.8360000214888714e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780399998096982e-05,
+            "medianSeconds": 1.7972000023291912e-05,
+            "meanSeconds": 1.8341266669115917e-05,
+            "maxSeconds": 2.706099996885314e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.629899996823951e-05,
+            "medianSeconds": 6.786150004245428e-05,
+            "meanSeconds": 6.798150000122404e-05,
+            "maxSeconds": 7.046799998988718e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.652199994685361e-05,
+            "medianSeconds": 8.785599999328042e-05,
+            "meanSeconds": 8.835206667375435e-05,
+            "maxSeconds": 9.823900006722397e-05
+          }
+        },
+        {
+          "file": "program-71.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.61880000684323e-05,
+          "transferSeconds": {
+            "minSeconds": 1.959999963219161e-06,
+            "medianSeconds": 2.0849999486927118e-06,
+            "meanSeconds": 2.1641999978783133e-06,
+            "maxSeconds": 4.587000034916855e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7763000073500734e-05,
+            "medianSeconds": 1.8012999987604417e-05,
+            "meanSeconds": 1.8150633339549436e-05,
+            "maxSeconds": 2.134900000783091e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.567299999460374e-05,
+            "medianSeconds": 6.642300002113188e-05,
+            "meanSeconds": 6.643616666224261e-05,
+            "maxSeconds": 6.85489999341371e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.606200003669073e-05,
+            "medianSeconds": 8.643849997724828e-05,
+            "meanSeconds": 8.675099999967036e-05,
+            "maxSeconds": 9.027500004776812e-05
+          }
+        },
+        {
+          "file": "program-72.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.072599996467034e-05,
+          "transferSeconds": {
+            "minSeconds": 1.960000076905999e-06,
+            "medianSeconds": 2.1260000266920542e-06,
+            "meanSeconds": 2.119566678023451e-06,
+            "maxSeconds": 2.334999976483232e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7888000002130866e-05,
+            "medianSeconds": 1.80755000087629e-05,
+            "meanSeconds": 1.8318966673784114e-05,
+            "maxSeconds": 2.1265999976094463e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.604899999729241e-05,
+            "medianSeconds": 6.792449994463823e-05,
+            "meanSeconds": 6.788846665510088e-05,
+            "maxSeconds": 6.934299995009496e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.656399995743413e-05,
+            "medianSeconds": 8.806499999991502e-05,
+            "meanSeconds": 8.832700000690844e-05,
+            "maxSeconds": 9.13590000664044e-05
+          }
+        },
+        {
+          "file": "program-73.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.535500001016771e-05,
+          "transferSeconds": {
+            "minSeconds": 2.0429999949556077e-06,
+            "medianSeconds": 2.168000037272577e-06,
+            "meanSeconds": 2.155833347690835e-06,
+            "maxSeconds": 2.2939999553273083e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.780499997039442e-05,
+            "medianSeconds": 1.7950499966445932e-05,
+            "meanSeconds": 1.8195199997232216e-05,
+            "maxSeconds": 2.1557999957622087e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.55899999628673e-05,
+            "medianSeconds": 6.575699995892137e-05,
+            "meanSeconds": 6.58828999992996e-05,
+            "maxSeconds": 6.838399997377564e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.564600000227074e-05,
+            "medianSeconds": 8.593799998379836e-05,
+            "meanSeconds": 8.623393334422265e-05,
+            "maxSeconds": 8.960799993928958e-05
+          }
+        },
+        {
+          "file": "program-74.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.614699993358954e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.001999973799684e-06,
+            "meanSeconds": 2.0071666578284445e-06,
+            "maxSeconds": 2.1690000266971765e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7845999991550343e-05,
+            "medianSeconds": 1.8242000010104675e-05,
+            "meanSeconds": 2.004506666632248e-05,
+            "maxSeconds": 6.24619999598508e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.571400001575967e-05,
+            "medianSeconds": 6.750799997234935e-05,
+            "meanSeconds": 6.763133333151928e-05,
+            "maxSeconds": 7.376199994268973e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.585399996263732e-05,
+            "medianSeconds": 8.779349997212194e-05,
+            "meanSeconds": 8.96835666556702e-05,
+            "maxSeconds": 0.00013389000002916873
+          }
+        },
+        {
+          "file": "program-75.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 8.44779999624734e-05,
+          "transferSeconds": {
+            "minSeconds": 1.958999973794562e-06,
+            "medianSeconds": 2.0429999949556077e-06,
+            "meanSeconds": 2.044299996365832e-06,
+            "maxSeconds": 2.4180000082196784e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.7846999980974942e-05,
+            "medianSeconds": 1.8075999946631782e-05,
+            "meanSeconds": 1.9033466651308116e-05,
+            "maxSeconds": 2.26839999868389e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.68830000449816e-05,
+            "medianSeconds": 6.788299998561342e-05,
+            "meanSeconds": 6.789823334353665e-05,
+            "maxSeconds": 6.917500002145971e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.764599999722122e-05,
+            "medianSeconds": 8.80644999483593e-05,
+            "meanSeconds": 8.89759999912106e-05,
+            "maxSeconds": 9.265199992114503e-05
+          }
+        },
+        {
+          "file": "program-76.anec",
+          "operation": "add",
+          "encoder": "h13-source-qualified",
+          "setupSeconds": 9.477799994783709e-05,
+          "transferSeconds": {
+            "minSeconds": 2.0009999843750848e-06,
+            "medianSeconds": 2.0429999949556077e-06,
+            "meanSeconds": 2.048766657480883e-06,
+            "maxSeconds": 2.2100000478531e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.784600010523718e-05,
+            "medianSeconds": 1.8221999994239013e-05,
+            "meanSeconds": 1.882496666970231e-05,
+            "maxSeconds": 2.1306999997250387e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 6.575699990207795e-05,
+            "medianSeconds": 6.700700004103055e-05,
+            "meanSeconds": 6.732959999832626e-05,
+            "maxSeconds": 7.276099995578988e-05
+          },
+          "totalSeconds": {
+            "minSeconds": 8.618899994417006e-05,
+            "medianSeconds": 8.733499998925254e-05,
+            "meanSeconds": 8.820333332550944e-05,
+            "maxSeconds": 9.323500000846252e-05
+          }
+        }
+      ],
+      "throughputEvaluationsPerSecond": 31.08492013170574
+    },
+    {
+      "case": "09-add-relu-per-op",
+      "result": "every output matched on every iteration",
+      "programCount": 2,
+      "warmup": 3,
+      "iterations": 30,
+      "referenceCriteria": {
+        "y": "exact fp16 values; signed zeros equal, NaNs rejected"
+      },
+      "endToEnd": {
+        "minSeconds": 0.0006747779999614067,
+        "medianSeconds": 0.000679135499979111,
+        "meanSeconds": 0.0006893623333288208,
+        "maxSeconds": 0.0007513749999361607,
+        "samples": [
+          0.0006784469999274734,
+          0.0006770719999167341,
+          0.0006803240000863298,
+          0.0007513749999361607,
+          0.0007185599999957049,
+          0.0007130139999844687,
+          0.0007128889999421517,
+          0.0007145979999449992,
+          0.0007167250000748027,
+          0.0007153490000746388,
+          0.0007132650000585272,
+          0.0006754029999456179,
+          0.0006808660000388045,
+          0.0006780300000173156,
+          0.0006817419999833874,
+          0.0006820340000786018,
+          0.0006782389999671068,
+          0.0006766550000065763,
+          0.0006769880000092598,
+          0.0006781970000702131,
+          0.000679073000014796,
+          0.0006782809999776873,
+          0.0006791979999434261,
+          0.000677612999993471,
+          0.0006770300000198404,
+          0.000675361999924462,
+          0.0006747779999614067,
+          0.0006772389999696315,
+          0.0006817830000045433,
+          0.0006807409999964875
+        ],
+        "note": "First program's first transfer through the last program's last readback per iteration; includes Python composition between programs, never program setup."
+      },
+      "programTiming": [
+        {
+          "file": "program-0.anec",
+          "operation": "add",
+          "encoder": "h13-oracle-parity",
+          "setupSeconds": 0.00016878799999631156,
+          "transferSeconds": {
+            "minSeconds": 2.7520000003278255e-06,
+            "medianSeconds": 2.7940000109083485e-06,
+            "meanSeconds": 2.8465333343774546e-06,
+            "maxSeconds": 3.0440000955422875e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 2.197399999204208e-05,
+            "medianSeconds": 2.234999999473075e-05,
+            "meanSeconds": 2.3427999985869973e-05,
+            "maxSeconds": 5.2370999924278294e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 0.00013509699999758595,
+            "medianSeconds": 0.00013522200003990292,
+            "meanSeconds": 0.0001363635333518687,
+            "maxSeconds": 0.00014080999994803278
+          },
+          "totalSeconds": {
+            "minSeconds": 0.00015986500000053638,
+            "medianSeconds": 0.00016047000008256873,
+            "meanSeconds": 0.00016263806667211612,
+            "maxSeconds": 0.00019564100000479812
+          }
+        },
+        {
+          "file": "program-1.anec",
+          "operation": "relu",
+          "encoder": "h13-oracle-parity",
+          "setupSeconds": 0.0001014900000200214,
+          "transferSeconds": {
+            "minSeconds": 1.4589999182135216e-06,
+            "medianSeconds": 1.5010000424808823e-06,
+            "meanSeconds": 1.531566666320335e-06,
+            "maxSeconds": 1.7510000134279835e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 1.88050000815565e-05,
+            "medianSeconds": 1.9139000073664647e-05,
+            "meanSeconds": 1.9255566663408293e-05,
+            "maxSeconds": 2.064000000245869e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 0.00013492999994468846,
+            "medianSeconds": 0.00013518099996190358,
+            "meanSeconds": 0.00013637189999447704,
+            "maxSeconds": 0.00013960100000076636
+          },
+          "totalSeconds": {
+            "minSeconds": 0.00015531999997620005,
+            "medianSeconds": 0.00015615450001860154,
+            "meanSeconds": 0.00015715903332420568,
+            "maxSeconds": 0.00016128300001128082
+          }
+        }
+      ],
+      "throughputEvaluationsPerSecond": 1472.460208648728
+    },
+    {
+      "case": "10-add-relu-fused",
+      "result": "every output matched on every iteration",
+      "programCount": 1,
+      "warmup": 3,
+      "iterations": 30,
+      "referenceCriteria": {
+        "y": "exact fp16 values; signed zeros equal, NaNs rejected"
+      },
+      "endToEnd": {
+        "minSeconds": 0.0001596570000401698,
+        "medianSeconds": 0.00016007350001245868,
+        "meanSeconds": 0.00016051300000299306,
+        "maxSeconds": 0.00016466099998524442,
+        "samples": [
+          0.00016374299991639418,
+          0.00016053299998475268,
+          0.00016028200002438098,
+          0.00016086599998743623,
+          0.00016003200005343388,
+          0.00016069899993453873,
+          0.00015994900002169743,
+          0.00016061600001648912,
+          0.00015978099997937534,
+          0.00016007399995032756,
+          0.0001599070000111169,
+          0.00016028300001380558,
+          0.00016157499999280844,
+          0.0001599489999080106,
+          0.00015978199996879994,
+          0.0001599070000111169,
+          0.00015994900002169743,
+          0.0001617000000351254,
+          0.00016011500008517032,
+          0.0001600740000640144,
+          0.00015994900002169743,
+          0.00015994900002169743,
+          0.000161491999961072,
+          0.00016019800000321993,
+          0.0001600730000745898,
+          0.00015986500000053638,
+          0.00016466099998524442,
+          0.00015986500000053638,
+          0.0001596570000401698,
+          0.00015986500000053638
+        ],
+        "note": "First program's first transfer through the last program's last readback per iteration; includes Python composition between programs, never program setup."
+      },
+      "programTiming": [
+        {
+          "file": "program-0.anec",
+          "operation": "chain",
+          "encoder": "composed-chain",
+          "setupSeconds": 0.00013588899992100778,
+          "transferSeconds": {
+            "minSeconds": 2.7100001034341403e-06,
+            "medianSeconds": 2.7929999646403303e-06,
+            "meanSeconds": 2.7881000088806712e-06,
+            "maxSeconds": 3.0429999924308504e-06
+          },
+          "submitSeconds": {
+            "minSeconds": 2.1807000052831427e-05,
+            "medianSeconds": 2.2161999993386416e-05,
+            "meanSeconds": 2.2402233317582915e-05,
+            "maxSeconds": 2.672799996616959e-05
+          },
+          "readbackSeconds": {
+            "minSeconds": 0.00013497199995526898,
+            "medianSeconds": 0.00013509699999758595,
+            "meanSeconds": 0.00013532266667652947,
+            "maxSeconds": 0.00013714099998196616
+          },
+          "totalSeconds": {
+            "minSeconds": 0.0001596570000401698,
+            "medianSeconds": 0.00016007350001245868,
+            "meanSeconds": 0.00016051300000299306,
+            "maxSeconds": 0.00016466099998524442
+          }
+        }
+      ],
+      "throughputEvaluationsPerSecond": 6247.130224066876
     }
   ],
-  "device_free_verification": [
-    "Linux GNUstep build PASS",
-    "H14 parity 718 cases / 1436 artifacts PASS",
-    "H13 CLI PASS",
-    "H13 package simulation ALL SIM CHECKS PASSED"
+  "sameBootComparisons": [
+    {
+      "case": "08-mlp-768-1024-768",
+      "baselinePrograms": 92,
+      "optimizedPrograms": 77,
+      "baselineEndToEnd": {
+        "minSeconds": 0.04142479799998,
+        "medianSeconds": 0.041523024000014175,
+        "meanSeconds": 0.041539850033329155,
+        "maxSeconds": 0.04178345100001479,
+        "samples": [
+          0.04156949399998666,
+          0.04146424600003229,
+          0.04149281000002247,
+          0.04142479799998,
+          0.04143989299996065,
+          0.0415064030000849,
+          0.0414632449999317,
+          0.04178345100001479,
+          0.04166644400004316,
+          0.04147677299999941,
+          0.04155727900001693,
+          0.04152317000000494,
+          0.04151082699991093,
+          0.041545060999965244,
+          0.04149835900000198,
+          0.04147275699995134,
+          0.04149965199997041,
+          0.04157658600001923,
+          0.04153914000005443,
+          0.0415108690000352,
+          0.04155936399990878,
+          0.041567995999912455,
+          0.04167015699999865,
+          0.04151412099997742,
+          0.041501904000028844,
+          0.041598477000093226,
+          0.041549606999979005,
+          0.04152287800002341,
+          0.041650099999969825,
+          0.041539639999996325
+        ],
+        "note": "First program's first transfer through the last program's last readback per iteration; includes Python composition between programs, never program setup."
+      },
+      "optimizedMedianSeconds": 0.03216993950002234,
+      "ratioOfMedians": 1.2907398846673412
+    },
+    {
+      "case": "09-add-relu-per-op",
+      "baselinePrograms": 9,
+      "optimizedPrograms": 2,
+      "baselineEndToEnd": {
+        "minSeconds": 0.0015615650000881942,
+        "medianSeconds": 0.0017274405000193838,
+        "meanSeconds": 0.0017133944999917123,
+        "maxSeconds": 0.0020056109999586624,
+        "samples": [
+          0.0020056109999586624,
+          0.0018540370000437179,
+          0.0018474900000455818,
+          0.0018485330000430622,
+          0.0018531199999642922,
+          0.001847657999974217,
+          0.001850826000008965,
+          0.0018466569999873172,
+          0.0018484500000113258,
+          0.0017319439999710085,
+          0.0017281499999626249,
+          0.0017281909999837808,
+          0.001727064999954564,
+          0.0017278160000842036,
+          0.0017295679999733693,
+          0.001728858999967997,
+          0.0016669359999923472,
+          0.001634494999962044,
+          0.001636371000017789,
+          0.0016484639999134743,
+          0.0016415000000051805,
+          0.0016370390000020052,
+          0.0016375799999650553,
+          0.0016060570000036023,
+          0.001568945000030908,
+          0.0015624399999296656,
+          0.0015696959999331739,
+          0.0015615650000881942,
+          0.001564979000022504,
+          0.0015617929999507396
+        ],
+        "note": "First program's first transfer through the last program's last readback per iteration; includes Python composition between programs, never program setup."
+      },
+      "optimizedMedianSeconds": 0.000679135499979111,
+      "ratioOfMedians": 2.5435873990868045
+    }
   ],
-  "finish_event_evidence": {
-    "source": "Owned macOS 26.6.2 ANE firmware; raw firmware not distributed",
-    "event_decoder": "0x6a5f0: type 5; 0x6a5fc: TID equals task count minus one; ANE_TM_EVENT_FINISH",
-    "retirement": "IRQ path 0x6b5e0 marks last TD completed; virtual call at 0x6b610 resolves via H13 table 0xf7bf0+160 to 0x3c1f4. It checks NID, then clears bit 0 of the selected TQ_NID register at 0x3c254..0x3c258.",
-    "scope": "Source-backed task-slot retirement. Not independent proof of all output-DMA visibility or safe unmap."
+  "finiteOverflow": {
+    "inputValues": [
+      65504,
+      65504
+    ],
+    "expectedFirstOutput": "+inf",
+    "oldSentinelLibraryResult": "ane_exec failed: -110, errno=0",
+    "abi1Result": "all outputs match"
+  },
+  "postRunKernelCheck": {
+    "pattern": "apple-dart.*fault|SError|completion failed|wedged|WARNING|BUG:",
+    "output": "-- No entries --",
+    "moduleRefcount": "0"
+  },
+  "reproduction": {
+    "firstRunCatalog": "tests/h13_first_run/rungs.json",
+    "runner": "tools/h13_run_linux.py --benchmark-json REPORT --warmup 3 --iterations 30",
+    "fusedModel": "research/oracles/h13/chain_add_relu_c512.json#mil",
+    "fusedInputPatterns": {
+      "x": "fp16((i % 17 - 8) / 8), i=0..511",
+      "z": "fp16((i % 11 - 5) / 4), i=0..511"
+    },
+    "schedules": [
+      "per-op",
+      "chain"
+    ],
+    "requires": "Exclusive hardware ownership and source-bound reviewed preflight; no approved identity defaults"
   },
   "unqualified": [
-    "Repeated submission and buffer reuse",
-    "Reclamation/unmap after completion",
-    "General-chain native correctness",
-    "Native throughput and latency",
-    "Cold-power-on repeatability"
+    "Cold-power-on repeatability",
+    "General chain fusion outside the decoded supported forms",
+    "M2 and later native execution",
+    "End-to-end mlx-omarchy model integration"
   ],
-  "hardware_handoff": "not released; compiler owner retains exclusive lease"
+  "historicalEvidence": "https://github.com/joshuaswarren/mil-hwx-compiler/blob/8a874b945f49df1716b271d4a07f7807c89bf7fc/receipts/2026-09-06-m1-native-progress.json",
+  "hardwareHandoff": {
+    "state": "compiler lease released and MLX acknowledgment received",
+    "finalBootId": "0faefd51-fa93-4b26-aae6-e37c1e193b72",
+    "onlineCpus": "0-7",
+    "aneModule": "unloaded",
+    "acceleratorNode": "absent",
+    "sshd": "active",
+    "tailscaled": "active",
+    "kernelCheck": "-- No entries --",
+    "acknowledgedAt": "2026-09-07T02:54:47.304Z"
+  },
+  "softwareVerification": {
+    "runtime": "16 PASS, 0 SKIP; real libane loading, no device execution",
+    "reference": "7 PASS",
+    "cli": "PASS (device-free)",
+    "simulation": "ALL SIM CHECKS PASSED",
+    "preflight": "all cases behave as gated",
+    "firstRun": "8 rung(s) dry-run OK",
+    "encoder": "H13_ENCODING_OK; ANEC assertions exit 0"
+  },
+  "benchmarkBootId": "be278460-14a1-4df1-b584-bd89a9ba24c7"
 }

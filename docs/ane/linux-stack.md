@@ -24,7 +24,7 @@ The reviewed H13 runtime uses a libane Python shared library that exports `pyane
 
 A Linux driver does not compile Core ML or MIL into HWX. It accepts already compiled program data in the format expected by its reviewed driver and firmware combination. **Evidence: high for the open driver architecture.** The ioctl and task paths in [`ane_drv.c`](https://github.com/eiln/ane/blob/0dcea9976fae0b500a236a62fca69cd4d39f0809/ane/src/ane_drv.c) and [`ane_tm.c`](https://github.com/eiln/ane/blob/0dcea9976fae0b500a236a62fca69cd4d39f0809/ane/src/ane_tm.c) contain no graph compiler.
 
-This repository's H13 encoder constructs target-specific ANEC packages without calling Apple's compiler at runtime. The native wrapper only accepts a package whose `compiler.sha256` marker matches the pinned reviewed `ANE_COMPILER_BIN`; `--package DIR` verifies that marker before dispatch. Dry-run validates the package and reference contract without loading libane or performing device calls. Native qualification remains unestablished.
+This repository's H13 encoder constructs target-specific ANEC packages without calling Apple's compiler at runtime. The native wrapper only accepts a package whose `compiler.sha256` marker matches the pinned reviewed `ANE_COMPILER_BIN`; `--package DIR` verifies that marker before dispatch. Dry-run validates the package and reference contract without loading libane or performing device calls. The [M1 native receipt](../../receipts/2026-09-06-m1-native-progress.json) records successful execution and timing for eight first-run models and both 512-element add-ReLU schedules using the reviewed ABI-1 driver and library. This does not qualify other SoCs or end-to-end model integration.
 
 ## Historical tinygrad work
 
