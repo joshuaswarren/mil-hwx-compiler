@@ -9,12 +9,16 @@ package, and the libane call sequence tools/h13_run_linux.py will issue.
     python3 tests/h13_first_run/first_run.py --rung 1    # one rung
     python3 tests/h13_first_run/first_run.py --rung 1 --execute   # submit
 
-`--execute` runs tests/run_h13_linux_hardware.sh, which refuses to submit
-unless preflight.sh passes. A dry run needs no device and no ANE host.
+`--execute` submits the exact dry-run package through
+tests/run_h13_linux_hardware.sh, which refuses to submit unless preflight.sh
+passes against the reviewed identity file (ANE_REVIEWED_IDENTITIES). A dry
+run needs no device and no ANE host.
 """
 
 import argparse
+import hashlib
 import json
+import os
 import shutil
 import struct
 import subprocess
@@ -24,7 +28,7 @@ from pathlib import Path
 
 KIT = Path(__file__).resolve().parent
 ROOT = KIT.parents[1]
-COMPILER = ROOT / "build/mil-hwxc"
+COMPILER = Path(os.environ.get("ANE_COMPILER_BIN") or ROOT / "build/mil-hwxc")
 REFERENCE = ROOT / "tools/h13_reference.py"
 RUNNER = ROOT / "tools/h13_run_linux.py"
 HARDWARE = ROOT / "tests/run_h13_linux_hardware.sh"
@@ -89,6 +93,10 @@ def check(rung, work):
     package = directory / "pkg"
     print(run([COMPILER, "--target", "H13", "--mil", mil,
                "--model-root", directory / "models", "--output", package]).strip())
+    # Same provenance record the wrapper writes, so --package can verify the
+    # package was produced by exactly the binary the wrapper attests.
+    (package / "compiler.sha256").write_text(
+        f"{hashlib.sha256(COMPILER.read_bytes()).hexdigest()}  mil-hwxc\n")
     manifest = json.loads((package / "manifest.json").read_text())
     encoders = Counter(program["encoder"] for program in manifest["programs"])
     if encoders != Counter(rung["encoders"]):
@@ -110,8 +118,9 @@ def check(rung, work):
     print(f"PASS rung {rung['id']} {rung['name']}: {dict(encoders)}, "
           f"{descriptors} task descriptors, {len(plan['programs'])} dispatched "
           f"programs, {calls} libane calls, plan {directory / 'plan.json'}")
-    print("  hardware: ANE_CHECKOUT=~/src/omarchy-ane bash "
-          f"{HARDWARE.relative_to(ROOT)} {mil} {directory / 'models'} "
+    print("  hardware: ANE_REVIEWED_IDENTITIES=<reviewed identities file> "
+          f"ANE_CHECKOUT=~/src/omarchy-ane bash {HARDWARE.relative_to(ROOT)} "
+          f"--package {directory / 'pkg'} {mil} {directory / 'models'} "
           + " ".join(f"{spec['name']}={directory / 'inputs' / (spec['name'] + '.fp16')}"
                      for spec in rung["inputs"]))
     return directory, mil
@@ -119,7 +128,8 @@ def check(rung, work):
 
 def execute(rung, work):
     directory, mil = check(rung, work)
-    command = ["bash", HARDWARE, mil, directory / "models",
+    command = ["bash", HARDWARE, "--package", directory / "pkg", mil,
+               directory / "models",
                *[f"{spec['name']}={directory / 'inputs' / (spec['name'] + '.fp16')}"
                  for spec in rung["inputs"]]]
     print(f"submitting rung {rung['id']}: {' '.join(str(item) for item in command)}")

@@ -224,6 +224,13 @@ int main(int argc, const char *argv[]) {
         BOOL valid = YES;
         for (NSUInteger programIndex = 0; valid && programIndex < programs.count; ++programIndex) {
             NSDictionary *program = programs[programIndex];
+            NSArray *artifactOperations = @[program[@"operation"]];
+            if ([manifest[@"schedule"] isEqualToString:@"chain"]) {
+                NSMutableArray *operations = [NSMutableArray array];
+                for (NSDictionary *task in manifest[@"tasks"])
+                    [operations addObject:task[@"operation"]];
+                artifactOperations = operations;
+            }
             NSMutableArray<ANEHWXBinding *> *bindings = [NSMutableArray array];
             for (NSDictionary *binding in program[@"inputs"])
                 [bindings addObject:runtimeBinding(binding, ANESurfaceRoleInput)];
@@ -235,7 +242,7 @@ int main(int argc, const char *argv[]) {
             NSData *image = readFile([package stringByAppendingPathComponent:filename], &error);
             if (!image) return fail(error.localizedDescription);
             ANEHWXArtifact *artifact = [[ANEHWXArtifact alloc]
-                initWithImage:image bindings:bindings operations:@[program[@"operation"]]];
+                initWithImage:image bindings:bindings operations:artifactOperations];
             ANEExecutableBundle *bundle = [[ANEExecutableBundle alloc]
                 initWithTarget:@"H13" artifacts:@[artifact] dispatchPlan:@[@0]
                 passTrace:@[]];

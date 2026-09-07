@@ -90,6 +90,19 @@ physical range must be fully covered by producer writes and dispatched after
 each overlapping producer. Padding beyond a consumer's logical count is
 ignored. Unsupported retiling fails with `h13.unsupported-chain`.
 
+The default `--schedule=per-op` keeps these intermediate transfers explicit.
+`--schedule=chain` currently accepts only two operations: a supported producer
+followed directly by the final `relu`, with all function inputs consumed by
+the producer. The producer must use the existing Apple-parity matvec or
+whole-tensor elementwise lowering. This emits one program without an
+intermediate buffer and enables ReLU only on the producer's final task.
+Oracle checks cover add at `[1,512,1,1]` and two-task matmul at
+`[1,64,256] × [256,256]`. Other chain edges fail with
+`h13.chain-unrepresentable-edge` or `h14.chain-unrepresentable-edge`;
+non-straight-line graphs and incompatible boundary inputs fail with
+`chain-outside-envelope`. General intermediate DMA/L2 routing is unresolved.
+Descriptor parity and host simulation do not qualify native M1 execution.
+
 Run the host-only checks with `make test-h13` (set `GNUSTEP_PREFIX` on Linux).
 They cover encoding, coefficient packing, serialization, and the MIL CLI;
 they do not execute ANE commands. A minimal compilation example is:
@@ -152,18 +165,9 @@ or establish device safety. Device dispatch is handled by the validated runner b
 `tools/h13_reference.py` evaluates the accepted H13 MIL subset without NumPy.
 It reads and writes dense little-endian fp16 files. Matmul accumulates in
 float32 and rounds once to fp16. Reductions larger than 512 elements on H13
-instead round each chunk before the add chain, so their device results can
-differ by the extra fp16 rounding.
-
-`reduce_sum`, `reduce_mean`, `softmax`, and `layer_norm` accumulate their sums,
-means, and variances in float32 and round once. `reduce_max` is exact. Softmax
-subtracts the group maximum before exponentiating. These agree with H13 in
-form, not bit-for-bit: Apple's softmax program evaluates the exponential and
-the reciprocal through the fp16 lookup tables in its constant section, so
-device output carries those tables' interpolation error, and layer_norm's
-device reciprocal square root is likewise hardware-evaluated. Byte parity with
-Apple is asserted on the emitted program (`make test-h13-parity`); numerical
-agreement with this reference is a tolerance, not an equality.
+round each chunk before the add chain, so tensors marked `chunked-fp16` use
+`|device-reference| <= 0.02 + 0.02 * |reference|`; other outputs must be
+byte-for-byte equal to the fp16 reference.
 
 ```bash
 python3 tools/h13_reference.py model.mil --model-root models \
@@ -173,15 +177,24 @@ python3 tools/h13_run_linux.py build/h13-package --mil model.mil \
 ```
 
 The Linux runner imports `research/inspect_anec.py` and validates the complete
-package before it opens libane. Dry-run mode performs package, input, reference,
-binding, and dispatch-plan checks without loading libane or writing an output. A
-hardware run uses the `omarchy` branch Python binding library from
-`~/src/omarchy-ane`, forwards intermediate slices as raw physical buffers, and
-compares elementwise output at exact fp16 equality. A tensor marked
-`chunked-fp16` uses
-`abs(device-reference) <= 0.03125 + 0.01 * abs(reference)` to allow the extra
-partial-sum rounding. Override the binding path with `--libane-library`. Run the
-host-only reference and dry-run checks with `make test-h13-reference`.
+package, dense inputs, MIL returns, bindings, dispatch plan, and reference before
+it opens libane. Dry-run performs those checks without loading libane, writing an
+output, or reporting native timings. Native execution resolves the selected
+`--libane-library` ABI: `pyane_init`, `pyane_free`, `__ane_src_size`,
+`__ane_dst_size`, `__ane_send`, `__ane_read`, and `ane_exec`. It validates
+the returned surface sizes before the first transfer and writes outputs only after
+every declared output passes.
+
+`--benchmark-json PATH` enables a correctness-gated native benchmark;
+`--warmup N` and `--iterations N` require that flag and are rejected with
+`--dry-run`. The defaults are three validated warmups and ten measured
+iterations. The report separates setup from the timed work. Per-program samples
+cover transfer, submission, readback, and their total; end-to-end samples span
+the first transfer through the last readback and include Python intermediate
+composition between programs. Final output unpacking, numerical checks, reference evaluation and
+program setup are outside every measured window. See
+`tests/h13_first_run/RUNBOOK.md` for reviewed identity and exact-package
+provenance requirements.
 
 ### H13 Apple-parity programs
 
