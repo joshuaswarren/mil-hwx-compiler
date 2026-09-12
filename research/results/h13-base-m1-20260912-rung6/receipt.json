@@ -1,0 +1,100 @@
+{
+  "schema": "mil-hwxc.h13-hardware-qualification.v1",
+  "date": "2026-09-12",
+  "host": {
+    "name": "jwm1-linux",
+    "hardware": "base Apple M1",
+    "kernel": "7.1.6-1-1-ARCH",
+    "architecture": "aarch64",
+    "deviceTree": "apple,t8103-ane",
+    "aneNode": "/dev/accel/accel0",
+    "postFailureRuntimeStatus": "active",
+    "postFailureDeviceUsers": "none"
+  },
+  "source": {
+    "initialCompilerCommit": "783dbe138d6cd170abe20854697498f60ea725b5",
+    "qualificationFixCommit": "ea903c46ecd75b4f7efb90ca72b8a68ad452a208",
+    "compilerCommit": "aaf82b8ca03664284233705b3aef97e152d1418d",
+    "compilerSha256": "764b999cb1b4a77d70fe7af748ded23facbb513b0ffde18e9814a87e693d55cc",
+    "compilerBuildId": "09ee6871bf121116ff56a16e674705b2719cb2ca",
+    "driverCommit": "f261a6cb537aca62f267ad3d01beda0d6877544c",
+    "driverModuleSha256": "83819510cae37e5c748ff7586bf009d038866e5bfb657372646533a07b0ce0f0",
+    "driverModuleSrcversion": "DD43701FCB506056A340587",
+    "libaneSha256": "8795e4c8d2b7b4440217ee5bebf342dc6795e909719e78bacbfc02e973231aa9"
+  },
+  "rung1Reuse": {
+    "result": "pass",
+    "reason": "The fixed compiler emitted a byte-identical ANEC payload and the driver, libane, probe, model, inputs, and expected output were unchanged.",
+    "oldPayloadSha256": "ac97b46653e5f0dd85ce0f45338b35aabd6049f9612f46ae756e4c224bd0bcb5",
+    "newPayloadSha256": "ac97b46653e5f0dd85ce0f45338b35aabd6049f9612f46ae756e4c224bd0bcb5",
+    "hardwareOutputSha256": "bf6058e573040afe541d8d8a02a604021c02095539a7a04e1d5b25f341c3ca3a"
+  },
+  "rungs": [
+    {
+      "id": 2,
+      "name": "02-add-parity",
+      "result": "pass",
+      "payloadSha256": "9a6a6a9a701ce207d4a8ea80ee1ca6d5ade076be2115b73a9aed6f4236aa56ab",
+      "outputSha256": "bf6058e573040afe541d8d8a02a604021c02095539a7a04e1d5b25f341c3ca3a",
+      "expectedSha256": "bf6058e573040afe541d8d8a02a604021c02095539a7a04e1d5b25f341c3ca3a",
+      "byteIdentical": true
+    },
+    {
+      "id": 3,
+      "name": "03-mul-scalar",
+      "result": "pass",
+      "payloadSha256": "ac2a26b1cd22644badd2b82aae4cb4f88b85e49e4a7287c997bcb0a22495ac0f",
+      "outputSha256": "f864fdbfb24b206ed45210ff619fc5b88155e83b6590aa416adedf826767177c",
+      "expectedSha256": "f864fdbfb24b206ed45210ff619fc5b88155e83b6590aa416adedf826767177c",
+      "byteIdentical": true
+    },
+    {
+      "id": 4,
+      "name": "04-matvec-k256-n512",
+      "result": "pass",
+      "payloadSha256": "74954e0c0bd9177eeaa0a24979e1d6380579adb499207fd5d8b7bbc46675af40",
+      "scratchBytes": 16384,
+      "outputSha256": "5691ee40f4d48460f1aa94add45438ba4b19612c8e7966f62ba930c71d3f0234",
+      "expectedSha256": "5691ee40f4d48460f1aa94add45438ba4b19612c8e7966f62ba930c71d3f0234",
+      "byteIdentical": true
+    },
+    {
+      "id": 5,
+      "name": "05-softmax-512",
+      "result": "pass",
+      "payloadSha256": "39b8006778407379dbd4c0803e385bdadb18eab3eede6ff2567a23c5e0af1210",
+      "outputSha256": "671419f2aa0c8d678b8ac6557010f89a29d319aa4ba729f370d6ebf46b0a400c",
+      "expectedSha256": "671419f2aa0c8d678b8ac6557010f89a29d319aa4ba729f370d6ebf46b0a400c",
+      "byteIdentical": true
+    },
+    {
+      "id": 6,
+      "name": "06-chain-add-mul",
+      "result": "failed-exact-fp16-reference",
+      "programPayloadSha256": [
+        "9a6a6a9a701ce207d4a8ea80ee1ca6d5ade076be2115b73a9aed6f4236aa56ab",
+        "62595e4a61db24066b83a4f7c077d459c69a6a740109098ee0122b4b46dcd3cc"
+      ],
+      "actualSha256": "8cdcd9ef211ab08d1fc1c3c24fa33467acb90509aab4a6a10ebe0f8bbf4ddf47",
+      "expectedSha256": "ad9d4acd30db846516d41444288314a1ae53811c46dd4313f97e002f83ac07ca",
+      "actualBytes": 128,
+      "expectedBytes": 128,
+      "finite": true,
+      "byteIdentical": false,
+      "bitMismatchCount": 1,
+      "numericMismatchCount": 0,
+      "signedZeroMismatchCount": 1,
+      "firstMismatch": {
+        "element": 1,
+        "actualBits": "0x0000",
+        "actualValue": 0.0,
+        "expectedBits": "0x8000",
+        "expectedValue": "-0.0"
+      }
+    }
+  ],
+  "stoppedBeforeRung": 7,
+  "runtimeTrace": null,
+  "runtimeTraceReason": "The bounded ctypes hardware runner did not emit a syscall trace; no second submission was made after the first failing rung.",
+  "remoteWorkRoot": "/tmp/h13-baseM1-aaf82b8"
+}
