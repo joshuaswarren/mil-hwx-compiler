@@ -403,6 +403,7 @@ def _broadcast_values(value, shape):
 
 
 def _binary(name, left, right, result_type):
+    """Evaluate the measured H13 binary datapath, including its unsigned zero products."""
     left_shape = left.shape if isinstance(left, Tensor) else ()
     right_shape = right.shape if isinstance(right, Tensor) else ()
     shape = _broadcast_shape(left_shape, right_shape)
@@ -416,8 +417,11 @@ def _binary(name, left, right, result_type):
         "sub": lambda a, b: a - b,
         "real_div": lambda a, b: a / b,
     }
-    values = [fp16(operations[name](a, b))
-              for a, b in zip(_broadcast_values(left, shape), _broadcast_values(right, shape))]
+    values = []
+    for left_value, right_value in zip(_broadcast_values(left, shape),
+                                       _broadcast_values(right, shape)):
+        value = fp16(operations[name](left_value, right_value))
+        values.append(0.0 if name == "mul" and value == 0.0 else value)
     return Tensor("fp16", shape, tuple(values))
 
 
