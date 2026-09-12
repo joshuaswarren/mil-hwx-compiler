@@ -61,7 +61,7 @@ header) with both artifacts built.
 
 ```sh
 python3 tests/h13_first_run/first_run.py --rung 1              # dry run, no device
-python3 tests/h13_first_run/first_run.py --rung 1 --execute    # submit
+H13_DEADLINE_SECONDS=120 python3 tests/h13_first_run/first_run.py --rung 1 --execute
 python3 tests/h13_first_run/first_run.py                       # dry-run all eight
 ```
 
@@ -73,10 +73,12 @@ per-output pass criterion, and the exact libane call sequence
 device. Review the plan before `--execute`.
 
 `--execute` hands the fixture to `tests/run_h13_linux_hardware.sh`, which
-preflights, recompiles, validates the package with
-`research/inspect_anec.py`, writes the plan next to the package, and only
-then submits. Every output is compared with `tools/h13_reference.py`; output
-files are written only on a pass.
+requires an explicit positive finite `H13_DEADLINE_SECONDS` budget, preflights,
+recompiles, validates the package with `research/inspect_anec.py`, writes the
+plan next to the package, and only then submits. This whole-device-phase budget
+is checked between programs; it is not the kernel per-submit timeout and cannot
+interrupt or recover an in-flight submission. Every output is compared with
+`tools/h13_reference.py`; output files are written only on a pass.
 
 ### Fixture layout
 
@@ -176,7 +178,7 @@ one 16 KiB tile, a `[1,512,1,1]` one 32 KiB pair of tiles.
 * **Weights** `models/c.bin`, 64 fp16, `0.25 * i`.
 * **Input** `a`, 64 fp16, `0.125 * i`.
 * **Expected** `expected/y.fp16` = `0.375 * i`, from `tools/h13_reference.py`.
-* **Command** `python3 tests/h13_first_run/first_run.py --rung 1 --execute`
+* **Command** `H13_DEADLINE_SECONDS=120 python3 tests/h13_first_run/first_run.py --rung 1 --execute`
 * **Criterion** `y` byte-for-byte equal to the reference; 128 bytes.
 * **libane calls** (one program, no kernel bind — the folded constant is a
   host-packed input surface, and `constantBytes` is 0):

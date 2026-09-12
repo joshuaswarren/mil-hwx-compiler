@@ -7,7 +7,7 @@ package, and the libane call sequence tools/h13_run_linux.py will issue.
 
     python3 tests/h13_first_run/first_run.py            # every rung, dry run
     python3 tests/h13_first_run/first_run.py --rung 1    # one rung
-    python3 tests/h13_first_run/first_run.py --rung 1 --execute   # submit
+    H13_DEADLINE_SECONDS=120 python3 tests/h13_first_run/first_run.py --rung 1 --execute
 
 `--execute` runs tests/run_h13_linux_hardware.sh, which refuses to submit
 unless preflight.sh passes. A dry run needs no device and no ANE host.
@@ -110,7 +110,8 @@ def check(rung, work):
     print(f"PASS rung {rung['id']} {rung['name']}: {dict(encoders)}, "
           f"{descriptors} task descriptors, {len(plan['programs'])} dispatched "
           f"programs, {calls} libane calls, plan {directory / 'plan.json'}")
-    print("  hardware: ANE_CHECKOUT=~/src/omarchy-ane bash "
+    print("  hardware: H13_DEADLINE_SECONDS=120 "
+          "ANE_CHECKOUT=~/src/omarchy-ane bash "
           f"{HARDWARE.relative_to(ROOT)} {mil} {directory / 'models'} "
           + " ".join(f"{spec['name']}={directory / 'inputs' / (spec['name'] + '.fp16')}"
                      for spec in rung["inputs"]))

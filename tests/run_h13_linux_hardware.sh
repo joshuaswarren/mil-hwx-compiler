@@ -2,7 +2,7 @@
 # Compile one MIL program for H13, run it through libane on a Linux ANE host,
 # and compare every output with tools/h13_reference.py.
 #
-#   bash tests/run_h13_linux_hardware.sh MIL MODEL_ROOT NAME=input.fp16 ...
+#   H13_DEADLINE_SECONDS=120 bash tests/run_h13_linux_hardware.sh MIL MODEL_ROOT NAME=input.fp16 ...
 #
 # Host, device-tree, module, device-node and libane gates come from
 # tests/h13_first_run/preflight.sh, which also prints the identities the
@@ -17,6 +17,7 @@ shift 2
 checkout=${ANE_CHECKOUT:-$HOME/src/omarchy-ane}
 library=$checkout/bindings/python/dylib/libane_python.so
 device=${ANE_DEVICE:-/dev/accel/accel0}
+deadline_seconds=${H13_DEADLINE_SECONDS:?set H13_DEADLINE_SECONDS to a positive finite whole-run device-phase budget}
 
 [[ $# -gt 0 ]] || { echo "at least one NAME=input.fp16 binding is required" >&2; exit 2; }
 ANE_CHECKOUT=$checkout ANE_DEVICE=$device bash "$repo/tests/h13_first_run/preflight.sh" || exit 2
@@ -45,5 +46,6 @@ python3 "$repo/tools/h13_run_linux.py" "$package" --mil "$mil" \
 printf 'H13 LINUX host=%s kernel=%s libane=%s device=%s package=%s\n' \
     "$(hostname)" "$(uname -r)" "$(git -C "$checkout" rev-parse --short HEAD)" "$device" "$package"
 python3 "$repo/tools/h13_run_linux.py" "$package" --mil "$mil" --model-root "$model_root" \
-    "${inputs[@]}" "${output_args[@]}" --libane-library "$library"
+    "${inputs[@]}" "${output_args[@]}" --libane-library "$library" \
+    --deadline-seconds "$deadline_seconds"
 echo "H13 Linux hardware gate: PASS"

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Host test: the qualification deadline stops issuing programs before the
-next device submit and never reaches libane when already expired."""
+"""Host test for the H13 whole-device-phase qualification deadline."""
 
 import importlib.util
+import json
+import math
+import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -15,8 +18,7 @@ spec.loader.exec_module(runner)
 
 class ForbiddenAdapter:
     def execute(self, *args, **kwargs):
-        raise AssertionError("device execute must not be reached once the "
-                             "qualification deadline has expired")
+        raise AssertionError("device execute must not be reached")
 
 
 def write_package(root):
@@ -24,11 +26,12 @@ def write_package(root):
     mil.write_text(
         "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n"
         "  func main<ios18>(tensor<fp16, [1, 64, 1, 1]> a, tensor<fp16, [1, 64, 1, 1]> b) {\n"
-        "    tensor<fp16, [1, 64, 1, 1]> y = add(x = a, y = b)[name = string(\"binary\")];\n"
+        "    tensor<fp16, [1, 64, 1, 1]> c = add(x = a, y = b)[name = string(\"first\")];\n"
+        "    tensor<fp16, [1, 64, 1, 1]> y = add(x = c, y = b)[name = string(\"second\")];\n"
         "  } -> (y);\n}\n")
     models = root / "models"
     models.mkdir()
-    result = __import__("subprocess").run(
+    result = subprocess.run(
         [str(ROOT / "build" / "mil-hwxc"), "--target", "H13", "--mil", str(mil),
          "--model-root", str(models), "--output", str(root / "pkg")],
         capture_output=True, text=True)
@@ -41,36 +44,83 @@ def write_package(root):
 
 def main():
     with tempfile.TemporaryDirectory() as tmp:
-        package, mil, inputs = write_package(Path(tmp))
+        root = Path(tmp)
+        package, mil, inputs = write_package(root)
         clock = {"tick": 0.0}
 
         def now():
             return clock["tick"]
 
-        expired = None
+        for invalid in (0.0, -1.0, math.nan, math.inf, -math.inf):
+            try:
+                runner.run_package(package, mil, root / "models", inputs,
+                                   ForbiddenAdapter(), deadline_seconds=invalid, now=now)
+                assert False, f"accepted invalid deadline {invalid}"
+            except ValueError as error:
+                assert "positive finite" in str(error), error
+
         try:
-            runner.run_package(package, mil, ROOT / "tests", inputs,
-                               ForbiddenAdapter(), deadline_seconds=0, now=now)
+            runner.run_package(package, mil, root / "models", inputs,
+                               ForbiddenAdapter(), now=now)
+            assert False, "device execution accepted a missing deadline"
         except ValueError as error:
-            expired = str(error)
-        assert expired and "deadline" in expired and "before program 0" in expired, expired
+            assert "requires --deadline-seconds" in str(error), error
 
-        class DeviceReached(Exception):
-            pass
+        manifest = json.loads((package / "manifest.json").read_text())
+        assert manifest["dispatchPlan"] == [0, 1], manifest["dispatchPlan"]
+        calls = []
 
-        class LiveAdapter:
-            def execute(self, *args, **kwargs):
-                raise DeviceReached
+        class CompletingAdapter:
+            def execute(self, _anec, _kernel, _inputs, output_sizes):
+                calls.append(len(calls))
+                clock["tick"] = 0.5
+                return [bytes(size) for size in output_sizes]
 
-        reached = None
+        original_intermediate_buffer = runner._intermediate_buffer
+
+        def forbidden_intermediate_buffer(*_args):
+            raise AssertionError("expired runner allocated the next program input")
+
+        runner._intermediate_buffer = forbidden_intermediate_buffer
         try:
-            runner.run_package(package, mil, ROOT / "tests", inputs, LiveAdapter(), now=now)
-        except DeviceReached:
-            reached = True
+            runner.run_package(package, mil, root / "models", inputs,
+                               CompletingAdapter(), deadline_seconds=0.5, now=now)
+            assert False, "expired qualification submitted the second program"
         except ValueError as error:
-            assert "deadline" not in str(error), error
-            reached = "passed deadline; numeric gate rejected stub output"
-        assert reached, "no-deadline run must reach the device phase"
+            assert "whole-run qualification deadline" in str(error), error
+            assert "before program 1" in str(error), error
+        finally:
+            runner._intermediate_buffer = original_intermediate_buffer
+        assert calls == [0], calls
+
+        dry_manifest, _, plan = runner.run_package(
+            package, mil, root / "models", inputs, None, now=now)
+        assert dry_manifest["dispatchPlan"] == [0, 1]
+        assert plan["deviceCalls"] is False
+
+        command = [sys.executable, str(ROOT / "tools" / "h13_run_linux.py"),
+                   str(package), "--mil", str(mil), "--model-root", str(root / "models"),
+                   "--input", f"a={inputs['a']}", "--input", f"b={inputs['b']}",
+                   "--output", f"y={root / 'y.fp16'}"]
+        missing = subprocess.run(
+            command + ["--libane-library", str(root / "missing.so")],
+            capture_output=True, text=True)
+        assert missing.returncode != 0
+        assert "requires --deadline-seconds" in missing.stderr, missing.stderr
+        malformed = subprocess.run(
+            command + ["--dry-run", "--deadline-seconds", "nan"],
+            capture_output=True, text=True)
+        assert malformed.returncode != 0
+        assert "positive finite" in malformed.stderr, malformed.stderr
+
+        environment = os.environ.copy()
+        environment.pop("H13_DEADLINE_SECONDS", None)
+        hardware = subprocess.run(
+            ["bash", str(ROOT / "tests" / "run_h13_linux_hardware.sh"),
+             str(mil), str(root / "models"), f"a={inputs['a']}"],
+            capture_output=True, text=True, env=environment)
+        assert hardware.returncode != 0
+        assert "H13_DEADLINE_SECONDS" in hardware.stderr, hardware.stderr
     print("H13_DEADLINE_OK")
 
 
