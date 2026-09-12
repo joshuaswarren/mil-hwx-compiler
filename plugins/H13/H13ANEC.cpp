@@ -73,6 +73,14 @@ void validateProgram(const Program &program) {
     if (program.constantOffsetBytes < program.task.size() ||
         program.constantOffsetBytes % 0x40)
         throw std::invalid_argument("H13 ANEC constant offset is invalid");
+    // The driver derives the kernel window as the command buffer plus the
+    // 16-byte-rounded task length, so the constant section must start
+    // exactly there or the device reads shifted weights.
+    if (program.constantOffsetBytes !=
+        ((program.task.size() + 0xf) & ~static_cast<std::size_t>(0xf)))
+        throw std::invalid_argument(
+            "H13 ANEC constant offset must equal the 16-byte-rounded task "
+            "length the driver derives");
 }
 
 } // namespace
