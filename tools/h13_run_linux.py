@@ -301,6 +301,11 @@ def chunked_tensors(manifest):
 
 def run_package(package, mil, model_root, inputs, adapter, deadline_seconds=None,
                 now=time.monotonic):
+    if deadline_seconds is None:
+        if adapter is not None:
+            raise ValueError("device execution requires --deadline-seconds with a positive finite value")
+    elif not math.isfinite(deadline_seconds) or deadline_seconds <= 0:
+        raise ValueError("--deadline-seconds must be a positive finite number")
     manifest, _ = inspect_anec.load_package(package)
     tensors = manifest["tensors"]
     input_names = {name for name, tensor in tensors.items()
@@ -320,14 +325,15 @@ def run_package(package, mil, model_root, inputs, adapter, deadline_seconds=None
 
     intermediate_regions = {}
     output_regions = {}
-    deadline = None if deadline_seconds is None else now() + deadline_seconds
+    deadline = now() + deadline_seconds
     package = Path(package).resolve()
     for program_index in manifest["dispatchPlan"]:
-        if deadline is not None and now() >= deadline:
+        if now() >= deadline:
             raise ValueError(
-                f"qualification deadline of {deadline_seconds}s exceeded before "
-                f"program {program_index}; stopped issuing work per the "
-                "stop-issuing rule")
+                f"whole-run qualification deadline of {deadline_seconds}s exceeded "
+                f"before program {program_index}; no next-program work was allocated "
+                "or submitted. This deadline cannot interrupt or recover an in-flight "
+                "kernel submission")
         program = manifest["programs"][program_index]
         input_buffers = []
         for binding in program["inputs"]:
@@ -370,10 +376,16 @@ def main():
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--libane-library", type=Path, default=DEFAULT_LIBANE)
     parser.add_argument("--deadline-seconds", type=float, default=None,
-                        help="wall-clock budget for the device phase; the "
-                             "runner stops issuing programs before the next "
-                             "submit when it elapses")
+                        help="required for device execution: positive finite "
+                             "whole-device-phase budget, separate from the kernel "
+                             "per-submit timeout; checked before each program and "
+                             "cannot interrupt an in-flight submission")
     args = parser.parse_args()
+    if args.deadline_seconds is not None and (
+            not math.isfinite(args.deadline_seconds) or args.deadline_seconds <= 0):
+        parser.error("--deadline-seconds must be a positive finite number")
+    if not args.dry_run and args.deadline_seconds is None:
+        parser.error("device execution requires --deadline-seconds with a positive finite value")
     try:
         inputs, outputs = _paths(args.input), _paths(args.output)
         adapter = None if args.dry_run else LibANEAdapter(args.libane_library, args.device)
