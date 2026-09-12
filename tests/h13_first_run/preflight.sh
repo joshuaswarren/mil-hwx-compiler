@@ -7,16 +7,17 @@
 # libane build, then prints the identities the hardware handoff records. Every
 # failure exits 2 and names what to fix; nothing here touches the device.
 #
-# ANE_CHECKOUT        libane checkout (default ~/src/omarchy-ane)
-# ANE_DEVICE          device node (default /dev/accel/accel0)
-# ANE_EXPECTED_COMMIT exact driver/libane source commit
+# ANE_CHECKOUT             libane checkout (default ~/src/omarchy-ane)
+# ANE_DEVICE               device node (default /dev/accel/accel0)
+# ANE_EXPECTED_COMMIT      exact driver/libane source commit
+# H13_COMPILER_COMMIT      exact compiler source commit
 set -uo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 checkout=${ANE_CHECKOUT:-$HOME/src/omarchy-ane}
 device=${ANE_DEVICE:-/dev/accel/accel0}
 expected_commit=${ANE_EXPECTED_COMMIT:-f261a6cb537aca62f267ad3d01beda0d6877544c}
-expected_compiler=783dbe138d6cd170abe20854697498f60ea725b5
+expected_compiler=${H13_COMPILER_COMMIT:-783dbe138d6cd170abe20854697498f60ea725b5}
 library=$checkout/bindings/python/dylib/libane_python.so
 archive=$checkout/libane/libane.a
 module=$checkout/ane/ane.ko
