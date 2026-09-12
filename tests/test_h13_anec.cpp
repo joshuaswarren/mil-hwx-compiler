@@ -75,4 +75,10 @@ int main() {
     invalid = program;
     invalid.inputs.clear();
     rejects([&] { encodeANEC(invalid); });
+    invalid = program;
+    invalid.constantOffsetBytes = 0x2c0;
+    rejects([&] { encodeANEC(invalid); });
+    invalid = program;
+    invalid.task.resize(0x240);
+    rejects([&] { encodeANEC(invalid); });
 }
