@@ -60,6 +60,20 @@ def test_fp16_rounding_and_ops():
         assert output_path.read_bytes() == fp16([1.0, 0.0])
 
 
+def test_h13_mul_zero_sign():
+    mil = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [2]> x, tensor<fp16, [2]> z) {
+    tensor<fp16, [2]> y = mul(x = x, y = z)[name = string("mul")];
+  } -> (y);
+}
+"""
+    output = h13_reference.evaluate(
+        mil, Path("."), {"x": fp16([0.0, 2.0]), "z": fp16([-1.0, -1.0])})
+    assert output["y"] == fp16([0.0, -2.0])
+
+
 def test_blob_matmul_transposes():
     mil = """program(1.3)
 [buildInfo = dict<string, string>({})]
