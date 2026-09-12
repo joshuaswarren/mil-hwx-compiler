@@ -1,0 +1,16 @@
+compiler-commit aaf82b8ca03664284233705b3aef97e152d1418d
+compiler-sha256 764b999cb1b4a77d70fe7af748ded23facbb513b0ffde18e9814a87e693d55cc
+compiler-build-id 09ee6871bf121116ff56a16e674705b2719cb2ca
+driver-commit f261a6cb537aca62f267ad3d01beda0d6877544c
+H13 preflight: PASS (no device access performed)
+STRICT_PACKAGE_PLAN_VALIDATION_OK
+RUNG1_REUSED byte-identical payload ac97b46653e5f0dd85ce0f45338b35aabd6049f9612f46ae756e4c224bd0bcb5
+PASS y: 128 fp16 bytes match the reference; wrote /tmp/h13-baseM1-aaf82b8/run-rung2/y.out.fp16
+PASS y: 128 fp16 bytes match the reference; wrote /tmp/h13-baseM1-aaf82b8/run-rung3/y.out.fp16
+PASS y: 1024 fp16 bytes match the reference; wrote /tmp/h13-baseM1-aaf82b8/run-rung4/y.out.fp16
+PASS y: 1024 fp16 bytes match the reference; wrote /tmp/h13-baseM1-aaf82b8/run-rung5/y.out.fp16
+H13 Linux runner error: device output differs from the exact fp16 reference; preserved /tmp/h13-baseM1-aaf82b8/06-chain-add-mul/pkg/y.failed.fp16
+RUNG6_CLASSIFICATION element=1 actualBits=0x0000 expectedBits=0x8000 numericMismatchCount=0 signedZeroMismatchCount=1
+post_failure_runtime_status active
+post_failure_device_users none
+STOPPED_BEFORE_RUNG7
