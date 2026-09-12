@@ -35,7 +35,7 @@ void rejects(Function &&function, const char *message = nullptr) {
 int main() {
     using namespace ane::h13;
     Program program;
-    program.task.assign(taskBytes, 0xa5);
+    program.task.assign(taskBytes, 0);
     program.constants = {0x11, 0x22, 0x33};
     program.output = tensor(4, 48);
     program.inputs = {tensor(5, 48), tensor(6, 48)};
@@ -57,7 +57,7 @@ int main() {
     assert(le(anec, 0xa8 + 4 * 48, 8) == 1);
     assert(le(anec, 0xa8 + 5 * 48, 8) == 1);
     assert(le(anec, 0xa8 + 6 * 48, 8) == 1);
-    assert(anec.at(0x1000) == 0xa5);
+    assert(anec.at(0x1000) == 0);
     assert(anec.at(0x1000 + taskBytes) == 0);
     assert(anec.at(0x1000 + 0x280) == 0x11);
     assert(anec.at(0x1000 + 0x282) == 0x33);
@@ -86,4 +86,38 @@ int main() {
     invalid.firstTaskBytes = 0x240;
     rejects([&] { encodeANEC(invalid); },
             "H13 ANEC constant offset must equal the 16-byte-rounded task length the driver derives");
+    program.taskSurfaceChannels = {5, 4, 6};
+    program.task[32] = 0xa4;
+    program.task[33] = 0x59;
+    program.task[34] = 0x02;
+    const auto routed = encodeANEC(program);
+    const auto selectors = le(routed, 0x1020, 4);
+    assert((selectors & 31) == 5);
+    assert(((selectors >> 6) & 31) == 6);
+    assert(((selectors >> 12) & 31) == 4);
+    assert(((le(routed, 0x1000, 4) >> 16) & 255) == 64);
+    assert(program.task[33] == 0x59);
+
+    program.task.assign(128, 0);
+    program.taskCount = 2;
+    program.firstTaskBytes = 40;
+    program.constantOffsetBytes = 128;
+    program.task[6] = 15;
+    program.task[28] = 64;
+    program.task[32] = 0x24;
+    program.task[64] = 1;
+    program.task[97] = 0x50;
+    program.task[98] = 0x02;
+    const auto linked = encodeANEC(program);
+    assert((le(linked, 0x1020, 4) & 31) == 5);
+    assert(((le(linked, 0x1060, 4) >> 12) & 31) == 4);
+    assert(((le(linked, 0x1040, 4) >> 16) & 255) == 64);
+    assert((le(linked, 0x1040, 4) & 65535) == 1);
+    program.scratchAllocationBytes = 2 * tileBytes;
+    const auto scratch = encodeANEC(program);
+    assert(le(scratch, 40 + 3 * 4, 4) == 2);
+    for (std::size_t field = 0; field != 6; ++field)
+        assert(le(scratch, 0xa8 + 3 * 48 + field * 8, 8) == 0);
+    program.task[28] = 60;
+    rejects([&] { encodeANEC(program); });
 }
