@@ -1,0 +1,5 @@
+STRICT_PACKAGE_PLAN_OK programs=1 taskDescriptors=2 calls=8 encoders={'apple-parity-matmul': 1} scratch={0: 1}
+PASS y: 8192 fp16 bytes match the reference; wrote /tmp/h13-baseM1-aa688df/run-rung7/y.out.fp16
+actual-sha256 162f7c3f644b53705126cff309f51e78deb830ac07f80b51ac56dffe6c3710d5
+expected-sha256 162f7c3f644b53705126cff309f51e78deb830ac07f80b51ac56dffe6c3710d5
+RUNG7_BYTE_IDENTICAL
