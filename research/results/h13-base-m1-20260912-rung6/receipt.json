@@ -8,13 +8,16 @@
     "architecture": "aarch64",
     "deviceTree": "apple,t8103-ane",
     "aneNode": "/dev/accel/accel0",
-    "postFailureRuntimeStatus": "active",
-    "postFailureDeviceUsers": "none"
+    "aneNodeExistsAfterQualification": true,
+    "aneModulePresentAfterQualification": true,
+    "postQualificationDeviceUserFds": 0
   },
   "source": {
     "initialCompilerCommit": "783dbe138d6cd170abe20854697498f60ea725b5",
     "qualificationFixCommit": "ea903c46ecd75b4f7efb90ca72b8a68ad452a208",
-    "compilerCommit": "aaf82b8ca03664284233705b3aef97e152d1418d",
+    "preflightCommit": "aaf82b8ca03664284233705b3aef97e152d1418d",
+    "referenceFixCommit": "aa688df66cbc2110e0df94f0d50fb72c7fa30a18",
+    "compilerCommit": "aa688df66cbc2110e0df94f0d50fb72c7fa30a18",
     "compilerSha256": "764b999cb1b4a77d70fe7af748ded23facbb513b0ffde18e9814a87e693d55cc",
     "compilerBuildId": "09ee6871bf121116ff56a16e674705b2719cb2ca",
     "driverCommit": "f261a6cb537aca62f267ad3d01beda0d6877544c",
@@ -29,7 +32,7 @@
     "newPayloadSha256": "ac97b46653e5f0dd85ce0f45338b35aabd6049f9612f46ae756e4c224bd0bcb5",
     "hardwareOutputSha256": "bf6058e573040afe541d8d8a02a604021c02095539a7a04e1d5b25f341c3ca3a"
   },
-  "rungs": [
+  "initialRunRungs": [
     {
       "id": 2,
       "name": "02-add-parity",
@@ -93,8 +96,72 @@
       }
     }
   ],
-  "stoppedBeforeRung": 7,
+  "referenceCorrection": {
+    "operation": "H13 elementwise multiply",
+    "change": "Canonicalize zero-valued products to positive zero in the H13 reference evaluator; exact output comparison remains unchanged.",
+    "hardwareObservation": "The composed add then multiply output contained positive zero where generic IEEE multiplication produced negative zero.",
+    "compilerPayloadEvidence": "A descriptor probe regenerated the Apple-oracle binary multiply program byte for byte.",
+    "independentSource": "https://arxiv.org/html/2606.22283v1#S3",
+    "independentSourceFinding": "Apple Neural Engine elementwise processing loses the sign of signed zero."
+  },
+  "requalification": {
+    "result": "pass",
+    "remoteWorkRoot": "/tmp/h13-baseM1-aa688df",
+    "preflight": "pass-no-device-access",
+    "deadlineSecondsPerHardwareRun": 120,
+    "rungs": [
+      {
+        "id": 6,
+        "name": "06-chain-add-mul",
+        "result": "pass",
+        "programCount": 2,
+        "taskDescriptorCount": 2,
+        "payloadSha256Digest": "9dac60e4528ba594be2a90d154b5565f8a5bc4b137be5bd263e8f541ce70ae9b",
+        "outputSha256": "8cdcd9ef211ab08d1fc1c3c24fa33467acb90509aab4a6a10ebe0f8bbf4ddf47",
+        "expectedSha256": "8cdcd9ef211ab08d1fc1c3c24fa33467acb90509aab4a6a10ebe0f8bbf4ddf47",
+        "byteIdentical": true
+      },
+      {
+        "id": 7,
+        "name": "07-runtime-matmul-64",
+        "result": "pass",
+        "programCount": 1,
+        "taskDescriptorCount": 2,
+        "encoderCounts": {
+          "apple-parity-matmul": 1
+        },
+        "aneExecCalls": 1,
+        "payloadSha256Digest": "f2fdfe87ab54cb2cc8c5f9050d7af72c7857ff22708613faeb683a7574570a38",
+        "outputSha256": "162f7c3f644b53705126cff309f51e78deb830ac07f80b51ac56dffe6c3710d5",
+        "expectedSha256": "162f7c3f644b53705126cff309f51e78deb830ac07f80b51ac56dffe6c3710d5",
+        "byteIdentical": true
+      },
+      {
+        "id": 8,
+        "name": "08-mlp-768-1024-768",
+        "result": "pass",
+        "programCount": 77,
+        "taskDescriptorCount": 77,
+        "encoderCounts": {
+          "h13-source-qualified": 76,
+          "h13-oracle-parity": 1
+        },
+        "aneExecCalls": 77,
+        "payloadSha256Digest": "10b0352461fe6ca3eee9b6745af986409716fb7249fc89caea6dba2d50763816",
+        "referenceCriterion": "|device - reference| <= 0.02 + 0.02 * |reference|",
+        "outputSha256": "dfaa81560221487a724fc17031ac579c13cba7d50d5cb5b7826bc0815b4df056",
+        "expectedSha256": "2276bbf08fb3226e0dc4eae95ba2364bf2a8aa4de4289fd9aa2271235bfb141b",
+        "actualBytes": 1536,
+        "finite": true,
+        "mismatchedFp16Count": 109,
+        "maxAbsoluteError": 0.0009765625,
+        "maxFiniteRelativeError": 0.0009140767824497258,
+        "outsideToleranceCount": 0
+      }
+    ]
+  },
+  "finalResult": "pass",
   "runtimeTrace": null,
-  "runtimeTraceReason": "The bounded ctypes hardware runner did not emit a syscall trace; no second submission was made after the first failing rung.",
-  "remoteWorkRoot": "/tmp/h13-baseM1-aaf82b8"
+  "runtimeTraceReason": "The bounded ctypes hardware runner did not emit a syscall trace.",
+  "artifactRoot": "research/results/h13-base-m1-20260912-rung6/recheck"
 }

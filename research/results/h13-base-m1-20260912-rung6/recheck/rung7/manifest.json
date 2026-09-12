@@ -1,0 +1,191 @@
+{
+  "artifactFormat": "anec",
+  "bytes": 21632,
+  "constantBytes": 16384,
+  "constantInputs": {
+  },
+  "constantOffset": 1152,
+  "dispatchPlan": [
+    0
+  ],
+  "encoder": "apple-parity-matmul",
+  "file": "program-0.anec",
+  "inputs": [
+    {
+      "allocationBytes": 16384,
+      "dtype": "float16",
+      "index": 5,
+      "logicalBytes": 8192,
+      "name": "w",
+      "nchw": [
+        1,
+        1,
+        64,
+        64,
+        8192,
+        128
+      ],
+      "shape": [
+        1,
+        64,
+        64
+      ]
+    },
+    {
+      "allocationBytes": 16384,
+      "dtype": "float16",
+      "index": 6,
+      "logicalBytes": 8192,
+      "name": "x",
+      "nchw": [
+        1,
+        1,
+        64,
+        64,
+        8192,
+        128
+      ],
+      "shape": [
+        1,
+        64,
+        64
+      ]
+    }
+  ],
+  "intermediates": [
+  ],
+  "operation": "matmul",
+  "outputs": [
+    {
+      "allocationBytes": 16384,
+      "dtype": "float16",
+      "index": 4,
+      "logicalBytes": 8192,
+      "name": "y",
+      "nchw": [
+        1,
+        1,
+        64,
+        64,
+        8192,
+        128
+      ],
+      "shape": [
+        1,
+        64,
+        64
+      ]
+    }
+  ],
+  "programs": [
+    {
+      "bytes": 21632,
+      "constantBytes": 16384,
+      "constantInputs": {
+      },
+      "constantOffset": 1152,
+      "encoder": "apple-parity-matmul",
+      "file": "program-0.anec",
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "dtype": "float16",
+          "index": 5,
+          "logicalBytes": 8192,
+          "name": "w",
+          "nchw": [
+            1,
+            1,
+            64,
+            64,
+            8192,
+            128
+          ],
+          "shape": [
+            1,
+            64,
+            64
+          ]
+        },
+        {
+          "allocationBytes": 16384,
+          "dtype": "float16",
+          "index": 6,
+          "logicalBytes": 8192,
+          "name": "x",
+          "nchw": [
+            1,
+            1,
+            64,
+            64,
+            8192,
+            128
+          ],
+          "shape": [
+            1,
+            64,
+            64
+          ]
+        }
+      ],
+      "operation": "matmul",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "dtype": "float16",
+          "index": 4,
+          "logicalBytes": 8192,
+          "name": "y",
+          "nchw": [
+            1,
+            1,
+            64,
+            64,
+            8192,
+            128
+          ],
+          "shape": [
+            1,
+            64,
+            64
+          ]
+        }
+      ],
+      "scratchBytes": 16384,
+      "taskDescriptors": 2
+    }
+  ],
+  "schema": "mil-hwxc.h13-anec-package.v1",
+  "scratchBytes": 16384,
+  "target": "H13",
+  "taskDescriptors": 2,
+  "tensors": {
+    "w": {
+      "logicalBytes": 8192,
+      "role": "input",
+      "shape": [
+        1,
+        64,
+        64
+      ]
+    },
+    "x": {
+      "logicalBytes": 8192,
+      "role": "input",
+      "shape": [
+        1,
+        64,
+        64
+      ]
+    },
+    "y": {
+      "logicalBytes": 8192,
+      "role": "output",
+      "shape": [
+        1,
+        64,
+        64
+      ]
+    }
+  }
+}
