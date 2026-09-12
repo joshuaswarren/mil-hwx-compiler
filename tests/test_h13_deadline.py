@@ -41,8 +41,30 @@ def write_package(root):
         path.write_bytes(bytes(128))
     return root / "pkg", mil, inputs
 
+def check_unmangled_symbols():
+    names = []
+
+    class Function:
+        pass
+
+    class Library:
+        def __getattr__(self, name):
+            names.append(name)
+            return Function()
+
+    original = runner.ctypes.CDLL
+    runner.ctypes.CDLL = lambda *_args, **_kwargs: Library()
+    try:
+        runner.LibANEAdapter("unused.so")
+    finally:
+        runner.ctypes.CDLL = original
+    for name in ("__ane_src_size", "__ane_dst_size", "__ane_send", "__ane_read"):
+        assert name in names, names
+        assert f"_LibANEAdapter{name}" not in names, names
+
 
 def main():
+    check_unmangled_symbols()
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         package, mil, inputs = write_package(root)
@@ -92,6 +114,17 @@ def main():
         finally:
             runner._intermediate_buffer = original_intermediate_buffer
         assert calls == [0], calls
+        class WrongAdapter:
+            def execute(self, _anec, _kernel, _inputs, output_sizes):
+                return [bytes([0xff]) * size for size in output_sizes]
+
+        try:
+            runner.run_package(package, mil, root / "models", inputs,
+                               WrongAdapter(), deadline_seconds=1.0, now=now)
+            assert False, "accepted incorrect device output"
+        except ValueError as error:
+            assert "preserved" in str(error), error
+        assert (package / "y.failed.fp16").read_bytes() == bytes([0xff]) * 128
 
         dry_manifest, _, plan = runner.run_package(
             package, mil, root / "models", inputs, None, now=now)

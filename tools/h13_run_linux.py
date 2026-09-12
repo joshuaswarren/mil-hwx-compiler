@@ -56,16 +56,20 @@ class LibANEAdapter:
         self.device = device
         self.lib = ctypes.CDLL(os.fspath(library), use_errno=True)
         pointer = ctypes.c_void_p
+        self._src_size = getattr(self.lib, "__ane_src_size")
+        self._dst_size = getattr(self.lib, "__ane_dst_size")
+        self._send = getattr(self.lib, "__ane_send")
+        self._read = getattr(self.lib, "__ane_read")
         self.lib.pyane_init.restype = pointer
         self.lib.pyane_init.argtypes = [ctypes.c_char_p, ctypes.c_int]
         self.lib.pyane_free.restype = ctypes.c_int
         self.lib.pyane_free.argtypes = [pointer]
-        self.lib.__ane_src_size.restype = ctypes.c_uint64
-        self.lib.__ane_src_size.argtypes = [pointer, ctypes.c_uint32]
-        self.lib.__ane_dst_size.restype = ctypes.c_uint64
-        self.lib.__ane_dst_size.argtypes = [pointer, ctypes.c_uint32]
-        self.lib.__ane_send.argtypes = [pointer, pointer, ctypes.c_uint32]
-        self.lib.__ane_read.argtypes = [pointer, pointer, ctypes.c_uint32]
+        self._src_size.restype = ctypes.c_uint64
+        self._src_size.argtypes = [pointer, ctypes.c_uint32]
+        self._dst_size.restype = ctypes.c_uint64
+        self._dst_size.argtypes = [pointer, ctypes.c_uint32]
+        self._send.argtypes = [pointer, pointer, ctypes.c_uint32]
+        self._read.argtypes = [pointer, pointer, ctypes.c_uint32]
         self.lib.ane_bind_kernel.restype = ctypes.c_int
         self.lib.ane_bind_kernel.argtypes = [pointer, pointer, ctypes.c_uint64]
         self.lib.ane_exec.restype = ctypes.c_int
@@ -95,15 +99,15 @@ class LibANEAdapter:
                     raise self._failure("ane_bind_kernel", result)
             input_buffers = []
             for index, data in enumerate(inputs):
-                size = self.lib.__ane_src_size(handle, index)
+                size = self._src_size(handle, index)
                 if size != len(data):
                     raise RuntimeError(
                         f"libane input {index} size {size} differs from manifest {len(data)}")
                 buffer = ctypes.create_string_buffer(data, len(data))
                 input_buffers.append(buffer)
-                self.lib.__ane_send(handle, buffer, index)
+                self._send(handle, buffer, index)
             for index, expected in enumerate(output_sizes):
-                size = self.lib.__ane_dst_size(handle, index)
+                size = self._dst_size(handle, index)
                 if size != expected:
                     raise RuntimeError(
                         f"libane output {index} size {size} differs from manifest {expected}")
@@ -113,7 +117,7 @@ class LibANEAdapter:
             outputs = []
             for index, size in enumerate(output_sizes):
                 buffer = ctypes.create_string_buffer(size)
-                self.lib.__ane_read(handle, buffer, index)
+                self._read(handle, buffer, index)
                 outputs.append(buffer.raw)
             return outputs
         finally:
@@ -361,7 +365,12 @@ def run_package(package, mil, model_root, inputs, adapter, deadline_seconds=None
     chunked = chunked_tensors(manifest)
     for name in output_names:
         target = tensors[name].get("aliasOf", name)
-        compare_fp16(actual[name], expected[name], target in chunked)
+        try:
+            compare_fp16(actual[name], expected[name], target in chunked)
+        except ValueError as error:
+            failed = package / f"{name}.failed.fp16"
+            failed.write_bytes(actual[name])
+            raise ValueError(f"{error}; preserved {failed}") from None
     return manifest, actual, None
 
 
