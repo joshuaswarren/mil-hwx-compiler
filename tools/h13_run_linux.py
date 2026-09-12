@@ -9,6 +9,7 @@ import os
 import struct
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -298,7 +299,8 @@ def chunked_tensors(manifest):
     return chunked
 
 
-def run_package(package, mil, model_root, inputs, adapter):
+def run_package(package, mil, model_root, inputs, adapter, deadline_seconds=None,
+                now=time.monotonic):
     manifest, _ = inspect_anec.load_package(package)
     tensors = manifest["tensors"]
     input_names = {name for name, tensor in tensors.items()
@@ -318,8 +320,14 @@ def run_package(package, mil, model_root, inputs, adapter):
 
     intermediate_regions = {}
     output_regions = {}
+    deadline = None if deadline_seconds is None else now() + deadline_seconds
     package = Path(package).resolve()
     for program_index in manifest["dispatchPlan"]:
+        if deadline is not None and now() >= deadline:
+            raise ValueError(
+                f"qualification deadline of {deadline_seconds}s exceeded before "
+                f"program {program_index}; stopped issuing work per the "
+                "stop-issuing rule")
         program = manifest["programs"][program_index]
         input_buffers = []
         for binding in program["inputs"]:
@@ -361,12 +369,17 @@ def main():
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--libane-library", type=Path, default=DEFAULT_LIBANE)
+    parser.add_argument("--deadline-seconds", type=float, default=None,
+                        help="wall-clock budget for the device phase; the "
+                             "runner stops issuing programs before the next "
+                             "submit when it elapses")
     args = parser.parse_args()
     try:
         inputs, outputs = _paths(args.input), _paths(args.output)
         adapter = None if args.dry_run else LibANEAdapter(args.libane_library, args.device)
         manifest, result, plan = run_package(
-            args.package, args.mil, args.model_root, inputs, adapter)
+            args.package, args.mil, args.model_root, inputs, adapter,
+            deadline_seconds=args.deadline_seconds)
         expected_outputs = _logical_outputs(manifest["tensors"])
         if set(outputs) != expected_outputs:
             raise ValueError(f"outputs must be exactly {', '.join(sorted(expected_outputs))}")

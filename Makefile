@@ -249,6 +249,7 @@ test-h13: $(BUILD)/test_h13_encoding $(BUILD)/test_h13_anec $(BUILD)/mil-hwxc
 .PHONY: test-h13-reference
 test-h13-reference: $(BUILD)/mil-hwxc
 	python3 tests/test_h13_reference.py $(BUILD)/mil-hwxc
+	python3 tests/test_h13_deadline.py
 .PHONY: test-h13-simulation
 test-h13-simulation: $(BUILD)/mil-hwxc
 	python3 tests/test_h13_package_simulation.py
