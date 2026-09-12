@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdint>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace {
@@ -20,11 +21,12 @@ ane::h13::TensorLayout tensor(std::uint32_t index, std::uint64_t allocation) {
 }
 
 template <typename Function>
-void rejects(Function &&function) {
+void rejects(Function &&function, const char *message = nullptr) {
     try {
         function();
         assert(false);
-    } catch (const std::invalid_argument &) {
+    } catch (const std::invalid_argument &error) {
+        assert(!message || std::string(error.what()) == message);
     }
 }
 
@@ -77,8 +79,11 @@ int main() {
     rejects([&] { encodeANEC(invalid); });
     invalid = program;
     invalid.constantOffsetBytes = 0x2c0;
-    rejects([&] { encodeANEC(invalid); });
+    rejects([&] { encodeANEC(invalid); },
+            "H13 ANEC constant offset must equal the 16-byte-rounded task length the driver derives");
     invalid = program;
     invalid.task.resize(0x240);
-    rejects([&] { encodeANEC(invalid); });
+    invalid.firstTaskBytes = 0x240;
+    rejects([&] { encodeANEC(invalid); },
+            "H13 ANEC constant offset must equal the 16-byte-rounded task length the driver derives");
 }
