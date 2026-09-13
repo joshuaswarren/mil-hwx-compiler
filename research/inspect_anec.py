@@ -390,10 +390,12 @@ def load_package(directory):
 
     allocations = [validate_program(directory, program, tensors) for program in programs]
     storage_intermediates = [name for name in intermediates if name not in alias_names]
-    producers = {name: [] for name in storage_intermediates}
-    consumers = {name: [] for name in storage_intermediates}
-    output_tensors = {name: [] for name, tensor in tensors.items()
-                      if tensor['role'] == 'output' and name not in alias_names}
+    storage_outputs = [name for name, tensor in tensors.items()
+                       if tensor['role'] == 'output' and name not in alias_names]
+    produced_storage = storage_intermediates + storage_outputs
+    producers = {name: [] for name in produced_storage}
+    consumers = {name: [] for name in produced_storage}
+    output_tensors = {name: producers[name] for name in storage_outputs}
     referenced = set()
     for program_index, program in enumerate(programs):
         for item in program['outputs']:
@@ -403,11 +405,10 @@ def load_package(directory):
             if role == 'intermediate':
                 require(item.get('role') == 'intermediate',
                         'intermediate output must have intermediate role')
-                producers[name].append((program_index, item))
             else:
                 require(role == 'output' and item.get('role') is None,
                         'non-intermediate output must have output tensor role')
-                output_tensors[name].append((program_index, item))
+            producers[name].append((program_index, item))
         for item in program['inputs']:
             name, _, _, _ = binding_interval(item, tensors)
             referenced.add(name)
@@ -416,6 +417,10 @@ def load_package(directory):
                 require(item.get('role') == 'intermediate' and
                         item.get('binding') is None,
                         'intermediate input must have intermediate role')
+                consumers[name].append((program_index, item))
+            elif role == 'output':
+                require(item.get('role') is None and item.get('binding') is None,
+                        'returned output input must have no binding role')
                 consumers[name].append((program_index, item))
             elif role == 'constant':
                 require(item.get('role') is None and item.get('binding') == 'constant',
@@ -428,11 +433,13 @@ def load_package(directory):
                 name in alias_names for name, tensor in tensors.items()),
             'only constants and aliases may be unreferenced by program bindings')
     positions = {program_index: position for position, program_index in enumerate(dispatch)}
-    for name in storage_intermediates:
+    for name in produced_storage:
         exact_tiling(producers[name], tensors,
-                     'intermediate producer slices must exactly tile the tensor')
+                     'produced tensor slices must exactly tile the tensor')
+        if not consumers[name]:
+            continue
         exact_tiling(consumers[name], tensors,
-                     'intermediate consumer slices must exactly tile the tensor', True)
+                     'produced tensor consumer slices must exactly tile the tensor', True)
         produced_ranges = sorted(
             (offset, offset + physical, program_index)
             for program_index, item in producers[name]
@@ -440,7 +447,7 @@ def load_package(directory):
         previous_end = 0
         for start, end, _ in produced_ranges:
             require(start >= previous_end,
-                    'intermediate producer physical writes overlap')
+                    'produced tensor physical writes overlap')
             previous_end = end
         for consumer_index, consumed in consumers[name]:
             _, consumed_offset, _, consumed_physical = binding_interval(consumed, tensors)
@@ -453,14 +460,12 @@ def load_package(directory):
                     break
                 if produced_offset < consumed_end and consumed_offset < produced_end:
                     require(positions[producer_index] < positions[consumer_index],
-                            'dispatchPlan violates an intermediate dependency')
-                cursor = max(cursor, produced_end)
+                            'dispatchPlan violates a produced tensor dependency')
+                    cursor = max(cursor, produced_end)
                 if cursor >= consumed_end:
                     break
             require(cursor >= consumed_end,
-                    'intermediate consumer physical range exceeds producer writes')
-    for name, bindings in output_tensors.items():
-        exact_tiling(bindings, tensors, 'output slices must exactly tile the tensor')
+                    'produced tensor consumer range exceeds producer writes')
     check_result_metadata(manifest, tensors, output_tensors)
     return manifest, allocations
 

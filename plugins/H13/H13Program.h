@@ -6,6 +6,7 @@
 #include <vector>
 
 namespace ane::h13 {
+constexpr std::size_t anecHeaderBytes = 0x1000;
 
 constexpr std::size_t taskBytes = 0x274;
 constexpr std::size_t tileBytes = 0x4000;

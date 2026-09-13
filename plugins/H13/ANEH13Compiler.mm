@@ -549,7 +549,9 @@ static NSArray<NSNumber *> *relocationOffsets(const ane::h13::Program &program) 
     return offsets;
 }
 
-static NSData *encodeHWX(const ane::h13::Program &program, NSError **error) {
+static NSData *encodeHWX(const ane::h13::Program &program,
+                         const std::vector<std::uint8_t> &anec,
+                         NSError **error) {
     // The writer walks this array to assign surface addresses. Apple's matmul
     // objects place the output surface below both operands, a broadcast puts
     // it between them, and every other decoded object places the inputs first.
@@ -564,7 +566,7 @@ static NSData *encodeHWX(const ane::h13::Program &program, NSError **error) {
             HWXObjectBindingRoleInput, index)];
     }
     if (outputIndex >= program.inputs.size()) [bindings addObject:output];
-    NSData *task = [NSData dataWithBytes:program.task.data()
+    NSData *task = [NSData dataWithBytes:anec.data() + ane::h13::anecHeaderBytes
                                   length:program.task.size()];
     NSData *constants = [NSData dataWithBytes:program.constants.data()
                                        length:program.constants.size()];
@@ -1511,18 +1513,19 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             return reject(diagnostics, @"H13 function inputs must all be used",
                 sourceOperations[0], chain ? chainCode : @"h13.unsupported-program");
     }
-    for (NSUInteger index = 0; index + 1 < sourceOperations.count; ++index) {
+    for (NSUInteger index = 0; index < sourceOperations.count; ++index) {
+        BOOL used = NO;
         for (ANEGraphValue *value in sourceOperations[index].results) {
-            BOOL used = [function.returnValues containsObject:value];
+            if ([function.returnValues containsObject:value]) used = YES;
             for (NSUInteger consumer = index + 1;
                  consumer < sourceOperations.count; ++consumer)
                 for (ANEGraphArgument *operand in sourceOperations[consumer].operands.allValues)
                     if (operand.value == value) used = YES;
-            if (!used)
-                return reject(diagnostics,
-                    @"H13 operation results not returned must be consumed by a later operation",
-                    sourceOperations[index], chainCode);
         }
+        if (!used)
+            return reject(diagnostics,
+                @"H13 operation results not returned must be consumed by a later operation",
+                sourceOperations[index], chainCode);
     }
 
     NSMutableArray<ANEGraphOperation *> *operations = [NSMutableArray array];
@@ -1911,13 +1914,6 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         [returnedSourceNames addObject:logical.name];
         [returnedStorageNameSet addObject:returned.name];
     }
-    for (ANEGraphOperation *candidate in operations)
-        for (ANEGraphArgument *operand in candidate.operands.allValues)
-            if (operand.value &&
-                [returnedStorageNameSet containsObject:operand.value.name])
-                return reject(diagnostics,
-                    @"H13 cannot expose a physical output that another encoded operation consumes",
-                    candidate, @"h13.unsupported-returned-intermediate");
 
     NSMutableOrderedSet<NSString *> *returnedStorageNames =
         [NSMutableOrderedSet orderedSet];
@@ -2175,7 +2171,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 NSUInteger programIndex = programRecords.count;
                 NSData *payload = nil;
                 if (hwx) {
-                    payload = encodeHWX(program, error);
+                    payload = encodeHWX(program, anec, error);
                     if (!payload) return NO;
                 } else {
                     payload = [NSData dataWithBytes:anec.data() length:anec.size()];
