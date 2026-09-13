@@ -1,0 +1,3629 @@
+{
+  "deviceCalls": false,
+  "programs": [
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-0.anec",
+      "index": 0,
+      "inputs": [
+        {
+          "allocationBytes": 32768,
+          "channel": 5,
+          "elementCount": 512,
+          "elementOffset": 0,
+          "physicalElements": 512,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-0.anec\", device)",
+        "ane_bind_kernel(handle, anec[0x1000 + 640], 524288)",
+        "__ane_src_size(handle, 0) == 32768  # x",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_dst_size(handle, 0) == 32768  # $h13.hidden.partial0",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "matmul",
+      "outputs": [
+        {
+          "allocationBytes": 32768,
+          "channel": 4,
+          "elementCount": 512,
+          "elementOffset": 0,
+          "physicalElements": 512,
+          "tensor": "$h13.hidden.partial0"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-1.anec",
+      "index": 1,
+      "inputs": [
+        {
+          "allocationBytes": 32768,
+          "channel": 5,
+          "elementCount": 512,
+          "elementOffset": 0,
+          "physicalElements": 512,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-1.anec\", device)",
+        "ane_bind_kernel(handle, anec[0x1000 + 640], 524288)",
+        "__ane_src_size(handle, 0) == 32768  # x",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_dst_size(handle, 0) == 32768  # $h13.hidden.partial0",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "matmul",
+      "outputs": [
+        {
+          "allocationBytes": 32768,
+          "channel": 4,
+          "elementCount": 512,
+          "elementOffset": 512,
+          "physicalElements": 512,
+          "tensor": "$h13.hidden.partial0"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-2.anec",
+      "index": 2,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 256,
+          "elementOffset": 512,
+          "physicalElements": 256,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-2.anec\", device)",
+        "ane_bind_kernel(handle, anec[0x1000 + 640], 524288)",
+        "__ane_src_size(handle, 0) == 16384  # x",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_dst_size(handle, 0) == 32768  # $h13.hidden.partial1",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "matmul",
+      "outputs": [
+        {
+          "allocationBytes": 32768,
+          "channel": 4,
+          "elementCount": 512,
+          "elementOffset": 0,
+          "physicalElements": 512,
+          "tensor": "$h13.hidden.partial1"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-3.anec",
+      "index": 3,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 256,
+          "elementOffset": 512,
+          "physicalElements": 256,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-3.anec\", device)",
+        "ane_bind_kernel(handle, anec[0x1000 + 640], 524288)",
+        "__ane_src_size(handle, 0) == 16384  # x",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_dst_size(handle, 0) == 32768  # $h13.hidden.partial1",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "matmul",
+      "outputs": [
+        {
+          "allocationBytes": 32768,
+          "channel": 4,
+          "elementCount": 512,
+          "elementOffset": 512,
+          "physicalElements": 512,
+          "tensor": "$h13.hidden.partial1"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-oracle-parity",
+      "file": "program-4.anec",
+      "index": 4,
+      "inputs": [
+        {
+          "allocationBytes": 65536,
+          "channel": 5,
+          "elementCount": 1024,
+          "elementOffset": 0,
+          "physicalElements": 1024,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.partial0"
+        },
+        {
+          "allocationBytes": 65536,
+          "channel": 6,
+          "elementCount": 1024,
+          "elementOffset": 0,
+          "physicalElements": 1024,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.partial1"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-4.anec\", device)",
+        "ane_bind_kernel(handle, anec[0x1000 + 512], 16384)",
+        "__ane_src_size(handle, 0) == 65536  # $h13.hidden.partial0",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 65536  # $h13.hidden.partial1",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 65536  # $h13.hidden.linear",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 65536,
+          "channel": 4,
+          "elementCount": 1024,
+          "elementOffset": 0,
+          "physicalElements": 1024,
+          "tensor": "$h13.hidden.linear"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-5.anec",
+      "index": 5,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.hidden.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-5.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.hidden.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.hidden.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # hidden",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "tensor": "hidden"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-6.anec",
+      "index": 6,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 64,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 64,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.hidden.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-6.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.hidden.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.hidden.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # hidden",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 64,
+          "physicalElements": 64,
+          "tensor": "hidden"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-7.anec",
+      "index": 7,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 128,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 128,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.hidden.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-7.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.hidden.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.hidden.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # hidden",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 128,
+          "physicalElements": 64,
+          "tensor": "hidden"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-8.anec",
+      "index": 8,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 192,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 192,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.hidden.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-8.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.hidden.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.hidden.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # hidden",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 192,
+          "physicalElements": 64,
+          "tensor": "hidden"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-9.anec",
+      "index": 9,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 256,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 256,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.hidden.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-9.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.hidden.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.hidden.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # hidden",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 256,
+          "physicalElements": 64,
+          "tensor": "hidden"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-10.anec",
+      "index": 10,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 320,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 320,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.hidden.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-10.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.hidden.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.hidden.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # hidden",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 320,
+          "physicalElements": 64,
+          "tensor": "hidden"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-11.anec",
+      "index": 11,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 384,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 384,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.hidden.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-11.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.hidden.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.hidden.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # hidden",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 384,
+          "physicalElements": 64,
+          "tensor": "hidden"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-12.anec",
+      "index": 12,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 448,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 448,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.hidden.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-12.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.hidden.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.hidden.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # hidden",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 448,
+          "physicalElements": 64,
+          "tensor": "hidden"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-13.anec",
+      "index": 13,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 512,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 512,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.hidden.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-13.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.hidden.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.hidden.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # hidden",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 512,
+          "physicalElements": 64,
+          "tensor": "hidden"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-14.anec",
+      "index": 14,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 576,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 576,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.hidden.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-14.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.hidden.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.hidden.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # hidden",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 576,
+          "physicalElements": 64,
+          "tensor": "hidden"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-15.anec",
+      "index": 15,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 640,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 640,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.hidden.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-15.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.hidden.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.hidden.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # hidden",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 640,
+          "physicalElements": 64,
+          "tensor": "hidden"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-16.anec",
+      "index": 16,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 704,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 704,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.hidden.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-16.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.hidden.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.hidden.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # hidden",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 704,
+          "physicalElements": 64,
+          "tensor": "hidden"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-17.anec",
+      "index": 17,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 768,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 768,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.hidden.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-17.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.hidden.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.hidden.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # hidden",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 768,
+          "physicalElements": 64,
+          "tensor": "hidden"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-18.anec",
+      "index": 18,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 832,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 832,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.hidden.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-18.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.hidden.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.hidden.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # hidden",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 832,
+          "physicalElements": 64,
+          "tensor": "hidden"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-19.anec",
+      "index": 19,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 896,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 896,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.hidden.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-19.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.hidden.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.hidden.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # hidden",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 896,
+          "physicalElements": 64,
+          "tensor": "hidden"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-20.anec",
+      "index": 20,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 960,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.hidden.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 960,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.hidden.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-20.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.hidden.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.hidden.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # hidden",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 960,
+          "physicalElements": 64,
+          "tensor": "hidden"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-21.anec",
+      "index": 21,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "hidden"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.activated.zero"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-21.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # hidden",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.activated.zero",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # activated",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "maximum",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "tensor": "activated"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-22.anec",
+      "index": 22,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 64,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "hidden"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 64,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.activated.zero"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-22.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # hidden",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.activated.zero",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # activated",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "maximum",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 64,
+          "physicalElements": 64,
+          "tensor": "activated"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-23.anec",
+      "index": 23,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 128,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "hidden"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 128,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.activated.zero"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-23.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # hidden",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.activated.zero",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # activated",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "maximum",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 128,
+          "physicalElements": 64,
+          "tensor": "activated"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-24.anec",
+      "index": 24,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 192,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "hidden"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 192,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.activated.zero"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-24.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # hidden",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.activated.zero",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # activated",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "maximum",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 192,
+          "physicalElements": 64,
+          "tensor": "activated"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-25.anec",
+      "index": 25,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 256,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "hidden"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 256,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.activated.zero"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-25.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # hidden",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.activated.zero",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # activated",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "maximum",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 256,
+          "physicalElements": 64,
+          "tensor": "activated"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-26.anec",
+      "index": 26,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 320,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "hidden"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 320,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.activated.zero"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-26.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # hidden",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.activated.zero",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # activated",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "maximum",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 320,
+          "physicalElements": 64,
+          "tensor": "activated"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-27.anec",
+      "index": 27,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 384,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "hidden"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 384,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.activated.zero"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-27.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # hidden",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.activated.zero",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # activated",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "maximum",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 384,
+          "physicalElements": 64,
+          "tensor": "activated"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-28.anec",
+      "index": 28,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 448,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "hidden"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 448,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.activated.zero"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-28.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # hidden",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.activated.zero",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # activated",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "maximum",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 448,
+          "physicalElements": 64,
+          "tensor": "activated"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-29.anec",
+      "index": 29,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 512,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "hidden"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 512,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.activated.zero"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-29.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # hidden",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.activated.zero",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # activated",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "maximum",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 512,
+          "physicalElements": 64,
+          "tensor": "activated"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-30.anec",
+      "index": 30,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 576,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "hidden"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 576,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.activated.zero"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-30.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # hidden",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.activated.zero",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # activated",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "maximum",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 576,
+          "physicalElements": 64,
+          "tensor": "activated"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-31.anec",
+      "index": 31,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 640,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "hidden"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 640,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.activated.zero"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-31.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # hidden",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.activated.zero",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # activated",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "maximum",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 640,
+          "physicalElements": 64,
+          "tensor": "activated"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-32.anec",
+      "index": 32,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 704,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "hidden"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 704,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.activated.zero"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-32.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # hidden",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.activated.zero",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # activated",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "maximum",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 704,
+          "physicalElements": 64,
+          "tensor": "activated"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-33.anec",
+      "index": 33,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 768,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "hidden"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 768,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.activated.zero"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-33.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # hidden",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.activated.zero",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # activated",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "maximum",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 768,
+          "physicalElements": 64,
+          "tensor": "activated"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-34.anec",
+      "index": 34,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 832,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "hidden"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 832,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.activated.zero"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-34.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # hidden",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.activated.zero",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # activated",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "maximum",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 832,
+          "physicalElements": 64,
+          "tensor": "activated"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-35.anec",
+      "index": 35,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 896,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "hidden"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 896,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.activated.zero"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-35.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # hidden",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.activated.zero",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # activated",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "maximum",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 896,
+          "physicalElements": 64,
+          "tensor": "activated"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-36.anec",
+      "index": 36,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 960,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "hidden"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 960,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.activated.zero"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-36.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # hidden",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.activated.zero",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # activated",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "maximum",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 960,
+          "physicalElements": 64,
+          "tensor": "activated"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-37.anec",
+      "index": 37,
+      "inputs": [
+        {
+          "allocationBytes": 32768,
+          "channel": 5,
+          "elementCount": 512,
+          "elementOffset": 0,
+          "physicalElements": 512,
+          "source": "intermediate",
+          "tensor": "activated"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-37.anec\", device)",
+        "ane_bind_kernel(handle, anec[0x1000 + 640], 524288)",
+        "__ane_src_size(handle, 0) == 32768  # activated",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_dst_size(handle, 0) == 32768  # $h13.projected.partial0",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "matmul",
+      "outputs": [
+        {
+          "allocationBytes": 32768,
+          "channel": 4,
+          "elementCount": 512,
+          "elementOffset": 0,
+          "physicalElements": 512,
+          "tensor": "$h13.projected.partial0"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-38.anec",
+      "index": 38,
+      "inputs": [
+        {
+          "allocationBytes": 32768,
+          "channel": 5,
+          "elementCount": 512,
+          "elementOffset": 0,
+          "physicalElements": 512,
+          "source": "intermediate",
+          "tensor": "activated"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-38.anec\", device)",
+        "ane_bind_kernel(handle, anec[0x1000 + 640], 524288)",
+        "__ane_src_size(handle, 0) == 32768  # activated",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_dst_size(handle, 0) == 32768  # $h13.projected.partial0",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "matmul",
+      "outputs": [
+        {
+          "allocationBytes": 32768,
+          "channel": 4,
+          "elementCount": 256,
+          "elementOffset": 512,
+          "physicalElements": 512,
+          "tensor": "$h13.projected.partial0"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-39.anec",
+      "index": 39,
+      "inputs": [
+        {
+          "allocationBytes": 32768,
+          "channel": 5,
+          "elementCount": 512,
+          "elementOffset": 512,
+          "physicalElements": 512,
+          "source": "intermediate",
+          "tensor": "activated"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-39.anec\", device)",
+        "ane_bind_kernel(handle, anec[0x1000 + 640], 524288)",
+        "__ane_src_size(handle, 0) == 32768  # activated",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_dst_size(handle, 0) == 32768  # $h13.projected.partial1",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "matmul",
+      "outputs": [
+        {
+          "allocationBytes": 32768,
+          "channel": 4,
+          "elementCount": 512,
+          "elementOffset": 0,
+          "physicalElements": 512,
+          "tensor": "$h13.projected.partial1"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-40.anec",
+      "index": 40,
+      "inputs": [
+        {
+          "allocationBytes": 32768,
+          "channel": 5,
+          "elementCount": 512,
+          "elementOffset": 512,
+          "physicalElements": 512,
+          "source": "intermediate",
+          "tensor": "activated"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-40.anec\", device)",
+        "ane_bind_kernel(handle, anec[0x1000 + 640], 524288)",
+        "__ane_src_size(handle, 0) == 32768  # activated",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_dst_size(handle, 0) == 32768  # $h13.projected.partial1",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "matmul",
+      "outputs": [
+        {
+          "allocationBytes": 32768,
+          "channel": 4,
+          "elementCount": 256,
+          "elementOffset": 512,
+          "physicalElements": 512,
+          "tensor": "$h13.projected.partial1"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-41.anec",
+      "index": 41,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial0"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial1"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-41.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.partial0",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.partial1",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # $h13.projected.linear",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "tensor": "$h13.projected.linear"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-42.anec",
+      "index": 42,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 64,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial0"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 64,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial1"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-42.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.partial0",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.partial1",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # $h13.projected.linear",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 64,
+          "physicalElements": 64,
+          "tensor": "$h13.projected.linear"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-43.anec",
+      "index": 43,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 128,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial0"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 128,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial1"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-43.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.partial0",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.partial1",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # $h13.projected.linear",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 128,
+          "physicalElements": 64,
+          "tensor": "$h13.projected.linear"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-44.anec",
+      "index": 44,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 192,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial0"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 192,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial1"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-44.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.partial0",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.partial1",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # $h13.projected.linear",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 192,
+          "physicalElements": 64,
+          "tensor": "$h13.projected.linear"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-45.anec",
+      "index": 45,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 256,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial0"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 256,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial1"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-45.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.partial0",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.partial1",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # $h13.projected.linear",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 256,
+          "physicalElements": 64,
+          "tensor": "$h13.projected.linear"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-46.anec",
+      "index": 46,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 320,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial0"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 320,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial1"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-46.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.partial0",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.partial1",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # $h13.projected.linear",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 320,
+          "physicalElements": 64,
+          "tensor": "$h13.projected.linear"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-47.anec",
+      "index": 47,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 384,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial0"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 384,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial1"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-47.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.partial0",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.partial1",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # $h13.projected.linear",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 384,
+          "physicalElements": 64,
+          "tensor": "$h13.projected.linear"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-48.anec",
+      "index": 48,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 448,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial0"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 448,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial1"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-48.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.partial0",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.partial1",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # $h13.projected.linear",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 448,
+          "physicalElements": 64,
+          "tensor": "$h13.projected.linear"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-49.anec",
+      "index": 49,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 512,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial0"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 512,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial1"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-49.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.partial0",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.partial1",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # $h13.projected.linear",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 512,
+          "physicalElements": 64,
+          "tensor": "$h13.projected.linear"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-50.anec",
+      "index": 50,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 576,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial0"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 576,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial1"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-50.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.partial0",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.partial1",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # $h13.projected.linear",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 576,
+          "physicalElements": 64,
+          "tensor": "$h13.projected.linear"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-51.anec",
+      "index": 51,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 640,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial0"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 640,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial1"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-51.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.partial0",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.partial1",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # $h13.projected.linear",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 640,
+          "physicalElements": 64,
+          "tensor": "$h13.projected.linear"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-52.anec",
+      "index": 52,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 704,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial0"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 704,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.partial1"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-52.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.partial0",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.partial1",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # $h13.projected.linear",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 704,
+          "physicalElements": 64,
+          "tensor": "$h13.projected.linear"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-53.anec",
+      "index": 53,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.projected.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-53.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # projected",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "tensor": "projected"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-54.anec",
+      "index": 54,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 64,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 64,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.projected.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-54.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # projected",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 64,
+          "physicalElements": 64,
+          "tensor": "projected"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-55.anec",
+      "index": 55,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 128,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 128,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.projected.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-55.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # projected",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 128,
+          "physicalElements": 64,
+          "tensor": "projected"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-56.anec",
+      "index": 56,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 192,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 192,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.projected.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-56.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # projected",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 192,
+          "physicalElements": 64,
+          "tensor": "projected"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-57.anec",
+      "index": 57,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 256,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 256,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.projected.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-57.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # projected",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 256,
+          "physicalElements": 64,
+          "tensor": "projected"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-58.anec",
+      "index": 58,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 320,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 320,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.projected.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-58.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # projected",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 320,
+          "physicalElements": 64,
+          "tensor": "projected"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-59.anec",
+      "index": 59,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 384,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 384,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.projected.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-59.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # projected",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 384,
+          "physicalElements": 64,
+          "tensor": "projected"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-60.anec",
+      "index": 60,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 448,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 448,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.projected.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-60.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # projected",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 448,
+          "physicalElements": 64,
+          "tensor": "projected"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-61.anec",
+      "index": 61,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 512,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 512,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.projected.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-61.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # projected",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 512,
+          "physicalElements": 64,
+          "tensor": "projected"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-62.anec",
+      "index": 62,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 576,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 576,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.projected.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-62.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # projected",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 576,
+          "physicalElements": 64,
+          "tensor": "projected"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-63.anec",
+      "index": 63,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 640,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 640,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.projected.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-63.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # projected",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 640,
+          "physicalElements": 64,
+          "tensor": "projected"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-64.anec",
+      "index": 64,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 704,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "$h13.projected.linear"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 704,
+          "physicalElements": 64,
+          "source": "constantInputs",
+          "tensor": "$h13.projected.bias"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-64.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # $h13.projected.linear",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # $h13.projected.bias",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # projected",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 704,
+          "physicalElements": 64,
+          "tensor": "projected"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-65.anec",
+      "index": 65,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "projected"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-65.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # projected",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # x",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # y",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "tensor": "y"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-66.anec",
+      "index": 66,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 64,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "projected"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 64,
+          "physicalElements": 64,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-66.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # projected",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # x",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # y",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 64,
+          "physicalElements": 64,
+          "tensor": "y"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-67.anec",
+      "index": 67,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 128,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "projected"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 128,
+          "physicalElements": 64,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-67.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # projected",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # x",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # y",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 128,
+          "physicalElements": 64,
+          "tensor": "y"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-68.anec",
+      "index": 68,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 192,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "projected"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 192,
+          "physicalElements": 64,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-68.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # projected",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # x",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # y",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 192,
+          "physicalElements": 64,
+          "tensor": "y"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-69.anec",
+      "index": 69,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 256,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "projected"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 256,
+          "physicalElements": 64,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-69.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # projected",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # x",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # y",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 256,
+          "physicalElements": 64,
+          "tensor": "y"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-70.anec",
+      "index": 70,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 320,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "projected"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 320,
+          "physicalElements": 64,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-70.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # projected",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # x",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # y",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 320,
+          "physicalElements": 64,
+          "tensor": "y"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-71.anec",
+      "index": 71,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 384,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "projected"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 384,
+          "physicalElements": 64,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-71.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # projected",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # x",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # y",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 384,
+          "physicalElements": 64,
+          "tensor": "y"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-72.anec",
+      "index": 72,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 448,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "projected"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 448,
+          "physicalElements": 64,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-72.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # projected",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # x",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # y",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 448,
+          "physicalElements": 64,
+          "tensor": "y"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-73.anec",
+      "index": 73,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 512,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "projected"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 512,
+          "physicalElements": 64,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-73.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # projected",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # x",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # y",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 512,
+          "physicalElements": 64,
+          "tensor": "y"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-74.anec",
+      "index": 74,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 576,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "projected"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 576,
+          "physicalElements": 64,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-74.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # projected",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # x",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # y",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 576,
+          "physicalElements": 64,
+          "tensor": "y"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-75.anec",
+      "index": 75,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 640,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "projected"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 640,
+          "physicalElements": 64,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-75.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # projected",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # x",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # y",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 640,
+          "physicalElements": 64,
+          "tensor": "y"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-source-qualified",
+      "file": "program-76.anec",
+      "index": 76,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 704,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "projected"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 704,
+          "physicalElements": 64,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-76.anec\", device)",
+        "__ane_src_size(handle, 0) == 16384  # projected",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # x",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # y",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 704,
+          "physicalElements": 64,
+          "tensor": "y"
+        }
+      ],
+      "taskDescriptors": 1
+    }
+  ],
+  "referenceCriteria": {
+    "y": "|device - reference| <= 0.02 + 0.02 * |reference|"
+  },
+  "referenceOutputs": {
+    "y": 1536
+  },
+  "schema": "mil-hwxc.h13-linux-plan.v1"
+}

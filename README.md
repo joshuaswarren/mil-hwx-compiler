@@ -371,12 +371,17 @@ On an aarch64 Linux host with `ane.ko` loaded and the `omarchy` branch of
 `joshuaswarren/omarchy-ane` built (libane and `bindings/python/dylib`), the
 Linux gate compiles the ANEC package and dispatches it through
 `tools/h13_run_linux.py`, comparing every output with the same reference.
-It refuses to run until the device node, library, branch, and ANEC header
-contract all check out.
+It refuses to run until the device node, library, branch, ANEC header contract,
+and an explicit positive finite whole-device-phase deadline all check out.
 
 ```bash
-ANE_CHECKOUT=~/src/omarchy-ane tests/run_h13_linux_hardware.sh model.mil models x=input.fp16
+H13_DEADLINE_SECONDS=120 ANE_CHECKOUT=~/src/omarchy-ane \
+  tests/run_h13_linux_hardware.sh model.mil models x=input.fp16
 ```
+
+The deadline is checked before each program is allocated or submitted. It is
+separate from the kernel per-submit timeout and cannot interrupt or recover an
+in-flight kernel submission.
 
 Elementwise outputs must match the reference bit for bit. A tensor marked
 `chunked-fp16` uses

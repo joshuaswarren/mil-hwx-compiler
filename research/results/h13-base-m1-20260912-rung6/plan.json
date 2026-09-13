@@ -1,0 +1,110 @@
+{
+  "deviceCalls": false,
+  "programs": [
+    {
+      "encoder": "h13-oracle-parity",
+      "file": "program-0.anec",
+      "index": 0,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "source": "input",
+          "tensor": "a"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "source": "input",
+          "tensor": "b"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-0.anec\", device)",
+        "ane_bind_kernel(handle, anec[0x1000 + 512], 16384)",
+        "__ane_src_size(handle, 0) == 16384  # a",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # b",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # sum",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "add",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "tensor": "sum"
+        }
+      ],
+      "taskDescriptors": 1
+    },
+    {
+      "encoder": "h13-oracle-parity",
+      "file": "program-1.anec",
+      "index": 1,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "source": "intermediate",
+          "tensor": "sum"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "source": "input",
+          "tensor": "b"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-1.anec\", device)",
+        "ane_bind_kernel(handle, anec[0x1000 + 512], 16384)",
+        "__ane_src_size(handle, 0) == 16384  # sum",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # b",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # y",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "mul",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 64,
+          "elementOffset": 0,
+          "physicalElements": 64,
+          "tensor": "y"
+        }
+      ],
+      "taskDescriptors": 1
+    }
+  ],
+  "referenceCriteria": {
+    "y": "byte-for-byte equal to the fp16 reference"
+  },
+  "referenceOutputs": {
+    "y": 128
+  },
+  "schema": "mil-hwxc.h13-linux-plan.v1"
+}

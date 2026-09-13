@@ -2125,6 +2125,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     @"outputs": @[outputRecord],
                     @"constantOffset": @(program.constantOffsetBytes),
                     @"constantBytes": @(program.constants.size()),
+                    @"scratchBytes": @(program.scratchAllocationBytes),
                 };
                 [programRecords addObject:record];
                 [payloads addObject:payload];

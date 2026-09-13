@@ -1,0 +1,61 @@
+{
+  "deviceCalls": false,
+  "programs": [
+    {
+      "encoder": "apple-parity-matmul",
+      "file": "program-0.anec",
+      "index": 0,
+      "inputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 5,
+          "elementCount": 4096,
+          "elementOffset": 0,
+          "physicalElements": 4096,
+          "source": "input",
+          "tensor": "w"
+        },
+        {
+          "allocationBytes": 16384,
+          "channel": 6,
+          "elementCount": 4096,
+          "elementOffset": 0,
+          "physicalElements": 4096,
+          "source": "input",
+          "tensor": "x"
+        }
+      ],
+      "libaneCalls": [
+        "pyane_init(\"program-0.anec\", device)",
+        "ane_bind_kernel(handle, anec[0x1000 + 1152], 16384)",
+        "__ane_src_size(handle, 0) == 16384  # w",
+        "__ane_send(handle, buffer, 0)",
+        "__ane_src_size(handle, 1) == 16384  # x",
+        "__ane_send(handle, buffer, 1)",
+        "__ane_dst_size(handle, 0) == 16384  # y",
+        "ane_exec(handle)",
+        "__ane_read(handle, buffer, 0)",
+        "pyane_free(handle)"
+      ],
+      "operation": "matmul",
+      "outputs": [
+        {
+          "allocationBytes": 16384,
+          "channel": 4,
+          "elementCount": 4096,
+          "elementOffset": 0,
+          "physicalElements": 4096,
+          "tensor": "y"
+        }
+      ],
+      "taskDescriptors": 2
+    }
+  ],
+  "referenceCriteria": {
+    "y": "byte-for-byte equal to the fp16 reference"
+  },
+  "referenceOutputs": {
+    "y": 8192
+  },
+  "schema": "mil-hwxc.h13-linux-plan.v1"
+}

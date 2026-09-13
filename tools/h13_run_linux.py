@@ -9,6 +9,7 @@ import os
 import struct
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,16 +56,20 @@ class LibANEAdapter:
         self.device = device
         self.lib = ctypes.CDLL(os.fspath(library), use_errno=True)
         pointer = ctypes.c_void_p
+        self._src_size = getattr(self.lib, "__ane_src_size")
+        self._dst_size = getattr(self.lib, "__ane_dst_size")
+        self._send = getattr(self.lib, "__ane_send")
+        self._read = getattr(self.lib, "__ane_read")
         self.lib.pyane_init.restype = pointer
         self.lib.pyane_init.argtypes = [ctypes.c_char_p, ctypes.c_int]
         self.lib.pyane_free.restype = ctypes.c_int
         self.lib.pyane_free.argtypes = [pointer]
-        self.lib.__ane_src_size.restype = ctypes.c_uint64
-        self.lib.__ane_src_size.argtypes = [pointer, ctypes.c_uint32]
-        self.lib.__ane_dst_size.restype = ctypes.c_uint64
-        self.lib.__ane_dst_size.argtypes = [pointer, ctypes.c_uint32]
-        self.lib.__ane_send.argtypes = [pointer, pointer, ctypes.c_uint32]
-        self.lib.__ane_read.argtypes = [pointer, pointer, ctypes.c_uint32]
+        self._src_size.restype = ctypes.c_uint64
+        self._src_size.argtypes = [pointer, ctypes.c_uint32]
+        self._dst_size.restype = ctypes.c_uint64
+        self._dst_size.argtypes = [pointer, ctypes.c_uint32]
+        self._send.argtypes = [pointer, pointer, ctypes.c_uint32]
+        self._read.argtypes = [pointer, pointer, ctypes.c_uint32]
         self.lib.ane_bind_kernel.restype = ctypes.c_int
         self.lib.ane_bind_kernel.argtypes = [pointer, pointer, ctypes.c_uint64]
         self.lib.ane_exec.restype = ctypes.c_int
@@ -94,15 +99,15 @@ class LibANEAdapter:
                     raise self._failure("ane_bind_kernel", result)
             input_buffers = []
             for index, data in enumerate(inputs):
-                size = self.lib.__ane_src_size(handle, index)
+                size = self._src_size(handle, index)
                 if size != len(data):
                     raise RuntimeError(
                         f"libane input {index} size {size} differs from manifest {len(data)}")
                 buffer = ctypes.create_string_buffer(data, len(data))
                 input_buffers.append(buffer)
-                self.lib.__ane_send(handle, buffer, index)
+                self._send(handle, buffer, index)
             for index, expected in enumerate(output_sizes):
-                size = self.lib.__ane_dst_size(handle, index)
+                size = self._dst_size(handle, index)
                 if size != expected:
                     raise RuntimeError(
                         f"libane output {index} size {size} differs from manifest {expected}")
@@ -112,7 +117,7 @@ class LibANEAdapter:
             outputs = []
             for index, size in enumerate(output_sizes):
                 buffer = ctypes.create_string_buffer(size)
-                self.lib.__ane_read(handle, buffer, index)
+                self._read(handle, buffer, index)
                 outputs.append(buffer.raw)
             return outputs
         finally:
@@ -298,7 +303,13 @@ def chunked_tensors(manifest):
     return chunked
 
 
-def run_package(package, mil, model_root, inputs, adapter):
+def run_package(package, mil, model_root, inputs, adapter, deadline_seconds=None,
+                now=time.monotonic):
+    if deadline_seconds is None:
+        if adapter is not None:
+            raise ValueError("device execution requires --deadline-seconds with a positive finite value")
+    elif not math.isfinite(deadline_seconds) or deadline_seconds <= 0:
+        raise ValueError("--deadline-seconds must be a positive finite number")
     manifest, _ = inspect_anec.load_package(package)
     tensors = manifest["tensors"]
     input_names = {name for name, tensor in tensors.items()
@@ -318,8 +329,15 @@ def run_package(package, mil, model_root, inputs, adapter):
 
     intermediate_regions = {}
     output_regions = {}
+    deadline = now() + deadline_seconds
     package = Path(package).resolve()
     for program_index in manifest["dispatchPlan"]:
+        if now() >= deadline:
+            raise ValueError(
+                f"whole-run qualification deadline of {deadline_seconds}s exceeded "
+                f"before program {program_index}; no next-program work was allocated "
+                "or submitted. This deadline cannot interrupt or recover an in-flight "
+                "kernel submission")
         program = manifest["programs"][program_index]
         input_buffers = []
         for binding in program["inputs"]:
@@ -347,7 +365,12 @@ def run_package(package, mil, model_root, inputs, adapter):
     chunked = chunked_tensors(manifest)
     for name in output_names:
         target = tensors[name].get("aliasOf", name)
-        compare_fp16(actual[name], expected[name], target in chunked)
+        try:
+            compare_fp16(actual[name], expected[name], target in chunked)
+        except ValueError as error:
+            failed = package / f"{name}.failed.fp16"
+            failed.write_bytes(actual[name])
+            raise ValueError(f"{error}; preserved {failed}") from None
     return manifest, actual, None
 
 
@@ -361,12 +384,23 @@ def main():
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--libane-library", type=Path, default=DEFAULT_LIBANE)
+    parser.add_argument("--deadline-seconds", type=float, default=None,
+                        help="required for device execution: positive finite "
+                             "whole-device-phase budget, separate from the kernel "
+                             "per-submit timeout; checked before each program and "
+                             "cannot interrupt an in-flight submission")
     args = parser.parse_args()
+    if args.deadline_seconds is not None and (
+            not math.isfinite(args.deadline_seconds) or args.deadline_seconds <= 0):
+        parser.error("--deadline-seconds must be a positive finite number")
+    if not args.dry_run and args.deadline_seconds is None:
+        parser.error("device execution requires --deadline-seconds with a positive finite value")
     try:
         inputs, outputs = _paths(args.input), _paths(args.output)
         adapter = None if args.dry_run else LibANEAdapter(args.libane_library, args.device)
         manifest, result, plan = run_package(
-            args.package, args.mil, args.model_root, inputs, adapter)
+            args.package, args.mil, args.model_root, inputs, adapter,
+            deadline_seconds=args.deadline_seconds)
         expected_outputs = _logical_outputs(manifest["tensors"])
         if set(outputs) != expected_outputs:
             raise ValueError(f"outputs must be exactly {', '.join(sorted(expected_outputs))}")

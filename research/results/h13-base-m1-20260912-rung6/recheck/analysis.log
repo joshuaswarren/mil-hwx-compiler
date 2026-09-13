@@ -1,0 +1,26 @@
+compiler-source-commit aa688df66cbc2110e0df94f0d50fb72c7fa30a18
+compiler-worktree-status clean
+compiler-sha256 764b999cb1b4a77d70fe7af748ded23facbb513b0ffde18e9814a87e693d55cc
+compiler-build-id 09ee6871bf121116ff56a16e674705b2719cb2ca
+preflight H13 preflight: PASS (no device access performed)
+rung6 PASS y: 128 fp16 bytes match the reference
+rung6 actual-sha256 8cdcd9ef211ab08d1fc1c3c24fa33467acb90509aab4a6a10ebe0f8bbf4ddf47
+rung6 expected-sha256 8cdcd9ef211ab08d1fc1c3c24fa33467acb90509aab4a6a10ebe0f8bbf4ddf47
+rung6 byte-identical true
+rung7 strict-package-plan programs=1 task-descriptors=2 encoder=apple-parity-matmul libane-exec-calls=1 scratch-bytes=0
+rung7 PASS y: 8192 fp16 bytes match the reference
+rung7 actual-sha256 162f7c3f644b53705126cff309f51e78deb830ac07f80b51ac56dffe6c3710d5
+rung7 expected-sha256 162f7c3f644b53705126cff309f51e78deb830ac07f80b51ac56dffe6c3710d5
+rung7 byte-identical true
+rung8 strict-package-plan programs=77 task-descriptors=77 libane-calls=686 encoders.h13-source-qualified=76 encoders.h13-oracle-parity=1 scratch-bytes=0
+rung8 PASS y: 1536 fp16 bytes satisfy the plan reference criterion
+rung8 reference-criterion |device - reference| <= 0.02 + 0.02 * |reference|
+rung8 actual-sha256 dfaa81560221487a724fc17031ac579c13cba7d50d5cb5b7826bc0815b4df056
+rung8 expected-sha256 2276bbf08fb3226e0dc4eae95ba2364bf2a8aa4de4289fd9aa2271235bfb141b
+rung8 bytes=1536 finite=true mismatched-fp16=109 outside-tolerance=0
+rung8 max-abs-error=0.0009765625 index=736 expected=-1.068359375 actual=-1.0693359375 allowed=0.0413671875
+rung8 max-finite-relative-error=0.0009140767824497258 index=1
+rung6 package-digest=9dac60e4528ba594be2a90d154b5565f8a5bc4b137be5bd263e8f541ce70ae9b manifest-sha256=d3be01476fa2a3b0c6d24ca3227fd88885e6370807eda6c16d0a93775ba20e19 plan-sha256=e18878357dacd9244b0ca158ac1885c15c8b26525a45ce4d89c176eceec61cb7
+rung7 package-digest=f2fdfe87ab54cb2cc8c5f9050d7af72c7857ff22708613faeb683a7574570a38 manifest-sha256=ffd6320c34bf42ab611a0d9270f22f728659439a5cd7320e4e572cd9466dda7a plan-sha256=14eb204aa9fbd6a18b05e8a270c552f7b866c7126c255a6e24cff3d6506d8cd4
+rung8 package-digest=10b0352461fe6ca3eee9b6745af986409716fb7249fc89caea6dba2d50763816 manifest-sha256=7b32cbc92011f6a0a58a93d75230e13b5277441e807bdd551b906f560608ff73 plan-sha256=14c14ccf32403ac95c4409677068a52107ab6c0f7ee5ad24c6906a5697206beb
+package-digest-method sha256(concatenated binary sha256 digests in numeric dispatch order)
