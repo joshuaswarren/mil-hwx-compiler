@@ -346,7 +346,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     manifest = json.loads((first / 'manifest.json').read_text())
     assert manifest['target'] == 'H13'
     assert manifest['artifactFormat'] == 'anec'
-    assert manifest["schema"] == "mil-hwxc.h13-anec-package.v1"
+    assert manifest["schema"] == "mil-hwxc.h13-anec-package.v2"
     assert manifest['dispatchPlan'] == [0]
     assert manifest['intermediates'] == []
     assert manifest['tensors'] == {
@@ -431,11 +431,19 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     returned_alias_manifest = json.loads((returned_alias / 'manifest.json').read_text())
     assert returned_alias_manifest['intermediates'] == []
     assert returned_alias_manifest['tensors']['t'] == {
-        'shape': [64], 'logicalBytes': 128, 'role': 'output'}
+        'shape': [1, 64, 1, 1], 'logicalBytes': 128, 'role': 'output'}
     assert returned_alias_manifest['tensors']['r'] == {
         'shape': [64], 'logicalBytes': 128, 'role': 'output', 'aliasOf': 't'}
     assert returned_alias_manifest['outputs'][0]['name'] == 't'
-    assert returned_alias_manifest['outputs'][0]['shape'] == [64]
+    assert returned_alias_manifest['outputs'][0]['shape'] == [1, 64, 1, 1]
+    assert returned_alias_manifest['physicalOutputs'] == [{
+        'tensor': 't', 'dtype': 'float16', 'shape': [1, 64, 1, 1],
+        'logicalBytes': 128}]
+    assert returned_alias_manifest['logicalResults'] == [{
+        'name': 'r', 'dtype': 'float16', 'shape': [64],
+        'physical': {'tensor': 't', 'elementOffset': 0,
+                     'elementCount': 64},
+        'conversion': 'identity'}]
     assert json.loads(inspect(returned_alias))['manifest'] == returned_alias_manifest
     compile_text(alias_source(return_alias=True), 'returned-input-alias', False,
                  'h13.returned-input-alias')
@@ -616,8 +624,8 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     chain = compile_text(chain_source(), 'chain')
     chain_manifest = json.loads((chain / 'manifest.json').read_text())
     assert set(chain_manifest) == {
-        'schema', 'target', 'artifactFormat', 'programs', 'dispatchPlan', 'intermediates',
-        'tensors'}
+        'schema', 'target', 'artifactFormat', 'programs', 'dispatchPlan',
+        'intermediates', 'tensors', 'physicalOutputs', 'logicalResults'}
     assert chain_manifest['dispatchPlan'] == [0, 1, 2]
     assert chain_manifest['intermediates'] == ['sum', 'product']
     assert [program['file'] for program in chain_manifest['programs']] == [

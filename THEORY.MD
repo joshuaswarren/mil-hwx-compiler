@@ -39,15 +39,20 @@ propagates view offsets through shape-only aliases, and validates offset
 addition before recording a binding. Liveness checks every ordered result.
 Other multi-result operations retain the existing refusal.
 The qualified package contract is strict rather than inferred by consumers.
-Every sliced binding records physicalElements even when it equals the logical
-count, and every program records scratchBytes from its encoded H13 program.
-The inspector requires both fields. It does not substitute count or zero when
-a producer omits them.
+Every sliced ANEC program binding records physicalElements even when it equals
+the logical count, and every program records scratchBytes from its encoded H13
+program. The inspector requires both fields and does not substitute defaults.
 
-The function-output contract remains separate. H13 still requires one return
-that names the last encoded operation result. Supporting split views does not
-imply support for multiple function outputs, unsupported operations, full
-encoder compilation, or device execution.
+Package schema v2 keeps runtime buffers separate from function returns.
+physicalOutputs describes each produced FP16 buffer once. logicalResults keeps
+MIL return order, name, type, shape, and an identity view with only tensor,
+elementOffset, and elementCount. Storage capacity comes from the referenced
+physical output, not from duplicated view metadata. Identity requires equal
+logical and physical dtypes, elementCount equal to the logical shape product,
+and a view range within physical storage. Duplicate read-only views are valid.
+Mixed FP32 or int32 returns fail with
+h13.unsupported-logical-result-conversion until an explicit hardware or GPU
+conversion path exists.
 
 ## Verified Outcome
 
@@ -59,7 +64,15 @@ reference confirms that those intervals are the ordered second and first
 halves. Valid noncontiguous geometry fails with
 h13.noncontiguous-split-axis, and a valid three-result split fails with
 h13.unsupported-split-count.
-Direct and reshape-chained constant split sources now fail with
+
+Direct, reshape-view, and split-subslice outputs compile as duplicate ordered
+identity results. The reshape case keeps a [1,64,1,1] physical buffer while
+returning [1,1,8,8] logical views. The split-subslice case returns offset 64,
+count 64 from a 128-element physical output. The strict inspector accepts both
+duplicates and rejects a logical physicalElements field because that field
+belongs only to ANEC program binding geometry.
+
+Direct and reshape-chained constant split sources fail with
 h13.unsupported-constant-split-source before blob access or alias creation. A
 runtime-produced 256-element intermediate remains an intermediate across an
 outer split, reshape, and nested splits; its four consumer windows are
@@ -67,9 +80,10 @@ outer split, reshape, and nested splits; its four consumer windows are
 turn valid intermediate views into inputs.
 
 The pinned adapter output at
-/tmp/ane-runtime-adapter-integrated-20260913/model.mil passes the former blanket
-split precheck. Its next compiler boundary is the two-value function return at
-line 3355, rejected by h13.unsupported-chain. No hardware command was run.
+/tmp/ane-runtime-adapter-integrated-20260913/model.mil reaches its ordered FP32
+and int32 returns and fails with h13.unsupported-logical-result-conversion. The
+full faithful source still stops earlier on the known uint4 importer boundary.
+No hardware command was run.
 
 ## Repository Shape
 

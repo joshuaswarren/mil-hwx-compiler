@@ -189,7 +189,7 @@ int main(int argc, const char *argv[]) {
         NSData *manifestBytes = readFile([package stringByAppendingPathComponent:@"manifest.json"], &error);
         NSDictionary *manifest = manifestBytes ?
             [NSJSONSerialization JSONObjectWithData:manifestBytes options:0 error:&error] : nil;
-        if (!manifest || ![manifest[@"schema"] isEqualToString:@"mil-hwxc.h13-anec-package.v1"] ||
+        if (!manifest || ![manifest[@"schema"] isEqualToString:@"mil-hwxc.h13-anec-package.v2"] ||
             ![manifest[@"target"] isEqualToString:@"H13"] ||
             ![manifest[@"artifactFormat"] isEqualToString:@"hwx"])
             return fail(error.localizedDescription ?: @"package is not an H13 HWX package");

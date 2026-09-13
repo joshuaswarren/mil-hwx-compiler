@@ -54,6 +54,50 @@ def constant_split_source(reshape=False):
 """
 
 
+def duplicate_result_source():
+    return """program(1) {
+  func main<CoreML8>(tensor<fp16, [1, 64, 1, 1]> input) {
+    tensor<fp16, [1, 64, 1, 1]> output = sigmoid(x = input);
+  } -> (output, output);
+}
+"""
+
+def reshaped_duplicate_result_source():
+    return """program(1) {
+  func main<CoreML8>(tensor<fp16, [1, 64, 1, 1]> input) {
+    tensor<fp16, [1, 64, 1, 1]> output = sigmoid(x = input);
+    tensor<int32, [4]> shape = const()[val = tensor<int32, [4]>([1, 1, 8, 8])];
+    tensor<fp16, [1, 1, 8, 8]> view = reshape(shape = shape, x = output);
+  } -> (view, view);
+}
+"""
+
+
+def sliced_duplicate_result_source():
+    return """program(1) {
+  func main<CoreML8>(tensor<fp16, [1, 128, 1, 1]> input) {
+    tensor<fp16, [1, 128, 1, 1]> output = relu(x = input);
+    tensor<int32, []> count = const()[val = tensor<int32, []>(2)];
+    tensor<int32, []> axis = const()[val = tensor<int32, []>(1)];
+    (tensor<fp16, [1, 64, 1, 1]> first, tensor<fp16, [1, 64, 1, 1]> second) = split(axis = axis, num_splits = count, x = output);
+  } -> (second, second);
+}
+"""
+
+
+def mixed_result_source():
+    return """program(1) {
+  func main<CoreML8>(tensor<fp16, [1, 64, 1, 1]> input) {
+    tensor<fp16, [1, 64, 1, 1]> output = sigmoid(x = input);
+    tensor<string, []> fp32_dtype = const()[val = tensor<string, []>("fp32")];
+    tensor<string, []> int32_dtype = const()[val = tensor<string, []>("int32")];
+    tensor<fp32, [1, 64, 1, 1]> fp32_output = cast(dtype = fp32_dtype, x = output);
+    tensor<int32, [1, 64, 1, 1]> int32_output = cast(dtype = int32_dtype, x = output);
+  } -> (fp32_output, int32_output);
+}
+"""
+
+
 def compile_source(root, name, source, expected_code=None):
     source_path = root / f"{name}.mil"
     output = root / name
@@ -106,6 +150,76 @@ with tempfile.TemporaryDirectory() as temporary:
         text=True, timeout=30, check=False)
     assert inspected.returncode == 0, inspected.stderr
 
+
+    duplicate = compile_source(root, "duplicate-identity-results",
+                               duplicate_result_source())
+    duplicate_manifest = json.loads((duplicate / "manifest.json").read_text())
+    physical = {"tensor": "output", "dtype": "float16",
+                "shape": [1, 64, 1, 1], "logicalBytes": 128}
+    mapping = {"name": "output", "dtype": "float16",
+               "shape": [1, 64, 1, 1],
+               "physical": {"tensor": "output", "elementOffset": 0,
+                            "elementCount": 64},
+               "conversion": "identity"}
+    assert duplicate_manifest["schema"] == "mil-hwxc.h13-anec-package.v2"
+    assert duplicate_manifest["physicalOutputs"] == [physical]
+    assert duplicate_manifest["logicalResults"] == [mapping, mapping]
+    duplicate_inspected = subprocess.run(
+        [sys.executable, inspector, str(duplicate)], capture_output=True,
+        text=True, timeout=30, check=False)
+    assert duplicate_inspected.returncode == 0, duplicate_inspected.stderr
+
+    reshaped = compile_source(root, "reshaped-identity-results",
+                              reshaped_duplicate_result_source())
+    reshaped_manifest = json.loads((reshaped / "manifest.json").read_text())
+    assert reshaped_manifest["physicalOutputs"] == [physical]
+    reshaped_mapping = {"name": "view", "dtype": "float16",
+                        "shape": [1, 1, 8, 8],
+                        "physical": {"tensor": "output", "elementOffset": 0,
+                                     "elementCount": 64},
+                        "conversion": "identity"}
+    assert reshaped_manifest["logicalResults"] == [
+        reshaped_mapping, reshaped_mapping]
+    reshaped_inspected = subprocess.run(
+        [sys.executable, inspector, str(reshaped)], capture_output=True,
+        text=True, timeout=30, check=False)
+    assert reshaped_inspected.returncode == 0, reshaped_inspected.stderr
+
+    sliced = compile_source(root, "sliced-identity-results",
+                            sliced_duplicate_result_source())
+    sliced_manifest = json.loads((sliced / "manifest.json").read_text())
+    sliced_physical = {"tensor": "output", "dtype": "float16",
+                       "shape": [1, 128, 1, 1], "logicalBytes": 256}
+    sliced_mapping = {"name": "second", "dtype": "float16",
+                      "shape": [1, 64, 1, 1],
+                      "physical": {"tensor": "output", "elementOffset": 64,
+                                   "elementCount": 64},
+                      "conversion": "identity"}
+    assert sliced_manifest["physicalOutputs"] == [sliced_physical]
+    assert sliced_manifest["logicalResults"] == [sliced_mapping, sliced_mapping]
+    sliced_inspected = subprocess.run(
+        [sys.executable, inspector, str(sliced)], capture_output=True,
+        text=True, timeout=30, check=False)
+    assert sliced_inspected.returncode == 0, sliced_inspected.stderr
+
+    sliced_manifest["logicalResults"][0]["physical"]["physicalElements"] = 128
+    (sliced / "manifest.json").write_text(json.dumps(sliced_manifest))
+    invalid_view_fields = subprocess.run(
+        [sys.executable, inspector, str(sliced)], capture_output=True,
+        text=True, timeout=30, check=False)
+    assert invalid_view_fields.returncode != 0
+    assert "physical mapping has incorrect fields" in invalid_view_fields.stderr
+
+    duplicate_manifest["logicalResults"][0]["dtype"] = "float32"
+    (duplicate / "manifest.json").write_text(json.dumps(duplicate_manifest))
+    invalid_identity = subprocess.run(
+        [sys.executable, inspector, str(duplicate)], capture_output=True,
+        text=True, timeout=30, check=False)
+    assert invalid_identity.returncode != 0
+    assert "identity result dtype differs" in invalid_identity.stderr
+
+    compile_source(root, "mixed-logical-results", mixed_result_source(),
+                   "h13.unsupported-logical-result-conversion")
     compile_source(root, "noncontiguous-axis-1", split_source(batch=2),
                    "h13.noncontiguous-split-axis")
     compile_source(root, "unsupported-count", three_way_split_source(),

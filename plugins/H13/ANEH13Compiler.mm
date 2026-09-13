@@ -1492,12 +1492,23 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     BOOL chain = sourceOperations.count > 1;
     NSString *chainCode = @"h13.unsupported-chain";
     ANEGraphOperation *lastSourceOperation = sourceOperations.lastObject;
-    if (function.returnValues.count != 1 ||
-        function.returnValues[0] != lastSourceOperation.results[0])
-        return reject(diagnostics,
-            chain ? @"H13 chains must return only the last operation result"
-                  : @"H13 requires one operation with its result returned",
+    if (!function.returnValues.count)
+        return reject(diagnostics, @"H13 requires at least one function result",
             lastSourceOperation, chain ? chainCode : @"h13.unsupported-program");
+    for (ANEGraphValue *returnedValue in function.returnValues)
+        if (!fp16Tensor(returnedValue))
+            return reject(diagnostics,
+                @"H13 logical result conversions require explicit hardware or GPU coverage",
+                returnedValue.producer ?: lastSourceOperation,
+                @"h13.unsupported-logical-result-conversion");
+    ANEGraphValue *sourceReturned = function.returnValues[0];
+    for (ANEGraphValue *returnedValue in function.returnValues)
+        if (returnedValue != sourceReturned ||
+            returnedValue.producer != lastSourceOperation)
+            return reject(diagnostics,
+                chain ? @"H13 chains must return only the last operation result"
+                      : @"H13 requires one operation with its result returned",
+                lastSourceOperation, chain ? chainCode : @"h13.unsupported-program");
 
     for (ANEGraphValue *input in function.inputs) {
         BOOL used = NO;
@@ -1901,8 +1912,17 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         [intermediateNames addObject:value.name];
         if (!alias) [intermediateStorageNames addObject:value.name];
     }
+    NSArray<NSNumber *> *returnedPhysicalShape = nil;
+    for (ANEGraphValue *value in manifestValues)
+        if ([value.name isEqualToString:returnedStorageName] && !aliases[value.name]) {
+            returnedPhysicalShape = value.type.shape;
+            break;
+        }
+    if (!returnedPhysicalShape)
+        return reject(diagnostics, @"H13 returned value has no physical output storage",
+                      lastSourceOperation, @"h13.unsupported-logical-result-storage");
     NSDictionary<NSString *, NSArray<NSNumber *> *> *outputShapes =
-        @{returnedStorageName: function.returnValues[0].type.shape};
+        @{returnedStorageName: returnedPhysicalShape};
 
     NSMutableArray<NSDictionary *> *programRecords = [NSMutableArray array];
     NSMutableArray<NSData *> *payloads = [NSMutableArray array];
@@ -2231,11 +2251,43 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         }
     }
 
+    NSDictionary *physicalTensor = tensors[returnedStorageName];
+    NSArray<NSNumber *> *physicalShape = physicalTensor[@"shape"];
+    NSUInteger physicalElements = 1;
+    for (NSNumber *dimension in physicalShape)
+        physicalElements *= dimension.unsignedIntegerValue;
+    NSUInteger resultOffset =
+        [[valueBaseOffsets objectForKey:returned] unsignedIntegerValue];
+    NSArray<NSDictionary *> *physicalOutputs = @[@{
+        @"tensor": returnedStorageName, @"dtype": @"float16",
+        @"shape": physicalShape,
+        @"logicalBytes": physicalTensor[@"logicalBytes"],
+    }];
+    NSMutableArray<NSDictionary *> *logicalResults = [NSMutableArray array];
+    for (ANEGraphValue *logical in function.returnValues) {
+        NSUInteger elements = 0;
+        if (!tensorElementCount(logical, &elements) ||
+            elements > physicalElements || resultOffset > physicalElements - elements)
+            return reject(diagnostics,
+                @"H13 logical result exceeds its physical output storage",
+                lastSourceOperation, @"h13.unsupported-logical-result-storage");
+        [logicalResults addObject:@{
+            @"name": logical.name, @"dtype": @"float16",
+            @"shape": logical.type.shape, @"conversion": @"identity",
+            @"physical": @{
+                @"tensor": returnedStorageName,
+                @"elementOffset": @(resultOffset),
+                @"elementCount": @(elements),
+            },
+        }];
+    }
+
     NSMutableDictionary *manifest = [@{
-        @"schema": @"mil-hwxc.h13-anec-package.v1",
+        @"schema": @"mil-hwxc.h13-anec-package.v2",
         @"target": @"H13", @"artifactFormat": format,
         @"programs": programRecords, @"dispatchPlan": dispatchPlan,
         @"intermediates": intermediateNames, @"tensors": tensors,
+        @"physicalOutputs": physicalOutputs, @"logicalResults": logicalResults,
     } mutableCopy];
     if (programRecords.count == 1)
         [manifest addEntriesFromDictionary:programRecords[0]];

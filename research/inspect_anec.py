@@ -276,11 +276,77 @@ def validate_program(directory, program, tensors):
     }
 
 
+def check_result_metadata(manifest, tensors, produced_outputs):
+    physical_outputs = manifest.get('physicalOutputs')
+    logical_results = manifest.get('logicalResults')
+    require(isinstance(physical_outputs, list) and physical_outputs,
+            'physicalOutputs must be a non-empty array')
+    require(isinstance(logical_results, list) and logical_results,
+            'logicalResults must be a non-empty ordered array')
+
+    physical_by_name = {}
+    for output in physical_outputs:
+        fields = set(output) if isinstance(output, dict) else set()
+        require(fields == {'tensor', 'dtype', 'shape', 'logicalBytes'},
+                'physical output has incorrect fields')
+        name = output.get('tensor')
+        shape = output.get('shape')
+        require(isinstance(name, str) and name and name not in physical_by_name,
+                'physical output tensor names must be unique and non-empty')
+        require(output.get('dtype') == 'float16',
+                'physical output must use float16')
+        require(isinstance(shape, list) and shape and
+                all(type(n) is int and n > 0 for n in shape),
+                'physical output shape must have positive static dimensions')
+        require(type(output.get('logicalBytes')) is int and
+                output['logicalBytes'] == math.prod(shape) * 2,
+                'physical output byte count does not match its shape')
+        require(name in tensors and 'aliasOf' not in tensors[name] and
+                tensors[name]['role'] == 'output' and
+                tensors[name]['shape'] == shape and
+                tensors[name]['logicalBytes'] == output['logicalBytes'],
+                'physical output differs from its produced tensor')
+        physical_by_name[name] = output
+
+    referenced = set()
+    for result in logical_results:
+        fields = set(result) if isinstance(result, dict) else set()
+        require(fields == {'name', 'dtype', 'shape', 'physical', 'conversion'},
+                'logical result has incorrect fields')
+        require(isinstance(result.get('name'), str) and result['name'],
+                'logical result needs a non-empty name')
+        shape = result.get('shape')
+        require(isinstance(shape, list) and shape and
+                all(type(n) is int and n > 0 for n in shape),
+                'logical result shape must have positive static dimensions')
+        require(result.get('conversion') == 'identity',
+                'unsupported logical result conversion')
+        physical = result.get('physical')
+        physical_fields = set(physical) if isinstance(physical, dict) else set()
+        require(physical_fields == {'tensor', 'elementOffset', 'elementCount'},
+                'logical result physical mapping has incorrect fields')
+        tensor_name = physical.get('tensor')
+        require(tensor_name in physical_by_name,
+                'logical result references an unknown physical output')
+        require(result.get('dtype') == physical_by_name[tensor_name]['dtype'],
+                'identity result dtype differs from physical output dtype')
+        offset = physical.get('elementOffset')
+        count = physical.get('elementCount')
+        storage_elements = math.prod(physical_by_name[tensor_name]['shape'])
+        require(type(offset) is int and type(count) is int and offset >= 0 and
+                count == math.prod(shape) and offset + count <= storage_elements,
+                'logical result mapping exceeds physical output storage')
+        referenced.add(tensor_name)
+
+    require(referenced == set(physical_by_name) == set(produced_outputs),
+            'physicalOutputs must exactly match produced and referenced outputs')
+
+
 def load_package(directory):
     directory = Path(directory).resolve()
     manifest = json.loads(local_file(directory, 'manifest.json', 64 << 20))
     require(isinstance(manifest, dict), 'manifest must be an object')
-    require(manifest.get('schema') == 'mil-hwxc.h13-anec-package.v1',
+    require(manifest.get('schema') == 'mil-hwxc.h13-anec-package.v2',
             'unsupported package schema')
     require(manifest.get('target') == 'H13' and manifest.get('artifactFormat') == 'anec',
             'package must target H13 ANEC')
@@ -395,6 +461,7 @@ def load_package(directory):
                     'intermediate consumer physical range exceeds producer writes')
     for name, bindings in output_tensors.items():
         exact_tiling(bindings, tensors, 'output slices must exactly tile the tensor')
+    check_result_metadata(manifest, tensors, output_tensors)
     return manifest, allocations
 
 
