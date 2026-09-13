@@ -462,6 +462,59 @@ with tempfile.TemporaryDirectory() as temporary:
     assert pinned_manifest["tensors"]["s"]["aliasOf"] == "a"
     validate(root, pinned)
 
+    # A contiguous [begin, end) range with the end inside the extent is one
+    # offset view — the latent prefix-only gap. The encoder-shaped half
+    # range [0,375) of 750 on the head axis is byte-equal to the nested
+    # split's first half, and the suffix half reads at its offset.
+    midrange = deterministic(root, "slice-mid-range",
+                             slice_source(shape=(1, 1, 750, 375),
+                                          begin=(0, 0, 0, 0),
+                                          end=(1, 1, 375, 375),
+                                          end_mask=(True, True, False, True),
+                                          result_shape=(1, 1, 375, 375),
+                                          consumer="relu"))
+    split_direct = compile_source(root, "slice-mid-range-split-direct", """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 1, 750, 375]> a) {
+    tensor<int32, []> ax = const()[val = tensor<int32, []>(2)];
+    tensor<int32, []> ns = const()[val = tensor<int32, []>(2)];
+    (tensor<fp16, [1, 1, 375, 375]> s0, tensor<fp16, [1, 1, 375, 375]> s1) = split(axis = ax, num_splits = ns, x = a)[name = string("sp")];
+    tensor<fp16, [1, 1, 375, 375]> y = relu(x = s0)[name = string("y")];
+  } -> (y);
+}
+""")
+    validate(root, midrange)
+
+    suffix = compile_source(root, "slice-suffix-half",
+                           slice_source(shape=(1, 1, 750, 375),
+                                        begin=(0, 0, 375, 0),
+                                        end=(1, 1, 750, 375),
+                                        end_mask=(True, True, True, True),
+                                        result_shape=(1, 1, 375, 375),
+                                        consumer="relu"))
+    suffix_manifest = json.loads((suffix / "manifest.json").read_text())
+    assert suffix_manifest["programs"][0]["inputs"][0]["slice"][
+        "elementOffset"] == 375 * 375
+
+    # The bias range [0,375) of 749 with every head dimension unit is one
+    # contiguous view; the encoder's real bias shape keeps its chunked
+    # rejection below because 375 rows precede the sliced axis.
+    bias_range = compile_source(root, "slice-bias-range-unit-heads",
+                                slice_source(shape=(1, 1, 1, 749),
+                                             begin=(0, 0, 0, 0),
+                                             end=(1, 1, 1, 375),
+                                             end_mask=(True, True, True, False),
+                                             result_shape=(1, 1, 1, 375),
+                                             consumer="relu"))
+    bias_manifest = json.loads((bias_range / "manifest.json").read_text())
+    bias_slices = [(program["inputs"][0]["slice"]["elementOffset"],
+                    program["inputs"][0]["slice"]["elementCount"])
+                   for program in bias_manifest["programs"]]
+    assert bias_slices == [(offset, min(64, 375 - offset))
+                           for offset in range(0, 375, 64)]
+    validate(root, bias_range)
+
     # The encoder's mask slicing interleaves chunks across a non-unit head
     # dimension; one binding slice cannot represent that.
     compile_source(root, "slice-encoder-mask",
