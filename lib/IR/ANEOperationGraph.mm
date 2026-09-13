@@ -39,6 +39,12 @@ static ANEOperationKind classifyOperation(NSString *name) {
             @"constexpr_affine_dequantize": @(ANEOperationKindDequantize),
             @"softmax": @(ANEOperationKindHighLevel),
             @"layer_norm": @(ANEOperationKindHighLevel),
+            @"less": @(ANEOperationKindMask),
+            @"floor": @(ANEOperationKindMask),
+            @"select": @(ANEOperationKindMask),
+            @"floor_div": @(ANEOperationKindMask),
+            @"logical_and": @(ANEOperationKindMask),
+            @"logical_not": @(ANEOperationKindMask),
         };
     }();
     NSNumber *kind = kinds[name];
@@ -58,6 +64,7 @@ static NSString *kindName(ANEOperationKind kind) {
         case ANEOperationKindQuantize: return @"quantize";
         case ANEOperationKindDequantize: return @"dequantize";
         case ANEOperationKindHighLevel: return @"high-level";
+        case ANEOperationKindMask: return @"mask";
         case ANEOperationKindUnsupported: return @"unsupported";
     }
 }

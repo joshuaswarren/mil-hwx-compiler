@@ -1901,7 +1901,23 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             static_cast<const std::uint8_t *>(paddedWeights.bytes),
             paddedWeights.length, transposeY);
         inputs = @[x];
-    } else {
+    } else if ([name isEqualToString:@"less"]) {
+        return reject(diagnostics,
+            @"H13 less is a registry op awaiting a decoded encoder: a comparison is a step function and no finite +,-,*,/ expression over fp16 produces (x < y) as 0/1 exactly — rounding destroys every sign-based construction and x == y must map to 0 while y - x = +0 is indistinguishable from tiny positives — so it lowers only through a decoded compare template (mint: fp16 compare emitting fp16 0/1, operand shapes and the arange-vs-length geometries the encoder's four instances use)",
+            operation, @"h13.less-needs-decoded-encoder");
+    } else if ([name isEqualToString:@"floor"]) {
+        return reject(diagnostics,
+            @"H13 floor is a registry op awaiting a decoded encoder: floor is total and exact over fp16 (|x| ≥ 2048 is already integral; below that every integer result is representable; NaN and ±inf pass through) but has no arithmetic identity over the decoded elementwise ops, so it lowers only through a decoded floor template (mint: fp16 floor; the encoder's three instances floor [1]-shaped length scalars)",
+            operation, @"h13.floor-needs-decoded-encoder");
+    } else if ([name isEqualToString:@"select"]) {
+        return reject(diagnostics,
+            @"H13 select is a registry op awaiting a decoded encoder: the blend identity m*a + not(m)*b is exact only for finite fills (and value-exact with a -0.0 zero-sign class for the +0.0 fill), while the encoder's 24 attention-bias selects fill -inf, where 0 * -inf = NaN destroys every unmasked lane — no arrangement of +,-,* avoids a 0·inf product on the discarded branch — so it lowers only through a decoded fp16 lane-pick-by-0/1-mask template; the +0.0-fill family belongs to the frontend mul rewrite, not here",
+            operation, @"h13.select-needs-decoded-encoder");
+    } else if ([name isEqualToString:@"floor_div"]) {
+        return reject(diagnostics,
+            @"H13 floor_div composes real_div with floor and is blocked on the floor encoder: the constant-divisor form already lowers its divide exactly through the decoded power-of-two reciprocal multiply (dividing by 2.0 multiplies by 0x3800), but the fp16 floor of that quotient needs the decoded floor template. Contract note the encoder relies on: fp16 floor_div equals floor(fp16_div(x, y)), which is not integer floor division — 3199/32 divides-and-rounds to exactly 100.0 in fp16 while exact integer floor division gives 99 — and that matches the package's own cast-then-divide reference",
+            operation, @"h13.floor-div-needs-decoded-encoder");
+     } else {
         ane::h13::NormOperation normOperation{};
         if (normEncoding(name, &normOperation))
             return reject(diagnostics, [NSString stringWithFormat:
