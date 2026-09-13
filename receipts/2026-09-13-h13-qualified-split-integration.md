@@ -4,7 +4,7 @@
 
 - Worktree: `/home/joshuawarren/.config/superpowers/worktrees/mil-hwx-compiler/h13-qualified-split-integration`
 - Branch: `agent/h13-qualified-split-integration`
-- Combined compiler commit: `b12b03f17619c76b77c48a83510847de2245ea1a`
+- Combined compiler commit: `b7a59f07c45e9fd4e753b0b25004fe6a18180d81`
 - Executing model: `openai-codex/gpt-5.6-sol`
 - Configured route: `mlx-openai-deep`; no routing fallback was observed.
 
@@ -14,6 +14,8 @@ The combined history is explicit:
 2. `30236d78d716053183b3bcdb7eb5327b718b9581` merges `40624cd1900a3f5049b9b3946c80a7a54941b7ef` with qualified H13 tip `f4ad09066b560818a9dcc1f5f4f53273d941bd1e`, retaining the `17664fa` through `f4ad090` qualification series.
 3. `a3665cd531d3bfe5c686418bbbb94eb7f68f6a5e` adds constant-storage provenance checks and the strict package fields required by the real consumer.
 4. `b12b03f17619c76b77c48a83510847de2245ea1a` emits strict v2 physical outputs and ordered identity logical results.
+5. `600dc3e606886f67d111c011e8c91e9a05a4d6be` preserves distinct ordered logical views across one sliced physical output and independent physical producers.
+6. `b7a59f07c45e9fd4e753b0b25004fe6a18180d81` preserves a returned physical output as later-consumed storage, validates its dispatch dependency, and makes HWX embed the normalized ANEC task stream.
 
 Git reported no textual merge conflicts. The semantic integration retained ordered parenthesized MIL results, split aliases, scalar folding, qualified task binding, the driver-derived kernel-window guard, scratch allocation, unsigned-zero behavior, and strict package inspection.
 
@@ -62,7 +64,7 @@ The source SHA-256 values are `747a5cad80437a9cc9aacbf66144ec2bd8e33a047772a7956
 
 An independent compiler review at `a3665cd` repeated the original split CLI and provenance checks without a remaining compiler finding. At `b12b03f`, the integrated adapter source reached its ordered FP32 and int32 returns and returned exit 65 with `h13.unsupported-logical-result-conversion` at line 3353. The full faithful source still reaches the previously recorded `mil.import.unsupported-type` boundary for `uint4`.
 
-A standard `make -j4 test` was attempted before v2. This Linux host cannot complete the repository-wide target unchanged: the Makefile applies Objective-C flags to `test_benchmark_stats.cpp`, four older tests include Apple-only `CommonCrypto`, two fixtures use clang-14-unsupported `_Float16`, and `test_runtime_contract` imports Apple-only `IOSurface`. Later, `tests/test_h13_cli.py` reached its known stale HWX-to-ANEC parity assertion at line 1237 after exercising the v2 schema and returned-view checks. No guessed descriptor or oracle change was retained.
+The device-free full verifier now completes successfully. `scripts/verify-linux-compiler.sh all` rebuilt the compiler, passed operation graph, HWX object writer, program composition, H13 encoding, H13 ANEC, H13 MIL-to-ANEC/HWX CLI, H13 split CLI, and HWX inspection checks, emitted both Linux compiler smoke artifacts, and ended with `linux compiler build: PASS`, `linux compiler software tests: PASS`, `linux compiler emission: PASS`, and `linux compiler hygiene: PASS` in 64.33 seconds.
 
 ## Pre-v2 strict consumer and loader verification
 
@@ -110,4 +112,34 @@ The pinned adapter's `encoder_hidden` FP32 and `encoder_mask` int32 returns are 
 
 ## Hardware boundary
 
-No SSH, Mac, jwm1, hardware inference, ANE command, router edit, model pin, push, or shared main-land2 write was performed.
+No SSH, Mac, jwm1, hardware inference, ANE command, router edit, model pin, or shared main-land2 write was performed. The two completed compiler checkpoints were pushed without force to the named feature branch; no default branch or release pin changed.
+
+## Ordered storage and HWX parity closure
+
+Commit `b7a59f07c45e9fd4e753b0b25004fe6a18180d81` changes `plugins/H13/ANEH13Compiler.mm`, `plugins/H13/H13ANEC.cpp`, `plugins/H13/H13Program.h`, `research/inspect_anec.py`, `tests/test_h13_cli.py`, and `THEORY.MD`. Its built compiler SHA-256 is `249601e59ff509eba2bcaa11b504df839a8c417d1d1eab2d74e570257d0ff680`.
+
+A MIL return may name an earlier physical producer that a later program consumes. The compiler now retains that value in `physicalOutputs`, emits the later binding against the same storage, and preserves physical producer order independently of ordered `logicalResults`. The inspector validates exact producer and consumer tiling plus topological dispatch coverage for both intermediate and returned physical storage. A forged `dispatchPlan: [1,0,2]` is rejected. An entirely dead terminal operation still fails `h13.unsupported-chain`; a partially used multi-result split remains valid.
+
+The HWX writer previously embedded raw selected task bytes while explicit ANEC normalized surface selectors and task header flags. HWX now embeds the normalized task slice from the already encoded ANEC. `tests/test_h13_cli.py` extracts ANEC from the emitted HWX and requires byte-for-byte equality with explicit ANEC output.
+
+Scoped verification after the fix returned:
+
+```text
+python3 tests/test_h13_cli.py build/mil-hwxc
+H13 MIL-to-ANEC/HWX CLI: PASS (device-free)
+python3 tests/test_h13_split_cli.py build/mil-hwxc
+h13 split cli: PASS
+```
+
+The GitHub feature branch receipt is `https://github.com/joshuaswarren/mil-hwx-compiler/tree/agent/h13-qualified-split-integration`. The first push created it at `600dc3e606886f67d111c011e8c91e9a05a4d6be`; the second advanced it to `b7a59f07c45e9fd4e753b0b25004fe6a18180d81`. Both used explicit `HEAD-or-commit:refs/heads/agent/h13-qualified-split-integration` refspecs without force.
+## Constant-input-free ordered split artifacts
+
+The runtime adapter requested add-based split views without materialized constant inputs. A detached Linux checkout at exact compiler commit `600dc3e606886f67d111c011e8c91e9a05a4d6be` built `/tmp/mil-hwxc-600dc3e-build/build/mil-hwxc` with SHA-256 `6e08cb08194b452894dab985c93f8dfe96974587f956a87f5ba89163debdedae`. It generated new paths without mutating the earlier package metadata:
+
+- Forward MIL: `/tmp/h13-ordered-add-splits/split-forward.mil`, SHA-256 `1f17595221a889ad04a785e5ac9e465a2abf30b3f407d9a00effe0e38de1cdf5`.
+- Forward package: `/tmp/h13-ordered-add-splits/split-forward-package`; manifest SHA-256 `6723c39c55e30485ba3c0f64afff7e33e17534e01a84558ead1d85f69ececfc5`.
+- Reverse MIL: `/tmp/h13-ordered-add-splits/split-reverse.mil`, SHA-256 `258f94e03a09a134e2ae2d6546533cf42f877c70ead382784d09d8d40dda2ba0`.
+- Reverse package: `/tmp/h13-ordered-add-splits/split-reverse-package`; manifest SHA-256 `ed77acc0ba9933890dbf415c25e2bc5100b59aa6efab975de4715dd51cd6a27e`.
+- Both packages contain `program-0.anec` SHA-256 `70b9e497556ce990c697fa86316f5292384bd27bbe51911ce24df14df7735a23`.
+
+Both compiler invocations succeeded and `research/inspect_anec.py` accepted each package. Each manifest has `constantInputs: {}` and operation `add`. Forward logical results are `tall` at offset 0 then `wide` at offset 64; reverse logical results are `wide` at offset 64 then `tall` at offset 0.
