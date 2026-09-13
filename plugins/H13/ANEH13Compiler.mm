@@ -1108,9 +1108,10 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 BOOL scalar = constantInput.type.kind == ANEValueTypeKindScalar &&
                     constantInput.type.elementType == ANEElementTypeFP16;
                 if ((!tensor(constantInput, runtimeInput.type.shape) && !scalar) ||
-                    (scalar && binaryIndex != 1) || producer.arguments.count)
+                    (scalar && binaryIndex != 0 && binaryIndex != 1 &&
+                     binaryIndex != 4) || producer.arguments.count)
                     return reject(diagnostics,
-                        @"H13 constants must be a matching fp16 tensor; only mul accepts an inline fp16 scalar broadcast",
+                        @"H13 constants must be a matching fp16 tensor; only add, mul, and runtime-minus-constant sub accept an inline fp16 scalar broadcast",
                         producer, @"h13.invalid-constant-input");
 
                 ANEGraphArgument *literal = producer.attributes[@"val"];
@@ -1118,7 +1119,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     uint16_t bits = 0;
                     if (!fp16Scalar(literal, &bits))
                         return reject(diagnostics,
-                            @"H13 scalar mul requires one finite inline fp16 value",
+                            @"H13 scalar binary folding requires one finite inline fp16 value",
                             producer, @"h13.invalid-constant-payload");
                     wholeData = splatFP16(bits);
                     repeatedConstant = YES;

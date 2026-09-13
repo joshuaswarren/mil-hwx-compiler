@@ -725,8 +725,32 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
                  False, 'h13.nonfoldable-binary')
     compile_text(constant_source('real_div', values, const_first=True),
                  'constant-divided-by-input', False, 'h13.nonfoldable-binary')
-    compile_text(constant_source('add', 1.0), 'scalar-add', False,
-                 'h13.invalid-constant-input')
+    scalar_shape = (130,)
+    scalar_value = 1.25
+    for op in ('add', 'sub'):
+        scalar = compile_text(
+            constant_source(op, scalar_value, shape=scalar_shape), f'scalar-{op}')
+        repeated = compile_text(
+            constant_source(op, (scalar_value,) * 130, shape=scalar_shape),
+            f'repeated-{op}')
+        scalar_manifest = json.loads((scalar / 'manifest.json').read_text())
+        repeated_manifest = json.loads((repeated / 'manifest.json').read_text())
+        assert scalar_manifest == repeated_manifest
+        assert [program['inputs'][0]['slice']['elementOffset']
+                for program in scalar_manifest['programs']] == [0, 64, 128]
+        assert [program['inputs'][0]['slice']['elementCount']
+                for program in scalar_manifest['programs']] == [64, 64, 2]
+        assert scalar_manifest['tensors']['a']['shape'] == [130]
+        assert scalar_manifest['tensors']['y']['shape'] == [130]
+        assert [(scalar / f'program-{index}.anec').read_bytes()
+                for index in range(3)] == [
+                    (repeated / f'program-{index}.anec').read_bytes()
+                    for index in range(3)]
+    compile_text(constant_source('sub', scalar_value, const_first=True,
+                                 shape=scalar_shape),
+                 'scalar-constant-minus-input', False, 'h13.nonfoldable-binary')
+    compile_text(constant_source('add', 65520.0, shape=scalar_shape),
+                 'nonfinite-scalar-result', False, 'h13.invalid-constant-payload')
 
     scalar_mul = compile_text(constant_source('mul', -1.0), 'scalar-mul')
     tensor_mul = compile_text(constant_source('mul', (-1.0,) * 64), 'tensor-mul')
