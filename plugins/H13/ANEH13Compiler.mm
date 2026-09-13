@@ -503,9 +503,12 @@ static BOOL sliceByIndexViewPlan(ANEGraphOperation *operation,
             operation, @"h13.invalid-slice-shape");
     NSUInteger offset = 0;
     if (slicedAxis >= 0) {
-        const NSUInteger extent =
-            x.type.shape[(NSUInteger)slicedAxis].unsignedIntegerValue;
-        const NSUInteger count = extent - (NSUInteger)sliceBegin;
+        // A contiguous [begin, end) range on the sliced axis with unit head
+        // dimensions is one offset view over that range's trailing
+        // elements — the same valueBaseOffsets mechanism the split lowering
+        // established, so the end may fall anywhere inside the extent.
+        const NSUInteger count =
+            (NSUInteger)(sliceUpper - sliceBegin);
         const NSUInteger sliceOffset = (NSUInteger)sliceBegin;
         if (count > NSUIntegerMax / trailing || resultElements > NSUIntegerMax / 2 ||
             count * trailing != resultElements || sliceOffset > NSUIntegerMax / trailing)
