@@ -449,7 +449,7 @@ static BOOL sliceByIndexViewPlan(ANEGraphOperation *operation,
                 operation, @"h13.noncontiguous-slice");
     }
     NSInteger slicedAxis = -1;
-    long long sliceBegin = 0;
+    long long sliceBegin = 0, sliceUpper = 0;
     for (NSUInteger index = 0; index < rank; ++index) {
         const NSUInteger extent =
             x.type.shape[index].unsignedIntegerValue;
@@ -471,17 +471,30 @@ static BOOL sliceByIndexViewPlan(ANEGraphOperation *operation,
                 operation, @"h13.noncontiguous-slice");
         slicedAxis = (NSInteger)index;
         sliceBegin = lower;
+        sliceUpper = upper;
     }
     NSUInteger trailing = 1;
     for (NSUInteger index = slicedAxis == -1 ? rank : (NSUInteger)slicedAxis + 1;
          index < rank; ++index)
         trailing *= x.type.shape[index].unsignedIntegerValue;
+    NSUInteger headChunks = 1;
     for (NSUInteger index = 0;
          slicedAxis >= 0 && index < (NSUInteger)slicedAxis; ++index)
-        if (x.type.shape[index].unsignedIntegerValue != 1)
+        headChunks *= x.type.shape[index].unsignedIntegerValue;
+    for (NSUInteger index = 0;
+         slicedAxis >= 0 && index < (NSUInteger)slicedAxis; ++index)
+        if (x.type.shape[index].unsignedIntegerValue != 1) {
+            const NSUInteger extent =
+                x.type.shape[(NSUInteger)slicedAxis].unsignedIntegerValue;
+            const NSUInteger kept =
+                (NSUInteger)(sliceUpper - sliceBegin);
             return reject(diagnostics,
-                @"H13 slice_by_index requires unit dimensions before its sliced axis because one binding slice cannot represent interleaved output chunks",
+                [NSString stringWithFormat:
+                    @"H13 slice_by_index over non-unit head dimensions reads %lu chunks of %lu elements spaced %lu apart, and one binding slice cannot represent interleaved chunks: a chunked consumer decomposition has no MIL-expressible direct reference to byte-prove against, because no view op exposes mid-range head slices",
+                    (unsigned long)headChunks, (unsigned long)(kept * trailing),
+                    (unsigned long)(extent * trailing)],
                 operation, @"h13.noncontiguous-slice");
+        }
     NSUInteger inputElements = 0, resultElements = 0;
     if (!tensorElementCount(x, &inputElements) ||
         !tensorElementCount(operation.results[0], &resultElements))
@@ -529,12 +542,18 @@ static BOOL identityExtentViewPlan(ANEGraphOperation *operation,
                 operation.operationName, parameter],
             operation, @"h13.invalid-view-parameters");
     for (NSNumber *extent in extents)
-        if (extent.longLongValue != identityExtent)
+        if (extent.longLongValue != identityExtent) {
+            NSMutableArray<NSString *> *texts =
+                [NSMutableArray arrayWithCapacity:extents.count];
+            for (NSNumber *value in extents)
+                [texts addObject:value.stringValue];
             return reject(diagnostics,
                 [NSString stringWithFormat:
-                    @"H13 %@ with a non-identity %@ needs a data-movement program: every decoded H13 encoder writes an output surface of its input's shape and the binding ABI carries one contiguous slice, so no host-side form can materialize the grown region",
-                    operation.operationName, parameter],
+                    @"H13 %@ with %@ [%@] needs a data-movement program: every decoded H13 encoder writes an output surface of its input's shape and the binding ABI carries one contiguous slice, so no host-side form can materialize the grown or replicated region — the elements land interleaved at the padded or tiled stride, not as one appendable tail",
+                    operation.operationName, parameter,
+                    [texts componentsJoinedByString:@","]],
                 operation, unsupportedCode);
+        }
     NSUInteger inputElements = 0, resultElements = 0;
     if (!tensorElementCount(x, &inputElements) ||
         !tensorElementCount(operation.results[0], &resultElements) ||
@@ -1673,19 +1692,29 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             return reject(diagnostics,
                 @"H13 matmul requires a constant rank-2 W shaped by transpose_y",
                 operation);
-        ANEGraphArgument *value = y.producer.attributes[@"val"];
-        if (y.producer.arguments.count || value.kind != ANEGraphArgumentKindCall ||
-            ![value.calleeValueType isEqualToValueType:y.type] ||
-            value.callArguments.count != 1 ||
-            ![value.callArguments[0].value.calleeName isEqualToString:@"BLOBFILE"])
-            return reject(diagnostics,
-                @"H13 weights require a matching tensor value with one BLOBFILE payload", y.producer);
-        if (columns > NSUIntegerMax / reduction ||
-            columns * reduction > NSUIntegerMax / 2)
-            return reject(diagnostics, @"H13 matmul weight size overflows",
-                operation, @"h13.invalid-constant-payload");
+        NSData *synthesizedWeight = synthesizedConstants[y.name];
+        if (synthesizedWeight) {
+            // A channel-plane chunk weight synthesized by the composite
+            // linear lowering: bytes already row-major [columns, reduction].
+            if (synthesizedWeight.length != columns * reduction * 2)
+                return reject(diagnostics,
+                    @"H13 synthesized matmul weight has the wrong size",
+                    operation, @"h13.invalid-constant-payload");
+        } else {
+            ANEGraphArgument *value = y.producer.attributes[@"val"];
+            if (y.producer.arguments.count || value.kind != ANEGraphArgumentKindCall ||
+                ![value.calleeValueType isEqualToValueType:y.type] ||
+                value.callArguments.count != 1 ||
+                ![value.callArguments[0].value.calleeName isEqualToString:@"BLOBFILE"])
+                return reject(diagnostics,
+                    @"H13 weights require a matching tensor value with one BLOBFILE payload", y.producer);
+            if (columns > NSUIntegerMax / reduction ||
+                columns * reduction > NSUIntegerMax / 2)
+                return reject(diagnostics, @"H13 matmul weight size overflows",
+                    operation, @"h13.invalid-constant-payload");
+        }
         NSUInteger count = columns * reduction;
-        NSData *weights = resolvedConstants[y.name];
+        NSData *weights = synthesizedWeight ?: resolvedConstants[y.name];
         if (!weights) {
             weights = [ANEBlobResolver loadConstantForOperation:y.producer
                 expectedBytes:count * 2 modelRoot:modelRoot diagnostics:diagnostics];
@@ -1942,6 +1971,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         [NSMapTable strongToStrongObjectsMapTable];
     NSMutableDictionary<NSString *, NSDictionary *> *transposeFolds =
         [NSMutableDictionary dictionary];
+    NSMutableDictionary<NSString *, NSDictionary *> *compositeFolds =
+        [NSMutableDictionary dictionary];
     for (ANEGraphOperation *candidate in sourceOperations) {
         NSMutableDictionary<NSString *, ANEGraphArgument *> *arguments =
             [candidate.arguments mutableCopy];
@@ -2011,7 +2042,76 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 [consumer.operationName isEqualToString:@"matmul"] &&
                 ([operandKey isEqualToString:@"x"] ||
                  [operandKey isEqualToString:@"y"]);
-            if (!foldable) {
+            // A [0,2,1,3] transpose of [1,C,P,D] feeding a reshape that
+            // merges the transposed pair into one reduction, consumed by one
+            // linear, decomposes into C contiguous [P,D] channel-plane
+            // matvecs the c-plane accumulation synthesizes — zero data
+            // movement, byte-equal to the per-plane direct form.
+            BOOL compositeFolded = NO;
+            if (!foldable && uses == 1 && consumer &&
+                [consumer.operationName isEqualToString:@"reshape"] &&
+                x.type.shape.count == 4 &&
+                x.type.shape[0].unsignedIntegerValue == 1) {
+                const NSUInteger channels =
+                    x.type.shape[1].unsignedIntegerValue;
+                const NSUInteger planeRows =
+                    x.type.shape[2].unsignedIntegerValue;
+                const NSUInteger inner =
+                    x.type.shape[3].unsignedIntegerValue;
+                const NSUInteger rank = x.type.shape.count;
+                std::vector<NSUInteger> source(rank);
+                BOOL planePerm = YES;
+                for (NSUInteger index = 0; index < rank; ++index) {
+                    long long axis =
+                        [int32TensorElements(candidate.operands[@"perm"].value)[index]
+                            longLongValue];
+                    if (axis < 0) axis += (long long)rank;
+                    source[index] = (NSUInteger)axis;
+                }
+                if (source[0] != 0 || source[1] != 2 || source[2] != 1 ||
+                    source[3] != 3)
+                    planePerm = NO;
+                NSArray<NSNumber *> *reshaped = consumer.results[0].type.shape;
+                NSUInteger reshapeUses = 0;
+                ANEGraphOperation *reshapeConsumer = nil;
+                for (ANEGraphOperation *other in sourceOperations) {
+                    if (other == consumer) continue;
+                    for (NSString *key in other.operands)
+                        if (other.operands[key].value == consumer.results[0]) {
+                            ++reshapeUses;
+                            reshapeConsumer = other;
+                        }
+                }
+                BOOL returnedShape = NO;
+                for (ANEGraphValue *returnedValue in function.returnValues)
+                    if (returnedValue == consumer.results[0]) returnedShape = YES;
+                if (planePerm && channels && planeRows && inner &&
+                    reshaped.count == 3 &&
+                    [reshaped[0] isEqualToNumber:@1] &&
+                    [reshaped[1] unsignedIntegerValue] == planeRows &&
+                    [reshaped[2] unsignedIntegerValue] == channels * inner &&
+                    reshapeUses == 1 && !returnedShape && reshapeConsumer &&
+                    [reshapeConsumer.operationName
+                        isEqualToString:@"linear"]) {
+                    compositeFolds[consumer.results[0].name] = @{
+                        @"source": x,
+                        @"channels": @(channels),
+                        @"planeRows": @(planeRows),
+                        @"inner": @(inner)};
+                    compositeFolded = YES;
+                } else if (planePerm && reshaped.count == 3 &&
+                         [reshaped[1] unsignedIntegerValue] == planeRows &&
+                         [reshaped[2] unsignedIntegerValue] == channels * inner)
+                    return reject(diagnostics,
+                        [NSString stringWithFormat:
+                            @"H13 transpose→reshape composite over [1,%lu,%lu,%lu] lowers through the channel-plane decomposition only when exactly one linear with a constant weight consumes the merged reduction: this one has %lu consumer%@",
+                            (unsigned long)channels, (unsigned long)planeRows,
+                            (unsigned long)inner, (unsigned long)reshapeUses,
+                            reshapeUses == 1 && reshapeConsumer ?
+                                [NSString stringWithFormat:@" ('%@')", reshapeConsumer.operationName] : @""],
+                        candidate, @"h13.nonfoldable-transpose");
+            }
+            if (!foldable && !compositeFolded) {
                 // Exact per-class blocker, so the encoder's transposes each
                 // reject with the reason that actually stops them.
                 NSString *message = nil;
@@ -2033,10 +2133,11 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 return reject(diagnostics, message,
                     candidate, @"h13.nonfoldable-transpose");
             }
-            transposeFolds[candidate.results[0].name] = @{
-                @"value": x,
-                @"flag": [operandKey isEqualToString:@"x"]
-                    ? @"transpose_x" : @"transpose_y"};
+            if (foldable)
+                transposeFolds[candidate.results[0].name] = @{
+                    @"value": x,
+                    @"flag": [operandKey isEqualToString:@"x"]
+                        ? @"transpose_x" : @"transpose_y"};
             continue;
         }
         if ([name isEqualToString:@"slice_by_index"]) {
@@ -2100,6 +2201,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         BOOL reshape = [name isEqualToString:@"reshape"];
         BOOL squeeze = [name isEqualToString:@"squeeze"];
         BOOL expand = [name isEqualToString:@"expand_dims"];
+        if ((reshape || squeeze || expand) &&
+            compositeFolds[candidate.results[0].name])
+            continue;
         if (reshape || squeeze || expand) {
             NSString *parameterName = reshape ? @"shape" : @"axes";
             ANEGraphArgument *parameter = arguments[parameterName];
@@ -2230,6 +2334,133 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 return reject(diagnostics,
                     @"H13 linear requires positive fp16 x rows, constant [N,K] weight, optional constant [N] bias, and a matching output shape",
                     candidate, @"h13.invalid-linear");
+
+            // transpose→reshape→linear composite: lower as C contiguous
+            // [1,P,D] channel-plane matvecs whose partials accumulate with
+            // adds and the expanded bias, byte-equal to the per-plane direct
+            // form (per-plane slices of a rank-4 [1,C,P,D] input are the
+            // offset views the slice lowering already emits).
+            NSDictionary *composite = compositeFolds[x.name];
+            if (linear && composite) {
+                const NSUInteger channels =
+                    [composite[@"channels"] unsignedIntegerValue];
+                const NSUInteger planeRows =
+                    [composite[@"planeRows"] unsignedIntegerValue];
+                const NSUInteger inner =
+                    [composite[@"inner"] unsignedIntegerValue];
+                ANEGraphValue *source = composite[@"source"];
+                if (reduction != channels * inner || rows != planeRows ||
+                    columns > NSUIntegerMax / reduction ||
+                    rows > NSUIntegerMax / columns)
+                    return reject(diagnostics,
+                        @"H13 channel-plane linear requires the merged reduction to equal the transposed channel and inner extents",
+                        candidate, @"h13.invalid-linear");
+                NSData *weights = resolvedConstants[weight.name];
+                if (!weights) {
+                    weights = [ANEBlobResolver loadConstantForOperation:weight.producer
+                        expectedBytes:columns * reduction * 2
+                        modelRoot:modelRoot diagnostics:diagnostics];
+                    if (!weights) return NO;
+                    resolvedConstants[weight.name] = weights;
+                }
+                NSData *biasData = nil;
+                if (bias) {
+                    biasData = perChannelConstantData(bias, columns, modelRoot,
+                        diagnostics, resolvedConstants);
+                    if (!biasData) return NO;
+                }
+                const NSUInteger sourceBase =
+                    [[valueBaseOffsets objectForKey:source]
+                        unsignedIntegerValue];
+                if (channels > NSUIntegerMax / (planeRows * inner) ||
+                    sourceBase > NSUIntegerMax - channels * planeRows * inner)
+                    return reject(diagnostics,
+                        @"H13 channel-plane offsets overflow", candidate,
+                        @"h13.invalid-linear");
+                ANEValueType *planeType = [[ANEValueType alloc]
+                    initWithKind:ANEValueTypeKindTensor
+                    elementType:ANEElementTypeFP16
+                    shape:@[@1, @(planeRows), @(inner)]];
+                ANEValueType *chunkWeightType = [[ANEValueType alloc]
+                    initWithKind:ANEValueTypeKindTensor
+                    elementType:ANEElementTypeFP16
+                    shape:@[@(columns), @(inner)]];
+                const uint16_t *weightWords =
+                    static_cast<const uint16_t *>(weights.bytes);
+                NSMutableArray<ANEGraphValue *> *partials =
+                    [NSMutableArray arrayWithCapacity:channels];
+                for (NSUInteger channel = 0; channel < channels; ++channel) {
+                    NSString *prefix = [NSString stringWithFormat:
+                        @"$h13.%@.plane%lu", result.name,
+                        (unsigned long)channel];
+                    ANEGraphValue *plane = [[ANEGraphValue alloc]
+                        initWithName:source.name type:planeType];
+                    [valueBaseOffsets setObject:
+                        @(sourceBase + channel * planeRows * inner)
+                        forKey:plane];
+                    NSString *chunkWeightName =
+                        [prefix stringByAppendingString:@".weight"];
+                    ANEGraphValue *chunkWeight = [[ANEGraphValue alloc]
+                        initWithName:chunkWeightName type:chunkWeightType];
+                    NSMutableData *chunk =
+                        [NSMutableData dataWithLength:columns * inner * 2];
+                    uint16_t *chunkWords =
+                        static_cast<uint16_t *>(chunk.mutableBytes);
+                    for (NSUInteger column = 0; column < columns; ++column)
+                        for (NSUInteger element = 0; element < inner; ++element)
+                            chunkWords[column * inner + element] =
+                                weightWords[column * reduction +
+                                    channel * inner + element];
+                    synthesizedConstants[chunkWeightName] = chunk;
+                    ANEGraphValue *partial =
+                        (channels == 1 && !bias) ? result : [[ANEGraphValue alloc]
+                            initWithName:[prefix stringByAppendingString:@".matmul"]
+                                type:result.type];
+                    NSDictionary *matmulArguments = @{
+                        @"x": valueArgument(plane, candidate.range),
+                        @"y": valueArgument(chunkWeight, candidate.range),
+                        @"transpose_x": booleanArgument(NO, candidate.range),
+                        @"transpose_y": booleanArgument(YES, candidate.range),
+                    };
+                    [operations addObject:[[ANEGraphOperation alloc]
+                        initWithOperationName:@"matmul" results:@[partial]
+                        arguments:matmulArguments attributes:@{}
+                        range:candidate.range]];
+                    [manifestValues addObject:partial];
+                    [partials addObject:partial];
+                }
+                ANEGraphValue *accumulator = partials[0];
+                for (NSUInteger channel = 1; channel < channels; ++channel) {
+                    const BOOL finalAccumulation = channel + 1 == channels;
+                    NSString *sumName = [NSString stringWithFormat:
+                        @"$h13.%@.accum%lu", result.name,
+                        (unsigned long)channel];
+                    ANEGraphValue *sum = (finalAccumulation && !bias)
+                        ? result : [[ANEGraphValue alloc]
+                            initWithName:sumName type:result.type];
+                    [operations addObject:binaryOperation(@"add", accumulator,
+                        partials[channel], sum, candidate.range)];
+                    [manifestValues addObject:sum];
+                    accumulator = sum;
+                }
+                if (bias) {
+                    NSString *biasName = [NSString stringWithFormat:
+                        @"$h13.%@.bias", result.name];
+                    ANEGraphValue *expandedBias = [[ANEGraphValue alloc]
+                        initWithName:biasName type:result.type];
+                    NSMutableData *expanded =
+                        [NSMutableData dataWithLength:rows * columns * 2];
+                    for (NSUInteger row = 0; row < rows; ++row)
+                        std::memcpy(static_cast<uint8_t *>(expanded.mutableBytes) +
+                            row * columns * 2, biasData.bytes, columns * 2);
+                    synthesizedConstants[biasName] = expanded;
+                    [operations addObject:binaryOperation(@"add", accumulator,
+                        expandedBias, result, candidate.range)];
+                }
+                [manifestValues addObject:result];
+                [loweredValues setObject:result forKey:candidate.results[0]];
+                continue;
+            }
 
             if (linear && bias && rows > 1) {
                 NSData *biasData = linearBiasData(bias, columns, modelRoot,

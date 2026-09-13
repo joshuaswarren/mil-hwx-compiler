@@ -388,18 +388,18 @@ with tempfile.TemporaryDirectory() as temporary:
                    encoder_bias_add_source(),
                    expected_code="h13.nonfoldable-transpose",
                    expected_message="several consumers")
-    # 25 reshape feeders: reshape never reorders elements, so the composite
-    # is a pure view exactly when the transpose itself is, and this one is
-    # not — the consumer's contiguous rows would be chunked runs.
+    # 25 reshape feeders: in the encoder these feed one linear and now fold
+    # through the channel-plane decomposition (composite suite); a non-linear
+    # consumer is a near-miss composite and rejects with that exact reason.
     compile_source(root, "transpose-encoder-reshape",
                    encoder_reshape_source(),
                    expected_code="h13.nonfoldable-transpose",
-                   expected_message="stays a pure view only when the permutation itself preserves")
+                   expected_message="only when exactly one linear with a constant weight consumes")
     compile_source(root, "transpose-encoder-reshape-subsampling",
                    encoder_reshape_source(shape=(1, 256, 375, 16),
                                           reshaped=(1, 375, 4096)),
                    expected_code="h13.nonfoldable-transpose",
-                   expected_message="stays a pure view only when the permutation itself preserves")
+                   expected_message="only when exactly one linear with a constant weight consumes")
     # 48 matmul feeders: a fast-axis-stable middle swap feeding matmul y;
     # the trailing-swap fold does not apply and no decoded encoder reads a
     # matmul operand with permuted leading strides.
@@ -421,7 +421,6 @@ with tempfile.TemporaryDirectory() as temporary:
                                reshaped=(1, 8, 16)))
     composite_manifest = json.loads(
         (composite / "manifest.json").read_text())
-    assert composite_manifest["tensors"]["t"]["aliasOf"] == "a"
     assert composite_manifest["tensors"]["r"]["aliasOf"] == "a"
     validate(root, composite)
 
@@ -472,7 +471,8 @@ with tempfile.TemporaryDirectory() as temporary:
                                 end_mask=(True, True, True, True),
                                 result_shape=(1, 8, 749, 375),
                                 consumer="relu"),
-                   expected_code="h13.noncontiguous-slice")
+                   expected_code="h13.noncontiguous-slice",
+                   expected_message="8 chunks of 280875 elements spaced 281250 apart")
     compile_source(root, "slice-encoder-bias",
                    slice_source(shape=(1, 8, 375, 749),
                                 begin=(0, 0, 0, 0),
@@ -480,7 +480,8 @@ with tempfile.TemporaryDirectory() as temporary:
                                 end_mask=(True, True, True, False),
                                 result_shape=(1, 8, 375, 375),
                                 consumer="relu"),
-                   expected_code="h13.noncontiguous-slice")
+                   expected_code="h13.noncontiguous-slice",
+                   expected_message="3000 chunks of 375 elements spaced 749 apart")
     compile_source(root, "slice-strided",
                    slice_source(stride=(1, 1, 1, 2)),
                    expected_code="h13.noncontiguous-slice")
@@ -501,17 +502,18 @@ with tempfile.TemporaryDirectory() as temporary:
                    pad_source(shape=(1, 1, 749, 375),
                               amounts=(0, 0, 0, 0, 0, 0, 1, 0),
                               result_shape=(1, 1, 750, 375)),
-                   expected_code="h13.unsupported-pad")
+                   expected_code="h13.unsupported-pad",
+                   expected_message="pad [0,0,0,0,0,0,1,0]")
 
     # tile: all-ones repeats are the identity view.
     tiled = deterministic(root, "tile-ones", tile_source())
     manifest = json.loads((tiled / "manifest.json").read_text())
     assert manifest["tensors"]["t"]["aliasOf"] == "a"
     validate(root, tiled)
-    # The encoder replicates its mask across heads; that needs movement.
     compile_source(root, "tile-encoder-mask",
                    tile_source(shape=(1, 1, 375), reps=(1, 375, 1),
                                result_shape=(1, 375, 375)),
-                   expected_code="h13.unsupported-tile")
+                   expected_code="h13.unsupported-tile",
+                   expected_message="reps [1,375,1]")
 
     print("h13 layout cli: PASS")
