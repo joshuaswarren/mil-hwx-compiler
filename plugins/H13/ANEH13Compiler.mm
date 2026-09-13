@@ -1501,14 +1501,6 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 @"H13 logical result conversions require explicit hardware or GPU coverage",
                 returnedValue.producer ?: lastSourceOperation,
                 @"h13.unsupported-logical-result-conversion");
-    ANEGraphValue *sourceReturned = function.returnValues[0];
-    for (ANEGraphValue *returnedValue in function.returnValues)
-        if (returnedValue != sourceReturned ||
-            returnedValue.producer != lastSourceOperation)
-            return reject(diagnostics,
-                chain ? @"H13 chains must return only the last operation result"
-                      : @"H13 requires one operation with its result returned",
-                lastSourceOperation, chain ? chainCode : @"h13.unsupported-program");
 
     for (ANEGraphValue *input in function.inputs) {
         BOOL used = NO;
@@ -1521,7 +1513,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     }
     for (NSUInteger index = 0; index + 1 < sourceOperations.count; ++index) {
         for (ANEGraphValue *value in sourceOperations[index].results) {
-            BOOL used = NO;
+            BOOL used = [function.returnValues containsObject:value];
             for (NSUInteger consumer = index + 1;
                  consumer < sourceOperations.count; ++consumer)
                 for (ANEGraphArgument *operand in sourceOperations[consumer].operands.allValues)
@@ -1884,45 +1876,78 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         [loweredValues setObject:result forKey:candidate.results[0]];
     }
 
-    ANEGraphValue *returned = [loweredValues objectForKey:function.returnValues[0]];
     NSMutableSet<NSString *> *inputNames = [NSMutableSet set];
     for (ANEGraphValue *input in function.inputs) [inputNames addObject:input.name];
     if (!operations.count) {
-        if (returned && [inputNames containsObject:returned.name])
-            return reject(diagnostics,
-                @"H13 cannot return an alias of a function input because no program produces it",
-                lastSourceOperation, @"h13.returned-input-alias");
+        for (ANEGraphValue *logical in function.returnValues) {
+            ANEGraphValue *returned = [loweredValues objectForKey:logical];
+            if (returned && [inputNames containsObject:returned.name])
+                return reject(diagnostics,
+                    @"H13 cannot return an alias of a function input because no program produces it",
+                    lastSourceOperation, @"h13.returned-input-alias");
+        }
         return reject(diagnostics, @"H13 requires at least one encoded operation");
     }
     ANEGraphOperation *lastOperation = operations.lastObject;
-    if (!returned || ![returned.name isEqualToString:lastOperation.results[0].name])
-        return reject(diagnostics,
-            @"H13 returned aliases must refer to the last encoded operation result",
-            lastSourceOperation, chainCode);
+    NSMutableSet<NSString *> *producedStorageNames = [NSMutableSet set];
+    for (ANEGraphOperation *candidate in operations)
+        for (ANEGraphValue *value in candidate.results)
+            [producedStorageNames addObject:value.name];
+    NSMutableArray<ANEGraphValue *> *returnedValues = [NSMutableArray array];
+    NSMutableSet<NSString *> *returnedSourceNames = [NSMutableSet set];
+    NSMutableSet<NSString *> *returnedStorageNameSet = [NSMutableSet set];
+    for (ANEGraphValue *logical in function.returnValues) {
+        ANEGraphValue *returned = [loweredValues objectForKey:logical] ?: logical;
+        if ([inputNames containsObject:returned.name])
+            return reject(diagnostics,
+                @"H13 cannot return an alias of a function input because no program produces it",
+                logical.producer ?: lastSourceOperation, @"h13.returned-input-alias");
+        if (![producedStorageNames containsObject:returned.name])
+            return reject(diagnostics,
+                @"H13 logical result has no encoded physical output",
+                logical.producer ?: lastSourceOperation,
+                @"h13.unsupported-logical-result-storage");
+        [returnedValues addObject:returned];
+        [returnedSourceNames addObject:logical.name];
+        [returnedStorageNameSet addObject:returned.name];
+    }
+    for (ANEGraphOperation *candidate in operations)
+        for (ANEGraphArgument *operand in candidate.operands.allValues)
+            if (operand.value &&
+                [returnedStorageNameSet containsObject:operand.value.name])
+                return reject(diagnostics,
+                    @"H13 cannot expose a physical output that another encoded operation consumes",
+                    candidate, @"h13.unsupported-returned-intermediate");
 
-    NSString *returnedSourceName = function.returnValues[0].name;
-    NSString *returnedStorageName = returned.name;
+    NSMutableOrderedSet<NSString *> *returnedStorageNames =
+        [NSMutableOrderedSet orderedSet];
+    for (ANEGraphOperation *candidate in operations)
+        for (ANEGraphValue *value in candidate.results)
+            if ([returnedStorageNameSet containsObject:value.name])
+                [returnedStorageNames addObject:value.name];
     NSMutableSet<NSString *> *intermediateStorageNames = [NSMutableSet set];
     NSMutableArray<NSString *> *intermediateNames = [NSMutableArray array];
     for (ANEGraphValue *value in manifestValues) {
         BOOL alias = aliases[value.name] != nil;
-        if ([value.name isEqualToString:returnedSourceName] ||
-            (!alias && [value.name isEqualToString:returnedStorageName]))
+        if ([returnedSourceNames containsObject:value.name] ||
+            (!alias && [returnedStorageNameSet containsObject:value.name]))
             continue;
         [intermediateNames addObject:value.name];
         if (!alias) [intermediateStorageNames addObject:value.name];
     }
-    NSArray<NSNumber *> *returnedPhysicalShape = nil;
-    for (ANEGraphValue *value in manifestValues)
-        if ([value.name isEqualToString:returnedStorageName] && !aliases[value.name]) {
-            returnedPhysicalShape = value.type.shape;
-            break;
-        }
-    if (!returnedPhysicalShape)
-        return reject(diagnostics, @"H13 returned value has no physical output storage",
-                      lastSourceOperation, @"h13.unsupported-logical-result-storage");
-    NSDictionary<NSString *, NSArray<NSNumber *> *> *outputShapes =
-        @{returnedStorageName: returnedPhysicalShape};
+    NSMutableDictionary<NSString *, NSArray<NSNumber *> *> *outputShapes =
+        [NSMutableDictionary dictionary];
+    for (NSString *storageName in returnedStorageNames) {
+        for (ANEGraphValue *value in manifestValues)
+            if ([value.name isEqualToString:storageName] && !aliases[value.name]) {
+                outputShapes[storageName] = value.type.shape;
+                break;
+            }
+        if (!outputShapes[storageName])
+            return reject(diagnostics, @"H13 returned value has no physical output storage",
+                          lastSourceOperation,
+                          @"h13.unsupported-logical-result-storage");
+    }
 
     NSMutableArray<NSDictionary *> *programRecords = [NSMutableArray array];
     NSMutableArray<NSData *> *payloads = [NSMutableArray array];
@@ -2188,7 +2213,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         NSUInteger elements = 1;
         for (NSNumber *dimension in shape)
             elements *= dimension.unsignedIntegerValue;
-        NSString *role = [name isEqualToString:returnedSourceName]
+        NSString *role = [returnedSourceNames containsObject:name]
             ? @"output" : @"intermediate";
         tensors[name] = @{@"shape": shape, @"logicalBytes": @(elements * 2),
                           @"role": role, @"aliasOf": alias[@"aliasOf"]};
@@ -2251,31 +2276,43 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         }
     }
 
-    NSDictionary *physicalTensor = tensors[returnedStorageName];
-    NSArray<NSNumber *> *physicalShape = physicalTensor[@"shape"];
-    NSUInteger physicalElements = 1;
-    for (NSNumber *dimension in physicalShape)
-        physicalElements *= dimension.unsignedIntegerValue;
-    NSUInteger resultOffset =
-        [[valueBaseOffsets objectForKey:returned] unsignedIntegerValue];
-    NSArray<NSDictionary *> *physicalOutputs = @[@{
-        @"tensor": returnedStorageName, @"dtype": @"float16",
-        @"shape": physicalShape,
-        @"logicalBytes": physicalTensor[@"logicalBytes"],
-    }];
+    NSMutableArray<NSDictionary *> *physicalOutputs = [NSMutableArray array];
+    NSMutableDictionary<NSString *, NSNumber *> *physicalElementCounts =
+        [NSMutableDictionary dictionary];
+    for (NSString *storageName in returnedStorageNames) {
+        NSDictionary *physicalTensor = tensors[storageName];
+        NSArray<NSNumber *> *physicalShape = physicalTensor[@"shape"];
+        NSUInteger physicalElements = 1;
+        for (NSNumber *dimension in physicalShape)
+            physicalElements *= dimension.unsignedIntegerValue;
+        physicalElementCounts[storageName] = @(physicalElements);
+        [physicalOutputs addObject:@{
+            @"tensor": storageName, @"dtype": @"float16",
+            @"shape": physicalShape,
+            @"logicalBytes": physicalTensor[@"logicalBytes"],
+        }];
+    }
     NSMutableArray<NSDictionary *> *logicalResults = [NSMutableArray array];
-    for (ANEGraphValue *logical in function.returnValues) {
+    for (NSUInteger index = 0; index < function.returnValues.count; ++index) {
+        ANEGraphValue *logical = function.returnValues[index];
+        ANEGraphValue *returned = returnedValues[index];
+        NSString *storageName = returned.name;
+        NSUInteger physicalElements =
+            physicalElementCounts[storageName].unsignedIntegerValue;
+        NSUInteger resultOffset =
+            [[valueBaseOffsets objectForKey:returned] unsignedIntegerValue];
         NSUInteger elements = 0;
         if (!tensorElementCount(logical, &elements) ||
             elements > physicalElements || resultOffset > physicalElements - elements)
             return reject(diagnostics,
                 @"H13 logical result exceeds its physical output storage",
-                lastSourceOperation, @"h13.unsupported-logical-result-storage");
+                logical.producer ?: lastSourceOperation,
+                @"h13.unsupported-logical-result-storage");
         [logicalResults addObject:@{
             @"name": logical.name, @"dtype": @"float16",
             @"shape": logical.type.shape, @"conversion": @"identity",
             @"physical": @{
-                @"tensor": returnedStorageName,
+                @"tensor": storageName,
                 @"elementOffset": @(resultOffset),
                 @"elementCount": @(elements),
             },
