@@ -500,11 +500,13 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
         rejection = @"H13 and H14 HWX require a nonempty word-aligned linear task stream";
     else if (!resourceCountValid)
         rejection = @"writer requires one output, at least one input, at most four surfaces and five total resources";
-    // Apple partitions one program into up to 129 tasks rather than emitting a
-    // second program; the largest decoded H13 stream is 80,888 bytes, for
-    // [512,8192] x const[8192,8192].
-    else if (taskDescriptor.length == 0 || taskDescriptor.length > 0x20000)
-        rejection = @"writer requires a nonempty task descriptor of at most 0x20000 bytes";
+    // Apple partitions one program into up to 129 tasks rather than emitting
+    // a second program; the largest decoded single-batch stream is 80,888
+    // bytes for [512,8192] x const[8192,8192]. The batched matmul oracles
+    // run 26·B tasks in one stream — 324,212 bytes at B=16 — so the cap
+    // covers that decoded maximum.
+    else if (taskDescriptor.length == 0 || taskDescriptor.length > 0x60000)
+        rejection = @"writer requires a nonempty task descriptor of at most 0x60000 bytes";
     // Apple keeps a whole matmul weight in one program's __TEXT/__const: the
     // largest decoded section is 134,217,728 bytes, for [512,8192] x
     // const[8192,8192]. The cap is twice that.

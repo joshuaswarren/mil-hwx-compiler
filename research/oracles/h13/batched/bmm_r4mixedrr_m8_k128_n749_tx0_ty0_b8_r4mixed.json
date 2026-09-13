@@ -1,0 +1,64 @@
+{
+  "case": "bmm_r4mixedrr_m8_k128_n749_tx0_ty0_b8_r4mixed",
+  "compiler": {
+    "command": [
+      "/tmp/h13-oracle/bin/ane-compile-hwx",
+      "CAPTURE_DIR",
+      "OUTPUT_DIR",
+      "h13"
+    ],
+    "decoder_sha256": "125da0249ca3c3ba0ca1f9f0cabfd1db54a965abb75f9f4cdcc2598e255c8fbc",
+    "driver_sha256": "a6e8f70d438973e60913815be66dbd6de19d7200df9053a9efc2a615823d8074",
+    "host": "MacStudio.local",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "tool": "/tmp/h13-oracle/bin/ane-compile-hwx",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  "constant_section": null,
+  "error": "callback_status=1",
+  "family": "batched_matmul",
+  "hwx_bytes": null,
+  "hwx_sha256": null,
+  "mil": "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n  func main<ios18>(tensor<fp16, [1, 375, 8, 128]> x, tensor<fp16, [1, 8, 128, 749]> w) {\n    bool tx = const()[name = string(\"tx\"), val = bool(false)];\n    bool ty = const()[name = string(\"ty\"), val = bool(false)];\n    tensor<fp16, [1, 375, 8, 749]> product = matmul(transpose_x = tx, transpose_y = ty, x = x, y = w)[name = string(\"product\")];\n  } -> (product);\n}\n",
+  "parameters": {
+    "batch": 8,
+    "batch_out_base_elements": 5992,
+    "batch_x_base_elements": 1024,
+    "batch_y_base_elements": 95872,
+    "columns": 749,
+    "layout": "r4mixed",
+    "output_shape": [
+      1,
+      375,
+      8,
+      749
+    ],
+    "reduction": 128,
+    "rows": 8,
+    "transpose_x": false,
+    "transpose_y": false,
+    "w_shape": [
+      1,
+      8,
+      128,
+      749
+    ],
+    "w_storage": "runtime",
+    "x_shape": [
+      1,
+      375,
+      8,
+      128
+    ],
+    "x_storage": "runtime"
+  },
+  "program_descriptor": null,
+  "schema_version": 1,
+  "source_commit": "12d5f05bae67e239251e5e1afd54344987d03de1",
+  "target": "h13",
+  "task_descriptors": [],
+  "tensor_descriptors": [],
+  "weights": {
+    "storage": "none"
+  }
+}

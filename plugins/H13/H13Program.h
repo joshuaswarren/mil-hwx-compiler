@@ -140,6 +140,28 @@ bool supportsMatmulParity(MatmulShape shape);
 /// blob resolves to, and must be null when the second operand is runtime.
 Program encodeMatmulParity(MatmulShape shape, const std::uint8_t *weights,
                            std::size_t weightBytes);
+/// One decoded Apple batched-matmul geometry: B independent per-batch GEMMs
+/// of [rows, reduction] by [reduction, columns] over batch-major contiguous
+/// operand planes, lowered as one task stream of 26 tasks per batch. The
+/// transpose flags are false in every decoded form.
+struct BatchedMatmulShape {
+    std::uint32_t batch = 1;
+    std::uint32_t rows;
+    std::uint32_t reduction;
+    std::uint32_t columns;
+    bool runtimeWeight = false;
+};
+
+/// True when the decoded batched corpus covers this geometry as one program.
+bool supportsBatchedMatmul(BatchedMatmulShape shape);
+
+/// Encodes Apple's own batched task stream for the geometry. `packedPlanes`
+/// carries the constant weight as B consecutive [reduction, columns] planes,
+/// each row padded to the 64-byte surface stride, and must be null for a
+/// runtime second operand.
+Program encodeBatchedMatmul(BatchedMatmulShape shape,
+                            const std::uint8_t *packedPlanes,
+                            std::size_t packedBytes);
 /// Apple's constant-section permutation for a [columns, reduction] fp16
 /// weight, whose row-group size depends on `rows` and `reduction`.
 std::vector<std::uint8_t> packMatvecWeights(MatmulShape shape,
