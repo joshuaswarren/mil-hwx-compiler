@@ -243,9 +243,24 @@ def dense_of(tensors, name):
 
 def run_sim(package: Path, mil: Path, model_root: Path, inputs: dict[str, bytes]):
     manifest, _ = inspect_anec.load_package(package)
-    tensors = manifest['tensors']
-    # seed dense inputs
+    chain = manifest.get('schedule') == 'chain'
+    chain_tasks = []
+    if chain:
+        program = manifest['programs'][0]
+        assert manifest['dispatchPlan'] == [0]
+        assert program['encoder'] == inspect_anec.CHAIN_ENCODER
+        assert len(manifest['tasks']) == program['taskDescriptors']
+        assert [task['index'] for task in manifest['tasks']] == \
+            list(range(program['taskDescriptors']))
+        assert len({task['operation'] for task in manifest['tasks']}) == 1
+        assert manifest['scratch']['regions'] == {}
+        data = inspect_anec.local_file(package, program['file'], program['bytes'])
+        _, first_words, count, stream_bytes = struct.unpack_from('<QIIQ', data)
+        chain_tasks = inspect_anec.split_h13_tasks(
+            data[inspect_anec.HEADER_BYTES:inspect_anec.HEADER_BYTES + stream_bytes],
+            first_words // 4 - 1, count)
     dense = {}
+    tensors = manifest['tensors']
     for name, t in tensors.items():
         if t['role'] == 'input' and 'aliasOf' not in t:
             dense[name] = bytearray(inputs[name])
@@ -257,9 +272,10 @@ def run_sim(package: Path, mil: Path, model_root: Path, inputs: dict[str, bytes]
 
     for pi in manifest['dispatchPlan']:
         program = manifest['programs'][pi]
-        op = program['operation']
+        op = manifest['tasks'][0]['operation'] if chain else program['operation']
         encoder = program['encoder']
-        parity_matvec = encoder == inspect_anec.PARITY_MATVEC
+        parity_matvec = encoder == inspect_anec.PARITY_MATVEC or \
+            (chain and op == 'matmul')
         in_bufs = []
         for binding in program['inputs']:
             name = binding['name']
@@ -300,6 +316,10 @@ def run_sim(package: Path, mil: Path, model_root: Path, inputs: dict[str, bytes]
                                               program['inputs'][0], out_binding,
                                               in_bufs[1], in_bufs[0],
                                               transpose_x, transpose_y)
+        elif op == 'relu':
+            values = dense_values(dense_of_surface(program['inputs'][0], in_bufs[0]))
+            out_buf = bytearray(surface(
+                out_binding, dense_bytes([fp16(max(value, 0.0)) for value in values])))
         elif op in ('add', 'mul', 'maximum', 'minimum'):
             assert len(in_bufs) == 2
             out_buf = simulate_binary(op, in_bufs[0], in_bufs[1], out_phys, out_binding['allocationBytes'])
@@ -312,6 +332,17 @@ def run_sim(package: Path, mil: Path, model_root: Path, inputs: dict[str, bytes]
                 out_buf = simulate_matvec(in_bufs[0], section, in_phys, out_binding['allocationBytes'])
         else:
             raise ValueError(op)
+
+        if chain:
+            registers = [inspect_anec.h13_task_registers(task)
+                         for task in chain_tasks]
+            address, bit = ((0x0c804, 0x00010000) if op == 'matmul'
+                            else (0x08800, 0x20))
+            assert not any(task.get(address, 0) & bit for task in registers[:-1])
+            assert registers[-1].get(address, 0) & bit
+            values = dense_values(dense_of_surface(out_binding, bytes(out_buf)))
+            out_buf = bytearray(surface(out_binding, dense_bytes(
+                [fp16(max(value, 0.0)) for value in values])))
 
         name, offset, count, physical = inspect_anec.binding_interval(out_binding, tensors)
         if tensors[name]['role'] == 'intermediate':
@@ -340,20 +371,23 @@ def run_sim(package: Path, mil: Path, model_root: Path, inputs: dict[str, bytes]
     return actual, expected, manifest
 
 
-def compile_mil(text: str, model_root: Path, out: Path, blobs: dict[str, bytes] | None = None):
+def compile_mil(text: str, model_root: Path, out: Path,
+                blobs: dict[str, bytes] | None = None, schedule: str | None = None):
     mil = model_root / 'model.mil'
     mil.write_text(text)
     if blobs:
         for n, b in blobs.items():
             (model_root / n).write_bytes(b)
     out.mkdir(parents=True, exist_ok=True)
-    # clear
     for p in out.iterdir():
         p.unlink()
-    r = subprocess.run([str(COMPILER), '--mil', str(mil), '--model-root', str(model_root),
-                        '--target', 'H13', '--output', str(out)], capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError(r.stdout + r.stderr)
+    command = [str(COMPILER), '--mil', str(mil), '--model-root', str(model_root),
+               '--target', 'H13', '--output', str(out)]
+    if schedule:
+        command += ['--schedule', schedule]
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(result.stdout + result.stderr)
     return mil
 
 
@@ -362,52 +396,74 @@ def blobfile(payload: bytes) -> bytes:
     struct.pack_into('<IIQQ', out, 64, 0xDEADBEEF, 1, len(payload), 128)
     out[128:] = payload
     return bytes(out)
-
-
-def check_elemwise_chain():
+def check_fused_chains():
     failures = []
-    with tempfile.TemporaryDirectory() as d:
-        d = Path(d)
-        # matmul -> add -> relu style with small shapes: just add/mul/relu chain
-        mil = '''program(1.3)
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        add_mil = '''program(1.3)
 [buildInfo = dict<string, string>({})]
 {
-  func main<ios18>(tensor<fp16, [96]> a, tensor<fp16, [96]> b) {
-    tensor<fp16, [96]> s = add(x = a, y = b)[name = string("s")];
-    tensor<fp16, [96]> p = mul(x = s, y = b)[name = string("p")];
-    tensor<fp16, [96]> y = relu(x = p)[name = string("y")];
+  func main<ios18>(tensor<fp16, [1, 512, 1, 1]> a,
+                   tensor<fp16, [1, 512, 1, 1]> b) {
+    tensor<fp16, [1, 512, 1, 1]> sum = add(x = a, y = b)[name = string("sum")];
+    tensor<fp16, [1, 512, 1, 1]> y = relu(x = sum)[name = string("y")];
   } -> (y);
 }
 '''
-        pkg = d / 'pkg'
-        mil_path = compile_mil(mil, d, pkg)
-        # packing agreement: reader vs linux composition on intermediates
-        manifest, _ = inspect_anec.load_package(pkg)
-        a = encode_fp16([0.5] * 96)
-        b = encode_fp16([-1.0, 2.0] * 48)
-        # Compare pack via inspect_anec.convert_tensor vs manual
-        for prog in manifest['programs']:
-            for binding in prog['inputs']:
-                if binding.get('binding') == 'constant':
-                    continue
-                name = binding['name']
-                if manifest['tensors'][name]['role'] != 'input':
-                    continue
-                src = a if name == 'a' else b
-                sliced = inspect_anec.dense_slice(src, binding, manifest['tensors'])
-                p1 = bytes(inspect_anec.convert_tensor(binding, sliced, True))
-                p2 = bytes(pack_dense(sliced, binding['logicalBytes'] // 2, binding['allocationBytes']))
-                if p1 != p2:
-                    failures.append(f'pack mismatch {name} prog={prog["file"]}')
-        actual, expected, _ = run_sim(pkg, mil_path, d, {'a': a, 'b': b})
+        package = root / 'add-relu'
+        mil_path = compile_mil(add_mil, root, package, schedule='chain')
+        a = encode_fp16([fp16((index % 9) - 4.0) for index in range(512)])
+        b = encode_fp16([fp16(0.5 - index % 3) for index in range(512)])
+        actual, expected, manifest = run_sim(
+            package, mil_path, root, {'a': a, 'b': b})
         if actual['y'] != expected['y']:
-            av, ev = decode_fp16(actual['y']), decode_fp16(expected['y'])
-            bad = [(i, ev[i], av[i]) for i in range(len(ev)) if ev[i] != av[i]][:5]
-            failures.append(f'elemwise chain mismatch samples={bad}')
+            failures.append('actual add-relu task stream differs from reference')
+        elif min(decode_fp16(actual['y'])) < 0:
+            failures.append('actual add-relu task stream did not clamp negatives')
         else:
-            print('OK elemwise add-mul-relu chain 96')
-    return failures
+            print('OK fused add-relu actual task stream 512')
+        if manifest['intermediates'] or manifest['scratch']['regions']:
+            failures.append('fused add-relu retained an intermediate surface')
 
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        matmul_mil = '''program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 64, 256]> x) {
+    bool f = const()[name = string("f"), val = bool(false)];
+    bool t = const()[name = string("t"), val = bool(true)];
+    tensor<fp16, [256, 256]> W = const()[name = string("W"), val = tensor<fp16, [256, 256]>(BLOBFILE(path = string("@model_path/weights.bin"), offset = uint64(64)))];
+    tensor<fp16, [1, 64, 256]> product = matmul(x = x, y = W, transpose_x = f, transpose_y = t)[name = string("product")];
+    tensor<fp16, [1, 64, 256]> y = relu(x = product)[name = string("y")];
+  } -> (y);
+}
+'''
+        weights = encode_fp16([0.5] * (256 * 256))
+        package = root / 'matmul-relu'
+        mil_path = compile_mil(matmul_mil, root, package,
+                               {'weights.bin': blobfile(weights)}, schedule='chain')
+        rows = []
+        for row in range(64):
+            if row % 3 == 0:
+                rows.extend([-1.0] * 128 + [1.0] * 128)
+            elif row % 3 == 1:
+                rows.extend([-1.0] * 256)
+            else:
+                rows.extend([1.0] * 256)
+        actual, expected, manifest = run_sim(
+            package, mil_path, root, {'x': encode_fp16(rows)})
+        if actual['y'] != expected['y']:
+            failures.append('actual matmul-relu task stream differs from reference')
+        else:
+            values = decode_fp16(actual['y'])
+            if values[0] != 0.0 or values[256] != 0.0 or values[512] != 128.0:
+                failures.append('matmul relu was not applied after the full K sum')
+            else:
+                print('OK fused matmul-relu actual two-task stream 64x256x256')
+        if manifest['intermediates'] or manifest['scratch']['regions']:
+            failures.append('fused matmul-relu retained an intermediate surface')
+    return failures
 
 def check_ops():
     failures = []
@@ -418,11 +474,12 @@ def check_ops():
         ('minimum', lambda x, y: fp16(min(x, y))),
         ('sub', lambda x, y: add_fp16(x, fp16(-y))),  # folded
         ('real_div', None),  # special
+        ('scalar_mul', None),  # scalar constant y, native encoder
     ]
     for op, _ in ops:
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
-            if op in ('sub', 'real_div'):
+            if op in ('sub', 'real_div', 'scalar_mul'):
                 # fold constant y
                 if op == 'sub':
                     mil = f'''program(1.3)
@@ -431,6 +488,16 @@ def check_ops():
   func main<ios18>(tensor<fp16, [32]> a) {{
     tensor<fp16, [32]> c = const()[name = string("c"), val = tensor<fp16, [32]>([{', '.join('fp16(2.0)' for _ in range(32))}])];
     tensor<fp16, [32]> y = sub(x = a, y = c)[name = string("y")];
+  }} -> (y);
+}}
+'''
+                elif op == 'scalar_mul':
+                    mil = f'''program(1.3)
+[buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>(tensor<fp16, [32]> a) {{
+    fp16 c = const()[name = string("c"), val = fp16(-1.0)];
+    tensor<fp16, [32]> y = mul(x = a, y = c)[name = string("y")];
   }} -> (y);
 }}
 '''
@@ -845,7 +912,7 @@ def check_norm_packages():
 def main():
     all_f = []
     all_f += check_macos_packing_rule()
-    all_f += check_elemwise_chain()
+    all_f += check_fused_chains()
     all_f += check_ops()
     all_f += check_reader_vs_linux_intermediate()
     all_f += check_matmul_grid()

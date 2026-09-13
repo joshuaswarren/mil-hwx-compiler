@@ -36,8 +36,10 @@ H13 accepts only an exact rank-zero tensor<int32, []> axis, an exact rank-zero
 tensor<int32, []> partition count of two, two equal positive static FP16
 results, and a contiguous axis. It maps both ordered SSA results to typed views,
 propagates view offsets through shape-only aliases, and validates offset
-addition before recording a binding. Liveness checks every ordered result.
-Other multi-result operations retain the existing refusal.
+addition before recording a binding. Liveness requires every operation to
+contribute at least one result to a later operation or the function return; a
+partially used multi-result split may discard its other view. Other
+multi-result operations retain the existing refusal.
 The qualified package contract is strict rather than inferred by consumers.
 Every sliced ANEC program binding records physicalElements even when it equals
 the logical count, and every program records scratchBytes from its encoded H13
@@ -61,6 +63,15 @@ surface selectors and task header flags after task selection; HWX therefore
 embeds that normalized task slice from the encoded ANEC rather than the raw
 pre-binding task bytes. Extracting ANEC from HWX must reproduce the explicit
 ANEC artifact byte for byte.
+
+The ANEC constant section begins at the exact 64-byte-aligned task-stream
+length. This retains the exact-offset guard for single-task programs while
+accepting decoded linked streams whose 80 task bytes occupy a 128-byte command
+region. Native execution validates the complete request and libane ABI before
+transfer, allocates declared scratch, pins device index zero to the attested
+node, and requires a finite whole-device-phase deadline before each program.
+The same deadline applies to correctness-gated benchmark preparation and each
+warmup or measured dispatch; it cannot interrupt an in-flight submission.
 Mixed FP32 or int32 returns fail with
 h13.unsupported-logical-result-conversion until an explicit hardware or GPU
 conversion path exists.
@@ -98,12 +109,17 @@ The pinned adapter output at
 and int32 returns and fails with h13.unsupported-logical-result-conversion. The
 full faithful source still stops earlier on the known uint4 importer boundary.
 No hardware command was run.
+The merge with origin/main at `5271ab0b2bc1d9c28b1eb9d3bcfef9773902b57c`
+retains its reviewed DMA validation, scratch allocation, surface-channel
+binding, native timing, and identity preflight together with schema v2 ordered
+logical results. Focused device-free verification covers both contracts.
 
 ## Repository Shape
 
 The integration branch starts from scalar-folding receipt commit
 7da065bd7c94aafdd7dd4f3e47c8ff16645910fb, merges ordered split commit
-e8b8520bb75d9ae30a4926de54936b1cd9f105a7, and merges qualified H13 commit
-f4ad09066b560818a9dcc1f5f4f53273d941bd1e. The adapter source remains
+e8b8520bb75d9ae30a4926de54936b1cd9f105a7, merges qualified H13 commit
+f4ad09066b560818a9dcc1f5f4f53273d941bd1e, and joins current GitHub main at
+5271ab0b2bc1d9c28b1eb9d3bcfef9773902b57c. The adapter source remains
 rootadapter commit eac5eed9 with program(1), CoreML8, and ordered parenthesized
 result lists.

@@ -4,7 +4,7 @@
 
 - Worktree: `/home/joshuawarren/.config/superpowers/worktrees/mil-hwx-compiler/h13-qualified-split-integration`
 - Branch: `agent/h13-qualified-split-integration`
-- Combined compiler commit: `b7a59f07c45e9fd4e753b0b25004fe6a18180d81`
+- Feature tip before upstream integration: `f91bc92ed892d03d20b6c945dfaa0a5bf50752af`
 - Executing model: `openai-codex/gpt-5.6-sol`
 - Configured route: `mlx-openai-deep`; no routing fallback was observed.
 
@@ -143,3 +143,22 @@ The runtime adapter requested add-based split views without materialized constan
 - Both packages contain `program-0.anec` SHA-256 `70b9e497556ce990c697fa86316f5292384bd27bbe51911ce24df14df7735a23`.
 
 Both compiler invocations succeeded and `research/inspect_anec.py` accepted each package. Each manifest has `constantInputs: {}` and operation `add`. Forward logical results are `tall` at offset 0 then `wide` at offset 64; reverse logical results are `wide` at offset 64 then `tall` at offset 0.
+
+## Upstream main integration
+
+The feature tip was merged with `origin/main` at `5271ab0b2bc1d9c28b1eb9d3bcfef9773902b57c`. The resolution preserves ordered result indexing, upstream native encoder selection, normalized ANEC bytes inside HWX, strict v2 storage dependencies, reviewed-host preflight, and the native runtime's mandatory finite whole-device-phase deadline. The linked ANEC constant region begins at the exact 64-byte-aligned task length; the 80-byte linked-task fixture therefore starts constants at byte 128.
+
+The focused device-free verification command was:
+
+```text
+make -j4 build/test_h13_anec
+build/test_h13_anec
+python3 tests/test_h13_cli.py build/mil-hwxc
+python3 tests/test_h13_split_cli.py build/mil-hwxc
+python3 tests/test_h13_deadline.py
+python3 tests/test_h13_linux_runtime.py
+python3 tests/test_h13_preflight.py
+python3 tests/test_h14_parity.py build/mil-hwxc
+```
+
+The command passed. It reported H13 CLI PASS, H13 split CLI PASS, `H13_DEADLINE_OK`, H13 Linux runtime PASS for 15 cases with one real-libane skip, all preflight cases PASS, and H14 parity PASS for 718 cases and 1,436 artifacts. `build/test_h13_anec` completed successfully without diagnostic output. No hardware command or model inference ran.

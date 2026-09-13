@@ -68,6 +68,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         package, mil, inputs = write_package(root)
+        outputs = {"y": root / "y.out.fp16"}
         clock = {"tick": 0.0}
 
         def now():
@@ -76,14 +77,15 @@ def main():
         for invalid in (0.0, -1.0, math.nan, math.inf, -math.inf):
             try:
                 runner.run_package(package, mil, root / "models", inputs,
-                                   ForbiddenAdapter(), deadline_seconds=invalid, now=now)
+                                   outputs, ForbiddenAdapter(),
+                                   deadline_seconds=invalid, now=now)
                 assert False, f"accepted invalid deadline {invalid}"
             except ValueError as error:
                 assert "positive finite" in str(error), error
 
         try:
             runner.run_package(package, mil, root / "models", inputs,
-                               ForbiddenAdapter(), now=now)
+                               outputs, ForbiddenAdapter(), now=now)
             assert False, "device execution accepted a missing deadline"
         except ValueError as error:
             assert "requires --deadline-seconds" in str(error), error
@@ -93,7 +95,7 @@ def main():
         calls = []
 
         class CompletingAdapter:
-            def execute(self, _anec, _kernel, _inputs, output_sizes):
+            def execute(self, _anec, _inputs, output_sizes):
                 calls.append(len(calls))
                 clock["tick"] = 0.5
                 return [bytes(size) for size in output_sizes]
@@ -106,7 +108,8 @@ def main():
         runner._intermediate_buffer = forbidden_intermediate_buffer
         try:
             runner.run_package(package, mil, root / "models", inputs,
-                               CompletingAdapter(), deadline_seconds=0.5, now=now)
+                               outputs, CompletingAdapter(),
+                               deadline_seconds=0.5, now=now)
             assert False, "expired qualification submitted the second program"
         except ValueError as error:
             assert "whole-run qualification deadline" in str(error), error
@@ -115,19 +118,20 @@ def main():
             runner._intermediate_buffer = original_intermediate_buffer
         assert calls == [0], calls
         class WrongAdapter:
-            def execute(self, _anec, _kernel, _inputs, output_sizes):
+            def execute(self, _anec, _inputs, output_sizes):
                 return [bytes([0xff]) * size for size in output_sizes]
 
         try:
             runner.run_package(package, mil, root / "models", inputs,
-                               WrongAdapter(), deadline_seconds=1.0, now=now)
+                               outputs, WrongAdapter(),
+                               deadline_seconds=1.0, now=now)
             assert False, "accepted incorrect device output"
         except ValueError as error:
             assert "preserved" in str(error), error
         assert (package / "y.failed.fp16").read_bytes() == bytes([0xff]) * 128
 
         dry_manifest, _, plan = runner.run_package(
-            package, mil, root / "models", inputs, None, now=now)
+            package, mil, root / "models", inputs, outputs, None, now=now)
         assert dry_manifest["dispatchPlan"] == [0, 1]
         assert plan["deviceCalls"] is False
 
