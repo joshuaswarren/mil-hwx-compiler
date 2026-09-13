@@ -42,9 +42,9 @@ static ANEGraphModule *importFixture(NSString *name,
 
 static ANEGraphOperation *operationNamed(ANEGraphFunction *function,
                                          NSString *resultName) {
-    for (ANEGraphOperation *operation in function.operations) {
-        if ([operation.result.name isEqualToString:resultName]) return operation;
-    }
+    for (ANEGraphOperation *operation in function.operations)
+        for (ANEGraphValue *result in operation.results)
+            if ([result.name isEqualToString:resultName]) return operation;
     return nil;
 }
 
@@ -70,9 +70,9 @@ static void testConvGraph(void) {
            @"relu operation identity is retained");
     expect(conv.operands[@"x"].value == input,
            @"conv input resolves to the function value");
-    expect(relu.operands[@"x"].value == conv.result,
+    expect(relu.operands[@"x"].value == conv.results[0],
            @"relu input resolves to the conv result");
-    expect(function.returnValues[0] == relu.result,
+    expect(function.returnValues[0] == relu.results[0],
            @"return resolves to the relu result");
 
     ANEGraphOperation *weight = operationNamed(function, @"W");
@@ -104,6 +104,47 @@ static void testAllArticleGraphs(void) {
     }
 }
 
+static NSString *splitProgram(NSString *version, NSString *opset,
+                              NSString *results) {
+    return [NSString stringWithFormat:
+        @"program(%@) { func main<%@>(tensor<fp16, [1, 2048, 375]> x) { "
+         "tensor<int32, []> count = const()[val = tensor<int32, []>(2)]; "
+         "tensor<int32, []> axis = const()[val = tensor<int32, []>(1)]; "
+         "%@ = split(axis = axis, num_splits = count, x = x); "
+         "tensor<fp16, [1, 1024, 375]> gate = sigmoid(x = second); "
+         "tensor<fp16, [1, 1024, 375]> y = mul(x = first, y = gate); "
+         "} -> (y); }", version, opset, results];
+}
+
+static void testOrderedResultImport(void) {
+    NSString *results =
+        @"(tensor<fp16, [1, 1024, 375]> first, "
+         "tensor<fp16, [1, 1024, 375]> second)";
+    ANEDiagnosticEngine *diagnostics = nil;
+    ANEGraphModule *module = importData(
+        [splitProgram(@"1", @"CoreML8", results)
+         dataUsingEncoding:NSUTF8StringEncoding], &diagnostics);
+    expect(module != nil && diagnostics.errorCount == 0,
+           @"two-output split imports and verifies");
+    ANEGraphFunction *function = module.functions[0];
+    expect([module.version isEqualToString:@"1"] &&
+           [function.opset isEqualToString:@"CoreML8"],
+           @"semantic graph retains program version and function opset");
+    ANEGraphOperation *split = operationNamed(function, @"first");
+    expect(split.results.count == 2 &&
+           [split.results[0].name isEqualToString:@"first"] &&
+           [split.results[1].name isEqualToString:@"second"],
+           @"semantic import preserves result order");
+    expect(split.results[0].producer == split &&
+           split.results[1].producer == split,
+           @"every imported result records the same producer");
+    ANEGraphOperation *sigmoid = operationNamed(function, @"gate");
+    ANEGraphOperation *mul = operationNamed(function, @"y");
+    expect(sigmoid.operands[@"x"].value == split.results[1] &&
+           mul.operands[@"x"].value == split.results[0],
+           @"consumers bind the intended ordered split results");
+}
+
 static void testSemanticFailures(void) {
     NSArray<NSDictionary<NSString *, NSString *> *> *cases = @[
         @{
@@ -130,6 +171,42 @@ static void testSemanticFailures(void) {
             @"source": @"program(1.3) { func main<ios18>(fp16 x) { "
                         "int8 y = relu(x = x); } -> (y); }"
         },
+        @{
+            @"label": @"duplicate operation result",
+            @"code": @"mil.import.duplicate-value",
+            @"source": @"program(1) { func main<CoreML8>(fp16 x) { "
+                        "(fp16 y, fp16 y) = split(x = x); } -> (y); }"
+        },
+        @{
+            @"label": @"mismatched split constant type",
+            @"code": @"ane.verify.split-constant-parameters",
+            @"source": @"program(1) { func main<CoreML8>(tensor<fp16, [1, 2048, 375]> x) { "
+                        "tensor<int32, []> count = const()[val = tensor<int32, []>(2)]; "
+                        "tensor<fp16, []> axis = const()[val = tensor<int32, []>(1)]; "
+                        "(tensor<fp16, [1, 1024, 375]> first, tensor<fp16, [1, 1024, 375]> second) = split(axis = axis, num_splits = count, x = x); "
+                        "} -> (first, second); }"
+        },
+        @{
+            @"label": @"split result arity",
+            @"code": @"ane.verify.split-result-arity",
+            @"source": @"program(1) { func main<CoreML8>(tensor<fp16, [1, 2048, 375]> x) { "
+                        "tensor<int32, []> count = const()[val = tensor<int32, []>(2)]; "
+                        "tensor<int32, []> axis = const()[val = tensor<int32, []>(1)]; "
+                        "tensor<fp16, [1, 1024, 375]> first = split(axis = axis, num_splits = count, x = x); "
+                        "} -> (first); }"
+        },
+        @{
+            @"label": @"unsupported program version",
+            @"code": @"ane.verify.unsupported-program-version",
+            @"source": @"program(2) { func main<CoreML8>(fp16 x) { "
+                        "fp16 y = relu(x = x); } -> (y); }"
+        },
+        @{
+            @"label": @"unsupported function opset",
+            @"code": @"ane.verify.unsupported-opset",
+            @"source": @"program(1) { func main<CoreML9>(fp16 x) { "
+                        "fp16 y = relu(x = x); } -> (y); }"
+        },
     ];
     for (NSDictionary<NSString *, NSString *> *testCase in cases) {
         ANEDiagnosticEngine *diagnostics = nil;
@@ -150,6 +227,7 @@ int main(void) {
     @autoreleasepool {
         testConvGraph();
         testAllArticleGraphs();
+        testOrderedResultImport();
         testSemanticFailures();
         printf("graph import: %s\n", failures == 0 ? "PASS" : "FAIL");
     }

@@ -78,14 +78,14 @@
 
 @implementation ANEGraphOperation
 - (instancetype)initWithOperationName:(NSString *)operationName
-                                result:(ANEGraphValue *)result
+                               results:(NSArray<ANEGraphValue *> *)results
                              arguments:(NSDictionary<NSString *,ANEGraphArgument *> *)arguments
                             attributes:(NSDictionary<NSString *,ANEGraphArgument *> *)attributes
                                  range:(ANESourceRange)range {
     self = [super init];
     if (self) {
         _operationName = [operationName copy];
-        _result = result;
+        _results = [results copy];
         _arguments = [arguments copy];
         _attributes = [attributes copy];
         NSMutableDictionary *operands = [NSMutableDictionary dictionary];
@@ -97,7 +97,8 @@
             }];
         _operands = [operands copy];
         _range = range;
-        [result setDefiningOperation:self];
+        for (ANEGraphValue *result in _results)
+            [result setDefiningOperation:self];
     }
     return self;
 }
@@ -105,12 +106,14 @@
 
 @implementation ANEGraphFunction
 - (instancetype)initWithName:(NSString *)name
+                         opset:(NSString *)opset
                         inputs:(NSArray<ANEGraphValue *> *)inputs
                     operations:(NSArray<ANEGraphOperation *> *)operations
                    returnValues:(NSArray<ANEGraphValue *> *)returnValues {
     self = [super init];
     if (self) {
         _name = [name copy];
+        _opset = [opset copy];
         _inputs = [inputs copy];
         _operations = [operations copy];
         _returnValues = [returnValues copy];
@@ -120,9 +123,13 @@
 @end
 
 @implementation ANEGraphModule
-- (instancetype)initWithFunctions:(NSArray<ANEGraphFunction *> *)functions {
+- (instancetype)initWithVersion:(NSString *)version
+                       functions:(NSArray<ANEGraphFunction *> *)functions {
     self = [super init];
-    if (self) _functions = [functions copy];
+    if (self) {
+        _version = [version copy];
+        _functions = [functions copy];
+    }
     return self;
 }
 @end

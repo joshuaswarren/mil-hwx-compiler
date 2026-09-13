@@ -56,19 +56,23 @@ typedef NS_ENUM(NSUInteger, MILExpressionKind) {
 - (instancetype)initWithType:(MILTypeSyntax *)type name:(NSString *)name;
 @end
 
+@interface MILResultSyntax : NSObject
+@property(nonatomic, readonly) MILTypeSyntax *type;
+@property(nonatomic, readonly, copy) NSString *name;
+- (instancetype)initWithType:(MILTypeSyntax *)type name:(NSString *)name;
+@end
+
 @interface MILOperationSyntax : NSObject
-@property(nonatomic, readonly) MILTypeSyntax *resultType;
-@property(nonatomic, readonly, copy) NSString *resultName;
+@property(nonatomic, readonly, copy) NSArray<MILResultSyntax *> *results;
 @property(nonatomic, readonly, copy) NSString *operationName;
 @property(nonatomic, readonly, copy) NSArray<MILArgumentSyntax *> *arguments;
 @property(nonatomic, readonly, copy) NSArray<MILArgumentSyntax *> *attributes;
 @property(nonatomic, readonly) ANESourceRange range;
-- (instancetype)initWithResultType:(MILTypeSyntax *)resultType
-                         resultName:(NSString *)resultName
-                      operationName:(NSString *)operationName
-                          arguments:(NSArray<MILArgumentSyntax *> *)arguments
-                         attributes:(NSArray<MILArgumentSyntax *> *)attributes
-                              range:(ANESourceRange)range;
+- (instancetype)initWithResults:(NSArray<MILResultSyntax *> *)results
+                   operationName:(NSString *)operationName
+                       arguments:(NSArray<MILArgumentSyntax *> *)arguments
+                      attributes:(NSArray<MILArgumentSyntax *> *)attributes
+                           range:(ANESourceRange)range;
 @end
 
 @interface MILFunctionSyntax : NSObject
