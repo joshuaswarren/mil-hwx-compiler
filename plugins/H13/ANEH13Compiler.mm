@@ -153,11 +153,66 @@ static BOOL int32TensorScalar(ANEGraphValue *value, long long *result) {
     return int32Literal(literal.callArguments[0].value, result);
 }
 
+static NSArray<NSNumber *> *int32TensorElements(ANEGraphValue *value) {
+    if (!value || ![value.producer.operationName isEqualToString:@"const"] ||
+        value.producer.arguments.count ||
+        value.type.kind != ANEValueTypeKindTensor ||
+        value.type.shape.count != 1 ||
+        value.type.elementType != ANEElementTypeInt32) return nil;
+    const NSUInteger count = value.type.shape[0].unsignedIntegerValue;
+    if (!count || count > 64) return nil;
+    ANEGraphArgument *literal = value.producer.attributes[@"val"];
+    if (literal.kind != ANEGraphArgumentKindCall ||
+        ![literal.calleeValueType isEqualToValueType:value.type] ||
+        literal.callArguments.count != 1) return nil;
+    ANEGraphArgument *payload = literal.callArguments[0].value;
+    if (payload.kind != ANEGraphArgumentKindList ||
+        payload.elements.count != count) return nil;
+    NSMutableArray<NSNumber *> *elements =
+        [NSMutableArray arrayWithCapacity:count];
+    for (ANEGraphArgument *element in payload.elements) {
+        long long parsed = 0;
+        if (!int32Literal(element, &parsed)) return nil;
+        [elements addObject:@(parsed)];
+    }
+    return elements;
+}
+
+static NSArray<NSNumber *> *boolTensorElements(ANEGraphValue *value) {
+    if (!value || ![value.producer.operationName isEqualToString:@"const"] ||
+        value.producer.arguments.count ||
+        value.type.kind != ANEValueTypeKindTensor ||
+        value.type.shape.count != 1 ||
+        value.type.elementType != ANEElementTypeBool) return nil;
+    NSUInteger count = value.type.shape[0].unsignedIntegerValue;
+    if (!count || count > 64) return nil;
+    ANEGraphArgument *literal = value.producer.attributes[@"val"];
+    if (literal.kind != ANEGraphArgumentKindCall ||
+        ![literal.calleeValueType isEqualToValueType:value.type] ||
+        literal.callArguments.count != 1) return nil;
+    ANEGraphArgument *payload = literal.callArguments[0].value;
+    if (payload.kind != ANEGraphArgumentKindList ||
+        payload.elements.count != count) return nil;
+    NSMutableArray<NSNumber *> *elements =
+        [NSMutableArray arrayWithCapacity:count];
+    for (ANEGraphArgument *element in payload.elements) {
+        if (element.kind != ANEGraphArgumentKindBoolean ||
+            (![element.text isEqualToString:@"true"] &&
+             ![element.text isEqualToString:@"false"])) return nil;
+        [elements addObject:@([element.text isEqualToString:@"true"])];
+    }
+    return elements;
+}
+
 static BOOL viewOperation(NSString *name) {
     return [name isEqualToString:@"reshape"] ||
         [name isEqualToString:@"squeeze"] ||
         [name isEqualToString:@"expand_dims"] ||
-        [name isEqualToString:@"split"];
+        [name isEqualToString:@"split"] ||
+        [name isEqualToString:@"slice_by_index"] ||
+        [name isEqualToString:@"pad"] ||
+        [name isEqualToString:@"tile"] ||
+        [name isEqualToString:@"transpose"];
 }
 
 static ANEGraphValue *storageOrigin(ANEGraphValue *value) {
@@ -223,6 +278,255 @@ static BOOL splitAliasPlan(ANEGraphOperation *operation,
                 operation, @"h13.invalid-split-shape");
     }
     plan->resultElements = resultElements;
+    return YES;
+}
+/// A MIL transpose resolves to one of three host-side forms: a free alias
+/// when the permutation preserves the row-major element order (only unit
+/// dimensions move), a fold into a consuming matmul's transpose flag when
+/// the permutation swaps the operand's trailing two dimensions, or an exact
+/// rejection because the binding ABI carries one contiguous slice per
+/// operand and the decoded corpus holds no data-movement encoder.
+struct H13TransposeViewPlan {
+    BOOL layoutPreserving;
+    BOOL tailSwap;
+};
+
+static BOOL transposeViewPlan(ANEGraphOperation *operation,
+                              ANEDiagnosticEngine *diagnostics,
+                              H13TransposeViewPlan *plan) {
+    ANEGraphValue *x = operation.operands[@"x"].value;
+    NSArray<NSNumber *> *perm =
+        int32TensorElements(operation.operands[@"perm"].value);
+    if (operation.results.count != 1 || operation.arguments.count != 2 ||
+        !x || perm.count != x.type.shape.count ||
+        !fp16Tensor(x) || !x.type.shape.count)
+        return reject(diagnostics,
+            @"H13 transpose requires x and an exact rank-matching tensor<int32,[rank]> perm constant over a positive-rank static fp16 input",
+            operation, @"h13.invalid-transpose-parameters");
+    const NSUInteger rank = x.type.shape.count;
+    std::vector<NSUInteger> source(rank);
+    for (NSUInteger index = 0; index < rank; ++index) {
+        long long axis = perm[index].longLongValue;
+        if (axis < 0) axis += (long long)rank;
+        if (axis < 0 || axis >= (long long)rank)
+            return reject(diagnostics,
+                @"H13 transpose perm is out of range",
+                operation, @"h13.invalid-transpose-parameters");
+        source[index] = (NSUInteger)axis;
+    }
+    for (NSUInteger outer = 0; outer < rank; ++outer)
+        for (NSUInteger inner = outer + 1; inner < rank; ++inner)
+            if (source[outer] == source[inner])
+                return reject(diagnostics,
+                    @"H13 transpose perm must list every axis exactly once",
+                    operation, @"h13.invalid-transpose-parameters");
+    NSMutableArray<NSNumber *> *expected =
+        [NSMutableArray arrayWithCapacity:rank];
+    for (NSUInteger index = 0; index < rank; ++index)
+        [expected addObject:x.type.shape[source[index]]];
+    if (operation.results[0].type.kind != ANEValueTypeKindTensor ||
+        ![operation.results[0].type.shape isEqualToArray:expected])
+        return reject(diagnostics,
+            @"H13 transpose result shape must be the permuted input shape",
+            operation, @"h13.invalid-transpose-parameters");
+    // The row-major element order survives a permutation exactly when every
+    // free output dimension reads its input dimension with the same stride:
+    // for each output axis whose moved-in extent is non-unit (unit extents
+    // are always the constant index zero), the product of the non-unit
+    // extents after it must equal its input dimension's input stride.
+    BOOL preserving = YES;
+    for (NSUInteger index = 0; index < rank && preserving; ++index) {
+        const NSUInteger movedIn =
+            x.type.shape[source[index]].unsignedIntegerValue;
+        if (movedIn == 1) continue;
+        unsigned long long outSuffix = 1, inSuffix = 1;
+        for (NSUInteger after = index + 1; after < rank; ++after) {
+            const NSUInteger extent =
+                x.type.shape[source[after]].unsignedIntegerValue;
+            if (extent != 1) {
+                if (outSuffix > ULLONG_MAX / extent) {
+                    preserving = NO;
+                    break;
+                }
+                outSuffix *= extent;
+            }
+        }
+        if (!preserving) break;
+        for (NSUInteger after = source[index] + 1; after < rank; ++after) {
+            const NSUInteger extent =
+                x.type.shape[after].unsignedIntegerValue;
+            if (inSuffix > ULLONG_MAX / extent) {
+                preserving = NO;
+                break;
+            }
+            inSuffix *= extent;
+        }
+        if (preserving) preserving = outSuffix == inSuffix;
+    }
+    BOOL tail = rank >= 2;
+    for (NSUInteger index = 0; index + 2 < rank; ++index)
+        if (source[index] != index) tail = NO;
+    if (source[rank - 2] != rank - 1 || source[rank - 1] != rank - 2) tail = NO;
+    plan->layoutPreserving = preserving;
+    plan->tailSwap = tail;
+    return YES;
+}
+
+/// A contiguous slice_by_index lowers as one offset view of its storage:
+/// unit strides, at most one sliced dimension, unit dimensions before it,
+/// and end_mask/begin_mask/negative bounds resolved to literal ranges.
+struct H13SliceViewPlan {
+    NSUInteger offset;
+    NSUInteger resultElements;
+    BOOL identity;
+};
+
+static BOOL sliceByIndexViewPlan(ANEGraphOperation *operation,
+                                 ANEDiagnosticEngine *diagnostics,
+                                 H13SliceViewPlan *plan) {
+    ANEGraphValue *x = operation.operands[@"x"].value;
+    NSArray<NSNumber *> *begin =
+        int32TensorElements(operation.operands[@"begin"].value);
+    NSArray<NSNumber *> *end =
+        int32TensorElements(operation.operands[@"end"].value);
+    NSArray<NSNumber *> *endMask =
+        boolTensorElements(operation.operands[@"end_mask"].value);
+    NSArray<NSNumber *> *beginMask =
+        boolTensorElements(operation.operands[@"begin_mask"].value);
+    NSArray<NSNumber *> *stride =
+        int32TensorElements(operation.operands[@"stride"].value);
+    NSArray<NSNumber *> *mask =
+        boolTensorElements(operation.operands[@"mask"].value);
+    NSArray<NSNumber *> *squeezeMask =
+        boolTensorElements(operation.operands[@"squeeze_mask"].value);
+    if (operation.results.count != 1 || !x ||
+        !fp16Tensor(x) || !x.type.shape.count ||
+        x.type.shape.count > 64 || !begin || !end ||
+        begin.count != x.type.shape.count ||
+        end.count != x.type.shape.count)
+        return reject(diagnostics,
+            @"H13 slice_by_index requires x with exact rank-matching tensor<int32,[rank]> begin and end constants over a positive-rank static fp16 input",
+            operation, @"h13.invalid-slice-parameters");
+    const NSUInteger rank = x.type.shape.count;
+    if ((endMask && endMask.count != rank) ||
+        (beginMask && beginMask.count != rank) ||
+        (stride && stride.count != rank) ||
+        (mask && mask.count != rank) ||
+        (squeezeMask && squeezeMask.count != rank))
+        return reject(diagnostics,
+            @"H13 slice_by_index mask and stride constants must match the input rank",
+            operation, @"h13.invalid-slice-parameters");
+    for (NSUInteger index = 0; index < rank; ++index) {
+        if (mask && !mask[index].boolValue)
+            return reject(diagnostics,
+                @"H13 slice_by_index cannot lower a false mask entry because the dropped axis leaves the one-slice binding ABI",
+                operation, @"h13.noncontiguous-slice");
+        if (squeezeMask && squeezeMask[index].boolValue)
+            return reject(diagnostics,
+                @"H13 slice_by_index cannot lower a squeeze_mask entry because the dropped axis leaves the one-slice binding ABI",
+                operation, @"h13.noncontiguous-slice");
+        if (stride && stride[index].longLongValue != 1)
+            return reject(diagnostics,
+                @"H13 slice_by_index requires unit strides because a strided view is not one contiguous binding slice",
+                operation, @"h13.noncontiguous-slice");
+    }
+    NSInteger slicedAxis = -1;
+    long long sliceBegin = 0;
+    for (NSUInteger index = 0; index < rank; ++index) {
+        const NSUInteger extent =
+            x.type.shape[index].unsignedIntegerValue;
+        long long lower = begin[index].longLongValue;
+        long long upper = endMask && endMask[index].boolValue
+            ? (long long)extent : end[index].longLongValue;
+        if (beginMask && beginMask[index].boolValue) lower = 0;
+        if (lower < 0) lower += (long long)extent;
+        if (upper < 0) upper += (long long)extent;
+        if (lower < 0 || lower > (long long)extent ||
+            upper < lower || upper > (long long)extent)
+            return reject(diagnostics,
+                @"H13 slice_by_index ranges must resolve inside [0, extent] with end not below begin",
+                operation, @"h13.invalid-slice-range");
+        if (lower == 0 && upper == (long long)extent) continue;
+        if (slicedAxis >= 0)
+            return reject(diagnostics,
+                @"H13 slice_by_index can slice at most one dimension because interleaved output chunks exceed the one-slice binding ABI",
+                operation, @"h13.noncontiguous-slice");
+        slicedAxis = (NSInteger)index;
+        sliceBegin = lower;
+    }
+    NSUInteger trailing = 1;
+    for (NSUInteger index = slicedAxis == -1 ? rank : (NSUInteger)slicedAxis + 1;
+         index < rank; ++index)
+        trailing *= x.type.shape[index].unsignedIntegerValue;
+    for (NSUInteger index = 0;
+         slicedAxis >= 0 && index < (NSUInteger)slicedAxis; ++index)
+        if (x.type.shape[index].unsignedIntegerValue != 1)
+            return reject(diagnostics,
+                @"H13 slice_by_index requires unit dimensions before its sliced axis because one binding slice cannot represent interleaved output chunks",
+                operation, @"h13.noncontiguous-slice");
+    NSUInteger inputElements = 0, resultElements = 0;
+    if (!tensorElementCount(x, &inputElements) ||
+        !tensorElementCount(operation.results[0], &resultElements))
+        return reject(diagnostics,
+            @"H13 slice_by_index requires static fp16 input and result shapes",
+            operation, @"h13.invalid-slice-shape");
+    NSUInteger offset = 0;
+    if (slicedAxis >= 0) {
+        const NSUInteger extent =
+            x.type.shape[(NSUInteger)slicedAxis].unsignedIntegerValue;
+        const NSUInteger count = extent - (NSUInteger)sliceBegin;
+        const NSUInteger sliceOffset = (NSUInteger)sliceBegin;
+        if (count > NSUIntegerMax / trailing || resultElements > NSUIntegerMax / 2 ||
+            count * trailing != resultElements || sliceOffset > NSUIntegerMax / trailing)
+            return reject(diagnostics,
+                @"H13 slice_by_index result shape must equal the sliced extents",
+                operation, @"h13.invalid-slice-shape");
+        offset = sliceOffset * trailing;
+    } else if (resultElements != inputElements) {
+        return reject(diagnostics,
+            @"H13 slice_by_index result shape must equal the sliced extents",
+            operation, @"h13.invalid-slice-shape");
+    }
+    plan->offset = offset;
+    plan->resultElements = resultElements;
+    plan->identity = offset == 0 && resultElements == inputElements;
+    return YES;
+}
+
+/// pad and tile only lower as identity views: any replicated or padded
+/// element needs a producer program, and the decoded corpus holds none.
+static BOOL identityExtentViewPlan(ANEGraphOperation *operation,
+                                   NSString *parameter,
+                                   long long identityExtent,
+                                   ANEDiagnosticEngine *diagnostics,
+                                   NSString *unsupportedCode) {
+    ANEGraphValue *x = operation.operands[@"x"].value;
+    NSArray<NSNumber *> *extents =
+        int32TensorElements(operation.operands[parameter].value);
+    if (operation.results.count != 1 || !x || !fp16Tensor(x) ||
+        !x.type.shape.count)
+        return reject(diagnostics,
+            [NSString stringWithFormat:
+                @"H13 %@ requires x and an exact tensor<int32,[rank]> %@ constant over a positive-rank static fp16 input",
+                operation.operationName, parameter],
+            operation, @"h13.invalid-view-parameters");
+    for (NSNumber *extent in extents)
+        if (extent.longLongValue != identityExtent)
+            return reject(diagnostics,
+                [NSString stringWithFormat:
+                    @"H13 %@ with a non-identity %@ needs a data-movement program: every decoded H13 encoder writes an output surface of its input's shape and the binding ABI carries one contiguous slice, so no host-side form can materialize the grown region",
+                    operation.operationName, parameter],
+                operation, unsupportedCode);
+    NSUInteger inputElements = 0, resultElements = 0;
+    if (!tensorElementCount(x, &inputElements) ||
+        !tensorElementCount(operation.results[0], &resultElements) ||
+        inputElements != resultElements ||
+        ![operation.results[0].type.shape isEqualToArray:x.type.shape])
+        return reject(diagnostics,
+            [NSString stringWithFormat:
+                @"H13 %@ identity view requires result shapes equal to x",
+                operation.operationName],
+            operation, @"h13.invalid-view-shape");
     return YES;
 }
 
@@ -1618,6 +1922,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         [NSMapTable strongToStrongObjectsMapTable];
     NSMapTable<ANEGraphValue *, NSNumber *> *valueBaseOffsets =
         [NSMapTable strongToStrongObjectsMapTable];
+    NSMutableDictionary<NSString *, NSDictionary *> *transposeFolds =
+        [NSMutableDictionary dictionary];
     for (ANEGraphOperation *candidate in sourceOperations) {
         NSMutableDictionary<NSString *, ANEGraphArgument *> *arguments =
             [candidate.arguments mutableCopy];
@@ -1647,6 +1953,118 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             }
             continue;
         }
+        if ([name isEqualToString:@"transpose"]) {
+            H13TransposeViewPlan plan{};
+            if (!transposeViewPlan(candidate, diagnostics, &plan)) return NO;
+            if (plan.layoutPreserving) {
+                if (constantBackedView(candidate.operands[@"x"].value))
+                    return reject(diagnostics,
+                        @"H13 cannot lower transposed views backed by constant storage",
+                        candidate, @"h13.unsupported-constant-view-source");
+                ANEGraphValue *alias = [[ANEGraphValue alloc]
+                    initWithName:x.name type:candidate.results[0].type];
+                NSNumber *baseOffset = [valueBaseOffsets objectForKey:x];
+                if (baseOffset) {
+                    [valueBaseOffsets setObject:baseOffset forKey:alias];
+                } else {
+                    aliases[candidate.results[0].name] = @{
+                        @"aliasOf": x.name,
+                        @"shape": candidate.results[0].type.shape};
+                    [manifestValues addObject:candidate.results[0]];
+                }
+                [loweredValues setObject:alias forKey:candidate.results[0]];
+                continue;
+            }
+            NSUInteger uses = 0;
+            NSString *operandKey = nil;
+            ANEGraphOperation *consumer = nil;
+            for (ANEGraphOperation *other in sourceOperations) {
+                if (other == candidate) continue;
+                for (NSString *key in other.operands)
+                    if (other.operands[key].value == candidate.results[0]) {
+                        ++uses;
+                        operandKey = key;
+                        consumer = other;
+                    }
+            }
+            for (ANEGraphValue *returnedValue in function.returnValues)
+                if (returnedValue == candidate.results[0]) uses = 2;
+            BOOL foldable = plan.tailSwap && uses == 1 && consumer &&
+                [consumer.operationName isEqualToString:@"matmul"] &&
+                ([operandKey isEqualToString:@"x"] ||
+                 [operandKey isEqualToString:@"y"]);
+            if (!foldable)
+                return reject(diagnostics,
+                    plan.tailSwap
+                        ? (uses == 1
+                            ? @"H13 tail-swap transpose only folds into a consuming matmul's x or y operand because that is the only consumer with a transpose flag able to absorb the permutation"
+                            : @"H13 tail-swap transpose with several consumers or a returned value needs a materialized transposed surface, and the decoded corpus holds no data-movement encoder")
+                        : @"H13 transpose whose permutation moves a non-unit leading dimension needs a data-movement program: the one-slice binding ABI reads storage row-major and the decoded corpus holds no encoder that permutes surface strides",
+                    candidate, @"h13.nonfoldable-transpose");
+            transposeFolds[candidate.results[0].name] = @{
+                @"value": x,
+                @"flag": [operandKey isEqualToString:@"x"]
+                    ? @"transpose_x" : @"transpose_y"};
+            continue;
+        }
+        if ([name isEqualToString:@"slice_by_index"]) {
+            H13SliceViewPlan plan{};
+            if (!sliceByIndexViewPlan(candidate, diagnostics, &plan)) return NO;
+            if (constantBackedView(candidate.operands[@"x"].value))
+                return reject(diagnostics,
+                    @"H13 cannot lower slice views backed by constant storage",
+                    candidate, @"h13.unsupported-constant-view-source");
+            NSNumber *baseOffset = [valueBaseOffsets objectForKey:x];
+            if (plan.identity && !baseOffset) {
+                aliases[candidate.results[0].name] = @{
+                    @"aliasOf": x.name,
+                    @"shape": candidate.results[0].type.shape};
+                [manifestValues addObject:candidate.results[0]];
+                ANEGraphValue *alias = [[ANEGraphValue alloc]
+                    initWithName:x.name type:candidate.results[0].type];
+                [loweredValues setObject:alias forKey:candidate.results[0]];
+            } else {
+                NSUInteger base = baseOffset.unsignedIntegerValue;
+                if (plan.offset > NSUIntegerMax - base ||
+                    plan.resultElements > NSUIntegerMax - base)
+                    return reject(diagnostics,
+                        @"H13 slice view offset overflows",
+                        candidate, @"h13.invalid-slice-shape");
+                ANEGraphValue *alias = [[ANEGraphValue alloc]
+                    initWithName:x.name type:candidate.results[0].type];
+                [loweredValues setObject:alias forKey:candidate.results[0]];
+                [valueBaseOffsets setObject:@(base + plan.offset) forKey:alias];
+            }
+            continue;
+        }
+        if ([name isEqualToString:@"pad"] || [name isEqualToString:@"tile"]) {
+            BOOL padding = [name isEqualToString:@"pad"];
+            if (!identityExtentViewPlan(candidate, padding ? @"pad" : @"reps",
+                                        padding ? 0 : 1, diagnostics,
+                                        padding ? @"h13.unsupported-pad"
+                                                : @"h13.unsupported-tile"))
+                return NO;
+            if (constantBackedView(candidate.operands[@"x"].value))
+                return reject(diagnostics,
+                    @"H13 cannot lower identity views backed by constant storage",
+                    candidate, @"h13.unsupported-constant-view-source");
+            NSNumber *baseOffset = [valueBaseOffsets objectForKey:x];
+            if (baseOffset) {
+                ANEGraphValue *alias = [[ANEGraphValue alloc]
+                    initWithName:x.name type:candidate.results[0].type];
+                [valueBaseOffsets setObject:baseOffset forKey:alias];
+                [loweredValues setObject:alias forKey:candidate.results[0]];
+            } else {
+                aliases[candidate.results[0].name] = @{
+                    @"aliasOf": x.name,
+                    @"shape": candidate.results[0].type.shape};
+                [manifestValues addObject:candidate.results[0]];
+                ANEGraphValue *alias = [[ANEGraphValue alloc]
+                    initWithName:x.name type:candidate.results[0].type];
+                [loweredValues setObject:alias forKey:candidate.results[0]];
+            }
+            continue;
+        }
         BOOL reshape = [name isEqualToString:@"reshape"];
         BOOL squeeze = [name isEqualToString:@"squeeze"];
         BOOL expand = [name isEqualToString:@"expand_dims"];
@@ -1665,7 +2083,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 inputElements != resultElements)
                 return reject(diagnostics,
                     @"H13 shape aliases require static fp16 input and result shapes with equal element counts and constant shape parameters",
-                    candidate, @"h13.invalid-shape-alias");
+                candidate, @"h13.invalid-shape-alias");
             if (constantBackedView(candidate.operands[@"x"].value))
                 return reject(diagnostics,
                     @"H13 cannot lower shape views backed by constant storage",
@@ -1747,6 +2165,16 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             [manifestValues addObject:result];
         } else if ([name isEqualToString:@"matmul"] ||
                    [name isEqualToString:@"linear"]) {
+            for (NSString *operand in @[@"x", @"y"]) {
+                NSDictionary *fold =
+                    transposeFolds[candidate.operands[operand].value.name];
+                if (!fold) continue;
+                arguments[operand] = valueArgument(fold[@"value"], candidate.range);
+                arguments[fold[@"flag"]] = booleanArgument(
+                    !boolean(arguments[fold[@"flag"]], YES), candidate.range);
+                if ([operand isEqualToString:@"x"])
+                    x = arguments[@"x"].value;
+            }
             BOOL linear = [name isEqualToString:@"linear"];
             ANEGraphValue *weight = linear ? arguments[@"weight"].value
                                            : arguments[@"y"].value;
