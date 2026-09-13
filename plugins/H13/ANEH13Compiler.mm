@@ -1670,6 +1670,26 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             // Both operands runtime: attention's QK^T and PV. Apple stages the
             // second operand as its own surface, so there is nothing to pack
             // and nothing to slice.
+            BOOL batchedOperand = NO;
+            NSUInteger batchExtent = 1;
+            for (NSUInteger index = 0; index + 2 < y.type.shape.count; ++index) {
+                const NSUInteger extent =
+                    y.type.shape[index].unsignedIntegerValue;
+                if (extent != 1) {
+                    batchedOperand = YES;
+                    batchExtent *= extent;
+                }
+            }
+            if (!runtimeMatmulOperand(y, reduction, columns, transposeY,
+                                      x.type.shape.count) && batchedOperand)
+                return reject(diagnostics,
+                    [NSString stringWithFormat:
+                        @"H13 batched runtime-operand matmul needs a primitive the decoded corpus does not hold: every decoded matmul template is (rows, reduction, columns) with both runtime operands as single [rows, width] planes — no template carries a batch axis, a batch-strided second-operand surface, or any 375/749 extent, and flattening the %@ leading dimensions into rows would multiply every batch against one shared y instead of the per-batch y this graph carries; the primitive that serves it is a batched matvec iterating B=%lu GEMMs over the batch-major contiguous operand slices (x[b] at b*rows*reduction, y[b] at its transpose-shaped base, out[b] at b*rows*columns), which needs new decoded oracle captures",
+                        x.type.shape.count > 2 ?
+                            [NSString stringWithFormat:@"%lu leading",
+                                (unsigned long)(x.type.shape.count - 2)] : @"its",
+                        (unsigned long)batchExtent],
+                    operation, @"h13.matmul-outside-envelope");
             if (!runtimeMatmulOperand(y, reduction, columns, transposeY,
                                       x.type.shape.count) ||
                 !matmulParityShape(x, operation.results[0], transposeX, transposeY,
@@ -1688,10 +1708,27 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             return YES;
         }
         if (!tensor(y, transposeY ? @[@(columns), @(reduction)]
-                                  : @[@(reduction), @(columns)]))
+                                  : @[@(reduction), @(columns)])) {
+            BOOL batchedWeight = NO;
+            NSUInteger batchExtent = 1;
+            for (NSUInteger index = 0; index + 2 < y.type.shape.count; ++index) {
+                const NSUInteger extent =
+                    y.type.shape[index].unsignedIntegerValue;
+                if (extent != 1) {
+                    batchedWeight = YES;
+                    batchExtent *= extent;
+                }
+            }
+            if (batchedWeight)
+                return reject(diagnostics,
+                    [NSString stringWithFormat:
+                        @"H13 batched constant weight needs a per-batch decomposition the decoded corpus cannot serve: the matvec program model carries one constant section per program, so B=%lu per-batch weights would need B programs over the batch-major contiguous x and output slices, and no decoded geometry covers their (rows, reduction, columns) — the same batched matvec primitive the runtime-operand path needs",
+                        (unsigned long)batchExtent],
+                    operation, @"h13.matmul-outside-envelope");
             return reject(diagnostics,
                 @"H13 matmul requires a constant rank-2 W shaped by transpose_y",
                 operation);
+        }
         NSData *synthesizedWeight = synthesizedConstants[y.name];
         if (synthesizedWeight) {
             // A channel-plane chunk weight synthesized by the composite
