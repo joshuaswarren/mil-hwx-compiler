@@ -17,7 +17,7 @@ PARITY_MATMUL = 'apple-parity-matmul'
 PARITY_BROADCAST = 'apple-parity-broadcast'
 PROGRAM_FIELDS = (
     'file', 'bytes', 'taskDescriptors', 'encoder', 'operation', 'inputs',
-    'constantInputs', 'outputs', 'constantOffset', 'constantBytes')
+    'constantInputs', 'outputs', 'constantOffset', 'constantBytes', 'scratchBytes')
 
 
 def surface_layout(shape):
@@ -96,12 +96,11 @@ def binding_interval(binding, tensors):
         count = tensor['logicalBytes'] // 2
         return tensor_name, 0, count, count
     fields = set(slice_record) if isinstance(slice_record, dict) else set()
-    require(fields in ({'tensor', 'elementOffset', 'elementCount'},
-                       {'tensor', 'elementOffset', 'elementCount',
-                        'physicalElements'}), 'slice has incorrect fields')
+    require(fields == {'tensor', 'elementOffset', 'elementCount',
+                       'physicalElements'}, 'slice has incorrect fields')
     tensor_name = slice_record.get('tensor')
     offset, count = slice_record.get('elementOffset'), slice_record.get('elementCount')
-    physical = slice_record.get('physicalElements', count)
+    physical = slice_record.get('physicalElements')
     require(tensor_name == binding['name'] and tensor_name in tensors,
             'slice references an unknown or mismatched tensor')
     require('aliasOf' not in tensors[tensor_name],
@@ -202,7 +201,7 @@ def validate_program(directory, program, tensors):
     tiles, layouts = fields[7:39], fields[39:]
     require(tiles[0] == (size + TILE_BYTES - 1) // TILE_BYTES,
             'incorrect command allocation')
-    scratch = program.get('scratchBytes', 0)
+    scratch = program.get('scratchBytes')
     require(type(scratch) is int and 0 <= scratch <= 0xffffffff * TILE_BYTES,
             'invalid scratch allocation size')
     require(tiles[3] == (scratch + TILE_BYTES - 1) // TILE_BYTES,

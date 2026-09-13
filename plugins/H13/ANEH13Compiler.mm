@@ -153,6 +153,26 @@ static BOOL int32TensorScalar(ANEGraphValue *value, long long *result) {
     return int32Literal(literal.callArguments[0].value, result);
 }
 
+static BOOL viewOperation(NSString *name) {
+    return [name isEqualToString:@"reshape"] ||
+        [name isEqualToString:@"squeeze"] ||
+        [name isEqualToString:@"expand_dims"] ||
+        [name isEqualToString:@"split"];
+}
+
+static ANEGraphValue *storageOrigin(ANEGraphValue *value) {
+    while (value && viewOperation(value.producer.operationName)) {
+        ANEGraphValue *source = value.producer.operands[@"x"].value;
+        if (!source || source == value) return nil;
+        value = source;
+    }
+    return value;
+}
+
+static BOOL constantBackedView(ANEGraphValue *value) {
+    ANEGraphValue *origin = storageOrigin(value);
+    return [origin.producer.operationName isEqualToString:@"const"];
+}
 struct H13SplitAliasPlan {
     NSUInteger resultElements;
 };
@@ -168,6 +188,10 @@ static BOOL splitAliasPlan(ANEGraphOperation *operation,
         return reject(diagnostics,
             @"H13 split requires x and exact rank-zero tensor<int32,[]> axis and num_splits constants",
             operation, @"h13.invalid-split-parameters");
+    if (constantBackedView(x))
+        return reject(diagnostics,
+            @"H13 cannot lower split views backed by constant storage",
+            operation, @"h13.unsupported-constant-split-source");
     if (count != 2 || operation.results.count != 2)
         return reject(diagnostics, @"H13 split supports exactly two results",
             operation, @"h13.unsupported-split-count");
@@ -569,10 +593,9 @@ static void recordTensor(NSMutableDictionary<NSString *, NSDictionary *> *tensor
 
 static void addSlice(NSMutableDictionary *record, ANEGraphValue *value,
                      NSUInteger offset, NSUInteger count, NSUInteger physical) {
-    NSMutableDictionary *slice = [@{@"tensor": value.name,
-        @"elementOffset": @(offset), @"elementCount": @(count)} mutableCopy];
-    if (physical != count) slice[@"physicalElements"] = @(physical);
-    record[@"slice"] = slice;
+    record[@"slice"] = @{@"tensor": value.name,
+        @"elementOffset": @(offset), @"elementCount": @(count),
+        @"physicalElements": @(physical)};
 }
 
 static BOOL constantValue(ANEGraphValue *value) {
@@ -1566,6 +1589,10 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 return reject(diagnostics,
                     @"H13 shape aliases require static fp16 input and result shapes with equal element counts and constant shape parameters",
                     candidate, @"h13.invalid-shape-alias");
+            if (constantBackedView(candidate.operands[@"x"].value))
+                return reject(diagnostics,
+                    @"H13 cannot lower shape views backed by constant storage",
+                    candidate, @"h13.unsupported-constant-view-source");
             ANEGraphValue *alias = [[ANEGraphValue alloc]
                 initWithName:x.name type:candidate.results[0].type];
             NSNumber *baseOffset = [valueBaseOffsets objectForKey:x];
