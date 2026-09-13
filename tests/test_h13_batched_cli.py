@@ -118,26 +118,47 @@ def anec_task_stream(path):
 with tempfile.TemporaryDirectory() as temporary:
     root = Path(temporary)
 
-    # Byte-exactness against every runtime capture (rank-3 and rank-4).
+    # Byte-exactness against every capture: task streams reconstructed from
+    # the decoded JSON, constant sections compared against the retained raw
+    # Apple bytes (round-2 _idx captures carry weights.bin and const.bin).
     verified = 0
     for capture in captures:
         record = json.loads(capture.read_text())
-        if record.get("error") or record["parameters"]["w_storage"] != "runtime":
+        if record.get("error") or len(record["task_descriptors"]) % 26 not in (0, 25):
             continue
-        if len(record["task_descriptors"]) % 26:
-            continue  # fold-flag variants are not in this envelope yet
+        root_dir = capture.parent
+        weights = root_dir / (capture.stem + ".weights.bin")
+        const_bin = root_dir / (capture.stem + ".const.bin")
+        if record["parameters"]["w_storage"] == "blob":
+            if weights.exists():
+                blob = weights.read_bytes()
+            else:
+                # Round-1 uniform captures record the payload size only.
+                blob = b"\x00\x38" * (record["weights"]["payload_bytes"] // 2)
+            blob_header = struct.pack("<IxxxxQQ", 0xDEADBEEF, len(blob), 64 + 24)
+            (root / "weights.bin").write_bytes(b"\0" * 64 + blob_header + blob)
         package = compile_source(root, f"cap-{capture.stem}", record["mil"])
         manifest = json.loads((package / "manifest.json").read_text())
         assert len(manifest["programs"]) == 1
         program = manifest["programs"][0]
         batch = record["parameters"]["batch"]
-        assert program["taskDescriptors"] == 26 * batch
-        assert program["encoder"] == "apple-parity-batched-matmul"
+        prefix = record["program_descriptor"]["task_count"] - 26 * batch
+        assert program["taskDescriptors"] == 26 * batch + prefix
+        assert program["encoder"] == (
+            "apple-parity-batched-matmul" if record["parameters"]["w_storage"] == "runtime"
+            else "apple-parity-batched-matvec")
         assert anec_task_stream(package / "program-0.anec") == \
             capture_stream(record), capture.stem
+        if const_bin.exists():
+            anec = (package / "program-0.anec").read_bytes()
+            task_size = struct.unpack_from("<Q", anec, 16)[0]
+            consts_off = (task_size + 127) // 128 * 128
+            consts_size = struct.unpack_from("<Q", anec, 24)[0]
+            emitted = anec[0x1000 + consts_off:0x1000 + consts_off + consts_size]
+            assert emitted == const_bin.read_bytes(), capture.stem
         validate(root, package)
         verified += 1
-    assert verified == 10, f"expected 10 runtime captures, verified {verified}"
+    assert verified >= 24, f"expected every capture, verified {verified}"
 
     # Determinism in both artifact formats.
     sample = json.loads(
@@ -170,17 +191,19 @@ with tempfile.TemporaryDirectory() as temporary:
         expected_code="h13.matmul-outside-envelope",
         expected_message="outside the decoded batched envelope")
 
-    # The V-projection form (transpose_y=true) has no decoded capture yet.
-    body = const("tx", "bool(false)") + const("ty", "bool(true)")
-    body += ("    tensor<fp16, [1, 8, 375, 375]> y = matmul("
+    # The V-projection transpose_y form is captured and covered above; the
+    # both-flags form has no capture and rejects.
+    body = const("tx", "bool(true)") + const("ty", "bool(true)")
+    body += ("    tensor<fp16, [1, 8, 375, 749]> y = matmul("
              "transpose_x = tx, transpose_y = ty, x = a, y = b)"
              "[name = string(\"y\")];\n")
-    compile_source(root, "batched-transpose-y", source(
-        body, header([1, 8, 375, 128]) + " a, " + header([1, 8, 375, 128]) + " b",
+    compile_source(root, "batched-both-flags", source(
+        body, header([1, 8, 375, 128]) + " a, " + header([1, 8, 128, 749]) + " b",
         "y"),
-        expected_code="h13.matmul-outside-envelope")
+        expected_code="h13.unsupported-program",
+        expected_message="H13 matmul requires positive fp16 x rows")
 
-    # Constant-weight batched forms wait for a non-uniform re-mint.
+    # A constant weight whose blob size disagrees with the geometry rejects.
     body = const("tx", "bool(false)") + const("ty", "bool(false)")
     body += const("w", "tensor<fp16, [1, 8, 128, 749]>"
                         "(BLOBFILE(path = string(\"@model_path/weights.bin\"),"
@@ -188,9 +211,11 @@ with tempfile.TemporaryDirectory() as temporary:
     body += ("    tensor<fp16, [1, 8, 375, 749]> y = matmul("
              "transpose_x = tx, transpose_y = ty, x = a, y = w)"
              "[name = string(\"y\")];\n")
-    compile_source(root, "batched-const-weight", source(
+    payload = b"\x00\x38" * 16
+    blob_header = struct.pack("<IxxxxQQ", 0xDEADBEEF, len(payload), 64 + 24)
+    (root / "weights.bin").write_bytes(b"\0" * 64 + blob_header + payload)
+    compile_source(root, "batched-const-weight-bad-size", source(
         body, header([1, 8, 375, 128]) + " a", "y"),
-        expected_code="h13.matmul-outside-envelope",
-        expected_message="non-uniform-weight re-mint is required")
+        expected_code="ane.model.invalid-blob-header")
 
     print("h13 batched cli: PASS")

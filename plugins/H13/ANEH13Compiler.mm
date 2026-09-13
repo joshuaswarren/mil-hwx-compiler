@@ -1421,17 +1421,28 @@ static H13BatchedParse batchedMatmulParse(ANEGraphOperation *operation,
     ANEGraphValue *x = operation.operands[@"x"].value;
     ANEGraphValue *y = operation.operands[@"y"].value;
     if (operation.arguments.count != 4 || !x || !y ||
-        boolean(operation.arguments[@"transpose_x"], YES) ||
-        boolean(operation.arguments[@"transpose_y"], YES) ||
         !fp16Tensor(x) || !fp16Tensor(y) || x.type.shape.count < 3 ||
         x.type.shape.count > 4 || y.type.shape.count != x.type.shape.count)
+        return H13BatchedParseNo;
+    const BOOL transposeX =
+        boolean(operation.arguments[@"transpose_x"], YES);
+    const BOOL transposeY =
+        boolean(operation.arguments[@"transpose_y"], YES);
+    if ((transposeX && !boolean(operation.arguments[@"transpose_x"], YES)) ||
+        (transposeY && !boolean(operation.arguments[@"transpose_y"], YES)))
         return H13BatchedParseNo;
     NSArray<NSNumber *> *xs = x.type.shape, *ys = y.type.shape,
         *os = operation.results[0].type.shape;
     if (xs.count == 4 && xs[0].unsignedIntegerValue != 1) return H13BatchedParseNo;
-    const NSUInteger rows = xs[xs.count - 2].unsignedIntegerValue;
-    const NSUInteger reduction = xs[xs.count - 1].unsignedIntegerValue;
-    const NSUInteger columns = ys[ys.count - 1].unsignedIntegerValue;
+    const NSUInteger rows = transposeX
+        ? xs[xs.count - 1].unsignedIntegerValue
+        : xs[xs.count - 2].unsignedIntegerValue;
+    const NSUInteger reduction = transposeX
+        ? xs[xs.count - 2].unsignedIntegerValue
+        : xs[xs.count - 1].unsignedIntegerValue;
+    const NSUInteger columns = transposeY
+        ? ys[ys.count - 2].unsignedIntegerValue
+        : ys[ys.count - 1].unsignedIntegerValue;
     NSUInteger batch = 1;
     for (NSUInteger index = 0; index + 2 < xs.count; ++index)
         batch *= xs[index].unsignedIntegerValue;
@@ -1442,8 +1453,10 @@ static H13BatchedParse batchedMatmulParse(ANEGraphOperation *operation,
     NSUInteger oBatch = 1;
     for (NSUInteger index = 0; os.count == xs.count && index + 2 < os.count; ++index)
         oBatch *= os[index].unsignedIntegerValue;
-    if (yBatch != batch || oBatch != batch ||
-        ys[ys.count - 2].unsignedIntegerValue != reduction ||
+    const NSUInteger yReduction = transposeY
+        ? ys[ys.count - 1].unsignedIntegerValue
+        : ys[ys.count - 2].unsignedIntegerValue;
+    if (yBatch != batch || oBatch != batch || yReduction != reduction ||
         os.count != xs.count ||
         os[os.count - 2].unsignedIntegerValue != rows ||
         os[os.count - 1].unsignedIntegerValue != columns)
@@ -1452,6 +1465,8 @@ static H13BatchedParse batchedMatmulParse(ANEGraphOperation *operation,
     shape->rows = static_cast<std::uint32_t>(rows);
     shape->reduction = static_cast<std::uint32_t>(reduction);
     shape->columns = static_cast<std::uint32_t>(columns);
+    shape->transposeX = transposeX;
+    shape->transposeY = transposeY;
     shape->runtimeWeight = !constantValue(y);
     return H13BatchedParseYes;
 }
@@ -1716,23 +1731,43 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 operation);
         ane::h13::BatchedMatmulShape batched{};
         if (batchedMatmulParse(operation, &batched) == H13BatchedParseYes) {
-            NSData *planes = nil;
-            if (!batched.runtimeWeight)
-                return reject(diagnostics,
-                    @"H13 batched constant weight is decoded at the task-stream level but its constant-section byte layout is not: the minted captures carry uniform fp16 values, whose hashes cannot discriminate the packing, and their nonzero-byte counts prove the section is not plain padded planes; a non-uniform-weight re-mint is required before this form lowers",
-                    operation, @"h13.matmul-outside-envelope");
+            std::vector<std::uint8_t> packed;
+            if (!batched.runtimeWeight) {
+                ANEGraphValue *weight = operation.operands[@"y"].value;
+                const NSUInteger packRows = batched.transposeY
+                    ? batched.columns : batched.reduction;
+                const NSUInteger packCols = batched.transposeY
+                    ? batched.reduction : batched.columns;
+                NSData *dense = resolvedConstants[weight.name];
+                if (!dense) {
+                    dense = [ANEBlobResolver loadConstantForOperation:weight.producer
+                        expectedBytes:(NSUInteger)batched.batch * packRows * packCols * 2
+                        modelRoot:modelRoot diagnostics:diagnostics];
+                    if (!dense) return NO;
+                    resolvedConstants[weight.name] = dense;
+                }
+                try {
+                    packed = ane::h13::packBatchedWeights(batched,
+                        static_cast<const std::uint8_t *>(dense.bytes),
+                        dense.length);
+                } catch (const std::exception &exception) {
+                    return reject(diagnostics,
+                        [NSString stringWithUTF8String:exception.what()],
+                        operation, @"h13.matmul-outside-envelope");
+                }
+            }
             if (!ane::h13::supportsBatchedMatmul(batched))
                 return reject(diagnostics,
                     [NSString stringWithFormat:
-                        @"H13 batched matmul (B=%lu, rows=%lu, reduction=%lu, columns=%lu, %@ y) is outside the decoded batched envelope, which covers B in {2,4,8,16} at the attention geometries (375,128,749) and (375,375,128) with both transpose flags false",
+                        @"H13 batched matmul (B=%lu, rows=%lu, reduction=%lu, columns=%lu, tx=%d, ty=%d, %@ y) is outside the decoded batched envelope, which covers B in {2,4,8,16} at the attention geometries (375,128,749), (375,375,128), and (375,128,375) with their captured flag forms",
                         (unsigned long)batched.batch, (unsigned long)batched.rows,
                         (unsigned long)batched.reduction,
                         (unsigned long)batched.columns,
+                        batched.transposeX, batched.transposeY,
                         batched.runtimeWeight ? @"runtime" : @"constant"],
                     operation, @"h13.matmul-outside-envelope");
             program = ane::h13::encodeBatchedMatmul(batched,
-                static_cast<const std::uint8_t *>(planes.bytes),
-                planes.length);
+                packed.empty() ? nullptr : packed.data(), packed.size());
             *inputsOut = batched.runtimeWeight
                 ? @[operation.operands[@"y"].value, x] : @[x];
             *constantInputOut = nil;

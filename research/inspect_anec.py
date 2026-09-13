@@ -103,6 +103,12 @@ def validate_task_headers(program, tasks, tiles):
             if channel == 0:
                 continue
             if channel == 1:
+                if program.get('encoder') in (PARITY_BATCHED_MATMUL,
+                                              PARITY_BATCHED_MATVEC):
+                    require(address in (0x13800, 0x13804) and
+                            program.get('constantBytes', 0) > 0,
+                            f'H13 task[{index}] selects noncanonical channel 1')
+                    continue
                 destination = registers.get(0x17800, H13_DMA_DISABLED)
                 destination_channel = (words[8] >> 12) & 0x1f
                 require(address in (0x13800, 0x13804) and
