@@ -35,6 +35,23 @@ def three_way_split_source():
   } -> (first);
 }
 """
+def constant_split_source(reshape=False):
+    view = ""
+    source = "weights"
+    if reshape:
+        view = "    tensor<int32, [4]> shape = const()[val = tensor<int32, [4]>([1, 128, 1, 1])];\n    tensor<fp16, [1, 128, 1, 1]> view = reshape(shape = shape, x = weights);\n"
+        source = "view"
+    return f"""program(1) {{
+  func main<CoreML8>() {{
+    tensor<fp16, [1, 128, 1, 1]> weights = const()[val = tensor<fp16, [1, 128, 1, 1]>(BLOBFILE(path = string(\"@model_path/missing.bin\"), offset = uint64(0)))];
+{view}    tensor<int32, []> count = const()[val = tensor<int32, []>(2)];
+    tensor<int32, []> axis = const()[val = tensor<int32, []>(1)];
+    (tensor<fp16, [1, 64, 1, 1]> first, tensor<fp16, [1, 64, 1, 1]> second) = split(axis = axis, num_splits = count, x = {source});
+    tensor<fp16, [1, 64, 1, 1]> gate = sigmoid(x = second);
+    tensor<fp16, [1, 64, 1, 1]> output = mul(x = first, y = gate);
+  }} -> (output);
+}}
+"""
 
 
 def compile_source(root, name, source, expected_code=None):
@@ -63,12 +80,16 @@ with tempfile.TemporaryDirectory() as temporary:
     mul_input = next(item for item in manifest["programs"][1]["inputs"]
                      if item["name"] == "input")
     assert sigmoid_input["slice"] == {
-        "tensor": "input", "elementOffset": 64, "elementCount": 64}
+        "tensor": "input", "elementOffset": 64, "elementCount": 64,
+        "physicalElements": 64}
     assert mul_input["slice"] == {
-        "tensor": "input", "elementOffset": 0, "elementCount": 64}
+        "tensor": "input", "elementOffset": 0, "elementCount": 64,
+        "physicalElements": 64}
     assert "first" not in manifest["tensors"]
     assert "second" not in manifest["tensors"]
     assert "second_view" not in manifest["tensors"]
+    assert all(type(program.get("scratchBytes")) is int
+               for program in manifest["programs"])
 
     dense = list(range(128))
     axis_reference = [dense[channel] for channel in range(128)]
@@ -89,5 +110,10 @@ with tempfile.TemporaryDirectory() as temporary:
                    "h13.noncontiguous-split-axis")
     compile_source(root, "unsupported-count", three_way_split_source(),
                    "h13.unsupported-split-count")
+    compile_source(root, "constant-source", constant_split_source(),
+                   "h13.unsupported-constant-split-source")
+    compile_source(root, "reshaped-constant-source",
+                   constant_split_source(reshape=True),
+                   "h13.unsupported-constant-split-source")
 
 print("h13 split cli: PASS")
