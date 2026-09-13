@@ -29,12 +29,92 @@ MATMUL_FAMILIES = {"env_matmul", "rrmm_matmul", "rrmm_matvec"}
 CONV_FAMILIES = {"env_conv", "conv_probe"}
 DEFAULT_ENCODER = "h13-oracle-parity"
 
+# Commit 4849a0e ("feat(compiler): add decoded chains and native M1
+# operation selection") prefers the source-qualified binary encoder for
+# per-operation schedules -- nativeBinaryPlan takes every broadcastable
+# binary it covers, and elementwise binaries whose final shape carries at
+# most 64 channels -- and prefers single-row matvec encoders for the
+# transposed-y matmul shapes below. These cases no longer emit the decoded
+# Apple task stream, so Apple byte parity is not their contract; their
+# native emission is exercised by the CLI, encoding, and simulation tests.
+# The set is exact: a case leaving it (or joining it) changes the family
+# counts this suite asserts, so any further selection drift stays visible.
+NATIVE_SELECTION_CASES = frozenset({
+    "binary_add_1x64x1x1", "binary_maximum_1x64x1x1", "binary_minimum_1x64x1x1",
+    "binary_mul_1x64x1x1", "binary_mul_c64_constant_scalar",
+    "env_bcast_add_1x16384x1x1_runtime_1x16384x1x1",
+    "env_bcast_add_1x200x1x1_runtime_1x200x1x1", "env_bcast_add_1x300x1x1_runtime_1x300x1x1",
+    "env_bcast_add_1x3072x1x1_runtime_1x3072x1x1", "env_bcast_add_1x768x1x1_runtime_1x768x1x1",
+    "env_bcast_add_1x8192x1x1_runtime_1x8192x1x1", "env_bcast_add_1x96x1x1_runtime_1x96x1x1",
+    "env_bcast_add_2x1024x1x1_runtime_2x1024x1x1", "env_bcast_add_2x512x1x1_runtime_2x512x1x1",
+    "env_bcast_add_2x64x1x1_runtime_2x64x1x1", "env_bcast_add_2x64x8x8_runtime_2x64x8x8",
+    "env_bcast_add_8x1024x1x1_runtime_8x1024x1x1", "env_bcast_add_8x512x1x1_runtime_8x512x1x1",
+    "env_bcast_add_8x64x1x1_runtime_8x64x1x1", "env_bcast_add_8x64x8x8_runtime_8x64x8x8",
+    "env_bcast_mul_1x16384x1x1_runtime_1x16384x1x1", "env_bcast_mul_1x200x1x1_runtime_1x200x1x1",
+    "env_bcast_mul_1x300x1x1_runtime_1x300x1x1", "env_bcast_mul_1x3072x1x1_runtime_1x3072x1x1",
+    "env_bcast_mul_1x64x16x16_scalar", "env_bcast_mul_1x64x8x8_scalar",
+    "env_bcast_mul_1x768x16x16_scalar", "env_bcast_mul_1x768x1x1_runtime_1x768x1x1",
+    "env_bcast_mul_1x768x8x8_scalar", "env_bcast_mul_1x8192x1x1_runtime_1x8192x1x1",
+    "env_bcast_mul_1x96x1x1_runtime_1x96x1x1", "env_bcast_mul_2x1024x1x1_runtime_2x1024x1x1",
+    "env_bcast_mul_2x512x1x1_runtime_2x512x1x1", "env_bcast_mul_2x64x1x1_runtime_2x64x1x1",
+    "env_bcast_mul_2x64x8x8_runtime_2x64x8x8", "env_bcast_mul_8x1024x1x1_runtime_8x1024x1x1",
+    "env_bcast_mul_8x512x1x1_runtime_8x512x1x1", "env_bcast_mul_8x64x1x1_runtime_8x64x1x1",
+    "env_bcast_mul_8x64x8x8_runtime_8x64x8x8", "env_mm_r2rb_m1_k2048_n2048_tx0_ty1",
+    "env_mm_r2rb_m1_k2048_n2048_tx1_ty1", "env_mm_r2rb_m1_k2048_n4096_tx0_ty1",
+    "env_mm_r2rb_m1_k2048_n8192_tx0_ty1", "env_mm_r2rb_m1_k4096_n2048_tx0_ty1",
+    "env_mm_r2rb_m1_k4096_n4096_tx0_ty1", "env_mm_r2rb_m1_k4096_n4096_tx1_ty1",
+    "env_mm_r2rb_m1_k4096_n8192_tx0_ty1", "env_mm_r2rb_m1_k8192_n2048_tx0_ty1",
+    "env_mm_r2rb_m1_k8192_n4096_tx0_ty1", "env_mm_r2rb_m1_k8192_n8192_tx0_ty1",
+    "env_mm_r3rb_m1_k2048_n2048_tx0_ty1_b1", "env_mm_r3rb_m1_k2048_n4096_tx0_ty1_b1",
+    "env_mm_r3rb_m1_k2048_n8192_tx0_ty1_b1", "env_mm_r3rb_m1_k4096_n2048_tx0_ty1_b1",
+    "env_mm_r3rb_m1_k4096_n4096_tx0_ty1_b1", "env_mm_r3rb_m1_k4096_n8192_tx0_ty1_b1",
+    "env_mm_r3rb_m1_k8192_n2048_tx0_ty1_b1", "env_mm_r3rb_m1_k8192_n4096_tx0_ty1_b1",
+    "env_mm_r3rb_m1_k8192_n8192_tx0_ty1_b1", "matmul_m1_k1024_n1024_ty1",
+    "matmul_m1_k1024_n256_ty1", "matmul_m1_k1024_n512_ty1", "matmul_m1_k256_n1024_ty1",
+    "matmul_m1_k256_n256_ty1", "matmul_m1_k256_n512_ty1", "matmul_m1_k512_n1024_ty1",
+    "matmul_m1_k512_n256_ty1", "matmul_m1_k512_n512_ty1", "rrmm_r2rb_m1_k256_n128_tx0_ty1",
+    "rrmm_r2rb_m1_k256_n256_tx0_ty1", "rrmm_r2rb_m1_k256_n512_tx1_ty1",
+    "rrmm_r2rb_m1_k256_n64_tx0_ty1", "rrmm_r2rb_m1_k512_n512_tx1_ty1",
+})
+
+# Commit ea903c4 ("fix(h13): qualify Linux ANEC execution") rewrites every
+# emitted task for the Linux driver ABI before the artifact leaves the
+# compiler: header word 0 bits 16..23 become the driver-derived kernel
+# window 0x40, and the three 5-bit surface-selector fields in header word 8
+# (bit shifts 0, 6, 12) rebind each declared channel to role order 4, 5, 6.
+# The parity encoders (elementwise, broadcast, norm, conv) declare channels
+# {output=5, input0=4, input1=6}; the matvec and matmul envelope encoders
+# keep the default {4, 5, 6}, for which the rebinding is the identity.
+# Applying the same fixed transform to each oracle keeps the comparison
+# byte-exact for everything else the encoder emits.
+PARITY_CHANNEL_BINDING = {5: 4, 4: 5, 6: 6}
+ENVELOPE_CHANNEL_BINDING = {4: 4, 5: 5, 6: 6}
+
+
+def bound_task_descriptor(task, binding):
+    header = [int(word, 16) for word in task["header_words"]]
+    for shift in (0, 6, 12):
+        channel = (header[8] >> shift) & 31
+        if channel >= 4:
+            header[8] = (header[8] & ~(31 << shift)) | (binding[channel] << shift)
+    header[0] = (header[0] & ~0x00FF0000) | 0x00400000
+    bound = dict(task)
+    bound["header_words"] = [f"0x{word:08x}" for word in header]
+    return bound
+
+
+def channel_binding(oracle):
+    identity = oracle["family"] in MATMUL_FAMILIES or oracle["family"] == "matmul"
+    return ENVELOPE_CHANNEL_BINDING if identity else PARITY_CHANNEL_BINDING
+
 
 def selected_oracles():
     selected = []
     for path in sorted(ORACLES.glob("*.json")):
         oracle = json.loads(path.read_text())
         if oracle.get("error") is not None:
+            continue
+        if oracle["case"] in NATIVE_SELECTION_CASES:
             continue
         parameters = oracle.get("parameters", {})
         operation = parameters.get("operation")
@@ -183,7 +263,9 @@ def anec_contents(payload):
 
 
 def assert_tasks(actual, oracle):
-    expected = oracle["task_descriptors"]
+    binding = channel_binding(oracle)
+    expected = [bound_task_descriptor(task, binding)
+                for task in oracle["task_descriptors"]]
     assert len(actual) == len(expected), \
         f"{oracle['case']}: {len(actual)} tasks, oracle has {len(expected)}"
     for index, task in enumerate(actual):
@@ -242,9 +324,12 @@ def check_hwx(oracle, output, manifest):
 def main():
     oracles = selected_oracles()
     families = collections.Counter(oracle["family"] for oracle in oracles)
-    expected = {"binary_runtime": 50, "binary_constant": 12, "unary": 25,
-                "matmul": 36, "normalization": 105, "reduction": 114,
-                "env_broadcast": 93, "env_matmul": 110, "env_conv": 15}
+    # Counts exclude the 73 NATIVE_SELECTION_CASES (4 binary_runtime,
+    # 1 binary_constant, 34 env_broadcast, 20 env_matmul, 9 matmul,
+    # 5 rrmm_matvec) that commit 4849a0e moved to native encoders.
+    expected = {"binary_runtime": 46, "binary_constant": 11, "unary": 25,
+                "matmul": 27, "normalization": 105, "reduction": 114,
+                "env_broadcast": 59, "env_matmul": 90, "env_conv": 15}
     for family in ("rrmm_broadcast", "rrmm_matmul", "rrmm_matvec",
                    "conv_probe"):
         if families[family]:
