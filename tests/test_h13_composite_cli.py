@@ -8,7 +8,9 @@ and the expanded bias — zero data movement. Every case is proven byte-equal
 to the compilable per-plane direct form (nested axis-1 splits expose each
 plane as the offset view the slice lowering already emits), recompile
 deterministic, and inspector-validated. Near-miss composites reject with the
-exact reason.
+exact reason. The batched-matmul section pins the envelope survey: the
+decoded corpus holds no batched matmul form, and the encoder's attention
+matmuls reject naming the missing primitive.
 """
 import json
 import struct
@@ -317,5 +319,33 @@ with tempfile.TemporaryDirectory() as temporary:
     compile_source(root, "composite-two-linears", two_consumers,
                    expected_code="h13.nonfoldable-transpose",
                    expected_message="channel-plane decomposition only when exactly one linear")
+
+    # Batched matmul envelope survey: the decoded corpus holds no batched
+    # form — every matmul template is (rows, reduction, columns) with both
+    # runtime operands as single [rows, width] planes, and no 375 or 749
+    # extent appears in any geometry. The encoder's attention matmuls reject
+    # naming the missing primitive.
+    for tag, x_shape, y_shape, result_shape in (
+            ("scores", [1, 8, 375, 128], [1, 8, 128, 749], [1, 8, 375, 749]),
+            ("attn-output", [1, 8, 375, 375], [1, 8, 375, 128],
+             [1, 8, 375, 128])):
+        body = const("tx", "bool(false)") + const("ty", "bool(false)")
+        body += (f"    {header(result_shape)} y = matmul("
+                 f"transpose_x = tx, transpose_y = ty, x = a, y = b)"
+                 f"[name = string(\"y\")];\n")
+        compile_source(root, f"batched-matmul-{tag}",
+                       source(body, f"{header(x_shape)} a, {header(y_shape)} b",
+                              "y"),
+                       expected_code="h13.matmul-outside-envelope",
+                       expected_message="batched runtime-operand matmul needs a primitive the decoded corpus does not hold")
+    body = const("tx", "bool(false)") + const("ty", "bool(false)")
+    body += blob_const("w", [1, 8, 128, 749], "@model_path/weights/w.bin")
+    body += ("    tensor<fp16, [1, 8, 375, 749]> y = matmul("
+             "transpose_x = tx, transpose_y = ty, x = a, y = w)"
+             "[name = string(\"y\")];\n")
+    compile_source(root, "batched-matmul-const-y",
+                   source(body, header([1, 8, 375, 128]) + " a", "y"),
+                   expected_code="h13.matmul-outside-envelope",
+                   expected_message="batched constant weight needs a per-batch decomposition")
 
     print("h13 composite cli: PASS")
