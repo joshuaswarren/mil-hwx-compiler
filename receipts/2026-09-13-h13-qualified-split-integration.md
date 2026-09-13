@@ -4,7 +4,7 @@
 
 - Worktree: `/home/joshuawarren/.config/superpowers/worktrees/mil-hwx-compiler/h13-qualified-split-integration`
 - Branch: `agent/h13-qualified-split-integration`
-- Combined compiler commit: `a3665cd531d3bfe5c686418bbbb94eb7f68f6a5e`
+- Combined compiler commit: `b12b03f17619c76b77c48a83510847de2245ea1a`
 - Executing model: `openai-codex/gpt-5.6-sol`
 - Configured route: `mlx-openai-deep`; no routing fallback was observed.
 
@@ -13,19 +13,23 @@ The combined history is explicit:
 1. `40624cd1900a3f5049b9b3946c80a7a54941b7ef` merges scalar-fold base `7da065bd7c94aafdd7dd4f3e47c8ff16645910fb` with split lowering `e8b8520bb75d9ae30a4926de54936b1cd9f105a7`. The split commit contains ordered-result commit `a1bfea0cd52208ac9f168791e8c6e9a83ddc8efb`.
 2. `30236d78d716053183b3bcdb7eb5327b718b9581` merges `40624cd1900a3f5049b9b3946c80a7a54941b7ef` with qualified H13 tip `f4ad09066b560818a9dcc1f5f4f53273d941bd1e`, retaining the `17664fa` through `f4ad090` qualification series.
 3. `a3665cd531d3bfe5c686418bbbb94eb7f68f6a5e` adds constant-storage provenance checks and the strict package fields required by the real consumer.
+4. `b12b03f17619c76b77c48a83510847de2245ea1a` emits strict v2 physical outputs and ordered identity logical results.
 
 Git reported no textual merge conflicts. The semantic integration retained ordered parenthesized MIL results, split aliases, scalar folding, qualified task binding, the driver-derived kernel-window guard, scratch allocation, unsigned-zero behavior, and strict package inspection.
 
 ## Changed source at the combined tip
 
-`a3665cd` changes:
+`b12b03f` changes:
 
 - `plugins/H13/ANEH13Compiler.mm`
 - `research/inspect_anec.py`
 - `tests/test_h13_split_cli.py`
+- `tests/test_h13_cli.py`
+- `tests/hardware/run_h13.mm`
+- `README.md`
 - `THEORY.MD`
 
-The compiler follows `reshape`, `squeeze`, `expand_dims`, and `split` aliases back to their storage producer. A split whose storage origin is `const` now fails as `h13.unsupported-constant-split-source`; a direct constant-backed shape view fails as `h13.unsupported-constant-view-source`. Runtime-backed nested aliases remain valid. Every slice record contains `physicalElements`, and every program contains `scratchBytes`; neither consumer field has a default.
+The compiler follows `reshape`, `squeeze`, `expand_dims`, and `split` aliases back to their storage producer. A split whose storage origin is `const` fails as `h13.unsupported-constant-split-source`; a direct constant-backed shape view fails as `h13.unsupported-constant-view-source`. Runtime-backed nested aliases remain valid. ANEC program slices retain `physicalElements`, and every program contains `scratchBytes`; neither binding field has a default. Logical return views deliberately omit `physicalElements` because their capacity comes from the referenced physical output.
 
 ## Compiler verification
 
@@ -38,11 +42,20 @@ h13 split cli: PASS
 
 Direct and reshape-chained constant split reproducers both returned exit 65 with `h13.unsupported-constant-split-source`. The nested runtime-backed split compiled seven artifacts. Its `whole` tensor remained an intermediate, and the four consumer windows were `(offset,count,physical) = (128,64,64), (192,64,64), (0,64,64), (64,64,64)`.
 
-An independent compiler review at `a3665cd` repeated the official split CLI, both constant-source rejections, the runtime intermediate split, and the nested sub-split. It reported no remaining compiler finding. The pinned encoder probe still stops at line 3354 with `h13.unsupported-chain`; this proves only the current two-return boundary, not prior-operation coverage.
+Fresh v2 producer packages were emitted under `/tmp/h13-v2-b12b03f`. The compiler and strict inspector accepted all four:
 
-A standard `make -j4 test` was attempted. This Linux host cannot complete the repository-wide target unchanged: the Makefile applies Objective-C flags to `test_benchmark_stats.cpp`, four older tests include Apple-only `CommonCrypto`, two fixtures use clang-14-unsupported `_Float16`, and `test_runtime_contract` imports Apple-only `IOSurface`. After temporary command-line/header workarounds exposed deeper targets, the qualified ANEC task rebinding also differed from the unbound parity oracle at the two fields intentionally rewritten by `ea903c4`, and a reference fixture lacked newly strict `physicalElements`. No guessed descriptor or oracle change was retained. The worktree was restored to the reviewed `a3665cd` source before this receipt.
+- `ordinary-package/manifest.json`: `5a6b5627ff171e918e11ee0fd3c275c1e1f01075def0410e9dd7f339e29f91ce`
+- `duplicate-package/manifest.json`: `adb26c403598c4048ba9502f7b34560be005aa832dec80614444b90ff579d1bc`
+- `sliced-package/manifest.json`: `9d5bca2e30f505e6cacdaed713bf5d05b8d93332da920d078e8afb5acd8e357c`
+- `reshaped-package/manifest.json`: `9a6bf068a55d4c277a23a3e90b27eaeb7f44287b19842d94d6bb32eab6e2d0a9`
 
-## Strict consumer and loader verification
+The producing `build/mil-hwxc` SHA-256 was `b3587e4d87bad93d95c1b1e69c3164d7f445787c65f9bdf2d81978e17d128a9e`.
+
+An independent compiler review at `a3665cd` repeated the original split CLI and provenance checks without a remaining compiler finding. At `b12b03f`, the integrated adapter source reached its ordered FP32 and int32 returns and returned exit 65 with `h13.unsupported-logical-result-conversion` at line 3353. The full faithful source still reaches the previously recorded `mil.import.unsupported-type` boundary for `uint4`.
+
+A standard `make -j4 test` was attempted before v2. This Linux host cannot complete the repository-wide target unchanged: the Makefile applies Objective-C flags to `test_benchmark_stats.cpp`, four older tests include Apple-only `CommonCrypto`, two fixtures use clang-14-unsupported `_Float16`, and `test_runtime_contract` imports Apple-only `IOSurface`. Later, `tests/test_h13_cli.py` reached its known stale HWX-to-ANEC parity assertion at line 1237 after exercising the v2 schema and returned-view checks. No guessed descriptor or oracle change was retained.
+
+## Pre-v2 strict consumer and loader verification
 
 Fresh package:
 
@@ -73,23 +86,18 @@ The supplied host loader returned:
 
 An independent consumer review regenerated `/tmp/h13-adapter-independent-Bo3BbswQ/package`. Its manifest and payload hashes matched the package above. The strict adapter passed, the supplied loader returned OK, only `input`, `gate`, and `output` were materialized, and dispatch `0 -> 1` preserved gate production and consumption.
 
-## Proposed mixed-return cross-repository contract
+## Implemented compiler v2 result contract
 
-The pinned textual CoreML8 function returns an ordered pair:
+Commit `b12b03f` emits schema `mil-hwxc.h13-anec-package.v2`. A single textual CoreML8 function can return the same read-only FP16 value more than once without creating another physical buffer. The manifest contains:
 
-1. `encoder_hidden`: logical `tensor<fp32,[1,375,640]>`, produced by a cast from `linear_217_cast_fp16`.
-2. `encoder_mask`: logical `tensor<int32,[1,375]>`, produced by a cast from boolean `output_mask`.
+- `physicalOutputs[]`: exactly the produced runtime FP16 tensor name, physical shape, dtype, and logical byte capacity.
+- `logicalResults[]`: ordered MIL name, dtype, independent logical shape, `conversion: identity`, and `physical {tensor, elementOffset, elementCount}`.
 
-The package must not pretend these logical values are existing H13 FP16 surfaces. The proposed contract separates storage from API results:
+The strict inspector requires `elementCount == product(logical shape)`, equal identity dtypes, and `elementOffset + elementCount` within the physical output's capacity. It requires every produced physical output to be declared and referenced. Duplicate and overlapping read-only result views are valid. It rejects extra logical mapping fields, including the ANEC-binding-only `physicalElements` field.
 
-- `physicalOutputs` describes actual ANE buffers only: physical dtype, physical shape, allocation bytes, and any slice `(tensor, elementOffset, elementCount, physicalElements)`.
-- `logicalResults` is an ordered list matching the MIL function return list. Each record contains the SSA name, logical dtype, logical shape, a reference to one physical output, and an explicit boundary conversion.
-- The only initially accepted conversion is `identity`. `fp16 -> fp32` and `bool -> int32` stay explicit unsupported conversions until an evidenced ANE conversion program or an explicitly selected MLX GPU conversion implements them. The adapter must never use a CPU tensor fallback and must never relabel FP16 or boolean bytes as FP32 or int32.
-- A physical output can back more than one ordered logical result only through validated, non-overlapping slice metadata. Logical return order never changes physical dispatch order.
-- `physicalOutputs` remains the runtime allocation and loader contract. `logicalResults` remains the caller-visible type and ordering contract. The loader validates both layers and the mapping between them; it does not infer one from the other.
-- Until the cross-repository choice is implemented, the compiler continues to reject the two terminal casts and the two-result chain with named errors. Unsupported `less`, boolean storage, and other hardware operations remain separate explicit lowering gaps; the result-layout contract does not claim those operations are supported.
+The scoped fixture covers three accepted mappings: two direct views of one 64-element output, two reshape views with logical shape `[1,1,8,8]` over physical shape `[1,64,1,1]`, and two split-subslice views at offset 64 over a 128-element physical output. The same test rejects a forged identity dtype and rejects extra logical `physicalElements` metadata.
 
-This proposal keeps one textual MIL graph, one ANEC package format, explicit GPU execution if selected, and no direct library API, alternate graph, hidden cast, or CPU fallback.
+The pinned adapter's `encoder_hidden` FP32 and `encoder_mask` int32 returns are not relabeled as FP16 and do not receive a CPU fallback. The compiler rejects them with `h13.unsupported-logical-result-conversion` until explicit hardware or GPU conversion coverage exists. This preserves one textual graph and one package format; it adds no direct library API or alternate IR.
 
 ## Hardware boundary
 
