@@ -144,6 +144,31 @@ Program encodeConvParity(ConvShape shape, const std::uint8_t *weights,
                          const std::uint8_t *bias = nullptr,
                          std::size_t biasBytes = 0);
 /// Byte lengths of the tasks a task stream carries, in stream order.
+/// A decoded epilogue Apple folds into the producer's own task instead of
+/// emitting the consumer as a separate program.
+enum class PostOperation : std::uint8_t { Relu };
+
+/// Fuses a relu into a one-task Apple elementwise program. Verified
+/// byte-exact against the `chain_add_relu_c512` oracle pair: the PE word
+/// `0x900` carries the clamp bit `0x20` and no other word moves. Throws
+/// unless the PE word is the decoded no-post-op form `0x00080000`.
+void fuseElementwisePostOperation(Program &program, PostOperation operation);
+
+/// Fuses a decoded post-operation into the two-task Apple matvec form.
+/// Verified byte-exact against the `chain_pair_mm_relu` oracle: the compute
+/// task's NE word `0xd04` carries the clamp bit `0x00010000` and no other
+/// word moves. Throws unless the compute task is the decoded no-post-op form.
+void fuseMatmulPostOperation(Program &program, PostOperation operation);
+
+/// Composes already-routed programs. A single program composes unchanged;
+/// a multi-program list is refused: relinking standalone task streams keeps
+/// every task's own surface routing, and the decoded corpus wires task DMA
+/// to the fixed boundary channels (reads through Src1/Src2, writes through
+/// Dst to the output channel or L2) with no addressing for declared
+/// intermediate surfaces, so any multi-program relink would emit tasks that
+/// never exchange data.
+Program composePrograms(const std::vector<Program> &programs);
+/// Byte lengths of the tasks a task stream carries, in stream order.
 std::vector<std::size_t> taskSizes(const std::vector<std::uint8_t> &stream);
 std::vector<std::uint8_t> encodeANEC(const Program &program);
 

@@ -80,12 +80,12 @@ int main() {
     invalid = program;
     invalid.constantOffsetBytes = 0x2c0;
     rejects([&] { encodeANEC(invalid); },
-            "H13 ANEC constant offset must equal the 16-byte-rounded task length the driver derives");
+            "H13 ANEC constant offset must equal the 64-byte-aligned task length");
     invalid = program;
     invalid.task.resize(0x240);
     invalid.firstTaskBytes = 0x240;
     rejects([&] { encodeANEC(invalid); },
-            "H13 ANEC constant offset must equal the 16-byte-rounded task length the driver derives");
+            "H13 ANEC constant offset must equal the 64-byte-aligned task length");
     program.taskSurfaceChannels = {5, 4, 6};
     program.task[32] = 0xa4;
     program.task[33] = 0x59;
@@ -98,26 +98,26 @@ int main() {
     assert(((le(routed, 0x1000, 4) >> 16) & 255) == 64);
     assert(program.task[33] == 0x59);
 
-    program.task.assign(128, 0);
+    program.task.assign(80, 0);
     program.taskCount = 2;
     program.firstTaskBytes = 40;
     program.constantOffsetBytes = 128;
-    program.task[6] = 15;
-    program.task[28] = 64;
+    program.task[6] = 9;
+    program.task[28] = 40;
     program.task[32] = 0x24;
-    program.task[64] = 1;
-    program.task[97] = 0x50;
-    program.task[98] = 0x02;
+    program.task[40] = 1;
+    program.task[73] = 0x50;
+    program.task[74] = 0x02;
     const auto linked = encodeANEC(program);
     assert((le(linked, 0x1020, 4) & 31) == 5);
-    assert(((le(linked, 0x1060, 4) >> 12) & 31) == 4);
-    assert(((le(linked, 0x1040, 4) >> 16) & 255) == 64);
-    assert((le(linked, 0x1040, 4) & 65535) == 1);
+    assert(((le(linked, 0x1048, 4) >> 12) & 31) == 4);
+    assert(((le(linked, 0x1028, 4) >> 16) & 255) == 64);
+    assert((le(linked, 0x1028, 4) & 65535) == 1);
     program.scratchAllocationBytes = 2 * tileBytes;
     const auto scratch = encodeANEC(program);
     assert(le(scratch, 40 + 3 * 4, 4) == 2);
     for (std::size_t field = 0; field != 6; ++field)
         assert(le(scratch, 0xa8 + 3 * 48 + field * 8, 8) == 0);
-    program.task[28] = 60;
+    program.task[28] = 36;
     rejects([&] { encodeANEC(program); });
 }

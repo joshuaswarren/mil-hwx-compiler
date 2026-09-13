@@ -1,10 +1,11 @@
 # MIL-to-HWX compiler
 
-This repository contains a research compiler for the H16G Apple Neural Engine
-in the M4, an experimental source-native H13/M1 backend, and an
+This repository contains a source-native H13 backend for the M1 Apple Neural
+Engine, a research compiler for the H16G engine in the M4, and an
 oracle-parity H14/M2 elementwise, matvec, and normalization backend. It reads textual MIL and
 emits H16G HWX objects, or H13 and H14 ANEC and HWX packages, without Apple's
-compiler.
+compiler. The H13 packages execute on Linux M1 hardware; see the measured
+results below.
 
 The project is a canary for the compiler pipeline recovered in *Inside the M4
 Apple Neural Engine*, Part 4b. It shows which parts of that pipeline are
@@ -12,10 +13,10 @@ understood well enough to reproduce in code and verify on hardware.
 
 ## Linux build
 
-This fork builds on Linux with GNUstep Foundation. H16G emits HWX; the
-experimental H13 and H14 backends emit ANEC by default and HWX with
-`--format hwx`. H13 and H14 performance and mlx-omarchy integration remain
-unqualified.
+This fork builds on Linux with GNUstep Foundation. H16G emits HWX; the H13 and
+H14 backends emit ANEC by default and HWX with `--format hwx`. The H13/M1
+qualification models execute on Linux with measured performance; H14 native
+execution and end-to-end mlx-omarchy integration remain unqualified.
 
 Install Clang and LLD, CMake, Ninja, Make, pkg-config, Git, Python 3, and development packages for libffi, libxml2, ICU, OpenSSL, and zlib. Then run:
 
@@ -29,7 +30,7 @@ The script builds pinned libobjc2 and GNUstep sources under `$HOME/.local/mil-hw
 
 Use this verifier on Linux. The macOS hardware suites below require Apple runtime interfaces and do not run on Linux.
 
-## Experimental M1/H13 compilation
+## M1/H13 compilation
 
 The H13 path constructs descriptors from named register fields and packs the
 model's own weights. It does not rename H16G output, patch a binary template,
@@ -96,6 +97,19 @@ physical range must be fully covered by producer writes and dispatched after
 each overlapping producer. Padding beyond a consumer's logical count is
 ignored. Unsupported retiling fails with `h13.unsupported-chain`.
 
+The default `--schedule=per-op` keeps these intermediate transfers explicit.
+`--schedule=chain` currently accepts only two operations: a supported producer
+followed directly by the final `relu`, with all function inputs consumed by
+the producer. The producer must use the existing Apple-parity matvec or
+whole-tensor elementwise lowering. This emits one program without an
+intermediate buffer and enables ReLU only on the producer's final task.
+Oracle checks cover add at `[1,512,1,1]` and two-task matmul at
+`[1,64,256] × [256,256]`. Other chain edges fail with
+`h13.chain-unrepresentable-edge` or `h14.chain-unrepresentable-edge`;
+non-straight-line graphs and incompatible boundary inputs fail with
+`chain-outside-envelope`. General intermediate DMA/L2 routing is unresolved.
+Descriptor parity and host simulation do not qualify native M1 execution.
+
 Run the host-only checks with `make test-h13` (set `GNUSTEP_PREFIX` on Linux).
 They cover encoding, coefficient packing, serialization, and the MIL CLI;
 they do not execute ANE commands. A minimal compilation example is:
@@ -158,18 +172,9 @@ or establish device safety. Device dispatch is handled by the validated runner b
 `tools/h13_reference.py` evaluates the accepted H13 MIL subset without NumPy.
 It reads and writes dense little-endian fp16 files. Matmul accumulates in
 float32 and rounds once to fp16. Reductions larger than 512 elements on H13
-instead round each chunk before the add chain, so their device results can
-differ by the extra fp16 rounding.
-
-`reduce_sum`, `reduce_mean`, `softmax`, and `layer_norm` accumulate their sums,
-means, and variances in float32 and round once. `reduce_max` is exact. Softmax
-subtracts the group maximum before exponentiating. These agree with H13 in
-form, not bit-for-bit: Apple's softmax program evaluates the exponential and
-the reciprocal through the fp16 lookup tables in its constant section, so
-device output carries those tables' interpolation error, and layer_norm's
-device reciprocal square root is likewise hardware-evaluated. Byte parity with
-Apple is asserted on the emitted program (`make test-h13-parity`); numerical
-agreement with this reference is a tolerance, not an equality.
+round each chunk before the add chain, so tensors marked `chunked-fp16` use
+`|device-reference| <= 0.02 + 0.02 * |reference|`; other outputs must be
+exactly equal as fp16 values. Signed zeros compare equal; NaNs are rejected.
 
 ```bash
 python3 tools/h13_reference.py model.mil --model-root models \
@@ -179,15 +184,50 @@ python3 tools/h13_run_linux.py build/h13-package --mil model.mil \
 ```
 
 The Linux runner imports `research/inspect_anec.py` and validates the complete
-package before it opens libane. Dry-run mode performs package, input, reference,
-binding, and dispatch-plan checks without loading libane or writing an output. A
-hardware run uses the `omarchy` branch Python binding library from
-`~/src/omarchy-ane`, forwards intermediate slices as raw physical buffers, and
-compares elementwise output at exact fp16 equality. A tensor marked
-`chunked-fp16` uses
-`abs(device-reference) <= 0.03125 + 0.01 * abs(reference)` to allow the extra
-partial-sum rounding. Override the binding path with `--libane-library`. Run the
-host-only reference and dry-run checks with `make test-h13-reference`.
+package, dense inputs, MIL returns, bindings, dispatch plan, and reference before
+it opens libane. Dry-run performs those checks without loading libane, writing an
+output, or reporting native timings. Native execution resolves the selected
+`--libane-library` ABI: `pyane_init`, `pyane_free`, `__ane_src_size`,
+`__ane_dst_size`, `__ane_send`, `__ane_read`, and `ane_exec`. It validates
+the returned surface sizes before the first transfer and writes outputs only after
+every declared output passes.
+
+`--benchmark-json PATH` enables a correctness-gated native benchmark;
+`--warmup N` and `--iterations N` require that flag and are rejected with
+`--dry-run`. The defaults are three validated warmups and ten measured
+iterations. The report separates setup from the timed work. Per-program samples
+cover transfer, submission, readback, and their total; end-to-end samples span
+the first transfer through the last readback and include Python intermediate
+composition between programs. Final output unpacking, numerical checks, reference evaluation and
+program setup are outside every measured window. See
+`tests/h13_first_run/RUNBOOK.md` for reviewed identity and exact-package
+provenance requirements.
+
+### Measured Linux M1 results
+
+Native execution uses the M1 driver and library in
+[joshuaswarren/omarchy-ane](https://github.com/joshuaswarren/omarchy-ane),
+which requires driver ABI 1: a successful submission guarantees terminal
+completion and CPU visibility. That stack passed all eight first-run models
+plus 512-element add-ReLU in per-op and fused schedules. Every output passed on
+three warmups and 30 measured iterations. These are transfer-to-readback times,
+including intermediate Python composition but excluding setup and reference evaluation.
+
+| Workload | Programs | Median |
+|---|---:|---:|
+| Runtime matmul, 64 by 64 | 1 | 0.066 ms |
+| Matvec, K256 N512 | 1 | 0.178 ms |
+| Softmax, 512 elements | 1 | 0.166 ms |
+| MLP, 768 to 1024 to 768 | 77 | 32.170 ms |
+| Add-ReLU, 512 elements, per-op | 2 | 0.679 ms |
+| Add-ReLU, 512 elements, `--schedule chain` | 1 | 0.160 ms |
+
+Whole-tensor binary selection reduced the MLP from 92 programs and 41.523 ms
+to 77 programs and 32.170 ms on the same driver boot. Native 64-element paths
+remain selected for small binaries; supported wider binaries avoid that tiling.
+The [native receipt](receipts/2026-09-06-m1-native-progress.json) records samples,
+build identities, numerical criteria and comparison runs. Cold power-on
+repeatability and general chain fusion remain unqualified.
 
 ### H13 Apple-parity programs
 
