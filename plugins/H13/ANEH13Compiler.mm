@@ -1406,6 +1406,53 @@ static NSData *linearBiasData(ANEGraphValue *bias, NSUInteger columns,
     return data;
 }
 
+/// Parses a batched runtime-or-constant matmul: x of rank 3 [B,rows,K] or
+/// rank 4 [1,B,rows,K] against a same-rank y of [.., B, K, N] with both
+/// transpose flags false, exactly as the decoded batched corpus carries.
+/// Returns NotBatched when the operands do not form a batched pair, so the
+/// existing single-batch paths (and their rejections) still apply.
+enum H13BatchedParse { H13BatchedParseNo, H13BatchedParseYes, H13BatchedParseShape };
+
+static H13BatchedParse batchedMatmulParse(ANEGraphOperation *operation,
+                                          ane::h13::BatchedMatmulShape *shape) {
+    ANEGraphValue *x = operation.operands[@"x"].value;
+    ANEGraphValue *y = operation.operands[@"y"].value;
+    if (operation.arguments.count != 4 || !x || !y ||
+        boolean(operation.arguments[@"transpose_x"], YES) ||
+        boolean(operation.arguments[@"transpose_y"], YES) ||
+        !fp16Tensor(x) || !fp16Tensor(y) || x.type.shape.count < 3 ||
+        x.type.shape.count > 4 || y.type.shape.count != x.type.shape.count)
+        return H13BatchedParseNo;
+    NSArray<NSNumber *> *xs = x.type.shape, *ys = y.type.shape,
+        *os = operation.results[0].type.shape;
+    if (xs.count == 4 && xs[0].unsignedIntegerValue != 1) return H13BatchedParseNo;
+    const NSUInteger rows = xs[xs.count - 2].unsignedIntegerValue;
+    const NSUInteger reduction = xs[xs.count - 1].unsignedIntegerValue;
+    const NSUInteger columns = ys[ys.count - 1].unsignedIntegerValue;
+    NSUInteger batch = 1;
+    for (NSUInteger index = 0; index + 2 < xs.count; ++index)
+        batch *= xs[index].unsignedIntegerValue;
+    if (!rows || !reduction || !columns || batch <= 1) return H13BatchedParseNo;
+    NSUInteger yBatch = 1;
+    for (NSUInteger index = 0; index + 2 < ys.count; ++index)
+        yBatch *= ys[index].unsignedIntegerValue;
+    NSUInteger oBatch = 1;
+    for (NSUInteger index = 0; os.count == xs.count && index + 2 < os.count; ++index)
+        oBatch *= os[index].unsignedIntegerValue;
+    if (yBatch != batch || oBatch != batch ||
+        ys[ys.count - 2].unsignedIntegerValue != reduction ||
+        os.count != xs.count ||
+        os[os.count - 2].unsignedIntegerValue != rows ||
+        os[os.count - 1].unsignedIntegerValue != columns)
+        return H13BatchedParseNo;
+    shape->batch = static_cast<std::uint32_t>(batch);
+    shape->rows = static_cast<std::uint32_t>(rows);
+    shape->reduction = static_cast<std::uint32_t>(reduction);
+    shape->columns = static_cast<std::uint32_t>(columns);
+    shape->runtimeWeight = !constantValue(y);
+    return H13BatchedParseYes;
+}
+
 static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                            ANEDiagnosticEngine *diagnostics, BOOL preferNative,
                            NSDictionary<NSString *, NSData *> *synthesizedConstants,
@@ -1448,6 +1495,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         *manifestOperationOut = name;
         return YES;
     }
+
 
     H13ParityPlan plan{};
     if (parityPlan(operation, synthesizedConstants, preferNative, &plan)) {
@@ -1663,6 +1711,32 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             return reject(diagnostics,
                 @"H13 matmul requires positive fp16 x rows, matching explicit transpose flags, and a matching positive output shape",
                 operation);
+        ane::h13::BatchedMatmulShape batched{};
+        if (batchedMatmulParse(operation, &batched) == H13BatchedParseYes) {
+            NSData *planes = nil;
+            if (!batched.runtimeWeight)
+                return reject(diagnostics,
+                    @"H13 batched constant weight is decoded at the task-stream level but its constant-section byte layout is not: the minted captures carry uniform fp16 values, whose hashes cannot discriminate the packing, and their nonzero-byte counts prove the section is not plain padded planes; a non-uniform-weight re-mint is required before this form lowers",
+                    operation, @"h13.matmul-outside-envelope");
+            if (!ane::h13::supportsBatchedMatmul(batched))
+                return reject(diagnostics,
+                    [NSString stringWithFormat:
+                        @"H13 batched matmul (B=%lu, rows=%lu, reduction=%lu, columns=%lu, %@ y) is outside the decoded batched envelope, which covers B in {2,4,8,16} at the attention geometries (375,128,749) and (375,375,128) with both transpose flags false",
+                        (unsigned long)batched.batch, (unsigned long)batched.rows,
+                        (unsigned long)batched.reduction,
+                        (unsigned long)batched.columns,
+                        batched.runtimeWeight ? @"runtime" : @"constant"],
+                    operation, @"h13.matmul-outside-envelope");
+            program = ane::h13::encodeBatchedMatmul(batched,
+                static_cast<const std::uint8_t *>(planes.bytes),
+                planes.length);
+            *inputsOut = batched.runtimeWeight
+                ? @[operation.operands[@"y"].value, x] : @[x];
+            *constantInputOut = nil;
+            *constantDataOut = nil;
+            *manifestOperationOut = name;
+            return YES;
+        }
         const BOOL runtimeWeight =
             !constantValue(y) && !synthesizedConstants[y.name];
         ane::h13::MatmulShape parityShape{};
@@ -1684,7 +1758,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                                       x.type.shape.count) && batchedOperand)
                 return reject(diagnostics,
                     [NSString stringWithFormat:
-                        @"H13 batched runtime-operand matmul needs a primitive the decoded corpus does not hold: every decoded matmul template is (rows, reduction, columns) with both runtime operands as single [rows, width] planes — no template carries a batch axis, a batch-strided second-operand surface, or any 375/749 extent, and flattening the %@ leading dimensions into rows would multiply every batch against one shared y instead of the per-batch y this graph carries; the primitive that serves it is a batched matvec iterating B=%lu GEMMs over the batch-major contiguous operand slices (x[b] at b*rows*reduction, y[b] at its transpose-shaped base, out[b] at b*rows*columns), which needs new decoded oracle captures",
+                        @"H13 batched runtime-operand matmul outside the decoded batched envelope: the batched primitive covers rank-3 [B,rows,K] and rank-4 [1,B,rows,K] operands with both transpose flags false at the attention geometries, while this form's flags or geometry have no decoded capture; flattening the %@ leading dimensions into rows would multiply every batch against one shared y instead of the per-batch y (B=%lu) this graph carries",
                         x.type.shape.count > 2 ?
                             [NSString stringWithFormat:@"%lu leading",
                                 (unsigned long)(x.type.shape.count - 2)] : @"its",
@@ -2767,7 +2841,11 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             BOOL runtimeWeight = matmul && secondOperand &&
                 !constantValue(secondOperand) &&
                 !synthesizedConstants[secondOperand.name];
-            BOOL matvecParity = matmul &&
+            ane::h13::BatchedMatmulShape batchedShape{};
+            BOOL batched = matmul &&
+                batchedMatmulParse(operation, &batchedShape) == H13BatchedParseYes &&
+                ane::h13::supportsBatchedMatmul(batchedShape);
+            BOOL matvecParity = !batched && matmul &&
                 matmulParityShape(operation.operands[@"x"].value, operation.results[0],
                     boolean(operation.arguments[@"transpose_x"], YES),
                     runtimeWeight
@@ -2835,7 +2913,14 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 BOOL transposeX = boolean(operation.arguments[@"transpose_x"], YES);
                 if (matmulGeometry(operation.operands[@"x"].value, operation.results[0],
                                    transposeX, &reduction, &rows, &columns)) {
-                    if (matvecParity) {
+                    if (batched) {
+                        inputSliceElements = inputPhysicalElements =
+                            (NSUInteger)batchedShape.batch *
+                            batchedShape.rows * batchedShape.reduction;
+                        outputSliceElements = outputPhysicalElements =
+                            (NSUInteger)batchedShape.batch *
+                            batchedShape.rows * batchedShape.columns;
+                    } else if (matvecParity) {
                         inputSliceElements = inputPhysicalElements =
                             rows * reduction;
                         outputSliceElements = outputPhysicalElements =
@@ -2861,7 +2946,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
 
             for (NSUInteger sliceIndex = 0; sliceIndex < sliceCount; ++sliceIndex) {
                 NSUInteger inputOffset = 0, outputOffset = 0;
-                if (matmul) {
+                if (matmul && !batched) {
                     NSUInteger reduction = 0, rows = 0, geometryColumns = 0;
                     BOOL transposeX = boolean(operation.arguments[@"transpose_x"], YES);
                     matmulGeometry(operation.operands[@"x"].value, operation.results[0],
@@ -2879,6 +2964,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                         outputSliceElements =
                             MIN((NSUInteger)512, columns - chunk * 512);
                     }
+                } else if (batched) {
+                    inputOffset = outputOffset = 0;
                 } else if (parity || broadcast || normalization || convolution) {
                     outputOffset =
                         [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
@@ -2983,7 +3070,10 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 NSDictionary *record = @{
                     @"file": file, @"bytes": @(payload.length),
                     @"taskDescriptors": @(program.taskCount),
-                    @"encoder": matvecParity
+                    @"encoder": batched
+                        ? (runtimeWeight ? @"apple-parity-batched-matmul"
+                                         : @"apple-parity-batched-matvec")
+                        : matvecParity
                         ? (runtimeWeight ? @"apple-parity-matmul"
                                          : @"apple-parity-matvec")
                         : (broadcast ? @"apple-parity-broadcast"

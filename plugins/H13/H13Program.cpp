@@ -420,6 +420,7 @@ struct OracleBroadcastTemplate {
 #include "H13NormTemplates.inc"
 #include "H13EnvelopeTemplates.inc"
 #include "H13ConvTemplates.inc"
+#include "H13BatchedMatmulTemplates.inc"
 
 bool sameShape(ElementwiseShape left, ElementwiseShape right) {
     return left.channels == right.channels && left.height == right.height &&
@@ -857,6 +858,119 @@ Program encodeMatmulParity(MatmulShape shape, const std::uint8_t *weights,
                                            : legacy->constantOffsetBytes;
     program.scratchAllocationBytes = envelope
         ? envelope->scratchAllocationBytes : legacy->scratchAllocationBytes;
+    return program;
+}
+
+const OracleBatchedMatmulTemplate *batchedTemplate(BatchedMatmulShape shape) {
+    for (const auto &candidate : kBatchedTasks)
+        if (candidate.rows == shape.rows &&
+            candidate.reduction == shape.reduction &&
+            candidate.columns == shape.columns &&
+            candidate.batch == shape.batch &&
+            candidate.storage == (shape.runtimeWeight
+                                      ? BatchedWeight::Runtime
+                                      : BatchedWeight::Packed))
+            return &candidate;
+    return nullptr;
+}
+
+bool supportsBatchedMatmul(BatchedMatmulShape shape) {
+    return batchedTemplate(shape) != nullptr;
+}
+
+/// The batched surface: one [1, B, rows, width] descriptor whose rows pad to
+/// the 64-byte stride every H13 surface uses and whose allocation covers
+/// exactly B planes with no tile rounding — the decoded descriptors carry
+TensorLayout batchedTensor(std::uint32_t index, std::uint32_t batch,
+                           std::uint32_t rows, std::uint32_t width) {
+    const std::uint64_t row = (width * 2 + 63) / 64 * 64;
+    const std::uint64_t plane = row * rows;
+    return {index,
+            {1, batch, rows, width, plane, row},
+            alignTile(plane * batch)};
+}
+Program encodeBatchedMatmul(BatchedMatmulShape shape,
+                            const std::uint8_t *packedPlanes,
+                            std::size_t packedBytes) {
+    constexpr std::size_t tasksPerBatch = 26;
+    const auto *source = batchedTemplate(shape);
+    if (!source)
+        throw std::invalid_argument(
+            "H13 batched matmul is outside the decoded envelope");
+    if (source->storage == BatchedWeight::Runtime) {
+        if (packedPlanes || packedBytes)
+            throw std::invalid_argument(
+                "H13 runtime-operand batched matmul takes no constant weight");
+    } else if (!packedPlanes || packedBytes != source->constantBytes) {
+        throw std::invalid_argument(
+            "H13 batched constant weight must be B padded planes");
+    }
+    if (source->groupWordCount % tasksPerBatch)
+        throw std::logic_error(
+            "H13 batched template group is not a whole task set");
+    const std::size_t taskWords = source->groupWordCount / tasksPerBatch;
+    Program program;
+    // Stamp batch zero's task group once per batch with the per-batch word
+    // rules, following each task's patched link pointer for placement; the
+    // gaps between tasks stay zero, exactly as decoded.
+    std::size_t offset = 0;
+    for (std::uint32_t batch = 0; batch < source->batch; ++batch) {
+        for (std::size_t index = 0; index < tasksPerBatch; ++index) {
+            std::vector<std::uint32_t> words(
+                source->groupWords + index * taskWords,
+                source->groupWords + (index + 1) * taskWords);
+            for (std::size_t rule = 0; rule < source->taskRuleCount; ++rule) {
+                const auto &taskRule = source->taskRules[rule];
+                if (taskRule.task != index) continue;
+                for (std::size_t word = 0; word < taskRule.ruleCount; ++word) {
+                    const auto &rule = taskRule.rules[word];
+                    if (rule.word >= words.size())
+                        throw std::logic_error(
+                            "H13 batched template patch is outside its task");
+                    if (rule.literalCount) {
+                        if (batch)
+                            words[rule.word] = rule.literals[batch - 1];
+                    } else {
+                        words[rule.word] =
+                            static_cast<std::uint32_t>(
+                                static_cast<std::int64_t>(words[rule.word]) +
+                                static_cast<std::int64_t>(batch) *
+                                    rule.delta);
+                    }
+                }
+                break;
+            }
+            if (batch == source->batch - 1 && index + 1 == tasksPerBatch &&
+                words[7])
+                throw std::logic_error(
+                    "H13 batched template final task does not end the stream");
+            if (program.task.size() < offset + words.size() * 4)
+                program.task.resize(offset + words.size() * 4);
+            std::memcpy(program.task.data() + offset, words.data(),
+                        words.size() * 4);
+            offset = words[7];
+        }
+    }
+    if (offset != 0)
+        throw std::logic_error(
+            "H13 batched template link chain does not terminate");
+    program.taskCount = tasksPerBatch * source->batch;
+    program.firstTaskBytes = taskWords * 4;
+    program.constants.assign(source->constantBytes, 0);
+    if (packedPlanes)
+        std::memcpy(program.constants.data(), packedPlanes, packedBytes);
+    program.constantOffsetBytes = (program.task.size() + 127) / 128 * 128;
+    if (shape.runtimeWeight) {
+        program.inputs = {batchedTensor(5, shape.batch, shape.reduction,
+                                        shape.columns),
+                          batchedTensor(6, shape.batch, shape.rows,
+                                        shape.reduction)};
+    } else {
+        program.inputs = {batchedTensor(5, shape.batch, shape.rows,
+                                        shape.reduction)};
+    }
+    program.output = batchedTensor(4, shape.batch, shape.rows, shape.columns);
+    program.outputBindingIndex = 0;
     return program;
 }
 

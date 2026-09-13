@@ -18,6 +18,8 @@ CONSTANT_OFFSET = 0x280
 TILE_BYTES = 0x4000
 PARITY_MATVEC = 'apple-parity-matvec'
 PARITY_MATMUL = 'apple-parity-matmul'
+PARITY_BATCHED_MATMUL = 'apple-parity-batched-matmul'
+PARITY_BATCHED_MATVEC = 'apple-parity-batched-matvec'
 PARITY_BROADCAST = 'apple-parity-broadcast'
 CHAIN_ENCODER = 'composed-chain'
 
@@ -122,13 +124,15 @@ PROGRAM_FIELDS = (
 
 
 def surface_layout(shape):
-    """The physical layout H13 lays an NCHW surface out as: rows padded up to
-    64 bytes, one plane per channel, and the batch only in the shape. This is
-    one formula for all three decoded surface kinds -- the elementwise
-    64-byte lane, the padded spatial plane, and the matmul's dense rows.
+    """The physical layout H13 lays an NCHW surface out as: rows padded up
+    to a 64-byte stride, one plane per channel, and the batch only in the
+    shape. This is one formula for all decoded surface kinds -- the
+    elementwise 64-byte lane, the padded spatial plane, and the matmul's
+    dense rows; the batched matmul's 749-wide planes pad to the 1536-byte
+    stride the decoded descriptors carry.
     """
     batch, channels, height, width = shape
-    row = max(64, width * 2)
+    row = (width * 2 + 63) // 64 * 64
     return [batch, channels, height, width, row * height, row]
 
 
@@ -330,14 +334,19 @@ def validate_program(directory, program, tensors):
     for index, item in enumerate(inputs, start=5):
         check_binding(item, index, tiles, layouts, tensors)
     check_binding(outputs[0], 4, tiles, layouts, tensors)
-    if matmul and encoder not in (PARITY_MATVEC, PARITY_MATMUL):
+    if matmul and encoder not in (PARITY_MATVEC, PARITY_MATMUL,
+                                  PARITY_BATCHED_MATMUL, PARITY_BATCHED_MATVEC):
         # The chunked encoder pads every surface to its 256- or 512-lane tile.
         require(binding_interval(inputs[0], tensors)[3] in (256, 512) and
                 binding_interval(outputs[0], tensors)[3] == 512,
                 'unsupported matvec physical size')
-    if encoder == PARITY_MATMUL:
+    if encoder in (PARITY_MATMUL, PARITY_BATCHED_MATMUL):
         require(matmul and len(inputs) == 2,
                 'a runtime-operand matmul binds both operands as inputs')
+    if encoder in (PARITY_BATCHED_MATMUL, PARITY_BATCHED_MATVEC):
+        require(program['taskDescriptors'] % 26 == 0 and
+                program['taskDescriptors'] >= 52,
+                'a batched matmul carries 26 tasks per batch')
     if operation not in ('matmul', 'chain'):
         output_is_returned_alias = any(
             tensor.get('aliasOf') == outputs[0]['name'] and
