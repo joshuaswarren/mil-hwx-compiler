@@ -6,6 +6,9 @@ free aliases for row-major-preserving views, offset views for contiguous
 slices, and tail-swap transposes folded into a consuming matmul's
 transpose flag — plus the exact rejection contracts for the encoder
 forms that need a data-movement program the decoded corpus lacks.
+The transpose-absorb extension adds the per-class encoder blocker
+contracts: fast-axis swaps, multi-consumer views, shape-view composites,
+middle-swap matmul feeds, and the fp16-only bool case.
 """
 import json
 import subprocess
@@ -32,13 +35,9 @@ def source(body, inputs, result):
 
 
 def const(name, literal):
-    return f"    {literal.split('(')[0].split('<')[0]} {name} = const()" \
-           f"[name = string(\"{name}\"), val = {literal}];\n"
-
-
-def const(name, literal):
     return f"    {literal.split('(')[0]} {name} = const()" \
            f"[name = string(\"{name}\"), val = {literal}];\n"
+
 
 
 def tensor_const(name, dtype, values):
@@ -164,8 +163,109 @@ def tile_source(shape=(1, 64, 1, 1), reps=(1, 1, 1, 1), result_shape=None):
     body += f"    {header(result_shape)} y = relu(x = t)[name = string(\"y\")];\n"
     return source(body, f"{header(shape)} a", "y")
 
+def blob_const(name, dtype, shape):
+    dims = ", ".join(map(str, shape))
+    return const(name, f"tensor<{dtype}, [{dims}]>"
+                          f"(BLOBFILE(path = string(\"@model_path/weights/weight.bin\"),"
+                          f" offset = uint64(0)))")
 
-def compile_source(root, name, text, expected_code=None, format="anec"):
+
+def encoder_conv_source():
+    """The encoder's 24 depthwise-pointwise conv feeders: a rank-3 [0,2,1]
+    transpose whose result the conv reads as x."""
+    body = tensor_const("perm", "int32", (0, 2, 1))
+    body += blob_const("w", "fp16", (2048, 1024, 1))
+    body += tensor_const("strides", "int32", (1,))
+    body += tensor_const("dilations", "int32", (1,))
+    body += tensor_const("pad", "int32", (0, 0))
+    body += const("pad_type", "string(\"valid\")")
+    body += const("groups", "int32(1)")
+    body += ("    tensor<fp16, [1, 1024, 375]> t = transpose(perm = perm, x = a)"
+             "[name = string(\"t\")];\n")
+    body += ("    tensor<fp16, [1, 2048, 375]> y = conv(dilations = dilations,"
+             " groups = groups, pad = pad, pad_type = pad_type,"
+             " strides = strides, weight = w, x = t)"
+             "[name = string(\"y\")];\n")
+    return source(body, "tensor<fp16, [1, 375, 1024]> a", "y")
+
+
+def encoder_residual_add_source():
+    """The encoder's 24 residual add feeders: a rank-3 [0,2,1] transpose read
+    as add's y against a plain-layout x."""
+    body = tensor_const("perm", "int32", (0, 2, 1))
+    body += ("    tensor<fp16, [1, 375, 1024]> t = transpose(perm = perm, x = a)"
+             "[name = string(\"t\")];\n")
+    body += ("    tensor<fp16, [1, 375, 1024]> y = add(x = b, y = t)"
+             "[name = string(\"y\")];\n")
+    return source(body, "tensor<fp16, [1, 1024, 375]> a, tensor<fp16, [1, 375, 1024]> b", "y")
+
+
+def encoder_bias_add_source():
+    """The encoder's 24 attention bias adds: a rank-4 [0,2,1,3] transpose read
+    twice as add's x against [1,8,1,128] constant biases."""
+    body = tensor_const("perm", "int32", (0, 2, 1, 3))
+    body += blob_const("q", "fp16", (1, 8, 1, 128))
+    body += blob_const("v", "fp16", (1, 8, 1, 128))
+    body += ("    tensor<fp16, [1, 8, 375, 128]> t = transpose(perm = perm, x = a)"
+             "[name = string(\"t\")];\n")
+    body += ("    tensor<fp16, [1, 8, 375, 128]> q1 = add(x = t, y = q)"
+             "[name = string(\"q1\")];\n")
+    body += ("    tensor<fp16, [1, 8, 375, 128]> y = add(x = t, y = v)"
+             "[name = string(\"y\")];\n")
+    return source(body, "tensor<fp16, [1, 375, 8, 128]> a", "q1, y")
+
+
+def encoder_reshape_source(shape=(1, 8, 375, 128), perm=(0, 2, 1, 3),
+                           reshaped=(1, 375, 1024)):
+    """The encoder's 25 reshape feeders: transpose then a flat-order-preserving
+    reshape whose consuming linear reads contiguous rows."""
+    result_shape = tuple(shape[p + len(shape) if p < 0 else p] for p in perm)
+    body = tensor_const("perm", "int32", perm)
+    body += tensor_const("rs", "int32", reshaped)
+    body += (f"    {header(result_shape)} t = transpose(perm = perm, x = a)"
+             "[name = string(\"t\")];\n")
+    body += (f"    {header(reshaped)} r = reshape(shape = rs, x = t)"
+             "[name = string(\"r\")];\n")
+    body += (f"    {header(reshaped)} y = relu(x = r)"
+             "[name = string(\"y\")];\n")
+    return source(body, f"{header(shape)} a", "y")
+
+
+def encoder_matmul_source():
+    """The encoder's 48 attention matmul feeders: a rank-4 [0,2,-3,-1]
+    middle-swap whose result feeds matmul's y operand."""
+    body = tensor_const("perm", "int32", (0, 2, -3, -1))
+    body += const("tx", "bool(false)")
+    body += const("ty", "bool(false)")
+    body += ("    tensor<fp16, [1, 8, 375, 128]> t = transpose(perm = perm, x = a)"
+             "[name = string(\"t\")];\n")
+    body += ("    tensor<fp16, [1, 8, 375, 749]> y = matmul("
+             "transpose_x = tx, transpose_y = ty, x = b, y = t)"
+             "[name = string(\"y\")];\n")
+    return source(body,
+                  "tensor<fp16, [1, 375, 8, 128]> a, tensor<fp16, [1, 8, 375, 749]> b",
+                  "y")
+
+
+def encoder_bool_source():
+    """The encoder's single bool mask transpose feeding logical_and."""
+    body = tensor_const("perm", "int32", (0, 2, 1))
+    body += ("    tensor<bool, [1, 375, 375]> t = transpose(perm = perm, x = a)"
+             "[name = string(\"t\")];\n")
+    body += ("    tensor<bool, [1, 375, 375]> m = logical_and(x = b, y = t)"
+             "[name = string(\"m\")];\n")
+    body += ("    tensor<fp16, [1, 375, 375]> y = select(a = c, b = d, cond = m)"
+             "[name = string(\"y\")];\n")
+    return source(body,
+                  "tensor<bool, [1, 375, 375]> a, tensor<bool, [1, 375, 375]> b,"
+                  " tensor<fp16, [1, 375, 375]> c, tensor<fp16, [1, 375, 375]> d",
+                  "y")
+
+
+
+
+def compile_source(root, name, text, expected_code=None, format="anec",
+                   expected_message=None):
     path = root / f"{name}.mil"
     path.write_text(text)
     output = root / name
@@ -178,6 +278,8 @@ def compile_source(root, name, text, expected_code=None, format="anec"):
         return output
     assert result.returncode == 65, result.stderr
     assert expected_code in result.stderr, result.stderr
+    if expected_message:
+        assert expected_message in result.stderr, result.stderr
     return None
 
 
@@ -262,6 +364,66 @@ with tempfile.TemporaryDirectory() as temporary:
     compile_source(root, "transpose-bad-perm",
                    transpose_source(perm=(0, 2, 2, 3)),
                    expected_code="h13.invalid-transpose-parameters")
+
+    # Encoder blocker classification, transpose-absorb stream: every one of
+    # the 98 add/conv/reshape-feeding encoder transposes rejects with the
+    # exact reason that stops it, and none has a compilable direct path a
+    # fold could be byte-compared against.
+    #
+    # 24 conv feeders: the rank-3 [0,2,1] permutation moves the fastest
+    # storage axis, so the conv's row-contiguous read is inexpressible as a
+    # surface interpretation at any size.
+    compile_source(root, "transpose-encoder-conv",
+                   encoder_conv_source(),
+                   expected_code="h13.nonfoldable-transpose",
+                   expected_message="moves the storage-fastest axis")
+    # 24 residual add feeders: same fast-axis class read as add's y operand.
+    compile_source(root, "transpose-encoder-residual-add",
+                   encoder_residual_add_source(),
+                   expected_code="h13.nonfoldable-transpose",
+                   expected_message="moves the storage-fastest axis")
+    # 24 attention bias adds: the rank-4 [0,2,1,3] permutation keeps the
+    # fastest axis but has two consumers, so nothing absorbs it.
+    compile_source(root, "transpose-encoder-bias-add",
+                   encoder_bias_add_source(),
+                   expected_code="h13.nonfoldable-transpose",
+                   expected_message="several consumers")
+    # 25 reshape feeders: reshape never reorders elements, so the composite
+    # is a pure view exactly when the transpose itself is, and this one is
+    # not — the consumer's contiguous rows would be chunked runs.
+    compile_source(root, "transpose-encoder-reshape",
+                   encoder_reshape_source(),
+                   expected_code="h13.nonfoldable-transpose",
+                   expected_message="stays a pure view only when the permutation itself preserves")
+    compile_source(root, "transpose-encoder-reshape-subsampling",
+                   encoder_reshape_source(shape=(1, 256, 375, 16),
+                                          reshaped=(1, 375, 4096)),
+                   expected_code="h13.nonfoldable-transpose",
+                   expected_message="stays a pure view only when the permutation itself preserves")
+    # 48 matmul feeders: a fast-axis-stable middle swap feeding matmul y;
+    # the trailing-swap fold does not apply and no decoded encoder reads a
+    # matmul operand with permuted leading strides.
+    compile_source(root, "transpose-encoder-matmul-y",
+                   encoder_matmul_source(),
+                   expected_code="h13.nonfoldable-transpose",
+                   expected_message="no decoded encoder permutes surface strides")
+    # The single bool mask transpose: the H13 path is fp16-only.
+    compile_source(root, "transpose-encoder-bool",
+                   encoder_bool_source(),
+                   expected_code="h13.invalid-transpose-parameters")
+
+    # Positive control for the composite rule: a layout-preserving
+    # permutation feeding a reshape stays the free alias the transpose
+    # lowering already emits.
+    composite = deterministic(
+        root, "transpose-reshape-pure-view",
+        encoder_reshape_source(shape=(1, 8, 1, 16), perm=(0, 2, 1, 3),
+                               reshaped=(1, 8, 16)))
+    composite_manifest = json.loads(
+        (composite / "manifest.json").read_text())
+    assert composite_manifest["tensors"]["t"]["aliasOf"] == "a"
+    assert composite_manifest["tensors"]["r"]["aliasOf"] == "a"
+    validate(root, composite)
 
     # slice_by_index: one contiguous view with the consumer reading at the
     # slice offset — the same binding ABI the split lowering established.

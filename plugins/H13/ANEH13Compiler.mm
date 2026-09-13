@@ -215,6 +215,15 @@ static BOOL viewOperation(NSString *name) {
         [name isEqualToString:@"transpose"];
 }
 
+/// The view family that never reorders elements: each result is the input's
+/// row-major sequence under a shape relabel, so transpose composed with one
+/// of them is a pure view exactly when the transpose alone is.
+static BOOL reshapeFamily(NSString *name) {
+    return [name isEqualToString:@"reshape"] ||
+        [name isEqualToString:@"squeeze"] ||
+        [name isEqualToString:@"expand_dims"];
+}
+
 static ANEGraphValue *storageOrigin(ANEGraphValue *value) {
     while (value && viewOperation(value.producer.operationName)) {
         ANEGraphValue *source = value.producer.operands[@"x"].value;
@@ -286,9 +295,17 @@ static BOOL splitAliasPlan(ANEGraphOperation *operation,
 /// the permutation swaps the operand's trailing two dimensions, or an exact
 /// rejection because the binding ABI carries one contiguous slice per
 /// operand and the decoded corpus holds no data-movement encoder.
+///
+/// `fastAxisSwapped` records whether the view's fastest (row) axis maps to
+/// a non-fast storage axis: the NCHW descriptor requires row elements
+/// contiguous, so such a permutation is inexpressible as a surface
+/// interpretation at any size, while a fast-axis-stable permutation only
+/// swaps the plane and row strides, which the descriptor can carry but no
+/// decoded task stream reads.
 struct H13TransposeViewPlan {
     BOOL layoutPreserving;
     BOOL tailSwap;
+    BOOL fastAxisSwapped;
 };
 
 static BOOL transposeViewPlan(ANEGraphOperation *operation,
@@ -369,6 +386,7 @@ static BOOL transposeViewPlan(ANEGraphOperation *operation,
     if (source[rank - 2] != rank - 1 || source[rank - 1] != rank - 2) tail = NO;
     plan->layoutPreserving = preserving;
     plan->tailSwap = tail;
+    plan->fastAxisSwapped = rank >= 1 && source[rank - 1] != rank - 1;
     return YES;
 }
 
@@ -1993,14 +2011,28 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 [consumer.operationName isEqualToString:@"matmul"] &&
                 ([operandKey isEqualToString:@"x"] ||
                  [operandKey isEqualToString:@"y"]);
-            if (!foldable)
-                return reject(diagnostics,
-                    plan.tailSwap
-                        ? (uses == 1
-                            ? @"H13 tail-swap transpose only folds into a consuming matmul's x or y operand because that is the only consumer with a transpose flag able to absorb the permutation"
-                            : @"H13 tail-swap transpose with several consumers or a returned value needs a materialized transposed surface, and the decoded corpus holds no data-movement encoder")
-                        : @"H13 transpose whose permutation moves a non-unit leading dimension needs a data-movement program: the one-slice binding ABI reads storage row-major and the decoded corpus holds no encoder that permutes surface strides",
+            if (!foldable) {
+                // Exact per-class blocker, so the encoder's transposes each
+                // reject with the reason that actually stops them.
+                NSString *message = nil;
+                if (plan.fastAxisSwapped)
+                    message = [NSString stringWithFormat:
+                        @"H13 %@ transpose moves the storage-fastest axis, so its view reads rows whose elements sit a non-unit storage stride apart: the NCHW descriptor carries contiguous rows and no surface interpretation expresses the permutation at any size; a consuming matmul's transpose flag is the only decoded mechanism that absorbs one, and this view has %@",
+                        plan.tailSwap ? @"a tail-swap" : @"a",
+                        uses == 1 && consumer
+                            ? [NSString stringWithFormat:
+                                  @"a '%@' consumer with no such flag",
+                                  consumer.operationName]
+                            : @"several consumers or a returned value needing a materialized surface the decoded corpus cannot produce"];
+                else if (uses != 1)
+                    message = @"H13 transpose with several consumers or a returned value needs a materialized transposed surface, and the decoded corpus holds no data-movement encoder";
+                else if (consumer && reshapeFamily(consumer.operationName))
+                    message = @"H13 transpose feeding a shape view stays a pure view only when the permutation itself preserves row-major element order, because reshape, squeeze, and expand_dims never reorder elements: this one moves non-unit axes, so the composite is a genuine permutation and the consumer's contiguous-row reads would need chunked runs of the storage-fastest axis, which no single binding slice covers";
+                else
+                    message = @"H13 transpose that keeps the fastest axis in place but swaps non-unit middle axes could only fold into a consumer that reads its operand with permuted plane and row strides: the descriptor can express the swap, but every decoded add, conv, and broadcast task stream bakes unpermuted operand strides and no decoded encoder permutes surface strides";
+                return reject(diagnostics, message,
                     candidate, @"h13.nonfoldable-transpose");
+            }
             transposeFolds[candidate.results[0].name] = @{
                 @"value": x,
                 @"flag": [operandKey isEqualToString:@"x"]
