@@ -132,10 +132,10 @@ sizes, and constant bindings.
 
 ANEC uses a 0x1000-byte header, a 0x274-byte descriptor, and constants at
 content offset 0x280. Older libane readers expecting a 0x800-byte header cannot
-consume this format. The schema remains `mil-hwxc.h13-anec-package.v1`, not an
-`ANEExecutableBundle` or an mlx-omarchy bundle. The device-free reader validates
-every container, tensor, binding, and slice. It also checks exact intermediate
-tiling and every producer-to-consumer dispatch dependency. Packing and unpacking
+consume this format. Schema `mil-hwxc.h13-anec-package.v2` separates physical
+fp16 output buffers from ordered logical returns. The device-free reader validates
+every container, tensor, binding, result mapping, and slice. It also checks exact
+intermediate tiling and every producer-to-consumer dispatch dependency. Packing and unpacking
 convert dense little-endian fp16 bytes to and from the physical channel layout.
 
 ```bash
@@ -342,9 +342,9 @@ scaling words, and the words that stay unresolved.
 
 ### H13 HWX and macOS aned gate
 
-Pass `--format hwx` to emit a loadable H13 Mach-O object for each program
-instead of an ANEC container. The manifest schema stays
-`mil-hwxc.h13-anec-package.v1` and records `"artifactFormat": "hwx"`.
+The H13 backend's `--format hwx` option writes HWX files in the same package
+instead of an ANEC container. The manifest uses
+`mil-hwxc.h13-anec-package.v2` and records `"artifactFormat": "hwx"`.
 `research/inspect_hwx.py` validates the H13 subtype, program descriptor,
 tensor channels, relocations, and embedded task/constant layout. It can also
 reconstruct the matching ANEC bytes:
