@@ -443,6 +443,7 @@ programCompositionCapabilityRows(void) {
             return YES;
         case ANEOperationKindConstant:
         case ANEOperationKindHighLevel:
+        case ANEOperationKindMask:
         case ANEOperationKindUnsupported:
             return NO;
     }
