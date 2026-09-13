@@ -552,7 +552,7 @@ static BOOL identityExtentViewPlan(ANEGraphOperation *operation,
                 [texts addObject:value.stringValue];
             return reject(diagnostics,
                 [NSString stringWithFormat:
-                    @"H13 %@ with %@ [%@] needs a data-movement program: every decoded H13 encoder writes an output surface of its input's shape and the binding ABI carries one contiguous slice, so no host-side form can materialize the grown or replicated region — the elements land interleaved at the padded or tiled stride, not as one appendable tail",
+                    @"H13 %@ with %@ [%@] needs a data-movement program: every decoded H13 encoder writes an output surface of its input's shape and the binding ABI carries one contiguous slice, so no host-side form can materialize the grown or replicated region — and Apple's own tool rejects pad in every form including the identity view (6/6 callback_status=1), so pad elimination belongs to the frontend, not to a new encoder",
                     operation.operationName, parameter,
                     [texts componentsJoinedByString:@","]],
                 operation, unsupportedCode);
@@ -860,8 +860,10 @@ static NSDictionary *binding(ANEGraphValue *value,
     NSUInteger elements = 1;
     for (NSNumber *dimension in logicalShape)
         elements *= dimension.unsignedIntegerValue;
-    return @{@"name": value.name, @"dtype": @"float16",
-        @"shape": logicalShape, @"logicalBytes": @(elements * 2),
+    const NSUInteger elementSize = layout.elementSize == 1 ? 1 : 2;
+    return @{@"name": value.name,
+        @"dtype": elementSize == 1 ? @"bool" : @"float16",
+        @"shape": logicalShape, @"logicalBytes": @(elements * elementSize),
         @"index": @(layout.index), @"nchw": physical,
         @"allocationBytes": @(layout.allocationBytes)};
 }
@@ -879,7 +881,9 @@ static HWXObjectBinding *objectBinding(const ane::h13::TensorLayout &layout,
     // size and spaces the surfaces by the whole allocation.
     HWXObjectBinding *binding = [[HWXObjectBinding alloc]
         initWithSymbol:name shortName:name role:role
-        elementType:ANEElementTypeFP16 shape:shape
+        elementType:layout.elementSize == 1 ? ANEElementTypeBool
+                                            : ANEElementTypeFP16
+        shape:shape
         rowStrideBytes:(NSUInteger)layout.nchw[5]
         planeStrideBytes:(NSUInteger)layout.nchw[4]
         batchStrideBytes:batchStride storageByteLength:batchStride];
@@ -935,8 +939,16 @@ static void recordTensor(NSMutableDictionary<NSString *, NSDictionary *> *tensor
     if (tensors[value.name]) return;
     NSUInteger elements = 1;
     for (NSNumber *dimension in shape) elements *= dimension.unsignedIntegerValue;
-    tensors[value.name] = @{@"shape": shape, @"logicalBytes": @(elements * 2),
-                            @"role": role};
+    // Schema evolution stays backward compatible: fp16 records keep their
+    // exact prior shape; only bool surfaces add the dtype field.
+    const BOOL boolElements =
+        value.type.kind == ANEValueTypeKindTensor &&
+        value.type.elementType == ANEElementTypeBool;
+    tensors[value.name] = boolElements
+        ? @{@"shape": shape, @"logicalBytes": @(elements),
+            @"dtype": @"bool", @"role": role}
+        : @{@"shape": shape, @"logicalBytes": @(elements * 2),
+            @"role": role};
 }
 
 static void addSlice(NSMutableDictionary *record, ANEGraphValue *value,
@@ -1939,22 +1951,146 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             static_cast<const std::uint8_t *>(paddedWeights.bytes),
             paddedWeights.length, transposeY);
         inputs = @[x];
-    } else if ([name isEqualToString:@"less"]) {
-        return reject(diagnostics,
-            @"H13 less is a registry op awaiting a decoded encoder: a comparison is a step function and no finite +,-,*,/ expression over fp16 produces (x < y) as 0/1 exactly — rounding destroys every sign-based construction and x == y must map to 0 while y - x = +0 is indistinguishable from tiny positives — so it lowers only through a decoded compare template (mint: fp16 compare emitting fp16 0/1, operand shapes and the arange-vs-length geometries the encoder's four instances use)",
-            operation, @"h13.less-needs-decoded-encoder");
-    } else if ([name isEqualToString:@"floor"]) {
-        return reject(diagnostics,
-            @"H13 floor is a registry op awaiting a decoded encoder: floor is total and exact over fp16 (|x| ≥ 2048 is already integral; below that every integer result is representable; NaN and ±inf pass through) but has no arithmetic identity over the decoded elementwise ops, so it lowers only through a decoded floor template (mint: fp16 floor; the encoder's three instances floor [1]-shaped length scalars)",
-            operation, @"h13.floor-needs-decoded-encoder");
-    } else if ([name isEqualToString:@"select"]) {
-        return reject(diagnostics,
-            @"H13 select is a registry op awaiting a decoded encoder: the blend identity m*a + not(m)*b is exact only for finite fills (and value-exact with a -0.0 zero-sign class for the +0.0 fill), while the encoder's 24 attention-bias selects fill -inf, where 0 * -inf = NaN destroys every unmasked lane — no arrangement of +,-,* avoids a 0·inf product on the discarded branch — so it lowers only through a decoded fp16 lane-pick-by-0/1-mask template; the +0.0-fill family belongs to the frontend mul rewrite, not here",
-            operation, @"h13.select-needs-decoded-encoder");
-    } else if ([name isEqualToString:@"floor_div"]) {
-        return reject(diagnostics,
-            @"H13 floor_div composes real_div with floor and is blocked on the floor encoder: the constant-divisor form already lowers its divide exactly through the decoded power-of-two reciprocal multiply (dividing by 2.0 multiplies by 0x3800), but the fp16 floor of that quotient needs the decoded floor template. Contract note the encoder relies on: fp16 floor_div equals floor(fp16_div(x, y)), which is not integer floor division — 3199/32 divides-and-rounds to exactly 100.0 in fp16 while exact integer floor division gives 99 — and that matches the package's own cast-then-divide reference",
-            operation, @"h13.floor-div-needs-decoded-encoder");
+    } else if ([name isEqualToString:@"less"] ||
+               [name isEqualToString:@"floor"] ||
+               [name isEqualToString:@"select"] ||
+               [name isEqualToString:@"floor_div"]) {
+        // The boolean registry ops lower through their decoded templates:
+        // fixed task streams keyed by (family, CHW surface, const-operand
+        // twin). less emits a bool result and select reads a bool cond —
+        // the captured 1-byte surfaces — so the fp16-only result gate and
+        // every operand check here is family-specific.
+        ane::h13::H13BooleanShape shape{};
+        if ([name isEqualToString:@"less"]) shape.kind = ane::h13::H13BooleanKind::Less;
+        else if ([name isEqualToString:@"floor"]) shape.kind = ane::h13::H13BooleanKind::Floor;
+        else if ([name isEqualToString:@"select"]) shape.kind = ane::h13::H13BooleanKind::Select;
+        else shape.kind = ane::h13::H13BooleanKind::FloorDiv;
+        NSMutableArray<ANEGraphValue *> *operands = [NSMutableArray array];
+        if (shape.kind == ane::h13::H13BooleanKind::Select) {
+            for (NSString *key in @[@"a", @"b", @"cond"]) {
+                ANEGraphValue *operand = operation.operands[key].value;
+                if (!operand && operation.arguments[key].kind ==
+                    ANEGraphArgumentKindValue)
+                    operand = operation.arguments[key].value;
+                [operands addObject:operand];
+            }
+        } else {
+            [operands addObject:operation.operands[@"x"].value];
+            ANEGraphValue *second = operation.operands[@"y"].value;
+            if (second) [operands addObject:second];
+        }
+        // The shape comes from the full-tensor operand: for select with a
+        // scalar fill that is b, never the scalar.
+        ANEGraphValue *primary = (shape.kind == ane::h13::H13BooleanKind::Select &&
+                                  operands[0].type.shape.count == 0)
+            ? operands[1] : operands[0];
+        if (!primary || primary.type.shape.count > 4) goto boolean_reject;
+        {
+            // Flat tensors (rank 2 and below) key as (elements, 1, 1) —
+            // the captured less shapes are flat vectors — while rank 3/4
+            // shapes collapse leading unit dimensions into CHW.
+            NSUInteger elements = 0;
+            if (!tensorElementCount(primary, &elements)) goto boolean_reject;
+            NSArray<NSNumber *> *shapeText = primary.type.shape;
+            if (shapeText.count <= 2) {
+                shapeText = @[@(elements), @1, @1];
+            } else {
+                while (shapeText.count > 3 &&
+                       [shapeText[0] isEqualToNumber:@1])
+                    shapeText = [shapeText subarrayWithRange:
+                        NSMakeRange(1, shapeText.count - 1)];
+                while (shapeText.count < 3)
+                    shapeText = [@[@1] arrayByAddingObjectsFromArray:shapeText];
+            }
+            if (shapeText.count != 3) goto boolean_reject;
+            shape.channels = (std::uint32_t)shapeText[0].unsignedIntegerValue;
+            shape.height = (std::uint32_t)shapeText[1].unsignedIntegerValue;
+            shape.width = (std::uint32_t)shapeText[2].unsignedIntegerValue;
+        }
+        // The captured dtypes are load-bearing: less emits a bool result
+        // and select reads a bool cond; Apple's own tool rejects the fp16
+        // forms outright, so they have no device encoding at all.
+        if (shape.kind == ane::h13::H13BooleanKind::Less &&
+            !(operation.results[0].type.kind == ANEValueTypeKindTensor &&
+              operation.results[0].type.elementType == ANEElementTypeBool))
+            goto boolean_reject;
+        if (shape.kind == ane::h13::H13BooleanKind::Select) {
+            ANEGraphValue *cond = operation.operands[@"cond"].value;
+            if (!cond || cond.type.kind != ANEValueTypeKindTensor ||
+                cond.type.elementType != ANEElementTypeBool)
+                goto boolean_reject;
+        }
+        // The const-operand twins: floor over a BLOBFILE x, floor_div over
+        // the captured scalar-2.0 y, select over the -inf blob a. The
+        // select -inf twin's constant section is not yet derivable from a
+        // uniform-value capture, so runtime-a stays the lowering form.
+        shape.constInput =
+            (shape.kind == ane::h13::H13BooleanKind::Floor &&
+             constantValue(primary)) ||
+            (shape.kind == ane::h13::H13BooleanKind::FloorDiv &&
+             constantValue(operation.operands[@"y"].value)) ||
+            (shape.kind == ane::h13::H13BooleanKind::Select &&
+             constantValue(operation.operands[@"a"].value));
+        if (shape.kind == ane::h13::H13BooleanKind::Select && shape.constInput)
+            return reject(diagnostics,
+                @"H13 select with a constant a belongs to the frontend, which materializes the fill as a runtime constant input and routes the +0.0-fill family through its exact mul rewrite: the captured constant-a form carries uniform -inf values whose retained section cannot discriminate the packing for arbitrary constants, so this path lowers only runtime-a forms with a bool cond",
+                operation, @"h13.select-needs-decoded-encoder");
+        if (!ane::h13::supportsBooleanOp(shape)) {
+        boolean_reject:
+            return reject(diagnostics,
+                [NSString stringWithFormat:
+                    @"H13 %@ is outside the decoded boolean envelope: the captured geometries are less at CHW (375,1,1)/(750,1,1)/(1500,1,1)/(64,1,1) with a bool result, floor at (1,1,1)/(64,1,1)/(512,1,1) runtime or blob x, select at (64,1,1)/(8,375,375) with runtime a and a bool cond, and floor_div at (1,1,1)/(64,1,1) with runtime y or the scalar 2.0 — fp16-result less and fp16-cond select are rejected by Apple's own tool, so no device form exists for them",
+                    name],
+                operation, @"h13.boolean-outside-envelope");
+        }
+        const uint8_t *scalarLane = nullptr;
+        if (shape.kind == ane::h13::H13BooleanKind::Floor && shape.constInput) {
+            ANEGraphValue *xValue = operation.operands[@"x"].value;
+            NSData *payload = resolvedConstants[xValue.name];
+            if (!payload) {
+                payload = [ANEBlobResolver loadConstantForOperation:xValue.producer
+                    expectedBytes:2 modelRoot:modelRoot
+                    diagnostics:diagnostics];
+                if (!payload) return NO;
+                resolvedConstants[xValue.name] = payload;
+            }
+            if (payload.length < 2)
+                return reject(diagnostics,
+                    @"H13 floored constants must carry one fp16 lane",
+                    operation, @"h13.invalid-constant-payload");
+            scalarLane = static_cast<const uint8_t *>(payload.bytes);
+        }
+        if (shape.kind == ane::h13::H13BooleanKind::FloorDiv &&
+            shape.constInput) {
+            ANEGraphValue *divisor = operation.operands[@"y"].value;
+            uint16_t divisorBits = 0;
+            BOOL halves = divisor.type.kind == ANEValueTypeKindScalar &&
+                divisor.type.elementType == ANEElementTypeFP16 &&
+                constantValue(divisor) &&
+                fp16Scalar(divisor.producer.attributes[@"val"], &divisorBits);
+            if (!halves || divisorBits != 0x4000)
+                return reject(diagnostics,
+                    @"H13 floor_div lowers the captured scalar-2.0 divisor only",
+                    operation, @"h13.invalid-constant-input");
+        }
+        program = ane::h13::encodeBooleanOp(shape, scalarLane,
+                                            scalarLane ? 2 : 0);
+        {
+            NSMutableArray *inputs = [NSMutableArray array];
+            for (ANEGraphValue *operand in operands) {
+                BOOL folded =
+                    (shape.constInput && operand == operands.lastObject &&
+                     shape.kind == ane::h13::H13BooleanKind::FloorDiv) ||
+                    (shape.constInput && operand == operands[0] &&
+                     shape.kind == ane::h13::H13BooleanKind::Floor);
+                if (!folded) [inputs addObject:operand];
+            }
+            *inputsOut = inputs;
+        }
+        *constantInputOut = nil;
+        *constantDataOut = nil;
+        *manifestOperationOut = name;
+        return YES;
      } else {
         ane::h13::NormOperation normOperation{};
         if (normEncoding(name, &normOperation))
@@ -1963,6 +2099,61 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                  "constant axes, no gamma or beta, epsilon 1e-5, and an input "
                  "and output surface inside the oracle parity envelope", name],
                 operation, @"h13.norm-outside-envelope");
+        if ([name isEqualToString:@"tile"]) {
+            ANEGraphValue *reps = operation.operands[@"reps"].value;
+            NSArray<NSNumber *> *repValues = int32TensorElements(reps);
+            ane::h13::H13TileShape tile{};
+            NSArray<NSNumber *> *inShape = x ? x.type.shape : nil;
+            while (inShape.count > 3)
+                inShape = [inShape subarrayWithRange:
+                    NSMakeRange(1, inShape.count - 1)];
+            while (inShape.count < 3)
+                inShape = [@[@1] arrayByAddingObjectsFromArray:inShape];
+            NSArray<NSNumber *> *repText = repValues;
+            while (repText.count > 3)
+                repText = [repText subarrayWithRange:
+                    NSMakeRange(1, repText.count - 1)];
+            while (repText.count < 3)
+                repText = [@[@1] arrayByAddingObjectsFromArray:repText];
+            BOOL tileParse = x && inShape.count == 3 && repText.count == 3;
+            for (NSUInteger index = 0; index < 3 && tileParse; ++index) {
+                long long rep = repText[index].longLongValue;
+                if (rep < 1 || rep > UINT32_MAX) tileParse = NO;
+            }
+            if (tileParse) {
+                tile.inChannels = inShape[0].unsignedIntegerValue;
+                tile.inHeight = inShape[1].unsignedIntegerValue;
+                tile.inWidth = inShape[2].unsignedIntegerValue;
+                tile.repChannels = (std::uint32_t)repText[0].longLongValue;
+                tile.repHeight = (std::uint32_t)repText[1].longLongValue;
+                tile.repWidth = (std::uint32_t)repText[2].longLongValue;
+                tile.runtimeInput = !constantValue(x);
+                if (!ane::h13::supportsTileOp(tile))
+                    return reject(diagnostics,
+                        @"H13 tile is outside the decoded tile envelope, which covers the captured materialized forms",
+                        operation, @"h13.unsupported-tile");
+                if (!tile.runtimeInput) {
+                    // The decoded blob template scatters its operand into
+                    // constant-section lanes with no clean patch map (the
+                    // capture's const section carries capture-specific
+                    // scattered bytes, not the dense blob), so no
+                    // byte-exact reproducer exists for a general blob
+                    // operand; the runtime-operand templates are exact.
+                    return reject(diagnostics,
+                        @"H13 tile with a constant operand is outside the decoded tile envelope: the blob template's constant-section lane embedding has no byte-exact reproducer, only the runtime-operand forms lower",
+                        operation, @"h13.unsupported-tile");
+                }
+                program = ane::h13::encodeTileOp(tile);
+                *inputsOut = tile.runtimeInput ? @[x] : @[];
+                *constantInputOut = nil;
+                *constantDataOut = nil;
+                *manifestOperationOut = name;
+                return YES;
+            }
+            return reject(diagnostics,
+                @"H13 tile is outside the decoded tile envelope, which covers the captured materialized forms",
+                operation, @"h13.unsupported-tile");
+        }
         if ([name isEqualToString:@"conv"])
             return reject(diagnostics,
                 @"H13 conv needs a decoded geometry: an fp16 rank-4 input and "
@@ -2335,6 +2526,27 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             }
             continue;
         }
+        if ([name isEqualToString:@"tile"]) {
+            // Materialized tile needs a decoded form; the all-ones identity
+            // stays the free alias handled below.
+            ANEGraphValue *repsValue = candidate.operands[@"reps"].value;
+            NSArray<NSNumber *> *repCheck =
+                int32TensorElements(repsValue);
+            BOOL identityReps = repCheck.count > 0;
+            for (NSNumber *rep in repCheck)
+                identityReps = identityReps && rep.longLongValue == 1;
+            if (!identityReps) {
+                ANEGraphValue *result = [[ANEGraphValue alloc]
+                    initWithName:candidate.results[0].name
+                    type:candidate.results[0].type];
+                [operations addObject:[[ANEGraphOperation alloc]
+                    initWithOperationName:name results:@[result] arguments:arguments
+                    attributes:candidate.attributes range:candidate.range]];
+                [manifestValues addObject:result];
+                [loweredValues setObject:result forKey:candidate.results[0]];
+                continue;
+            }
+        }
         if ([name isEqualToString:@"pad"] || [name isEqualToString:@"tile"]) {
             BOOL padding = [name isEqualToString:@"pad"];
             if (!identityExtentViewPlan(candidate, padding ? @"pad" : @"reps",
@@ -2363,6 +2575,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             }
             continue;
         }
+
         BOOL reshape = [name isEqualToString:@"reshape"];
         BOOL squeeze = [name isEqualToString:@"squeeze"];
         BOOL expand = [name isEqualToString:@"expand_dims"];
@@ -2899,6 +3112,11 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             BOOL batched = matmul &&
                 batchedMatmulParse(operation, &batchedShape) == H13BatchedParseYes &&
                 ane::h13::supportsBatchedMatmul(batchedShape);
+            NSString *booleanOp = operation.operationName;
+            BOOL booleanLowered = [booleanOp isEqualToString:@"less"] ||
+                [booleanOp isEqualToString:@"floor"] ||
+                [booleanOp isEqualToString:@"select"] ||
+                [booleanOp isEqualToString:@"floor_div"];
             BOOL matvecParity = !batched && matmul &&
                 matmulParityShape(operation.operands[@"x"].value, operation.results[0],
                     boolean(operation.arguments[@"transpose_x"], YES),
@@ -2918,7 +3136,44 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 normParityPlan(operation, &normalizationPlan);
             BOOL convolution = !parity && !broadcast && !normalization &&
                 convParityPlan(operation, &convolutionPlan);
-            if (parity) {
+            BOOL tiled = [operation.operationName isEqualToString:@"tile"];
+            if (tiled) {
+                // The tile program reads its whole input surface and writes
+                // its whole output surface in one program, so both slice
+                // spans are the whole-tensor element counts.
+                NSUInteger xElements = 0;
+                NSArray<NSNumber *> *xType = operation.operands[@"x"].value.type.shape;
+                if (xType.count) {
+                    xElements = 1;
+                    for (NSNumber *dimension in xType)
+                        xElements *= dimension.unsignedIntegerValue;
+                }
+                NSUInteger oElements = 0;
+                NSArray<NSNumber *> *oType = operation.results[0].type.shape;
+                if (oType.count) {
+                    oElements = 1;
+                    for (NSNumber *dimension in oType)
+                        oElements *= dimension.unsignedIntegerValue;
+                }
+                if (xElements)
+                    inputSliceElements = inputPhysicalElements = xElements;
+                if (oElements)
+                    outputSliceElements = outputPhysicalElements = oElements;
+            } else if (booleanLowered) {
+                // Whole-tensor shapes regardless of the result dtype:
+                // bool compare results and select conds count elements,
+                // not bytes.
+                NSArray<NSNumber *> *resultShape = operation.results[0].type.shape;
+                if (resultShape.count) {
+                    NSUInteger elements = 1;
+                    for (NSNumber *dimension in resultShape)
+                        elements *= dimension.unsignedIntegerValue;
+                    if (elements)
+                        inputSliceElements = outputSliceElements =
+                            inputPhysicalElements = outputPhysicalElements =
+                                elements;
+                }
+            } else if (parity) {
                 inputSliceElements = outputSliceElements =
                     inputPhysicalElements = outputPhysicalElements =
                         operationPlan.elements;
@@ -3023,7 +3278,11 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 } else if (parity || broadcast || normalization || convolution) {
                     outputOffset =
                         [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
-                } else {
+                } else if (!tiled) {
+                    // A materialized tile reads its whole input surface and
+                    // writes its whole output surface in one program; the
+                    // tiled metadata above already sized both slice spans,
+                    // so the 64-lane split must not clobber them.
                     inputOffset = sliceIndex * 64;
                     outputOffset = inputOffset +
                         [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
@@ -3127,6 +3386,10 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     @"encoder": batched
                         ? (runtimeWeight ? @"apple-parity-batched-matmul"
                                          : @"apple-parity-batched-matvec")
+                        : tiled
+                        ? @"apple-parity-tile"
+                        : booleanLowered
+                        ? @"apple-parity-boolean"
                         : matvecParity
                         ? (runtimeWeight ? @"apple-parity-matmul"
                                          : @"apple-parity-matvec")
@@ -3264,9 +3527,11 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     if (![item[@"name"] isEqualToString:name]) continue;
                     NSDictionary *slice = item[@"slice"];
                     NSUInteger offset = [slice[@"elementOffset"] unsignedIntegerValue];
+                    const NSUInteger elementSize =
+                        [item[@"dtype"] isEqualToString:@"bool"] ? 1 : 2;
                     NSUInteger count = slice
                         ? [slice[@"elementCount"] unsignedIntegerValue]
-                        : [item[@"logicalBytes"] unsignedIntegerValue] / 2;
+                        : [item[@"logicalBytes"] unsignedIntegerValue] / elementSize;
                     NSUInteger physical = slice[@"physicalElements"]
                         ? [slice[@"physicalElements"] unsignedIntegerValue] : count;
                     [([direction isEqualToString:@"outputs"] ? produced : consumed)
@@ -3298,7 +3563,10 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 cursor = MAX(cursor, producerEnd);
                 if (cursor >= end) break;
             }
-            if (cursor < end)
+            // Programs read in 64-element lanes, so a consumer may reach
+            // the end of the lane containing the last covered element —
+            // the readable surface padding — but never beyond it.
+            if (cursor < end && end > (cursor + 63) / 64 * 64)
                 return reject(diagnostics,
                     @"H13 intermediate consumer physical range exceeds producer writes",
                     lastOperation, chainCode);

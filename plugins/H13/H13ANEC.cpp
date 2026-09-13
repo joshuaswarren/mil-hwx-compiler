@@ -48,7 +48,9 @@ void validateTensor(const TensorLayout &tensor, std::uint32_t expectedIndex,
     const auto &nchw = tensor.nchw;
     if (!nchw[0] || !nchw[1] || !nchw[2] || !nchw[3] || !nchw[4] || !nchw[5])
         throw std::invalid_argument("tensor layout has a zero dimension or stride");
-    if ((nchw[5] % 2) || (nchw[4] % nchw[5]) || nchw[5] / 2 < nchw[3])
+    const std::uint64_t element = tensor.elementSize == 1 ? 1 : 2;
+    if ((nchw[5] % element) || (nchw[4] % nchw[5]) ||
+        nchw[5] / element < nchw[3])
         throw std::invalid_argument("unsupported tensor tiling layout");
     const auto minimumPlane = checkedMultiply(nchw[2], nchw[5],
                                               "tensor row span overflows");
@@ -95,8 +97,19 @@ void storeWord(std::vector<std::uint8_t> &bytes, std::size_t offset,
 void bindTasks(std::vector<std::uint8_t> &anec, const Program &program) {
     auto channels = program.taskSurfaceChannels;
     std::sort(channels.begin(), channels.end());
-    if (channels != std::array<std::uint32_t, 3>{4, 5, 6})
-        throw std::invalid_argument("H13 task surface channels must be a permutation of 4, 5, 6");
+    const bool threeSurface =
+        channels == std::array<std::uint32_t, 4>{4, 5, 6, 7} &&
+        program.inputs.size() <= 2;
+    const bool fourSurface =
+        channels == std::array<std::uint32_t, 4>{4, 5, 6, 7} &&
+        program.inputs.size() == 3;
+    if (!threeSurface && !fourSurface)
+        throw std::invalid_argument(
+            "H13 task surface channels must be a permutation of 4..6, "
+            "or 4..7 when a third input binds a fourth surface");
+    if (program.inputs.size() > 2 && !fourSurface)
+        throw std::invalid_argument(
+            "H13 three-input programs must bind four surface channels");
     std::size_t offset = 0, size = program.firstTaskBytes;
     for (std::uint32_t index = 0; index != program.taskCount; ++index) {
         if (offset > program.task.size() || size < 40 ||
@@ -136,10 +149,22 @@ void bindTasks(std::vector<std::uint8_t> &anec, const Program &program) {
 
 std::vector<std::uint8_t> encodeANEC(const Program &program) {
     validateProgram(program);
-    if (program.inputs.empty() || program.inputs.size() > 2)
-        throw std::invalid_argument("H13 ANEC requires one or two input tensors");
+    if (program.inputs.empty() && program.constants.empty())
+        throw std::invalid_argument("H13 ANEC requires a source for its task stream");
+    if (program.inputs.size() > 3)
+        throw std::invalid_argument("H13 ANEC requires at most three input tensors");
 
-    validateTensor(program.output, 4, "output allocation does not cover its physical span");
+    // Most encoders bind the result on 4 with operands on 5..7; the blob-x
+    // boolean twin binds no runtime surface and the capture writes its
+    // result through channel 5, so the output may take the first-input
+    // slot there and only there.
+    const auto outputChannel = program.output.index;
+    if (outputChannel != 4 && outputChannel != 5)
+        throw std::invalid_argument("unsupported ANEC output channel index");
+    if (outputChannel == 5 && !program.inputs.empty())
+        throw std::invalid_argument("ANEC output shares its channel with an input");
+    validateTensor(program.output, outputChannel,
+                   "output allocation does not cover its physical span");
     for (std::size_t i = 0; i != program.inputs.size(); ++i)
         validateTensor(program.inputs[i], static_cast<std::uint32_t>(5 + i),
                        "input allocation does not cover its physical span");
@@ -156,15 +181,15 @@ std::vector<std::uint8_t> encodeANEC(const Program &program) {
     if (program.scratchAllocationBytes)
         tiles[3] = tileCount(program.scratchAllocationBytes,
                              "scratch tile count overflows");
-    tiles[4] = tileCount(program.output.allocationBytes,
-                         "output tile count overflows");
+    tiles[outputChannel] = tileCount(program.output.allocationBytes,
+                                     "output tile count overflows");
     for (std::size_t i = 0; i != program.inputs.size(); ++i)
         tiles[5 + i] = tileCount(program.inputs[i].allocationBytes,
                                  "input tile count overflows");
 
     std::array<std::uint64_t, channelCount * tensorFields> layouts{};
     std::copy(program.output.nchw.begin(), program.output.nchw.end(),
-              layouts.begin() + 4 * tensorFields);
+              layouts.begin() + outputChannel * tensorFields);
     for (std::size_t i = 0; i != program.inputs.size(); ++i)
         std::copy(program.inputs[i].nchw.begin(), program.inputs[i].nchw.end(),
                   layouts.begin() + (5 + i) * tensorFields);

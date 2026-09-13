@@ -81,34 +81,39 @@ def validate(root, package):
 with tempfile.TemporaryDirectory() as temporary:
     root = Path(temporary)
 
-    body = const("dt", "string(\"fp16\")")
-    body += fp16_const("arange", [1, 375], [i * 0.03125 for i in range(375)])
-    body += ("    tensor<fp16, [1, 375]> m = less(x = arange, y = len)"
+    body = ("    tensor<bool, [1, 64, 1, 1]> m = less(x = x, y = y)"
              "[name = string(\"m\")];\n")
-    body += ("    tensor<fp16, [1, 375]> y = cast(dtype = dt, x = m)"
-             "[name = string(\"y\")];\n")
-    compile_source(root, "registry-less", source(
-        body, header([1]) + " len", "y"),
-        expected_code="h13.less-needs-decoded-encoder",
-        expected_message="no finite +,-,*,/ expression over fp16 produces (x < y) as 0/1 exactly")
+    body += ("    tensor<fp16, [1, 64, 1, 1]> out = select(a = a, b = b, cond = m)"
+             "[name = string(\"out\")];\n")
+    package = compile_source(root, "registry-less-chain", source(
+        body, header([1, 64, 1, 1]) + " x, " + header([1, 64, 1, 1]) + " y, " +
+        header([1, 64, 1, 1]) + " a, " + header([1, 64, 1, 1]) + " b", "out"))
+    manifest = json.loads((package / "manifest.json").read_text())
+    assert [program["encoder"] for program in manifest["programs"]] == [
+        "apple-parity-boolean", "apple-parity-boolean"]
+    validate(root, package)
 
-    # floor — the encoder's [1]-shaped length scalars.
-    body = ("    tensor<fp16, [1]> y = floor(x = a)"
-            "[name = string(\"y\")];\n")
-    compile_source(root, "registry-floor", source(
-        body, header([1]) + " a", "y"),
-        expected_code="h13.floor-needs-decoded-encoder",
-        expected_message="total and exact over fp16")
+    # floor — the encoder's [1]-shaped length scalars now lower.
+    floor = compile_source(root, "registry-floor",
+                           source(("    tensor<fp16, [1]> y = floor(x = a)"
+                                     "[name = string(\"y\")];\n"),
+                                  header([1]) + " a", "y"))
+    floor_manifest = json.loads((floor / "manifest.json").read_text())
+    assert floor_manifest["programs"][0]["encoder"] == "apple-parity-boolean"
+    validate(root, floor)
 
-    # floor_div — the encoder's length halving; blocked on the floor encoder
-    # while the divide itself is already exact.
-    body = fp16_const("two", [1], [2.0])
+    # floor_div — the encoder's length halving by the scalar constant 2.0
+    # now lowers (the encoder carries the divisor as tensor<fp16, []>, like
+    # the int32 length form); the fp16 3199/32-to-100 semantics stay in the
+    # contract.
+    body = const("two", "fp16(2.0)")
     body += ("    tensor<fp16, [1]> y = floor_div(x = a, y = two)"
              "[name = string(\"y\")];\n")
-    compile_source(root, "registry-floor-div", source(
-        body, header([1]) + " a", "y"),
-        expected_code="h13.floor-div-needs-decoded-encoder",
-        expected_message="3199/32 divides-and-rounds to exactly 100.0 in fp16")
+    floor_div = compile_source(root, "registry-floor-div",
+                               source(body, header([1]) + " a", "y"))
+    floor_div_manifest = json.loads((floor_div / "manifest.json").read_text())
+    assert floor_div_manifest["programs"][0]["encoder"] == "apple-parity-boolean"
+    validate(root, floor_div)
 
     # select — the encoder's attention-bias family: -inf fill against an
     # fp16 0/1 mask (the decision doc's boundary conversion means no bool
@@ -122,10 +127,11 @@ with tempfile.TemporaryDirectory() as temporary:
     body += ("    tensor<fp16, [1, 8, 375, 375]> y = select("
              "a = neg_inf, b = b, cond = m)[name = string(\"y\")];\n")
     compile_source(root, "registry-select-neg-inf", source(
-        body, header([1, 8, 375, 375]) + " b, " + header([1, 8, 375, 375]) + " m",
+        body, header([1, 8, 375, 375]) + " b, "
+              + "tensor<bool, [1, 8, 375, 375]> m",
         "y"),
         expected_code="h13.select-needs-decoded-encoder",
-        expected_message="0 * -inf = NaN destroys every unmasked lane")
+        expected_message="materializes the fill as a runtime constant input")
 
     # The +0.0-fill family rejects the same way here: it belongs to the
     # frontend mul rewrite, not to a compiler encoder.
@@ -133,10 +139,11 @@ with tempfile.TemporaryDirectory() as temporary:
     body += ("    tensor<fp16, [1, 1024, 375]> y = select("
              "a = zero, b = b, cond = m)[name = string(\"y\")];\n")
     compile_source(root, "registry-select-zero-fill", source(
-        body, header([1, 1024, 375]) + " b, " + header([1, 1024, 375]) + " m",
+        body, header([1, 1024, 375]) + " b, "
+              + "tensor<bool, [1, 1024, 375]> m",
         "y"),
         expected_code="h13.select-needs-decoded-encoder",
-        expected_message="the +0.0-fill family belongs to the frontend mul rewrite")
+        expected_message="materializes the fill as a runtime constant input")
 
     # Positive control: the divide half of floor_div is real today — a
     # constant power-of-two divisor lowers through the decoded reciprocal

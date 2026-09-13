@@ -20,6 +20,7 @@ PARITY_MATVEC = 'apple-parity-matvec'
 PARITY_MATMUL = 'apple-parity-matmul'
 PARITY_BATCHED_MATMUL = 'apple-parity-batched-matmul'
 PARITY_BATCHED_MATVEC = 'apple-parity-batched-matvec'
+PARITY_BOOLEAN = 'apple-parity-boolean'
 PARITY_BROADCAST = 'apple-parity-broadcast'
 CHAIN_ENCODER = 'composed-chain'
 
@@ -111,6 +112,12 @@ def validate_task_headers(program, tasks, tiles):
                     continue
                 destination = registers.get(0x17800, H13_DMA_DISABLED)
                 destination_channel = (words[8] >> 12) & 0x1f
+                if program.get('encoder') == PARITY_BOOLEAN and                         program.get('constantBytes', 0) > 0:
+                    # The boolean encoder reads its folded constant/blob
+                    # surface on channel 1; runtime operands stay on 4-7.
+                    require(address in (0x13800, 0x13804),
+                            f'H13 task[{index}] selects noncanonical channel 1')
+                    continue
                 require(address in (0x13800, 0x13804) and
                         program.get('encoder') == PARITY_BROADCAST and
                         len(program.get('inputs', ())) == 1 and
@@ -118,7 +125,13 @@ def validate_task_headers(program, tasks, tiles):
                         destination == 0x000000c0 and destination_channel == 0,
                         f'H13 task[{index}] selects noncanonical channel 1')
                 continue
-            require(channel in H13_ALLOCATED_CHANNELS,
+            # Channel 3 is the scratch surface: selectable only when the
+            # program backs it (the boolean multi-task forms stage through
+            # it; every other encoder leaves tiles[3] at zero).
+            allocated = set(H13_ALLOCATED_CHANNELS if program.get('encoder') !=
+                            PARITY_BOOLEAN else {4, 5, 6, 7}) | \
+                ({3} if tiles[3] > 0 else set())
+            require(channel in allocated,
                     f'H13 task[{index}] selects noncanonical channel {channel}')
             require(tiles[channel] > 0,
                     f'H13 task[{index}] selects unallocated channel {channel}')
@@ -129,16 +142,15 @@ PROGRAM_FIELDS = (
     'constantInputs', 'outputs', 'constantOffset', 'constantBytes', 'scratchBytes')
 
 
-def surface_layout(shape):
+def surface_layout(shape, bool_elements=False):
     """The physical layout H13 lays an NCHW surface out as: rows padded up
-    to a 64-byte stride, one plane per channel, and the batch only in the
-    shape. This is one formula for all decoded surface kinds -- the
-    elementwise 64-byte lane, the padded spatial plane, and the matmul's
-    dense rows; the batched matmul's 749-wide planes pad to the 1536-byte
-    stride the decoded descriptors carry.
+    to a 64-byte stride over the element size (two bytes for fp16, one for
+    the bool compare/cond surfaces), one plane per channel, and the batch
+    only in the shape.
     """
     batch, channels, height, width = shape
-    row = (width * 2 + 63) // 64 * 64
+    element = 1 if bool_elements else 2
+    row = max(64, (width * element + 63) // 64 * 64)
     return [batch, channels, height, width, row * height, row]
 
 
@@ -174,7 +186,8 @@ def check_tensor(name, tensor):
     fields = set(tensor) if isinstance(tensor, dict) else set()
     require(fields in ({'shape', 'logicalBytes', 'role'},
                        {'shape', 'logicalBytes', 'role', 'aliasOf'},
-                       {'shape', 'logicalBytes', 'role', 'accumulation'}),
+                       {'shape', 'logicalBytes', 'role', 'accumulation'},
+                       {'shape', 'logicalBytes', 'role', 'dtype'}),
             'tensor record has incorrect fields')
     require('accumulation' not in tensor or
             tensor['accumulation'] == 'chunked-fp16',
@@ -184,7 +197,8 @@ def check_tensor(name, tensor):
             all(type(n) is int and n > 0 for n in shape),
             'tensor shape must have positive static dimensions')
     require(type(tensor.get('logicalBytes')) is int and
-            tensor['logicalBytes'] == math.prod(shape) * 2,
+            tensor['logicalBytes'] == math.prod(shape) *
+            (1 if tensor.get('dtype') == 'bool' else 2),
             'tensor logical byte count does not match its shape')
     require(tensor.get('role') in ('input', 'output', 'intermediate', 'constant'),
             'unsupported tensor role')
@@ -204,7 +218,7 @@ def binding_interval(binding, tensors):
         require(binding['shape'] == tensor['shape'] and
                 binding['logicalBytes'] == tensor['logicalBytes'],
                 'whole-tensor binding differs from its tensor')
-        count = tensor['logicalBytes'] // 2
+        count = tensor['logicalBytes'] // (1 if tensor.get('dtype') == 'bool' else 2)
         return tensor_name, 0, count, count
     fields = set(slice_record) if isinstance(slice_record, dict) else set()
     require(fields == {'tensor', 'elementOffset', 'elementCount',
@@ -219,8 +233,9 @@ def binding_interval(binding, tensors):
     require(type(offset) is int and type(count) is int and
             type(physical) is int and offset >= 0 and count > 0 and physical >= count,
             'slice offsets, counts, and physical elements must be valid integers')
-    elements = tensors[tensor_name]['logicalBytes'] // 2
-    require(count == binding['logicalBytes'] // 2 and offset <= elements - count,
+    element = 1 if tensors[tensor_name].get('dtype') == 'bool' else 2
+    elements = tensors[tensor_name]['logicalBytes'] // element
+    require(count == binding['logicalBytes'] // element and offset <= elements - count,
             'slice exceeds its tensor or differs from its binding')
     return tensor_name, offset, count, physical
 
@@ -234,16 +249,26 @@ def require_covering(bindings, tensors, message, exact=True):
     for offset, count in intervals:
         require(offset == cursor if exact else offset <= cursor, message)
         cursor = cursor + count if exact else max(cursor, offset + count)
+    first = tensors[binding_interval(bindings[0][1], tensors)[0]]
     require(bindings and
-            cursor == tensors[binding_interval(bindings[0][1], tensors)[0]]['logicalBytes'] // 2,
+            cursor == first['logicalBytes'] //
+            (1 if first.get('dtype') == 'bool' else 2),
             message)
+
+
+def logical_elements(binding):
+    shape = binding.get('shape', [])
+    elements = 1
+    for dimension in shape:
+        elements *= dimension
+    return elements
 
 
 def check_binding(binding, index, tiles, layouts, tensors):
     require(isinstance(binding, dict), 'binding must be an object')
     require(isinstance(binding.get('name'), str) and binding['name'],
             'binding needs a non-empty name')
-    require(binding.get('dtype') == 'float16', 'binding must use float16')
+    require(binding.get('dtype') in ('float16', 'bool'), 'binding must use float16')
     physical_elements = check_layout(binding)
     layout = binding['nchw']
     shape = binding.get('shape')
@@ -256,7 +281,8 @@ def check_binding(binding, index, tiles, layouts, tensors):
     require(list(layouts[index * 6:(index + 1) * 6]) == layout,
             'manifest layout differs from ANEC header')
     require(type(binding.get('logicalBytes')) is int and
-            binding['logicalBytes'] == logical_elements * 2,
+            binding['logicalBytes'] == logical_elements *
+            (1 if binding.get('dtype') == 'bool' else 2),
             'incorrect logical byte count')
     span = layout[0] * layout[1] * layout[4]
     allocation = -(-span // TILE_BYTES) * TILE_BYTES
@@ -280,7 +306,9 @@ def validate_program(directory, program, tensors):
                           'matmul', 'abs', 'exp', 'gelu', 'leaky_relu', 'relu',
                           'rsqrt', 'sigmoid', 'silu', 'sqrt', 'tanh',
                           'softmax', 'layer_norm', 'reduce_sum', 'reduce_max',
-                          'reduce_mean', 'conv'),
+                          'reduce_mean', 'conv',
+                          'less', 'floor', 'select', 'floor_div',
+                          'tile'),
             'unsupported operation')
     inputs, outputs = program.get('inputs'), program.get('outputs')
     require(isinstance(inputs, list) and isinstance(outputs, list),
@@ -288,8 +316,10 @@ def validate_program(directory, program, tensors):
     constant_inputs = program.get('constantInputs')
     require(isinstance(constant_inputs, dict), 'constantInputs must be an object')
     matmul = operation == 'matmul'
-    require(1 <= len(inputs) <= 2 and len(outputs) == 1,
+    require((not inputs and operation in ('floor',)) or
+            1 <= len(inputs) <= (3 if operation == 'select' else 2),
             'incorrect input/output count')
+    require(len(outputs) == 1, 'incorrect output count')
     for key in ('bytes', 'constantBytes', 'constantOffset', 'taskDescriptors'):
         require(type(program.get(key)) is int and program[key] > 0 or
                 (key == 'constantBytes' and program.get(key) == 0),
@@ -327,7 +357,15 @@ def validate_program(directory, program, tensors):
             'invalid scratchBytes allocation size')
     require(tiles[3] == (scratch + TILE_BYTES - 1) // TILE_BYTES,
             'scratch allocation differs from ANEC header')
-    occupied = {4, *range(5, 5 + len(inputs))}
+    # Most encoders bind the result on 4 with operands on 5..7; the
+    # blob-x boolean twin binds its result on 5 and no operand surface.
+    require(outputs[0].get('index') in (4, 5),
+            'output binding selects an unallocated channel')
+    require([item.get('index') for item in inputs] ==
+            list(range(5, 5 + len(inputs))),
+            'input bindings must fill channels 5.. in order')
+    occupied = {outputs[0]['index'],
+                *range(5, 5 + len(inputs))}
     for index in range(32):
         if index not in occupied:
             require(not any(layouts[index * 6:(index + 1) * 6]),
@@ -339,7 +377,7 @@ def validate_program(directory, program, tensors):
     require(isinstance(encoder, str) and encoder, 'program needs an encoder name')
     for index, item in enumerate(inputs, start=5):
         check_binding(item, index, tiles, layouts, tensors)
-    check_binding(outputs[0], 4, tiles, layouts, tensors)
+    check_binding(outputs[0], outputs[0]['index'], tiles, layouts, tensors)
     if matmul and encoder not in (PARITY_MATVEC, PARITY_MATMUL,
                                   PARITY_BATCHED_MATMUL, PARITY_BATCHED_MATVEC):
         # The chunked encoder pads every surface to its 256- or 512-lane tile.
@@ -353,7 +391,23 @@ def validate_program(directory, program, tensors):
         require(program['taskDescriptors'] % 26 == 0 and
                 program['taskDescriptors'] >= 52,
                 'a batched matmul carries 26 tasks per batch')
-    if operation not in ('matmul', 'chain'):
+    if operation == 'tile':
+        # A materialized tile runs one task over its whole surfaces: one
+        # runtime input, whole-tensor bindings, and the output replicating
+        # the input by an integer factor.
+        require(len(inputs) == 1, 'a tile program binds one runtime input')
+        require(all('slice' not in item for item in inputs + outputs),
+                'a tile program covers its whole surfaces')
+        require(math.prod(outputs[0]['shape']) >= math.prod(inputs[0]['shape']) and
+                math.prod(outputs[0]['shape']) % math.prod(inputs[0]['shape']) == 0,
+                'a tile output replicates its input')
+    if operation not in ('matmul', 'chain', 'tile') and not inputs:
+        # Only the blob-x floor twin folds its whole operand: the operand
+        # rides the constant section, so there is no runtime shape to check.
+        require(operation == 'floor' and encoder == PARITY_BOOLEAN and
+                program.get('constantBytes', 0) > 0,
+                'a program with no inputs must be the blob-x floor twin')
+    if operation not in ('matmul', 'chain', 'tile') and inputs:
         output_is_returned_alias = any(
             tensor.get('aliasOf') == outputs[0]['name'] and
             tensor['role'] == 'output' and tensor['shape'] == outputs[0]['shape']
@@ -629,7 +683,11 @@ def load_package(directory):
                     cursor = max(cursor, produced_end)
                 if cursor >= consumed_end:
                     break
-            require(cursor >= consumed_end,
+            # Programs read in 64-element lanes, so a consumer may reach
+            # the end of the lane containing the last covered element —
+            # the readable surface padding — but never beyond it.
+            require(cursor >= consumed_end or
+                    consumed_end <= (cursor + 63) // 64 * 64,
                     'produced tensor consumer range exceeds producer writes')
     check_result_metadata(manifest, tensors, output_tensors)
     return manifest, allocations

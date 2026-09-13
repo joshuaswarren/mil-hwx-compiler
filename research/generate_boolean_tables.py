@@ -57,6 +57,7 @@ def derive(path):
         constants = bytes(record["constant_section"]["size"])
     return {
         "words": flat,
+        "sizes": [len(task) for task in tasks],
         "constants": constants,
         "params": record["parameters"],
         "mil": record["mil"],
@@ -105,7 +106,6 @@ def main():
            "#include <cstdint>",
            "#include <cstddef>",
            "",
-           "enum class H13BooleanKind : std::uint8_t { Less, Floor, Select, FloorDiv };",
            "struct H13BooleanTemplate {",
            "    H13BooleanKind kind;",
            "    bool constInput;",
@@ -114,13 +114,18 @@ def main():
            "    std::size_t wordCount;",
            "    const std::uint8_t *constants;",
            "    std::size_t constantBytes;",
+           "    const std::uint32_t *taskWords;",
+           "    std::size_t taskCount;",
            "};",
            ""]
     table = []
     for index, entry in enumerate(entries):
         wname = f"kBooleanWords{index}"
         cname = f"kBooleanConst{index}"
+        sname = f"kBooleanSizes{index}"
         out.extend(words_literal(wname, entry["words"]))
+        sizes = ", ".join(str(s) for s in entry["sizes"])
+        out.append(f"static const uint32_t {sname}[] = {{{sizes}}};")
         data = ", ".join(f"0x{b:02x}" for b in entry["constants"])
         out.append(f"static const uint8_t {cname}[] = {{{data}}};")
         params = entry["params"]
@@ -136,10 +141,10 @@ def main():
                 "Select": "H13BooleanKind::Select",
                 "FloorDiv": "H13BooleanKind::FloorDiv"}[entry["kind"]]
         table.append(
-            "    {%s, %s, %d, %d, %d, %s, std::size(%s), %s, std::size(%s)},"
+            "    {%s, %s, %d, %d, %d, %s, std::size(%s), %s, std::size(%s), %s, std::size(%s)},"
             % (kind, "true" if entry["constInput"] else "false",
                channels, height, width,
-               wname, wname, cname, cname))
+               wname, wname, cname, cname, sname, sname))
     out.append("static const H13BooleanTemplate kBooleanTasks[] = {")
     out.extend("    " + row for row in table)
     out.append("};")

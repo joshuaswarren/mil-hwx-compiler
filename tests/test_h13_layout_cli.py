@@ -556,17 +556,55 @@ with tempfile.TemporaryDirectory() as temporary:
                               amounts=(0, 0, 0, 0, 0, 0, 1, 0),
                               result_shape=(1, 1, 750, 375)),
                    expected_code="h13.unsupported-pad",
-                   expected_message="pad [0,0,0,0,0,0,1,0]")
-
+                   expected_message="Apple's own tool rejects pad in every form")
+    # Pad citations: every Apple capture in research/oracles/h13/layout/pad_*
+    # is a callback_status=1 rejection, and each pins our matching behavior
+    # — the identity view stays the host-side alias, every materializing
+    # form keeps the Apple-citing rejection.
+    pad_captures = sorted(
+        Path(__file__).resolve().parents[1].glob(
+            "research/oracles/h13/layout/pad_*.json"))
+    cited = 0
+    for pad_capture in pad_captures:
+        record = json.loads(pad_capture.read_text())
+        assert record.get("error") == "callback_status=1", pad_capture.name
+        amounts = record["parameters"]["amounts"]
+        if record["parameters"].get("x_storage") == "blob":
+            shape = record["parameters"]["shape"]
+            elements = 1
+            for dimension in shape:
+                elements *= dimension
+            (root / "weights.bin").write_bytes(b"\0" * (64 + elements * 2))
+        if all(amount == 0 for amount in amounts):
+            package = deterministic(root, f"pad-{pad_capture.stem}",
+                                    record["mil"])
+            manifest = json.loads((package / "manifest.json").read_text())
+            padded_result = record["mil"].split("= pad(")[0].split()[-1]
+            assert manifest["tensors"][padded_result]["aliasOf"], \
+                pad_capture.name
+            validate(root, package)
+        else:
+            compile_source(root, f"pad-{pad_capture.stem}", record["mil"],
+                           expected_code="h13.unsupported-pad",
+                           expected_message="Apple's own tool rejects pad "
+                           "in every form")
+        cited += 1
+    assert cited == 6, f"expected all six Apple pad rejections, got {cited}"
     # tile: all-ones repeats are the identity view.
     tiled = deterministic(root, "tile-ones", tile_source())
     manifest = json.loads((tiled / "manifest.json").read_text())
     assert manifest["tensors"]["t"]["aliasOf"] == "a"
     validate(root, tiled)
-    compile_source(root, "tile-encoder-mask",
-                   tile_source(shape=(1, 1, 375), reps=(1, 375, 1),
-                               result_shape=(1, 375, 375)),
-                   expected_code="h13.unsupported-tile",
-                   expected_message="reps [1,375,1]")
+    # Tile is materialized: the captured mask-replication form lowers as
+    # a real program; the byte proof lives in the tile suite.
+    materialized = deterministic(root, "tile-encoder-mask",
+                                 tile_source(shape=(1, 8, 1, 375),
+                                             reps=(1, 1, 375, 1),
+                                             result_shape=(1, 8, 375, 375)))
+    materialized_manifest = json.loads(
+        (materialized / "manifest.json").read_text())
+    assert materialized_manifest["programs"][0]["encoder"] == \
+        "apple-parity-tile"
+    validate(root, materialized)
 
     print("h13 layout cli: PASS")

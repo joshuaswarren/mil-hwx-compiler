@@ -76,7 +76,9 @@ int main() {
     rejects([&] { encodeANEC(invalid); });
     invalid = program;
     invalid.inputs.clear();
-    rejects([&] { encodeANEC(invalid); });
+    invalid.constants.clear();
+    rejects([&] { encodeANEC(invalid); },
+            "H13 ANEC requires a source for its task stream");
     invalid = program;
     invalid.constantOffsetBytes = 0x2c0;
     rejects([&] { encodeANEC(invalid); },
@@ -86,7 +88,7 @@ int main() {
     invalid.firstTaskBytes = 0x240;
     rejects([&] { encodeANEC(invalid); },
             "H13 ANEC constant offset must equal the 64-byte-aligned task length");
-    program.taskSurfaceChannels = {5, 4, 6};
+    program.taskSurfaceChannels = {5, 4, 6, 7};
     program.task[32] = 0xa4;
     program.task[33] = 0x59;
     program.task[34] = 0x02;
