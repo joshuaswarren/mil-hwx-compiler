@@ -457,7 +457,8 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     for index, program in enumerate(tiled_manifest['programs']):
         assert (tiled_add / program['file']).read_bytes() == tiled_reference
         assert [item['slice'] for item in program['inputs'] + program['outputs']] == [
-            {'tensor': name, 'elementOffset': index * 64, 'elementCount': 64}
+            {'tensor': name, 'elementOffset': index * 64, 'elementCount': 64,
+             'physicalElements': 64}
             for name in ('a', 'b', 'y')]
     assert tiled_manifest['tensors'] == {
         name: {'shape': [192], 'logicalBytes': 384,
@@ -674,8 +675,23 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     invalid_chain_manifest['dispatchPlan'] = [1, 0, 2]
     (invalid_chain / 'manifest.json').write_text(json.dumps(invalid_chain_manifest))
     inspect(invalid_chain, success=False)
-    compile_text(chain_source('sum, result'), 'early-intermediate-return', False,
-                 'h13.unsupported-chain')
+    early_return = compile_text(chain_source('sum, result'),
+                                'early-intermediate-return')
+    early_manifest = json.loads((early_return / 'manifest.json').read_text())
+    assert [output['tensor'] for output in early_manifest['physicalOutputs']] == [
+        'sum', 'result']
+    assert [result['name'] for result in early_manifest['logicalResults']] == [
+        'sum', 'result']
+    assert [result['physical']['tensor']
+            for result in early_manifest['logicalResults']] == ['sum', 'result']
+    assert early_manifest['tensors']['sum']['role'] == 'output'
+    assert early_manifest['tensors']['product']['role'] == 'intermediate'
+    assert json.loads(inspect(early_return))['manifest'] == early_manifest
+    invalid_early_manifest = json.loads(json.dumps(early_manifest))
+    invalid_early_manifest['dispatchPlan'] = [1, 0, 2]
+    (early_return / 'manifest.json').write_text(json.dumps(invalid_early_manifest))
+    inspect(early_return, success=False)
+    (early_return / 'manifest.json').write_text(json.dumps(early_manifest))
     compile_text(chain_source(middle='a'), 'unused-intermediate', False,
                  'h13.unsupported-chain')
     values = tuple(1.0 + (index % 8) * 0.125 for index in range(64))
@@ -889,7 +905,8 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     wide_manifest = json.loads((wide_projection / 'manifest.json').read_text())
     assert len(wide_manifest['programs']) == 2
     assert [program['outputs'][0]['slice'] for program in wide_manifest['programs']] == [
-        {'tensor': 'y', 'elementOffset': 0, 'elementCount': 512},
+        {'tensor': 'y', 'elementOffset': 0, 'elementCount': 512,
+         'physicalElements': 512},
         {'tensor': 'y', 'elementOffset': 512, 'elementCount': 488,
          'physicalElements': 512}]
     assert (wide_projection / 'program-0.anec').read_bytes() != \
@@ -915,7 +932,8 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         ['matmul', 'matmul', 'add']
     assert [program['inputs'][0]['slice'] for program in
             wide_reduction_manifest['programs'][:2]] == [
-        {'tensor': 'x', 'elementOffset': 0, 'elementCount': 512},
+        {'tensor': 'x', 'elementOffset': 0, 'elementCount': 512,
+         'physicalElements': 512},
         {'tensor': 'x', 'elementOffset': 512, 'elementCount': 488,
          'physicalElements': 512}]
     assert wide_reduction_manifest['tensors']['y']['accumulation'] == 'chunked-fp16'

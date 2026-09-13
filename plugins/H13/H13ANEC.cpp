@@ -7,7 +7,6 @@
 namespace ane::h13 {
 namespace {
 
-constexpr std::size_t headerBytes = 0x1000;
 constexpr std::size_t headerFieldsBytes = 0x6a8;
 constexpr std::size_t channelCount = 32;
 constexpr std::size_t tensorFields = 6;
@@ -106,7 +105,7 @@ void bindTasks(std::vector<std::uint8_t> &anec, const Program &program) {
         if (offset > program.task.size() || size < 40 ||
             size > program.task.size() - offset)
             throw std::invalid_argument("H13 linked task is truncated");
-        const auto base = headerBytes + offset;
+        const auto base = anecHeaderBytes + offset;
         auto selectors = loadWord(anec, base + 32);
         for (unsigned shift : {0u, 6u, 12u}) {
             const auto channel = (selectors >> shift) & 31;
@@ -151,7 +150,7 @@ std::vector<std::uint8_t> encodeANEC(const Program &program) {
     const auto constantsSize = static_cast<std::uint64_t>(program.constants.size());
     const auto contentSize = checkedAdd(program.constantOffsetBytes, constantsSize,
                                         "ANEC content size overflows");
-    if (contentSize > std::numeric_limits<std::size_t>::max() - headerBytes)
+    if (contentSize > std::numeric_limits<std::size_t>::max() - anecHeaderBytes)
         throw std::invalid_argument("ANEC output size overflows");
     const auto contentTiles = tileCount(contentSize, "ANEC content tile count overflows");
 
@@ -174,7 +173,7 @@ std::vector<std::uint8_t> encodeANEC(const Program &program) {
                   layouts.begin() + (5 + i) * tensorFields);
 
     std::vector<std::uint8_t> anec;
-    anec.reserve(headerBytes + static_cast<std::size_t>(contentSize));
+    anec.reserve(anecHeaderBytes + static_cast<std::size_t>(contentSize));
     appendLE(anec, contentSize, 8);
     appendLE(anec, program.firstTaskBytes, 4);
     appendLE(anec, program.taskCount, 4);
@@ -188,10 +187,10 @@ std::vector<std::uint8_t> encodeANEC(const Program &program) {
         appendLE(anec, field, 8);
     if (anec.size() != headerFieldsBytes)
         throw std::logic_error("ANEC header layout changed");
-    anec.resize(headerBytes, 0);
+    anec.resize(anecHeaderBytes, 0);
     anec.insert(anec.end(), program.task.begin(), program.task.end());
     bindTasks(anec, program);
-    anec.resize(headerBytes + program.constantOffsetBytes, 0);
+    anec.resize(anecHeaderBytes + program.constantOffsetBytes, 0);
     anec.insert(anec.end(), program.constants.begin(), program.constants.end());
     return anec;
 }

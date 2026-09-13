@@ -50,6 +50,17 @@ elementOffset, and elementCount. Storage capacity comes from the referenced
 physical output, not from duplicated view metadata. Identity requires equal
 logical and physical dtypes, elementCount equal to the logical shape product,
 and a view range within physical storage. Duplicate read-only views are valid.
+A physical output remains storage even when a later program consumes it. The
+producer stays in physicalOutputs, the consumer binding refers to the same
+tensor, and dispatchPlan must keep the producer before every consumer. This
+permits an early MIL return without misclassifying that buffer as a transient
+intermediate.
+
+HWX and ANEC must encode the same bound H13 task stream. ANEC binding normalizes
+surface selectors and task header flags after task selection; HWX therefore
+embeds that normalized task slice from the encoded ANEC rather than the raw
+pre-binding task bytes. Extracting ANEC from HWX must reproduce the explicit
+ANEC artifact byte for byte.
 Mixed FP32 or int32 returns fail with
 h13.unsupported-logical-result-conversion until an explicit hardware or GPU
 conversion path exists.
@@ -65,13 +76,15 @@ halves. Valid noncontiguous geometry fails with
 h13.noncontiguous-split-axis, and a valid three-result split fails with
 h13.unsupported-split-count.
 
-Direct, reshape-view, split-subslice, and distinct view outputs compile as
-ordered identity results. One split-backed physical output can expose differently
-shaped logical views at offsets 0 and 64 in either MIL return order. Independent
-terminal producers keep their physical output order while logicalResults follows
-the declared return order. The strict inspector accepts these mappings and rejects
-a logical physicalElements field because that field belongs only to ANEC program
-binding geometry.
+Direct and reshape-chained outputs, split subslices, and distinct view outputs
+compile as ordered identity results. One split-backed physical output can expose
+differently shaped logical views at offsets 0 and 64 in either MIL return order.
+Independent producers keep physical output order while logicalResults follows
+the declared return order. A returned producer may also feed a later program;
+the manifest keeps it as physical output storage and records the later consumer
+dependency. The strict inspector accepts these mappings, requires topological
+dispatch coverage, and rejects a logical physicalElements field because that
+field belongs only to ANEC program binding geometry.
 
 Direct and reshape-chained constant split sources fail with
 h13.unsupported-constant-split-source before blob access or alias creation. A
