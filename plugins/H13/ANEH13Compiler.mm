@@ -292,7 +292,7 @@ static ANEGraphOperation *binaryOperation(NSString *name, ANEGraphValue *x,
                                           ANEGraphValue *y,
                                           ANEGraphValue *result,
                                           ANESourceRange range) {
-    return [[ANEGraphOperation alloc] initWithOperationName:name result:result
+    return [[ANEGraphOperation alloc] initWithOperationName:name results:@[result]
         arguments:@{@"x": valueArgument(x, range), @"y": valueArgument(y, range)}
         attributes:@{} range:range];
 }
@@ -309,8 +309,8 @@ static BOOL boolean(ANEGraphArgument *argument, BOOL expected) {
     if (argument.kind == ANEGraphArgumentKindValue) {
         ANEGraphOperation *producer = argument.value.producer;
         if (![producer.operationName isEqualToString:@"const"] ||
-            producer.result.type.kind != ANEValueTypeKindScalar ||
-            producer.result.type.elementType != ANEElementTypeBool) return NO;
+            producer.results[0].type.kind != ANEValueTypeKindScalar ||
+            producer.results[0].type.elementType != ANEElementTypeBool) return NO;
         argument = producer.attributes[@"val"];
     }
     if (argument.kind == ANEGraphArgumentKindCall &&
@@ -563,8 +563,8 @@ static BOOL parityPlan(ANEGraphOperation *operation,
     NSString *name = operation.operationName;
     H13ParityPlan candidate{};
     ane::h13::ElementwiseShape shapes[2];
-    NSUInteger shapeCount = parityShapes(operation.result, shapes);
-    if (!shapeCount || !tensor(x, operation.result.type.shape)) return NO;
+    NSUInteger shapeCount = parityShapes(operation.results[0], shapes);
+    if (!shapeCount || !tensor(x, operation.results[0].type.shape)) return NO;
     BOOL leaky = [name isEqualToString:@"leaky_relu"];
     BOOL gelu = [name isEqualToString:@"gelu"];
     BOOL rsqrt = [name isEqualToString:@"rsqrt"];
@@ -599,7 +599,7 @@ static BOOL parityPlan(ANEGraphOperation *operation,
     if (synthesizedConstants[x.name] || constantValue(x)) return NO;
     BOOL runtime = !synthesizedConstants[y.name] && !constantValue(y);
     if (runtime) {
-        if (!tensor(y, operation.result.type.shape)) return NO;
+        if (!tensor(y, operation.results[0].type.shape)) return NO;
     } else if (synthesizedConstants[y.name] ||
                y.type.kind != ANEValueTypeKindScalar ||
                y.type.elementType != ANEElementTypeFP16 ||
@@ -654,7 +654,7 @@ static BOOL broadcastPlan(ANEGraphOperation *operation,
     if (synthesizedConstants[x.name] || constantValue(x) ||
         synthesizedConstants[y.name]) return NO;
     if (!batchedShape(x, &candidate.shape.x) ||
-        !batchedShape(operation.result, &candidate.result)) return NO;
+        !batchedShape(operation.results[0], &candidate.result)) return NO;
     ANEGraphValue *constant = nil;
     if (constantValue(y)) {
         candidate.inputCount = 1;
@@ -760,9 +760,9 @@ static BOOL normParityPlan(ANEGraphOperation *operation, H13NormPlan *plan) {
     const BOOL softmax = candidate.operation == ane::h13::NormOperation::Softmax;
     const BOOL layerNorm = candidate.operation == ane::h13::NormOperation::LayerNorm;
     NSInteger inputShift = 0;
-    if (!fp16Tensor(x) || !fp16Tensor(operation.result) ||
+    if (!fp16Tensor(x) || !fp16Tensor(operation.results[0]) ||
         !normSurface(x.type.shape, &candidate.shape.input, &inputShift) ||
-        !normSurface(operation.result.type.shape, &candidate.shape.output, nullptr))
+        !normSurface(operation.results[0].type.shape, &candidate.shape.output, nullptr))
         return NO;
     if (!constantAxisMask(operation.operands[softmax ? @"axis" : @"axes"].value,
                           x.type.shape.count, inputShift,
@@ -783,7 +783,7 @@ static BOOL normParityPlan(ANEGraphOperation *operation, H13NormPlan *plan) {
     if (!candidate.shape.keepDims &&
         !boolean(operation.arguments[@"keep_dims"], NO)) return NO;
     if (!tensorElementCount(x, &candidate.inputElements) ||
-        !tensorElementCount(operation.result, &candidate.outputElements))
+        !tensorElementCount(operation.results[0], &candidate.outputElements))
         return NO;
     if (!ane::h13::supportsNormParity(candidate.operation, candidate.shape))
         return NO;
@@ -858,7 +858,7 @@ static BOOL convParityPlan(ANEGraphOperation *operation, H13ConvPlan *plan) {
     candidate.bias = bias;
     if (!x || !weight || !fp16Tensor(weight) || weight.type.shape.count != 4 ||
         !convSurface(x, &candidate.shape.input) ||
-        !convSurface(operation.result, &candidate.shape.output)) return NO;
+        !convSurface(operation.results[0], &candidate.shape.output)) return NO;
     if (operation.arguments.count != (bias ? 8u : 7u)) return NO;
     NSString *padType = nil;
     long long strides[2] = {0, 0}, dilations[2] = {0, 0}, padding[4] = {0, 0, 0, 0};
@@ -1070,7 +1070,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     @"H13 '%@' with two runtime inputs cannot lower exactly through the verified binary modes", name],
                     operation, @"h13.nonfoldable-binary");
             if (!tensorElementCount(x, &elements) || !tensor(y, x.type.shape) ||
-                !tensor(operation.result, x.type.shape))
+                !tensor(operation.results[0], x.type.shape))
                 return reject(diagnostics,
                     @"H13 binary operations require fp16 inputs with the same positive static shape",
                     operation);
@@ -1086,7 +1086,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             ANEGraphValue *runtimeInput = xIsConstant ? y : x;
             constantInput = xIsConstant ? x : y;
             if (!tensorElementCount(runtimeInput, &elements) ||
-                !tensor(operation.result, runtimeInput.type.shape))
+                !tensor(operation.results[0], runtimeInput.type.shape))
                 return reject(diagnostics,
                     @"H13 folded binary operations require one fp16 input and output with the same positive static shape",
                     operation, @"h13.invalid-constant-input");
@@ -1205,7 +1205,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         NSUInteger reduction = 0, rows = 0, columns = 0;
         BOOL transposeX = boolean(operation.arguments[@"transpose_x"], YES);
         BOOL transposeY = boolean(operation.arguments[@"transpose_y"], YES);
-        BOOL geometry = matmulGeometry(x, operation.result, transposeX,
+        BOOL geometry = matmulGeometry(x, operation.results[0], transposeX,
                                        &reduction, &rows, &columns);
         if (operation.arguments.count != 4 || constantValue(x) ||
             (!transposeX && !boolean(operation.arguments[@"transpose_x"], NO)) ||
@@ -1223,7 +1223,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             // and nothing to slice.
             if (!runtimeMatmulOperand(y, reduction, columns, transposeY,
                                       x.type.shape.count) ||
-                !matmulParityShape(x, operation.result, transposeX, transposeY,
+                !matmulParityShape(x, operation.results[0], transposeX, transposeY,
                                    YES, &parityShape) ||
                 inputElementCount != rows * reduction)
                 return reject(diagnostics,
@@ -1263,13 +1263,13 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             resolvedConstants[y.name] = weights;
         }
         if (transposeX && rows > 1 &&
-            !matmulParityShape(x, operation.result, YES, YES, NO, nullptr))
+            !matmulParityShape(x, operation.results[0], YES, YES, NO, nullptr))
             return reject(diagnostics,
                 @"H13 transpose_x=true matmul supports exactly one logical row outside the decoded parity envelope",
                 operation, @"h13.transpose-x-multirow");
         // Apple refuses a transpose_y=false constant weight, so the host
         // transpose below feeds the transpose_y=true program it accepts.
-        if (matmulParityShape(x, operation.result, transposeX, YES, NO,
+        if (matmulParityShape(x, operation.results[0], transposeX, YES, NO,
                               &parityShape) &&
             inputElementCount == rows * reduction) {
             // transpose_y=false weights are [K, N]; Apple rejects that form, so
@@ -1387,6 +1387,11 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     if (module.functions.count != 1)
         return reject(diagnostics, @"H13 requires exactly one function");
     ANEGraphFunction *function = module.functions[0];
+    for (ANEGraphOperation *candidate in function.operations)
+        if (candidate.results.count != 1)
+            return reject(diagnostics,
+                @"H13 does not lower multi-result operations",
+                candidate, @"h13.unsupported-multi-result-operation");
     NSMutableArray<ANEGraphOperation *> *sourceOperations = [NSMutableArray array];
     for (ANEGraphOperation *candidate in function.operations)
         if (![candidate.operationName isEqualToString:@"const"])
@@ -1398,7 +1403,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     NSString *chainCode = @"h13.unsupported-chain";
     ANEGraphOperation *lastSourceOperation = sourceOperations.lastObject;
     if (function.returnValues.count != 1 ||
-        function.returnValues[0] != lastSourceOperation.result)
+        function.returnValues[0] != lastSourceOperation.results[0])
         return reject(diagnostics,
             chain ? @"H13 chains must return only the last operation result"
                   : @"H13 requires one operation with its result returned",
@@ -1414,7 +1419,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 sourceOperations[0], chain ? chainCode : @"h13.unsupported-program");
     }
     for (NSUInteger index = 0; index + 1 < sourceOperations.count; ++index) {
-        ANEGraphValue *value = sourceOperations[index].result;
+        ANEGraphValue *value = sourceOperations[index].results[0];
         BOOL used = NO;
         for (NSUInteger consumer = index + 1;
              consumer < sourceOperations.count; ++consumer)
@@ -1467,22 +1472,22 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 (parameter && (parameter.kind != ANEGraphArgumentKindValue ||
                                !constantValue(parameter.value))) ||
                 !tensorElementCount(x, &inputElements) ||
-                !tensorElementCount(candidate.result, &resultElements) ||
+                !tensorElementCount(candidate.results[0], &resultElements) ||
                 inputElements != resultElements)
                 return reject(diagnostics,
                     @"H13 shape aliases require static fp16 input and result shapes with equal element counts and constant shape parameters",
                     candidate, @"h13.invalid-shape-alias");
             ANEGraphValue *alias = [[ANEGraphValue alloc]
-                initWithName:x.name type:candidate.result.type];
-            aliases[candidate.result.name] = @{
-                @"aliasOf": x.name, @"shape": candidate.result.type.shape};
-            [manifestValues addObject:candidate.result];
-            [loweredValues setObject:alias forKey:candidate.result];
+                initWithName:x.name type:candidate.results[0].type];
+            aliases[candidate.results[0].name] = @{
+                @"aliasOf": x.name, @"shape": candidate.results[0].type.shape};
+            [manifestValues addObject:candidate.results[0]];
+            [loweredValues setObject:alias forKey:candidate.results[0]];
             continue;
         }
 
         ANEGraphValue *result = [[ANEGraphValue alloc]
-            initWithName:candidate.result.name type:candidate.result.type];
+            initWithName:candidate.results[0].name type:candidate.results[0].type];
         if ([name isEqualToString:@"relu"]) {
             if (candidate.arguments.count != 1 || !x)
                 return reject(diagnostics, @"H13 relu requires one x value operand",
@@ -1496,7 +1501,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                                                   shapes[index]);
             if (nativeRelu) {
                 [operations addObject:[[ANEGraphOperation alloc]
-                    initWithOperationName:name result:result arguments:arguments
+                    initWithOperationName:name results:@[result] arguments:arguments
                     attributes:candidate.attributes range:candidate.range]];
             } else {
                 NSString *zeroName = [NSString stringWithFormat:@"$h13.%@.zero",
@@ -1604,7 +1609,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                             ANEGraphValue *partial = [[ANEGraphValue alloc]
                                 initWithName:partialName type:rowOutputType];
                             ANEGraphOperation *partialOperation = [[ANEGraphOperation alloc]
-                                initWithOperationName:@"matmul" result:partial
+                                initWithOperationName:@"matmul" results:@[partial]
                                 arguments:matmulArguments attributes:@{}
                                 range:candidate.range];
                             [reductionOffsets setObject:@(row * reduction + chunk * 512)
@@ -1631,7 +1636,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                         [chunkedAccumulations addObject:matrix.name];
                     } else {
                         ANEGraphOperation *matmulOperation = [[ANEGraphOperation alloc]
-                            initWithOperationName:@"matmul" result:matrix
+                            initWithOperationName:@"matmul" results:@[matrix]
                             arguments:matmulArguments attributes:@{}
                             range:candidate.range];
                         [reductionOffsets setObject:@(row * reduction)
@@ -1652,7 +1657,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     [operations addObject:add];
                 }
                 [manifestValues addObject:result];
-                [loweredValues setObject:result forKey:candidate.result];
+                [loweredValues setObject:result forKey:candidate.results[0]];
                 continue;
             }
 
@@ -1685,7 +1690,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     ANEGraphValue *partial = [[ANEGraphValue alloc]
                         initWithName:partialName type:matmulResult.type];
                     ANEGraphOperation *partialOperation = [[ANEGraphOperation alloc]
-                        initWithOperationName:@"matmul" result:partial
+                        initWithOperationName:@"matmul" results:@[partial]
                         arguments:matmulArguments attributes:@{} range:candidate.range];
                     [reductionOffsets setObject:@(chunk * 512)
                                          forKey:partialOperation];
@@ -1710,7 +1715,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 [chunkedAccumulations addObject:matmulResult.name];
             } else {
                 ANEGraphOperation *matmulOperation = [[ANEGraphOperation alloc]
-                    initWithOperationName:@"matmul" result:matmulResult
+                    initWithOperationName:@"matmul" results:@[matmulResult]
                     arguments:matmulArguments attributes:@{} range:candidate.range];
                 [operations addObject:matmulOperation];
                 [manifestValues addObject:matmulResult];
@@ -1739,11 +1744,11 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             }
         } else {
             [operations addObject:[[ANEGraphOperation alloc]
-                initWithOperationName:name result:result arguments:arguments
+                initWithOperationName:name results:@[result] arguments:arguments
                 attributes:candidate.attributes range:candidate.range]];
             [manifestValues addObject:result];
         }
-        [loweredValues setObject:result forKey:candidate.result];
+        [loweredValues setObject:result forKey:candidate.results[0]];
     }
 
     ANEGraphValue *returned = [loweredValues objectForKey:function.returnValues[0]];
@@ -1757,7 +1762,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         return reject(diagnostics, @"H13 requires at least one encoded operation");
     }
     ANEGraphOperation *lastOperation = operations.lastObject;
-    if (!returned || ![returned.name isEqualToString:lastOperation.result.name])
+    if (!returned || ![returned.name isEqualToString:lastOperation.results[0].name])
         return reject(diagnostics,
             @"H13 returned aliases must refer to the last encoded operation result",
             lastSourceOperation, chainCode);
@@ -1798,7 +1803,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 !constantValue(secondOperand) &&
                 !synthesizedConstants[secondOperand.name];
             BOOL matvecParity = matmul &&
-                matmulParityShape(operation.operands[@"x"].value, operation.result,
+                matmulParityShape(operation.operands[@"x"].value, operation.results[0],
                     boolean(operation.arguments[@"transpose_x"], YES),
                     runtimeWeight
                         ? boolean(operation.arguments[@"transpose_y"], YES) : YES,
@@ -1824,7 +1829,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 // Each operand covers its own whole tensor: a broadcast reads
                 // fewer elements from y than it writes to the result.
                 NSUInteger elements = 0;
-                if (!tensorElementCount(operation.result, &elements))
+                if (!tensorElementCount(operation.results[0], &elements))
                     return reject(diagnostics,
                         @"H13 broadcast result must have a positive static shape",
                         operation);
@@ -1844,7 +1849,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                         @"H13 convolution input must have a positive static shape",
                         operation);
                 inputSliceElements = inputPhysicalElements = elements;
-                if (!tensorElementCount(operation.result, &elements))
+                if (!tensorElementCount(operation.results[0], &elements))
                     return reject(diagnostics,
                         @"H13 convolution result must have a positive static shape",
                         operation);
@@ -1856,14 +1861,14 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                                  convolutionPlan.bias.type.shape, @"constant");
             } else if ([binaryNames containsObject:operation.operationName]) {
                 NSUInteger elements = 0;
-                if (tensorElementCount(operation.result, &elements)) {
+                if (tensorElementCount(operation.results[0], &elements)) {
                     sliceCount = (elements - 1) / 64 + 1;
                     inputPhysicalElements = outputPhysicalElements = 64;
                 }
             } else if (matmul) {
                 NSUInteger reduction = 0, rows = 0, columns = 0;
                 BOOL transposeX = boolean(operation.arguments[@"transpose_x"], YES);
-                if (matmulGeometry(operation.operands[@"x"].value, operation.result,
+                if (matmulGeometry(operation.operands[@"x"].value, operation.results[0],
                                    transposeX, &reduction, &rows, &columns)) {
                     if (matvecParity) {
                         inputSliceElements = inputPhysicalElements =
@@ -1894,9 +1899,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 if (matmul) {
                     NSUInteger reduction = 0, rows = 0, geometryColumns = 0;
                     BOOL transposeX = boolean(operation.arguments[@"transpose_x"], YES);
-                    matmulGeometry(operation.operands[@"x"].value, operation.result,
+                    matmulGeometry(operation.operands[@"x"].value, operation.results[0],
                                    transposeX, &reduction, &rows, &geometryColumns);
-                    NSUInteger columns = operation.result.type.shape.lastObject.unsignedIntegerValue;
+                    NSUInteger columns = operation.results[0].type.shape.lastObject.unsignedIntegerValue;
                     NSNumber *reductionOffset = [reductionOffsets objectForKey:operation];
                     if (matvecParity) {
                         inputOffset = reductionOffset.unsignedIntegerValue;
@@ -1917,7 +1922,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     outputOffset = inputOffset +
                         [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
                     NSUInteger elements = 0;
-                    if (tensorElementCount(operation.result, &elements))
+                    if (tensorElementCount(operation.results[0], &elements))
                         inputSliceElements = outputSliceElements =
                             MIN((NSUInteger)64, elements - inputOffset);
                 }
@@ -1939,7 +1944,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 for (NSUInteger index = 0; index < inputs.count; ++index) {
                     ANEGraphValue *input = inputs[index];
                     NSArray<NSNumber *> *fullShape = input == constantInput
-                        ? operation.result.type.shape : input.type.shape;
+                        ? operation.results[0].type.shape : input.type.shape;
                     BOOL intermediate = input != constantInput &&
                         [intermediateStorageNames containsObject:input.name];
                     NSString *role = input == constantInput ? @"constant"
@@ -1976,11 +1981,11 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     [inputRecords addObject:record];
                 }
                 BOOL intermediateOutput =
-                    [intermediateStorageNames containsObject:operation.result.name];
+                    [intermediateStorageNames containsObject:operation.results[0].name];
                 NSString *outputRole = intermediateOutput ? @"intermediate" : @"output";
-                NSArray<NSNumber *> *fullOutputShape = outputShapes[operation.result.name]
-                    ?: operation.result.type.shape;
-                recordTensor(tensors, operation.result, fullOutputShape, outputRole);
+                NSArray<NSNumber *> *fullOutputShape = outputShapes[operation.results[0].name]
+                    ?: operation.results[0].type.shape;
+                recordTensor(tensors, operation.results[0], fullOutputShape, outputRole);
                 NSUInteger fullOutputElements = 1;
                 for (NSNumber *dimension in fullOutputShape)
                     fullOutputElements *= dimension.unsignedIntegerValue;
@@ -1988,10 +1993,10 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     outputOffset == 0 && outputSliceElements == fullOutputElements
                         ? fullOutputShape : @[@(outputSliceElements)];
                 NSMutableDictionary *outputRecord =
-                    [binding(operation.result, outputShape, program.output) mutableCopy];
+                    [binding(operation.results[0], outputShape, program.output) mutableCopy];
                 if (outputOffset || outputSliceElements != fullOutputElements ||
                     outputPhysicalElements != outputSliceElements)
-                    addSlice(outputRecord, operation.result, outputOffset,
+                    addSlice(outputRecord, operation.results[0], outputOffset,
                              outputSliceElements, outputPhysicalElements);
                 if (intermediateOutput) outputRecord[@"role"] = @"intermediate";
                 NSUInteger programIndex = programRecords.count;

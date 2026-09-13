@@ -141,16 +141,29 @@ static NSString *kindName(ANEOperationKind kind) {
     self = [super init];
     if (!self) return nil;
     _sourceFunction = function;
+    for (ANEGraphOperation *operation in function.operations) {
+        if (operation.results.count != 1) {
+            [diagnostics emitSeverity:ANEDiagnosticSeverityError
+                                 code:@"ane.graph.unsupported-multi-result-operation"
+                              message:[NSString stringWithFormat:
+                                  @"operation '%@' has %lu results; the operation graph requires exactly one",
+                                  operation.operationName,
+                                  (unsigned long)operation.results.count]
+                                range:operation.range];
+            return nil;
+        }
+    }
     NSMutableArray<ANEOperationNode *> *nodes = [NSMutableArray array];
     NSMutableDictionary<NSString *, ANEOperationNode *> *byValue =
         [NSMutableDictionary dictionary];
     NSUInteger ordinal = 0;
     for (ANEGraphOperation *operation in function.operations) {
+        ANEGraphValue *result = operation.results[0];
         ANEOperationNode *node = [[ANEOperationNode alloc]
-            initWithIdentifier:operation.result.name
+            initWithIdentifier:result.name
                  operationName:operation.operationName
                           kind:classifyOperation(operation.operationName)
-                    outputType:operation.result.type
+                    outputType:result.type
                         inputs:@[]
             externalValueNames:@[]
                sourceOperation:operation];
