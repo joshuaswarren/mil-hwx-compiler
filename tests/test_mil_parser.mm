@@ -125,6 +125,45 @@ static void testW8A8(void) {
     assertRoundTrip(program, operationSequence(function), @"W8A8");
 }
 
+static void testOrderedResultsRoundTrip(void) {
+    NSString *source = @"program(1) { "
+        "func main<CoreML8>(tensor<fp16, [1, 2048, 375]> x) { "
+        "(tensor<fp16, [1, 1024, 375]> first, "
+        "tensor<fp16, [1, 1024, 375]> second) = "
+        "split(axis = axis, num_splits = count, x = x); "
+        "} -> (first, second); }";
+    ANEDiagnosticEngine *diagnostics = nil;
+    MILProgramSyntax *program = parseData(
+        [source dataUsingEncoding:NSUTF8StringEncoding], &diagnostics);
+    expect(program != nil && diagnostics.errorCount == 0,
+           @"ordered result list parses");
+    MILOperationSyntax *operation = program.functions[0].operations[0];
+    expect(operation.results.count == 2,
+           @"all operation results are retained");
+    expect([operation.results[0].name isEqualToString:@"first"] &&
+           [operation.results[1].name isEqualToString:@"second"],
+           @"operation result order is retained");
+    expect([program.version isEqualToString:@"1"] &&
+           [program.functions[0].opset isEqualToString:@"CoreML8"],
+           @"Core ML program metadata is retained in syntax");
+
+    NSString *printed = [MILPrinter stringForProgram:program];
+    expect([printed containsString:
+        @"(tensor<fp16, [1, 1024, 375]> first, tensor<fp16, [1, 1024, 375]> second) = split"],
+        @"printer emits the ordered result list");
+    ANEDiagnosticEngine *roundTripDiagnostics = nil;
+    MILProgramSyntax *reparsed = parseData(
+        [printed dataUsingEncoding:NSUTF8StringEncoding],
+        &roundTripDiagnostics);
+    NSArray<MILResultSyntax *> *results =
+        reparsed.functions[0].operations[0].results;
+    expect(reparsed != nil && roundTripDiagnostics.errorCount == 0 &&
+           results.count == 2 &&
+           [results[0].name isEqualToString:@"first"] &&
+           [results[1].name isEqualToString:@"second"],
+           @"printed result order reparses without an aggregate");
+}
+
 static void testMalformedProgram(void) {
     NSString *source = @"program(1.3) { func main<ios18>(fp16 x) { "
                         "fp16 y = relu(x = x) } -> (y); }";
@@ -142,6 +181,7 @@ int main(void) {
         testConvRelu();
         testAttention();
         testW8A8();
+        testOrderedResultsRoundTrip();
         testMalformedProgram();
         printf("mil parser: %s\n", failures == 0 ? "PASS" : "FAIL");
     }

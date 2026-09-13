@@ -80,8 +80,15 @@
         [result appendFormat:@"  func %@<%@>(%@) {\n", function.name,
             function.opset, [parameters componentsJoinedByString:@", "]];
         for (MILOperationSyntax *operation in function.operations) {
-            [result appendFormat:@"    %@ %@ = %@(%@)",
-                [self typeString:operation.resultType], operation.resultName,
+            NSMutableArray<NSString *> *bindings = [NSMutableArray array];
+            for (MILResultSyntax *binding in operation.results)
+                [bindings addObject:[NSString stringWithFormat:@"%@ %@",
+                    [self typeString:binding.type], binding.name]];
+            NSString *left = operation.results.count == 1
+                ? bindings[0]
+                : [NSString stringWithFormat:@"(%@)",
+                    [bindings componentsJoinedByString:@", "]];
+            [result appendFormat:@"    %@ = %@(%@)", left,
                 operation.operationName,
                 [self argumentString:operation.arguments]];
             if (operation.attributes.count)

@@ -37,7 +37,7 @@ static ANEGraphOperation *unary(NSString *name, NSString *resultName,
                                                            type:type];
     return [[ANEGraphOperation alloc]
         initWithOperationName:name
-                       result:result
+                      results:@[result]
                     arguments:@{@"x": valueArgument(input)}
                    attributes:@{}
                         range:zeroRange()];
@@ -50,13 +50,13 @@ static void testArbitraryDataflowAndUsers(void) {
                shape:@[@1, @64, @64, @64]];
     ANEGraphValue *input = [[ANEGraphValue alloc] initWithName:@"x" type:type];
     ANEGraphOperation *producer = unary(@"relu", @"r", type, input);
-    ANEGraphOperation *left = unary(@"sigmoid", @"a", type, producer.result);
-    ANEGraphOperation *right = unary(@"tanh", @"b", type, producer.result);
+    ANEGraphOperation *left = unary(@"sigmoid", @"a", type, producer.results[0]);
+    ANEGraphOperation *right = unary(@"tanh", @"b", type, producer.results[0]);
     ANEGraphFunction *function = [[ANEGraphFunction alloc]
-        initWithName:@"branched"
+        initWithName:@"branched" opset:@"ios18"
               inputs:@[input]
           operations:@[producer, left, right]
-        returnValues:@[left.result, right.result]];
+        returnValues:@[left.results[0], right.results[0]]];
     ANEDiagnosticEngine *diagnostics = [[ANEDiagnosticEngine alloc] init];
     ANEOperationGraph *graph = [[ANEOperationGraph alloc]
         initWithFunction:function diagnostics:diagnostics];
@@ -81,8 +81,8 @@ static void testUnknownOperationRemainsExplicit(void) {
     ANEGraphValue *input = [[ANEGraphValue alloc] initWithName:@"x" type:type];
     ANEGraphOperation *mystery = unary(@"future_op", @"y", type, input);
     ANEGraphFunction *function = [[ANEGraphFunction alloc]
-        initWithName:@"unknown" inputs:@[input] operations:@[mystery]
-        returnValues:@[mystery.result]];
+        initWithName:@"unknown" opset:@"ios18" inputs:@[input] operations:@[mystery]
+        returnValues:@[mystery.results[0]]];
     ANEDiagnosticEngine *diagnostics = [[ANEDiagnosticEngine alloc] init];
     ANEOperationGraph *graph = [[ANEOperationGraph alloc]
         initWithFunction:function diagnostics:diagnostics];
@@ -104,10 +104,10 @@ static void testSpaceDepthOperationsAreFirstClassLayoutNodes(void) {
     ANEGraphOperation *pack = unary(@"space_to_depth", @"packed",
                                     packedType, input);
     ANEGraphOperation *unpack = unary(@"depth_to_space", @"y",
-                                      inputType, pack.result);
+                                      inputType, pack.results[0]);
     ANEGraphFunction *function = [[ANEGraphFunction alloc]
-        initWithName:@"layout_round_trip" inputs:@[input]
-        operations:@[pack, unpack] returnValues:@[unpack.result]];
+        initWithName:@"layout_round_trip" opset:@"ios18" inputs:@[input]
+        operations:@[pack, unpack] returnValues:@[unpack.results[0]]];
     ANEDiagnosticEngine *diagnostics = [[ANEDiagnosticEngine alloc] init];
     ANEOperationGraph *graph = [[ANEOperationGraph alloc]
         initWithFunction:function diagnostics:diagnostics];
@@ -124,11 +124,38 @@ static void testSpaceDepthOperationsAreFirstClassLayoutNodes(void) {
            @"layout nodes preserve symbolic tensor geometry");
 }
 
+static void testMultiResultLoweringRefusesWithoutTruncation(void) {
+    ANEValueType *type = [[ANEValueType alloc]
+        initWithKind:ANEValueTypeKindTensor
+         elementType:ANEElementTypeFP16 shape:@[@1, @1024, @375]];
+    ANEGraphValue *first = [[ANEGraphValue alloc] initWithName:@"first"
+                                                          type:type];
+    ANEGraphValue *second = [[ANEGraphValue alloc] initWithName:@"second"
+                                                           type:type];
+    ANEGraphOperation *split = [[ANEGraphOperation alloc]
+        initWithOperationName:@"split" results:@[first, second]
+        arguments:@{} attributes:@{} range:zeroRange()];
+    ANEGraphFunction *function = [[ANEGraphFunction alloc]
+        initWithName:@"main" opset:@"CoreML8" inputs:@[]
+        operations:@[split] returnValues:@[first, second]];
+    ANEDiagnosticEngine *diagnostics = [[ANEDiagnosticEngine alloc] init];
+    ANEOperationGraph *graph = [[ANEOperationGraph alloc]
+        initWithFunction:function diagnostics:diagnostics];
+    expect(graph == nil,
+           @"single-result operation graph refuses multi-result lowering");
+    BOOL found = NO;
+    for (ANEDiagnostic *diagnostic in diagnostics.diagnostics)
+        if ([diagnostic.code isEqualToString:
+             @"ane.graph.unsupported-multi-result-operation"]) found = YES;
+    expect(found, @"multi-result lowering refusal has a stable diagnostic");
+}
+
 int main(void) {
     @autoreleasepool {
         testArbitraryDataflowAndUsers();
         testSpaceDepthOperationsAreFirstClassLayoutNodes();
         testUnknownOperationRemainsExplicit();
+        testMultiResultLoweringRefusesWithoutTruncation();
         printf("operation graph: %s\n", failures == 0 ? "PASS" : "FAIL");
     }
     return failures == 0 ? 0 : 1;
