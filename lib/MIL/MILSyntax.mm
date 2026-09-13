@@ -59,17 +59,26 @@
 }
 @end
 
-@implementation MILOperationSyntax
-- (instancetype)initWithResultType:(MILTypeSyntax *)resultType
-                         resultName:(NSString *)resultName
-                      operationName:(NSString *)operationName
-                          arguments:(NSArray<MILArgumentSyntax *> *)arguments
-                         attributes:(NSArray<MILArgumentSyntax *> *)attributes
-                              range:(ANESourceRange)range {
+@implementation MILResultSyntax
+- (instancetype)initWithType:(MILTypeSyntax *)type name:(NSString *)name {
     self = [super init];
     if (self) {
-        _resultType = resultType;
-        _resultName = [resultName copy];
+        _type = type;
+        _name = [name copy];
+    }
+    return self;
+}
+@end
+
+@implementation MILOperationSyntax
+- (instancetype)initWithResults:(NSArray<MILResultSyntax *> *)results
+                   operationName:(NSString *)operationName
+                       arguments:(NSArray<MILArgumentSyntax *> *)arguments
+                      attributes:(NSArray<MILArgumentSyntax *> *)attributes
+                           range:(ANESourceRange)range {
+    self = [super init];
+    if (self) {
+        _results = [results copy];
         _operationName = [operationName copy];
         _arguments = [arguments copy];
         _attributes = [attributes copy];

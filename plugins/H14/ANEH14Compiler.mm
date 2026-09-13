@@ -355,8 +355,8 @@ static BOOL parityPlan(ANEGraphOperation *operation, H14ParityPlan *plan) {
     NSString *name = operation.operationName;
     H14ParityPlan candidate{};
     ane::h14::ElementwiseShape shapes[2];
-    NSUInteger shapeCount = parityShapes(operation.result, shapes);
-    if (!shapeCount || !tensor(x, operation.result.type.shape)) return NO;
+    NSUInteger shapeCount = parityShapes(operation.results[0], shapes);
+    if (!shapeCount || !tensor(x, operation.results[0].type.shape)) return NO;
     BOOL leaky = [name isEqualToString:@"leaky_relu"];
     BOOL gelu = [name isEqualToString:@"gelu"];
     BOOL rsqrt = [name isEqualToString:@"rsqrt"];
@@ -419,8 +419,8 @@ static BOOL boolean(ANEGraphArgument *argument, BOOL expected) {
     if (argument.kind == ANEGraphArgumentKindValue) {
         ANEGraphOperation *producer = argument.value.producer;
         if (![producer.operationName isEqualToString:@"const"] ||
-            producer.result.type.kind != ANEValueTypeKindScalar ||
-            producer.result.type.elementType != ANEElementTypeBool) return NO;
+            producer.results[0].type.kind != ANEValueTypeKindScalar ||
+            producer.results[0].type.elementType != ANEElementTypeBool) return NO;
         argument = producer.attributes[@"val"];
     }
     if (argument.kind == ANEGraphArgumentKindCall &&
@@ -447,9 +447,9 @@ static BOOL normParityPlan(ANEGraphOperation *operation,
     const BOOL softmax = encoding == ane::h14::NormOperation::Softmax;
     const BOOL layerNorm = encoding == ane::h14::NormOperation::LayerNorm;
     NSInteger inputShift = 0;
-    if (!fp16Tensor(x) || !fp16Tensor(operation.result) ||
+    if (!fp16Tensor(x) || !fp16Tensor(operation.results[0]) ||
         !normSurface(x.type.shape, &shape.input, &inputShift) ||
-        !normSurface(operation.result.type.shape, &shape.output, nullptr))
+        !normSurface(operation.results[0].type.shape, &shape.output, nullptr))
         return NO;
     if (!constantAxisMask(operation.operands[softmax ? @"axis" : @"axes"].value,
                           x.type.shape.count, inputShift, &shape.axisMask))
@@ -544,7 +544,7 @@ static BOOL convParityPlan(ANEGraphOperation *operation, H14ConvPlan *plan) {
     candidate.bias = bias;
     if (!x || !weight || !fp16Tensor(weight) || weight.type.shape.count != 4 ||
         !convSurface(x, &candidate.shape.input) ||
-        !convSurface(operation.result, &candidate.shape.output)) return NO;
+        !convSurface(operation.results[0], &candidate.shape.output)) return NO;
     if (operation.arguments.count != (bias ? 8u : 7u)) return NO;
     NSString *padType = nil;
     long long strides[2] = {0, 0}, dilations[2] = {0, 0}, padding[4] = {0, 0, 0, 0};
@@ -648,7 +648,7 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
     NSUInteger rows = 0, reduction = 0, columns = 0;
     if (!x || !y || constantValue(x) || !constantValue(y) ||
         (linear && operation.arguments.count != 2) ||
-        !matvecGeometry(x, operation.result, &rows, &reduction, &columns) ||
+        !matvecGeometry(x, operation.results[0], &rows, &reduction, &columns) ||
         !tensor(y, transposeY ? @[@(columns), @(reduction)]
                               : @[@(reduction), @(columns)]))
         return reject(diagnostics,
@@ -712,6 +712,11 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
     if (module.functions.count != 1)
         return reject(diagnostics, @"H14 requires exactly one function");
     ANEGraphFunction *function = module.functions[0];
+    for (ANEGraphOperation *candidate in function.operations)
+        if (candidate.results.count != 1)
+            return reject(diagnostics,
+                @"H14 does not lower multi-result operations",
+                candidate, @"h14.unsupported-multi-result-operation");
     NSMutableArray<ANEGraphOperation *> *sourceOperations = [NSMutableArray array];
     for (ANEGraphOperation *candidate in function.operations)
         if (![candidate.operationName isEqualToString:@"const"])
@@ -723,7 +728,7 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
             sourceOperations.lastObject);
     ANEGraphOperation *operation = sourceOperations[0];
     if (function.returnValues.count != 1 ||
-        function.returnValues[0] != operation.result)
+        function.returnValues[0] != operation.results[0])
         return reject(diagnostics,
             @"H14 requires one operation with its result returned", operation);
     for (ANEGraphValue *input in function.inputs) {
@@ -837,8 +842,8 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
         tensors[value.name] = @{@"shape": value.type.shape,
             @"logicalBytes": @(logicalBytes(value)), @"role": @"input"};
     }
-    tensors[operation.result.name] = @{@"shape": operation.result.type.shape,
-        @"logicalBytes": @(logicalBytes(operation.result)), @"role": @"output"};
+    tensors[operation.results[0].name] = @{@"shape": operation.results[0].type.shape,
+        @"logicalBytes": @(logicalBytes(operation.results[0])), @"role": @"output"};
     NSDictionary *record = @{
         @"file": [@"program-0." stringByAppendingString:format],
         @"bytes": @(payload.length),
@@ -849,7 +854,7 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
         @"operation": operation.operationName,
         @"inputs": inputRecords,
         @"constantInputs": @{},
-        @"outputs": @[binding(operation.result, program.output)],
+        @"outputs": @[binding(operation.results[0], program.output)],
         @"constantOffset": @(program.constantOffsetBytes),
         @"constantBytes": @(program.constants.size()),
         @"firstTaskBytes": @(program.firstTaskBytes),

@@ -214,10 +214,21 @@
 
 - (MILOperationSyntax *)parseOperation {
     MILToken *start = self.current;
-    MILTypeSyntax *type = [self parseType];
-    MILToken *result = [self expect:MILTokenKindIdentifier label:@"result name"];
-    if (!type || !result || ![self expect:MILTokenKindEqual label:@"'='"])
-        return nil;
+    NSMutableArray<MILResultSyntax *> *results = [NSMutableArray array];
+    BOOL list = [self at:MILTokenKindLParen];
+    if (list) [self take];
+    do {
+        MILTypeSyntax *type = [self parseType];
+        MILToken *name = [self expect:MILTokenKindIdentifier
+                               label:@"result name"];
+        if (!type || !name) return nil;
+        [results addObject:[[MILResultSyntax alloc] initWithType:type
+                                                             name:name.spelling]];
+        if (!list || ![self at:MILTokenKindComma]) break;
+        [self take];
+    } while (!_failed);
+    if (list && ![self expect:MILTokenKindRParen label:@"')'"]) return nil;
+    if (![self expect:MILTokenKindEqual label:@"'='"]) return nil;
     MILToken *operation = [self expect:MILTokenKindIdentifier
                                  label:@"operation name"];
     if (!operation || ![self expect:MILTokenKindLParen label:@"'('"])
@@ -232,9 +243,9 @@
     }
     MILToken *semicolon = [self expect:MILTokenKindSemicolon label:@"';'"];
     if (!semicolon) return nil;
-    return [[MILOperationSyntax alloc] initWithResultType:type
-        resultName:result.spelling operationName:operation.spelling
-        arguments:arguments attributes:attributes
+    return [[MILOperationSyntax alloc] initWithResults:results
+        operationName:operation.spelling arguments:arguments
+        attributes:attributes
         range:ANESourceRangeMake(start.range.start, semicolon.range.end)];
 }
 

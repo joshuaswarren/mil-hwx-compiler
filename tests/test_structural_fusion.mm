@@ -31,7 +31,7 @@ static ANEGraphOperation *op(NSString *name, NSString *resultName,
     NSMutableDictionary *arguments = [NSMutableDictionary dictionary];
     for (NSUInteger i = 0; i < inputs.count; ++i)
         arguments[[NSString stringWithFormat:@"in%lu", (unsigned long)i]] = arg(inputs[i]);
-    return [[ANEGraphOperation alloc] initWithOperationName:name result:result
+    return [[ANEGraphOperation alloc] initWithOperationName:name results:@[result]
         arguments:arguments attributes:@{} range:zeroRange()];
 }
 static ANEOperationGraph *graphWithOps(NSArray<NSString *> *names,
@@ -45,13 +45,13 @@ static ANEOperationGraph *graphWithOps(NSArray<NSString *> *names,
         NSMutableArray<ANEGraphValue *> *inputs = [NSMutableArray array];
         for (NSNumber *edge in edges[i])
             [inputs addObject:edge.integerValue < 0 ? input
-                : ops[edge.unsignedIntegerValue].result];
+                : ops[edge.unsignedIntegerValue].results[0]];
         [ops addObject:op(names[i], [NSString stringWithFormat:@"v%lu",
             (unsigned long)i], type, inputs)];
     }
     NSMutableArray<ANEGraphValue *> *outputs = [NSMutableArray array];
-    for (NSNumber *index in returns) [outputs addObject:ops[index.unsignedIntegerValue].result];
-    ANEGraphFunction *function = [[ANEGraphFunction alloc] initWithName:@"f"
+    for (NSNumber *index in returns) [outputs addObject:ops[index.unsignedIntegerValue].results[0]];
+    ANEGraphFunction *function = [[ANEGraphFunction alloc] initWithName:@"f" opset:@"ios18"
         inputs:@[input] operations:ops returnValues:outputs];
     return [[ANEOperationGraph alloc] initWithFunction:function
         diagnostics:[[ANEDiagnosticEngine alloc] init]];

@@ -83,13 +83,13 @@ typedef NS_ENUM(NSUInteger, ANEGraphArgumentKind) {
 
 @interface ANEGraphOperation : NSObject
 @property(nonatomic, readonly, copy) NSString *operationName;
-@property(nonatomic, readonly) ANEGraphValue *result;
+@property(nonatomic, readonly, copy) NSArray<ANEGraphValue *> *results;
 @property(nonatomic, readonly, copy) NSDictionary<NSString *, ANEGraphArgument *> *arguments;
 @property(nonatomic, readonly, copy) NSDictionary<NSString *, ANEGraphArgument *> *attributes;
 @property(nonatomic, readonly, copy) NSDictionary<NSString *, ANEGraphArgument *> *operands;
 @property(nonatomic, readonly) ANESourceRange range;
 - (instancetype)initWithOperationName:(NSString *)operationName
-                                result:(ANEGraphValue *)result
+                               results:(NSArray<ANEGraphValue *> *)results
                              arguments:(NSDictionary<NSString *, ANEGraphArgument *> *)arguments
                             attributes:(NSDictionary<NSString *, ANEGraphArgument *> *)attributes
                                  range:(ANESourceRange)range;
@@ -97,18 +97,22 @@ typedef NS_ENUM(NSUInteger, ANEGraphArgumentKind) {
 
 @interface ANEGraphFunction : NSObject
 @property(nonatomic, readonly, copy) NSString *name;
+@property(nonatomic, readonly, copy) NSString *opset;
 @property(nonatomic, readonly, copy) NSArray<ANEGraphValue *> *inputs;
 @property(nonatomic, readonly, copy) NSArray<ANEGraphOperation *> *operations;
 @property(nonatomic, readonly, copy) NSArray<ANEGraphValue *> *returnValues;
 - (instancetype)initWithName:(NSString *)name
+                         opset:(NSString *)opset
                         inputs:(NSArray<ANEGraphValue *> *)inputs
                     operations:(NSArray<ANEGraphOperation *> *)operations
                    returnValues:(NSArray<ANEGraphValue *> *)returnValues;
 @end
 
 @interface ANEGraphModule : NSObject
+@property(nonatomic, readonly, copy) NSString *version;
 @property(nonatomic, readonly, copy) NSArray<ANEGraphFunction *> *functions;
-- (instancetype)initWithFunctions:(NSArray<ANEGraphFunction *> *)functions;
+- (instancetype)initWithVersion:(NSString *)version
+                       functions:(NSArray<ANEGraphFunction *> *)functions;
 @end
 
 NS_ASSUME_NONNULL_END

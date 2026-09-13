@@ -24,7 +24,7 @@
         [diagnostics emitSeverity:ANEDiagnosticSeverityError
                             code:@"mil.import.unsupported-type"
                          message:[NSString stringWithFormat:
-                            @"unsupported MIL type '%@'", type.name]
+                            @"unsupported MIL type '%@'", elementName]
                            range:range];
         return nil;
     }
@@ -154,27 +154,35 @@
 
     NSMutableArray<ANEGraphOperation *> *operations = [NSMutableArray array];
     for (MILOperationSyntax *operation in function.operations) {
-        if (symbols[operation.resultName]) {
-            [diagnostics emitSeverity:ANEDiagnosticSeverityError
-                                code:@"mil.import.duplicate-value"
-                             message:[NSString stringWithFormat:
-                                @"duplicate SSA value '%@'", operation.resultName]
-                               range:operation.range];
-            return nil;
+        NSMutableSet<NSString *> *names = [NSMutableSet set];
+        for (MILResultSyntax *result in operation.results) {
+            if (symbols[result.name] || [names containsObject:result.name]) {
+                [diagnostics emitSeverity:ANEDiagnosticSeverityError
+                                    code:@"mil.import.duplicate-value"
+                                 message:[NSString stringWithFormat:
+                                    @"duplicate SSA value '%@'", result.name]
+                                   range:operation.range];
+                return nil;
+            }
+            [names addObject:result.name];
         }
         NSDictionary *arguments = [self importArguments:operation.arguments
             symbols:symbols diagnostics:diagnostics range:operation.range];
         NSDictionary *attributes = [self importArguments:operation.attributes
             symbols:symbols diagnostics:diagnostics range:operation.range];
-        ANEValueType *type = [self importType:operation.resultType
-            diagnostics:diagnostics range:operation.range];
-        if (!arguments || !attributes || !type) return nil;
-        ANEGraphValue *result = [[ANEGraphValue alloc]
-            initWithName:operation.resultName type:type];
+        if (!arguments || !attributes) return nil;
+        NSMutableArray<ANEGraphValue *> *results = [NSMutableArray array];
+        for (MILResultSyntax *result in operation.results) {
+            ANEValueType *type = [self importType:result.type
+                diagnostics:diagnostics range:operation.range];
+            if (!type) return nil;
+            [results addObject:[[ANEGraphValue alloc]
+                initWithName:result.name type:type]];
+        }
         ANEGraphOperation *imported = [[ANEGraphOperation alloc]
-            initWithOperationName:operation.operationName result:result
+            initWithOperationName:operation.operationName results:results
             arguments:arguments attributes:attributes range:operation.range];
-        symbols[result.name] = result;
+        for (ANEGraphValue *result in results) symbols[result.name] = result;
         [operations addObject:imported];
     }
 
@@ -191,8 +199,9 @@
         }
         [returns addObject:value];
     }
-    return [[ANEGraphFunction alloc] initWithName:function.name inputs:inputs
-        operations:operations returnValues:returns];
+    return [[ANEGraphFunction alloc] initWithName:function.name
+        opset:function.opset inputs:inputs operations:operations
+        returnValues:returns];
 }
 
 + (ANEGraphModule *)importProgram:(MILProgramSyntax *)program
@@ -204,7 +213,8 @@
         if (!imported) return nil;
         [functions addObject:imported];
     }
-    return [[ANEGraphModule alloc] initWithFunctions:functions];
+    return [[ANEGraphModule alloc] initWithVersion:program.version
+                                        functions:functions];
 }
 
 @end
