@@ -1,0 +1,45 @@
+{
+  "case": "select_rrr_1x1024x375",
+  "compiler": {
+    "campaign_sha256": "113f93c8562625cb679f60b83116c03bb3360058a60356e496646421db6df1b6",
+    "command": [
+      "/tmp/h13-oracle/bin/ane-compile-hwx",
+      "CAPTURE_DIR",
+      "OUTPUT_DIR",
+      "h13"
+    ],
+    "decoder_sha256": "125da0249ca3c3ba0ca1f9f0cabfd1db54a965abb75f9f4cdcc2598e255c8fbc",
+    "driver_sha256": "a6e8f70d438973e60913815be66dbd6de19d7200df9053a9efc2a615823d8074",
+    "host": "MacStudio.local",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "tool": "/tmp/h13-oracle/bin/ane-compile-hwx",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  "constant_section": null,
+  "error": "callback_status=1",
+  "family": "select",
+  "hwx_bytes": null,
+  "hwx_sha256": null,
+  "mil": "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n  func main<ios18>(tensor<fp16, [1, 1024, 375]> a, tensor<fp16, [1, 1024, 375]> b, tensor<fp16, [1, 1024, 375]> cond) {\n    tensor<fp16, [1, 1024, 375]> y = select(a = a, b = b, cond = cond)[name = string(\"y\")];\n  } -> (y);\n}\n",
+  "parameters": {
+    "a_storage": "runtime",
+    "b_storage": "runtime",
+    "cond_storage": "runtime",
+    "operation": "select",
+    "shape": [
+      1,
+      1024,
+      375
+    ],
+    "weight_mode": "none"
+  },
+  "program_descriptor": null,
+  "schema_version": 1,
+  "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+  "target": "h13",
+  "task_descriptors": [],
+  "tensor_descriptors": [],
+  "weights": {
+    "storage": "none"
+  }
+}

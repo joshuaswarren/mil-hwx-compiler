@@ -1,0 +1,2320 @@
+[
+  {
+    "file": "floor_b_1_idx.json",
+    "status": "decoded",
+    "error": null,
+    "family": "floor",
+    "operation": "floor",
+    "shape": [
+      1
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "index",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 4,
+    "task_sizes": [
+      628,
+      628,
+      628,
+      504
+    ],
+    "program_count": 1,
+    "hwx_sha256": "4df2156424b8046dde91be5990c27c1730729defcd552cbfd67c91697efbe487",
+    "hwx_bytes": 32768,
+    "json_bytes": 30739,
+    "tensor_shapes": [
+      [
+        1,
+        1,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 448,
+    "constant_sha256": "e1a2a8115e98000857b1f05568606c7e8a724e2455508e2d8d7356f6930701e0",
+    "const_raw_path": "floor_b_1_idx.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0x0001",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 448,
+      "prefix_u16": 224,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 10
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "floor_b_1_idx.const.bin",
+        "bytes": 448,
+        "sha256": "e1a2a8115e98000857b1f05568606c7e8a724e2455508e2d8d7356f6930701e0"
+      },
+      "weights.bin": {
+        "file": "floor_b_1_idx.weights.bin",
+        "bytes": 2,
+        "sha256": "47dc540c94ceb704a23875c11273e16bb0b8a87aed84de911f2133568115f254"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "floor_div_comp_1_c2.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "family": "floor_div",
+    "operation": "floor_div",
+    "shape": [
+      1
+    ],
+    "form": "real_div_then_floor",
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "const2",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": null,
+    "task_sizes": null,
+    "program_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "json_bytes": 1586,
+    "tensor_shapes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "const_raw_path": null,
+    "packing": null,
+    "sidecars": {},
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "floor_div_comp_1_rr.json",
+    "status": "decoded",
+    "error": null,
+    "family": "floor_div",
+    "operation": "floor_div",
+    "shape": [
+      1
+    ],
+    "form": "real_div_then_floor",
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 6,
+    "task_sizes": [
+      628,
+      504,
+      628,
+      628,
+      628,
+      504
+    ],
+    "program_count": 1,
+    "hwx_sha256": "d9f1aebd5f96eb4d93bed364c3fc831b496961e47b046d667edd8b6ad9b8762e",
+    "hwx_bytes": 49152,
+    "json_bytes": 43723,
+    "tensor_shapes": [
+      [
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 512,
+    "constant_sha256": "4898c23a1e6f28c4566704a2fa75c62b5593c4be3047237da23d9d75ec99eb9a",
+    "const_raw_path": "floor_div_comp_1_rr.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0x0000",
+        "0x7c00",
+        "0x7c00",
+        "0x0000",
+        "0x4000",
+        "0x3fc2",
+        "0x3f88",
+        "0x3f50",
+        "0x3f1c",
+        "0x3eeb",
+        "0x3ebd",
+        "0x3e90",
+        "0x3e66",
+        "0x3e3e",
+        "0x3e18",
+        "0x3df4"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 512,
+      "prefix_u16": 256,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 44
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "floor_div_comp_1_rr.const.bin",
+        "bytes": 512,
+        "sha256": "4898c23a1e6f28c4566704a2fa75c62b5593c4be3047237da23d9d75ec99eb9a"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "floor_div_comp_1_s2.json",
+    "status": "decoded",
+    "error": null,
+    "family": "floor_div",
+    "operation": "floor_div",
+    "shape": [
+      1
+    ],
+    "form": "real_div_then_floor",
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "scalar2",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 5,
+    "task_sizes": [
+      504,
+      628,
+      628,
+      628,
+      504
+    ],
+    "program_count": 1,
+    "hwx_sha256": "1added33ab660f22e40fe9f71039e40e282d68fdb8fb5443460755f2105fc9f4",
+    "hwx_bytes": 32768,
+    "json_bytes": 36620,
+    "tensor_shapes": [
+      [
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 384,
+    "constant_sha256": "6880d0f577b489d4c7eca826218f206c24e607a2622109eac66ca0f71096eb22",
+    "const_raw_path": "floor_div_comp_1_s2.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0xfc00",
+        "0x7c00",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 384,
+      "prefix_u16": 192,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 10
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "floor_div_comp_1_s2.const.bin",
+        "bytes": 384,
+        "sha256": "6880d0f577b489d4c7eca826218f206c24e607a2622109eac66ca0f71096eb22"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "floor_div_comp_1x64x1x1_rr.json",
+    "status": "decoded",
+    "error": null,
+    "family": "floor_div",
+    "operation": "floor_div",
+    "shape": [
+      1,
+      64,
+      1,
+      1
+    ],
+    "form": "real_div_then_floor",
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 6,
+    "task_sizes": [
+      628,
+      504,
+      628,
+      628,
+      628,
+      504
+    ],
+    "program_count": 1,
+    "hwx_sha256": "f99843c63d73dce9468a50b270c8c27d28c7bb05ef1816defb28d10576539dd9",
+    "hwx_bytes": 49152,
+    "json_bytes": 43823,
+    "tensor_shapes": [
+      [
+        1,
+        64,
+        1,
+        1
+      ],
+      [
+        1,
+        64,
+        1,
+        1
+      ],
+      [
+        1,
+        64,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 1408,
+    "constant_sha256": "badaf68e04adfa49618eb54eb6cd592b931940ef175e3e014860396c4072d567",
+    "const_raw_path": "floor_div_comp_1x64x1x1_rr.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0x0000",
+        "0x7c00",
+        "0x7c00",
+        "0x0000",
+        "0x4000",
+        "0x3fc2",
+        "0x3f88",
+        "0x3f50",
+        "0x3f1c",
+        "0x3eeb",
+        "0x3ebd",
+        "0x3e90",
+        "0x3e66",
+        "0x3e3e",
+        "0x3e18",
+        "0x3df4"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 1408,
+      "prefix_u16": 704,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 44
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "floor_div_comp_1x64x1x1_rr.const.bin",
+        "bytes": 1408,
+        "sha256": "badaf68e04adfa49618eb54eb6cd592b931940ef175e3e014860396c4072d567"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "floor_div_comp_1x64x1x1_s2.json",
+    "status": "decoded",
+    "error": null,
+    "family": "floor_div",
+    "operation": "floor_div",
+    "shape": [
+      1,
+      64,
+      1,
+      1
+    ],
+    "form": "real_div_then_floor",
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "scalar2",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 6,
+    "task_sizes": [
+      504,
+      504,
+      628,
+      628,
+      628,
+      504
+    ],
+    "program_count": 1,
+    "hwx_sha256": "1d6098843723d08934ede22a5038341353178b6e6b8a76143aca1379a57e2cd8",
+    "hwx_bytes": 32768,
+    "json_bytes": 42561,
+    "tensor_shapes": [
+      [
+        1,
+        64,
+        1,
+        1
+      ],
+      [
+        1,
+        64,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 640,
+    "constant_sha256": "40df41a9a3e8f9d19642232da3e91338b75225dbb265789e4fc28655bd910215",
+    "const_raw_path": "floor_div_comp_1x64x1x1_s2.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 640,
+      "prefix_u16": 320,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 11
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "floor_div_comp_1x64x1x1_s2.const.bin",
+        "bytes": 640,
+        "sha256": "40df41a9a3e8f9d19642232da3e91338b75225dbb265789e4fc28655bd910215"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "floor_div_native_1_c2.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "family": "floor_div",
+    "operation": "floor_div",
+    "shape": [
+      1
+    ],
+    "form": "native",
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "const2",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": null,
+    "task_sizes": null,
+    "program_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "json_bytes": 1513,
+    "tensor_shapes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "const_raw_path": null,
+    "packing": null,
+    "sidecars": {},
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "floor_div_native_1_rr.json",
+    "status": "decoded",
+    "error": null,
+    "family": "floor_div",
+    "operation": "floor_div",
+    "shape": [
+      1
+    ],
+    "form": "native",
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 6,
+    "task_sizes": [
+      628,
+      504,
+      628,
+      628,
+      628,
+      504
+    ],
+    "program_count": 1,
+    "hwx_sha256": "432f411ba667c09c3b6680e7bd942e820c0b9b5a2eac75fd13d5f8060f7f0253",
+    "hwx_bytes": 49152,
+    "json_bytes": 43652,
+    "tensor_shapes": [
+      [
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 512,
+    "constant_sha256": "4898c23a1e6f28c4566704a2fa75c62b5593c4be3047237da23d9d75ec99eb9a",
+    "const_raw_path": "floor_div_native_1_rr.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0x0000",
+        "0x7c00",
+        "0x7c00",
+        "0x0000",
+        "0x4000",
+        "0x3fc2",
+        "0x3f88",
+        "0x3f50",
+        "0x3f1c",
+        "0x3eeb",
+        "0x3ebd",
+        "0x3e90",
+        "0x3e66",
+        "0x3e3e",
+        "0x3e18",
+        "0x3df4"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 512,
+      "prefix_u16": 256,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 44
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "floor_div_native_1_rr.const.bin",
+        "bytes": 512,
+        "sha256": "4898c23a1e6f28c4566704a2fa75c62b5593c4be3047237da23d9d75ec99eb9a"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "floor_div_native_1_s2.json",
+    "status": "decoded",
+    "error": null,
+    "family": "floor_div",
+    "operation": "floor_div",
+    "shape": [
+      1
+    ],
+    "form": "native",
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "scalar2",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 5,
+    "task_sizes": [
+      504,
+      628,
+      628,
+      628,
+      504
+    ],
+    "program_count": 1,
+    "hwx_sha256": "f734d73053b3118c9496879af1755f0986e749aa515ae993ca47e3f4fa01e2e6",
+    "hwx_bytes": 32768,
+    "json_bytes": 36549,
+    "tensor_shapes": [
+      [
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 384,
+    "constant_sha256": "6880d0f577b489d4c7eca826218f206c24e607a2622109eac66ca0f71096eb22",
+    "const_raw_path": "floor_div_native_1_s2.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0xfc00",
+        "0x7c00",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 384,
+      "prefix_u16": 192,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 10
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "floor_div_native_1_s2.const.bin",
+        "bytes": 384,
+        "sha256": "6880d0f577b489d4c7eca826218f206c24e607a2622109eac66ca0f71096eb22"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "floor_div_native_1x64x1x1_rr.json",
+    "status": "decoded",
+    "error": null,
+    "family": "floor_div",
+    "operation": "floor_div",
+    "shape": [
+      1,
+      64,
+      1,
+      1
+    ],
+    "form": "native",
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 6,
+    "task_sizes": [
+      628,
+      504,
+      628,
+      628,
+      628,
+      504
+    ],
+    "program_count": 1,
+    "hwx_sha256": "0ff08bc454b57459ad4d360113dbe631977d84bcb74d7d36d116eac315dd3b7d",
+    "hwx_bytes": 49152,
+    "json_bytes": 43742,
+    "tensor_shapes": [
+      [
+        1,
+        64,
+        1,
+        1
+      ],
+      [
+        1,
+        64,
+        1,
+        1
+      ],
+      [
+        1,
+        64,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 1408,
+    "constant_sha256": "badaf68e04adfa49618eb54eb6cd592b931940ef175e3e014860396c4072d567",
+    "const_raw_path": "floor_div_native_1x64x1x1_rr.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0x0000",
+        "0x7c00",
+        "0x7c00",
+        "0x0000",
+        "0x4000",
+        "0x3fc2",
+        "0x3f88",
+        "0x3f50",
+        "0x3f1c",
+        "0x3eeb",
+        "0x3ebd",
+        "0x3e90",
+        "0x3e66",
+        "0x3e3e",
+        "0x3e18",
+        "0x3df4"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 1408,
+      "prefix_u16": 704,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 44
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "floor_div_native_1x64x1x1_rr.const.bin",
+        "bytes": 1408,
+        "sha256": "badaf68e04adfa49618eb54eb6cd592b931940ef175e3e014860396c4072d567"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "floor_div_native_1x64x1x1_s2.json",
+    "status": "decoded",
+    "error": null,
+    "family": "floor_div",
+    "operation": "floor_div",
+    "shape": [
+      1,
+      64,
+      1,
+      1
+    ],
+    "form": "native",
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "scalar2",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 6,
+    "task_sizes": [
+      504,
+      504,
+      628,
+      628,
+      628,
+      504
+    ],
+    "program_count": 1,
+    "hwx_sha256": "6e04eb4e51e258e1098a77ccc9e2c96a7b100048c5604b01e23a91d1998a8ca4",
+    "hwx_bytes": 32768,
+    "json_bytes": 42480,
+    "tensor_shapes": [
+      [
+        1,
+        64,
+        1,
+        1
+      ],
+      [
+        1,
+        64,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 640,
+    "constant_sha256": "40df41a9a3e8f9d19642232da3e91338b75225dbb265789e4fc28655bd910215",
+    "const_raw_path": "floor_div_native_1x64x1x1_s2.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 640,
+      "prefix_u16": 320,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 11
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "floor_div_native_1x64x1x1_s2.const.bin",
+        "bytes": 640,
+        "sha256": "40df41a9a3e8f9d19642232da3e91338b75225dbb265789e4fc28655bd910215"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "floor_r_1.json",
+    "status": "decoded",
+    "error": null,
+    "family": "floor",
+    "operation": "floor",
+    "shape": [
+      1
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 4,
+    "task_sizes": [
+      628,
+      628,
+      628,
+      504
+    ],
+    "program_count": 1,
+    "hwx_sha256": "f7dda4c31479d7e3c0a8ec92a6e86a7ce88ffa33f4e9261c81fd1ab7b4a3737a",
+    "hwx_bytes": 32768,
+    "json_bytes": 30533,
+    "tensor_shapes": [
+      [
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 384,
+    "constant_sha256": "6880d0f577b489d4c7eca826218f206c24e607a2622109eac66ca0f71096eb22",
+    "const_raw_path": "floor_r_1.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0xfc00",
+        "0x7c00",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 384,
+      "prefix_u16": 192,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 10
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "floor_r_1.const.bin",
+        "bytes": 384,
+        "sha256": "6880d0f577b489d4c7eca826218f206c24e607a2622109eac66ca0f71096eb22"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "floor_r_1x512x1x1.json",
+    "status": "decoded",
+    "error": null,
+    "family": "floor",
+    "operation": "floor",
+    "shape": [
+      1,
+      512,
+      1,
+      1
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 4,
+    "task_sizes": [
+      628,
+      628,
+      628,
+      504
+    ],
+    "program_count": 1,
+    "hwx_sha256": "88be661cc9363a9a4d08ee2dd447e3d6a6474f2fc74348e9ff9179b7322ee3d8",
+    "hwx_bytes": 32768,
+    "json_bytes": 30795,
+    "tensor_shapes": [
+      [
+        1,
+        512,
+        1,
+        1
+      ],
+      [
+        1,
+        512,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 2176,
+    "constant_sha256": "7c8bdcb1517ecb336e3927fe4da9a0ce5fc8057b454287d788e7a4335d115de9",
+    "const_raw_path": "floor_r_1x512x1x1.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0xfc00",
+        "0x7c00",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 2176,
+      "prefix_u16": 1088,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 10
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "floor_r_1x512x1x1.const.bin",
+        "bytes": 2176,
+        "sha256": "7c8bdcb1517ecb336e3927fe4da9a0ce5fc8057b454287d788e7a4335d115de9"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "floor_r_1x64x1x1.json",
+    "status": "decoded",
+    "error": null,
+    "family": "floor",
+    "operation": "floor",
+    "shape": [
+      1,
+      64,
+      1,
+      1
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 4,
+    "task_sizes": [
+      628,
+      628,
+      628,
+      504
+    ],
+    "program_count": 1,
+    "hwx_sha256": "544be7a4dd6b8193d01ee354cff53c681525bf0f94a6f383f194f4faad033eb9",
+    "hwx_bytes": 32768,
+    "json_bytes": 30784,
+    "tensor_shapes": [
+      [
+        1,
+        64,
+        1,
+        1
+      ],
+      [
+        1,
+        64,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 2176,
+    "constant_sha256": "7c8bdcb1517ecb336e3927fe4da9a0ce5fc8057b454287d788e7a4335d115de9",
+    "const_raw_path": "floor_r_1x64x1x1.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0xfc00",
+        "0x7c00",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 2176,
+      "prefix_u16": 1088,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 10
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "floor_r_1x64x1x1.const.bin",
+        "bytes": 2176,
+        "sha256": "7c8bdcb1517ecb336e3927fe4da9a0ce5fc8057b454287d788e7a4335d115de9"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "less_bool_cast_1x375.json",
+    "status": "decoded",
+    "error": null,
+    "family": "less",
+    "operation": "less",
+    "shape": [
+      1,
+      375
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 4,
+    "task_sizes": [
+      504,
+      504,
+      628,
+      504
+    ],
+    "program_count": 1,
+    "hwx_sha256": "1e352e5b8aa6f755c77b21cce28660453c1eadb3130a7dff1328bb0f5f23b1e1",
+    "hwx_bytes": 49152,
+    "json_bytes": 29404,
+    "tensor_shapes": [
+      [
+        1,
+        1,
+        1,
+        375
+      ],
+      [
+        1,
+        1,
+        1,
+        375
+      ],
+      [
+        1,
+        1,
+        1,
+        375
+      ]
+    ],
+    "constant_bytes": 192,
+    "constant_sha256": "e77499d642a5a0c36bebd0cf536bac987e20b45be20c7a753285337e50167ed7",
+    "const_raw_path": "less_bool_cast_1x375.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0x8001",
+        "0x0001",
+        "0x3c00",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 192,
+      "prefix_u16": 96,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 6
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "less_bool_cast_1x375.const.bin",
+        "bytes": 192,
+        "sha256": "e77499d642a5a0c36bebd0cf536bac987e20b45be20c7a753285337e50167ed7"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "less_bool_rr_1500x1x1.json",
+    "status": "decoded",
+    "error": null,
+    "family": "less",
+    "operation": "less",
+    "shape": [
+      1500,
+      1,
+      1
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 3,
+    "task_sizes": [
+      504,
+      504,
+      628
+    ],
+    "program_count": 1,
+    "hwx_sha256": "7071e5ab33740f13a145b52e61e308ba1294f7570e8041fd289269818639a5ee",
+    "hwx_bytes": 49152,
+    "json_bytes": 23303,
+    "tensor_shapes": [
+      [
+        1,
+        1500,
+        1,
+        1
+      ],
+      [
+        1,
+        1500,
+        1,
+        1
+      ],
+      [
+        1,
+        1500,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 5120,
+    "constant_sha256": "e418d63846468026dbd40ea508edee92975d01ea616eff49cfb3dc0acfbf2e36",
+    "const_raw_path": "less_bool_rr_1500x1x1.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0x8001",
+        "0x0001",
+        "0x3c00",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 5120,
+      "prefix_u16": 2560,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 6
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "less_bool_rr_1500x1x1.const.bin",
+        "bytes": 5120,
+        "sha256": "e418d63846468026dbd40ea508edee92975d01ea616eff49cfb3dc0acfbf2e36"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "less_bool_rr_1x64x1x1.json",
+    "status": "decoded",
+    "error": null,
+    "family": "less",
+    "operation": "less",
+    "shape": [
+      1,
+      64,
+      1,
+      1
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 3,
+    "task_sizes": [
+      504,
+      504,
+      628
+    ],
+    "program_count": 1,
+    "hwx_sha256": "01df5d04053247c21b19d0c71c14472bbbded9eb6d6d2e6c63281af5fef4316f",
+    "hwx_bytes": 49152,
+    "json_bytes": 23118,
+    "tensor_shapes": [
+      [
+        1,
+        64,
+        1,
+        1
+      ],
+      [
+        1,
+        64,
+        1,
+        1
+      ],
+      [
+        1,
+        64,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 3072,
+    "constant_sha256": "3d6fd6f37aa10ae9ed58523e5522c6d3c88f444525df1b1eb6f78106e8c5251f",
+    "const_raw_path": "less_bool_rr_1x64x1x1.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0x8001",
+        "0x0001",
+        "0x3c00",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 3072,
+      "prefix_u16": 1536,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 6
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "less_bool_rr_1x64x1x1.const.bin",
+        "bytes": 3072,
+        "sha256": "3d6fd6f37aa10ae9ed58523e5522c6d3c88f444525df1b1eb6f78106e8c5251f"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "less_bool_rr_375x1x1.json",
+    "status": "decoded",
+    "error": null,
+    "family": "less",
+    "operation": "less",
+    "shape": [
+      375,
+      1,
+      1
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 3,
+    "task_sizes": [
+      504,
+      504,
+      628
+    ],
+    "program_count": 1,
+    "hwx_sha256": "d92cc34414c1eb40d85cff27187b1830752db854cea133a2958711c02747c1db",
+    "hwx_bytes": 49152,
+    "json_bytes": 23112,
+    "tensor_shapes": [
+      [
+        1,
+        375,
+        1,
+        1
+      ],
+      [
+        1,
+        375,
+        1,
+        1
+      ],
+      [
+        1,
+        375,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 3072,
+    "constant_sha256": "f832c7e3b641436f56e324aa681f06d36ffb3253ea58cf77b77a30a342121e01",
+    "const_raw_path": "less_bool_rr_375x1x1.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0x8001",
+        "0x0001",
+        "0x3c00",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 3072,
+      "prefix_u16": 1536,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 6
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "less_bool_rr_375x1x1.const.bin",
+        "bytes": 3072,
+        "sha256": "f832c7e3b641436f56e324aa681f06d36ffb3253ea58cf77b77a30a342121e01"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "less_bool_rr_750x1x1.json",
+    "status": "decoded",
+    "error": null,
+    "family": "less",
+    "operation": "less",
+    "shape": [
+      750,
+      1,
+      1
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 3,
+    "task_sizes": [
+      504,
+      504,
+      628
+    ],
+    "program_count": 1,
+    "hwx_sha256": "e7b4390e7a6dcc9053a175fc9dde6b4a2c00333458d8bb340fe707104ac4d85a",
+    "hwx_bytes": 49152,
+    "json_bytes": 23114,
+    "tensor_shapes": [
+      [
+        1,
+        750,
+        1,
+        1
+      ],
+      [
+        1,
+        750,
+        1,
+        1
+      ],
+      [
+        1,
+        750,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 4096,
+    "constant_sha256": "102881fed0b29f288dfb66ce58d8a4f4beb50be3e5ae2cd62c6c6dbd235c6608",
+    "const_raw_path": "less_bool_rr_750x1x1.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0x8001",
+        "0x0001",
+        "0x3c00",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 4096,
+      "prefix_u16": 2048,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 6
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "less_bool_rr_750x1x1.const.bin",
+        "bytes": 4096,
+        "sha256": "102881fed0b29f288dfb66ce58d8a4f4beb50be3e5ae2cd62c6c6dbd235c6608"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "less_rb_1x375_idx.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "family": "less",
+    "operation": "less",
+    "shape": [
+      1,
+      375
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "index",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": null,
+    "task_sizes": null,
+    "program_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "json_bytes": 1750,
+    "tensor_shapes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "const_raw_path": null,
+    "packing": null,
+    "sidecars": {},
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "less_rb_375x1x1_idx.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "family": "less",
+    "operation": "less",
+    "shape": [
+      375,
+      1,
+      1
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "index",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": null,
+    "task_sizes": null,
+    "program_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "json_bytes": 1784,
+    "tensor_shapes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "const_raw_path": null,
+    "packing": null,
+    "sidecars": {},
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "less_rr_1500x1x1.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "family": "less",
+    "operation": "less",
+    "shape": [
+      1500,
+      1,
+      1
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": null,
+    "task_sizes": null,
+    "program_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "json_bytes": 1443,
+    "tensor_shapes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "const_raw_path": null,
+    "packing": null,
+    "sidecars": {},
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "less_rr_1x375.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "family": "less",
+    "operation": "less",
+    "shape": [
+      1,
+      375
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": null,
+    "task_sizes": null,
+    "program_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "json_bytes": 1418,
+    "tensor_shapes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "const_raw_path": null,
+    "packing": null,
+    "sidecars": {},
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "less_rr_1x512x1x1.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "family": "less",
+    "operation": "less",
+    "shape": [
+      1,
+      512,
+      1,
+      1
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": null,
+    "task_sizes": null,
+    "program_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "json_bytes": 1458,
+    "tensor_shapes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "const_raw_path": null,
+    "packing": null,
+    "sidecars": {},
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "less_rr_1x64x1x1.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "family": "less",
+    "operation": "less",
+    "shape": [
+      1,
+      64,
+      1,
+      1
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": null,
+    "task_sizes": null,
+    "program_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "json_bytes": 1453,
+    "tensor_shapes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "const_raw_path": null,
+    "packing": null,
+    "sidecars": {},
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "less_rr_375x1x1.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "family": "less",
+    "operation": "less",
+    "shape": [
+      375,
+      1,
+      1
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": null,
+    "task_sizes": null,
+    "program_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "json_bytes": 1438,
+    "tensor_shapes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "const_raw_path": null,
+    "packing": null,
+    "sidecars": {},
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "less_rr_750x1x1.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "family": "less",
+    "operation": "less",
+    "shape": [
+      750,
+      1,
+      1
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": null,
+    "task_sizes": null,
+    "program_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "json_bytes": 1438,
+    "tensor_shapes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "const_raw_path": null,
+    "packing": null,
+    "sidecars": {},
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "select_ninf_bool_1x8x375x375.json",
+    "status": "decoded",
+    "error": null,
+    "family": "select",
+    "operation": "select",
+    "shape": [
+      1,
+      8,
+      375,
+      375
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "neg_inf",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 5,
+    "task_sizes": [
+      628,
+      504,
+      628,
+      504,
+      504
+    ],
+    "program_count": 1,
+    "hwx_sha256": "928d24a5f2d5ee4edebbf405fae278594cb114aba59c0afc1ff81573f3be90f9",
+    "hwx_bytes": 2310144,
+    "json_bytes": 36207,
+    "tensor_shapes": [
+      [
+        1,
+        8,
+        375,
+        375
+      ],
+      [
+        1,
+        8,
+        375,
+        375
+      ],
+      [
+        1,
+        8,
+        375,
+        375
+      ]
+    ],
+    "constant_bytes": 2258048,
+    "constant_sha256": "9f52b9a2039667fea1cf6e9425ab0098437c54badd4349cff7c0d87bce89098b",
+    "const_raw_path": "select_ninf_bool_1x8x375x375.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0x0001",
+        "0xfc00",
+        "0xfc00",
+        "0xfc00",
+        "0xfc00",
+        "0xfc00",
+        "0xfc00",
+        "0xfc00",
+        "0x0000",
+        "0xfc00",
+        "0xfc00",
+        "0xfc00",
+        "0xfc00",
+        "0xfc00",
+        "0xfc00",
+        "0xfc00"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 8192,
+      "prefix_u16": 4096,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 9
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "select_ninf_bool_1x8x375x375.const.bin",
+        "bytes": 2258048,
+        "sha256": "9f52b9a2039667fea1cf6e9425ab0098437c54badd4349cff7c0d87bce89098b"
+      },
+      "weights.bin": {
+        "file": "select_ninf_bool_1x8x375x375.weights.bin",
+        "bytes": 2250000,
+        "sha256": "98cabc7db74c4a173e1bc2a1e22afc5c3595a5a5f91a53a19c2e89e903726d3b"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "select_ninf_scalar_1x8x375x375.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "family": "select",
+    "operation": "select",
+    "shape": [
+      1,
+      8,
+      375,
+      375
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "neg_inf",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": null,
+    "task_sizes": null,
+    "program_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "json_bytes": 1850,
+    "tensor_shapes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "const_raw_path": null,
+    "packing": null,
+    "sidecars": {},
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "select_ninf_tensor_1x8x375x375.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "family": "select",
+    "operation": "select",
+    "shape": [
+      1,
+      8,
+      375,
+      375
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "neg_inf",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": null,
+    "task_sizes": null,
+    "program_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "json_bytes": 1938,
+    "tensor_shapes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "const_raw_path": null,
+    "packing": null,
+    "sidecars": {},
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "select_rrb_1x64x1x1.json",
+    "status": "decoded",
+    "error": null,
+    "family": "select",
+    "operation": "select",
+    "shape": [
+      1,
+      64,
+      1,
+      1
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 5,
+    "task_sizes": [
+      628,
+      504,
+      628,
+      504,
+      504
+    ],
+    "program_count": 1,
+    "hwx_sha256": "f42c51d99e8ed3cfce7951a029c8d55d6ad49085e1c2cac106358b4471e49f92",
+    "hwx_bytes": 49152,
+    "json_bytes": 36038,
+    "tensor_shapes": [
+      [
+        1,
+        64,
+        1,
+        1
+      ],
+      [
+        1,
+        64,
+        1,
+        1
+      ],
+      [
+        1,
+        64,
+        1,
+        1
+      ],
+      [
+        1,
+        64,
+        1,
+        1
+      ]
+    ],
+    "constant_bytes": 2048,
+    "constant_sha256": "b292d7e287aa9335bdba3b99e60dc77f688f93f65f52934c874bb4342a5ea049",
+    "const_raw_path": "select_rrb_1x64x1x1.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0x8001",
+        "0x0001",
+        "0x3c00",
+        "0x3c00",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000",
+        "0x0000"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 2048,
+      "prefix_u16": 1024,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 5
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "select_rrb_1x64x1x1.const.bin",
+        "bytes": 2048,
+        "sha256": "b292d7e287aa9335bdba3b99e60dc77f688f93f65f52934c874bb4342a5ea049"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "select_rrb_1x8x375x375.json",
+    "status": "decoded",
+    "error": null,
+    "family": "select",
+    "operation": "select",
+    "shape": [
+      1,
+      8,
+      375,
+      375
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": 5,
+    "task_sizes": [
+      628,
+      504,
+      628,
+      504,
+      504
+    ],
+    "program_count": 1,
+    "hwx_sha256": "0725b0e50438652c3dadeb58036d06cde6052f1978379fc66b00c41f576b8a9a",
+    "hwx_bytes": 49152,
+    "json_bytes": 36115,
+    "tensor_shapes": [
+      [
+        1,
+        8,
+        375,
+        375
+      ],
+      [
+        1,
+        8,
+        375,
+        375
+      ],
+      [
+        1,
+        8,
+        375,
+        375
+      ],
+      [
+        1,
+        8,
+        375,
+        375
+      ]
+    ],
+    "constant_bytes": 2048,
+    "constant_sha256": "6d07d38cdeb1a95b7b7acac96697b12a2e633349e554a8bf3057d2f2125acdd8",
+    "const_raw_path": "select_rrb_1x8x375x375.const.bin",
+    "packing": {
+      "first_16_u16": [
+        "0x8001",
+        "0x0001",
+        "0x0000",
+        "0x0000",
+        "0x3c00",
+        "0x3c00",
+        "0x3c00",
+        "0x3c00",
+        "0x3c00",
+        "0x3c00",
+        "0x3c00",
+        "0x3c00",
+        "0x3c00",
+        "0x3c00",
+        "0x3c00",
+        "0x3c00"
+      ],
+      "prefix_all_zero": false,
+      "prefix_bytes": 2048,
+      "prefix_u16": 1024,
+      "prefix_uniform_0x3800": false,
+      "unique_u16_in_prefix": 5
+    },
+    "sidecars": {
+      "const.bin": {
+        "file": "select_rrb_1x8x375x375.const.bin",
+        "bytes": 2048,
+        "sha256": "6d07d38cdeb1a95b7b7acac96697b12a2e633349e554a8bf3057d2f2125acdd8"
+      }
+    },
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "select_rrr_1x1024x375.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "family": "select",
+    "operation": "select",
+    "shape": [
+      1,
+      1024,
+      375
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": null,
+    "task_sizes": null,
+    "program_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "json_bytes": 1541,
+    "tensor_shapes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "const_raw_path": null,
+    "packing": null,
+    "sidecars": {},
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "select_rrr_1x64x1x1.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "family": "select",
+    "operation": "select",
+    "shape": [
+      1,
+      64,
+      1,
+      1
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": null,
+    "task_sizes": null,
+    "program_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "json_bytes": 1540,
+    "tensor_shapes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "const_raw_path": null,
+    "packing": null,
+    "sidecars": {},
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  {
+    "file": "select_rrr_1x8x375x375.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "family": "select",
+    "operation": "select",
+    "shape": [
+      1,
+      8,
+      375,
+      375
+    ],
+    "form": null,
+    "batch": null,
+    "layout": null,
+    "w_storage": null,
+    "weight_mode": "none",
+    "rows": null,
+    "reduction": null,
+    "columns": null,
+    "tx": null,
+    "ty": null,
+    "task_count": null,
+    "task_sizes": null,
+    "program_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "json_bytes": 1558,
+    "tensor_shapes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "const_raw_path": null,
+    "packing": null,
+    "sidecars": {},
+    "source_commit": "7fd06ac89f63694571795f2f9e26e75b78e58550",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  }
+]
