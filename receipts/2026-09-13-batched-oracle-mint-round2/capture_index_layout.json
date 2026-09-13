@@ -1,0 +1,426 @@
+[
+  {
+    "file": "pad_b_1x1x749x375_to_1x1x750x375_a00000010_idx.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "operation": "pad",
+    "shape": [
+      1,
+      1,
+      749,
+      375
+    ],
+    "result_shape": [
+      1,
+      1,
+      750,
+      375
+    ],
+    "amounts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0
+    ],
+    "task_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "tensor_shapes": [],
+    "tensor_total_bytes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "sidecars": {}
+  },
+  {
+    "file": "pad_b_1x8x375x749_to_1x8x375x750_a00000001_idx.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "operation": "pad",
+    "shape": [
+      1,
+      8,
+      375,
+      749
+    ],
+    "result_shape": [
+      1,
+      8,
+      375,
+      750
+    ],
+    "amounts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    "task_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "tensor_shapes": [],
+    "tensor_total_bytes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "sidecars": {}
+  },
+  {
+    "file": "pad_r_1x1x749x375_to_1x1x750x375_a00000010.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "operation": "pad",
+    "shape": [
+      1,
+      1,
+      749,
+      375
+    ],
+    "result_shape": [
+      1,
+      1,
+      750,
+      375
+    ],
+    "amounts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0
+    ],
+    "task_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "tensor_shapes": [],
+    "tensor_total_bytes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "sidecars": {}
+  },
+  {
+    "file": "pad_r_1x64x1x1_to_1x64x1x1_a00000000.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "operation": "pad",
+    "shape": [
+      1,
+      64,
+      1,
+      1
+    ],
+    "result_shape": [
+      1,
+      64,
+      1,
+      1
+    ],
+    "amounts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "task_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "tensor_shapes": [],
+    "tensor_total_bytes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "sidecars": {}
+  },
+  {
+    "file": "pad_r_1x8x375x749_to_1x8x375x750_a00000001.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "operation": "pad",
+    "shape": [
+      1,
+      8,
+      375,
+      749
+    ],
+    "result_shape": [
+      1,
+      8,
+      375,
+      750
+    ],
+    "amounts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    "task_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "tensor_shapes": [],
+    "tensor_total_bytes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "sidecars": {}
+  },
+  {
+    "file": "pad_r_1x8x375x749_to_1x8x375x750_a00000010.json",
+    "status": "rejected",
+    "error": "callback_status=1",
+    "operation": "pad",
+    "shape": [
+      1,
+      8,
+      375,
+      749
+    ],
+    "result_shape": [
+      1,
+      8,
+      375,
+      750
+    ],
+    "amounts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0
+    ],
+    "task_count": null,
+    "hwx_sha256": null,
+    "hwx_bytes": null,
+    "tensor_shapes": [],
+    "tensor_total_bytes": [],
+    "constant_bytes": null,
+    "constant_sha256": null,
+    "sidecars": {}
+  },
+  {
+    "file": "tile_b_1x1x375_reps_13751_idx.json",
+    "status": "decoded",
+    "error": null,
+    "operation": "tile",
+    "shape": [
+      1,
+      1,
+      375
+    ],
+    "result_shape": [
+      1,
+      375,
+      375
+    ],
+    "amounts": [
+      1,
+      375,
+      1
+    ],
+    "task_count": 1,
+    "hwx_sha256": "5d0a21f8d4d91eea9186964e334fcc587efe2874684813416afdfaa3860aca17",
+    "hwx_bytes": 32768,
+    "tensor_shapes": [
+      [
+        1,
+        1,
+        375,
+        375
+      ]
+    ],
+    "tensor_total_bytes": [
+      288000
+    ],
+    "constant_bytes": 768,
+    "constant_sha256": "3d5be0a1d755ec491a056c681a04c38fbcaefa151ae6be57be52f27447f83e1f",
+    "sidecars": {
+      "const.bin": {
+        "file": "tile_b_1x1x375_reps_13751_idx.const.bin",
+        "bytes": 768,
+        "sha256": "3d5be0a1d755ec491a056c681a04c38fbcaefa151ae6be57be52f27447f83e1f"
+      },
+      "weights.bin": {
+        "file": "tile_b_1x1x375_reps_13751_idx.weights.bin",
+        "bytes": 750,
+        "sha256": "512a31b2f96457d14663c0b0b3009cffa47c572995838ed3563beffbeac19e09"
+      }
+    }
+  },
+  {
+    "file": "tile_r_1x1x375_reps_13751.json",
+    "status": "decoded",
+    "error": null,
+    "operation": "tile",
+    "shape": [
+      1,
+      1,
+      375
+    ],
+    "result_shape": [
+      1,
+      375,
+      375
+    ],
+    "amounts": [
+      1,
+      375,
+      1
+    ],
+    "task_count": 1,
+    "hwx_sha256": "2dae030ce2e12264aab6827ad70e96eea47a24d1bba523cf4235791b13fddc2d",
+    "hwx_bytes": 49152,
+    "tensor_shapes": [
+      [
+        1,
+        1,
+        1,
+        375
+      ],
+      [
+        1,
+        1,
+        375,
+        375
+      ]
+    ],
+    "tensor_total_bytes": [
+      768,
+      288000
+    ],
+    "constant_bytes": 16384,
+    "constant_sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe",
+    "sidecars": {
+      "const.bin": {
+        "file": "tile_r_1x1x375_reps_13751.const.bin",
+        "bytes": 16384,
+        "sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe"
+      }
+    }
+  },
+  {
+    "file": "tile_r_1x64x1x1_reps_1111.json",
+    "status": "decoded",
+    "error": null,
+    "operation": "tile",
+    "shape": [
+      1,
+      64,
+      1,
+      1
+    ],
+    "result_shape": [
+      1,
+      64,
+      1,
+      1
+    ],
+    "amounts": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "task_count": 1,
+    "hwx_sha256": "2af0921babd31e175b9c2636c139043266a6b45c3370da04d9ad66206bf39c1d",
+    "hwx_bytes": 49152,
+    "tensor_shapes": [
+      [
+        1,
+        64,
+        1,
+        1
+      ],
+      [
+        1,
+        64,
+        1,
+        1
+      ]
+    ],
+    "tensor_total_bytes": [
+      4096,
+      4096
+    ],
+    "constant_bytes": 16384,
+    "constant_sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe",
+    "sidecars": {
+      "const.bin": {
+        "file": "tile_r_1x64x1x1_reps_1111.const.bin",
+        "bytes": 16384,
+        "sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe"
+      }
+    }
+  },
+  {
+    "file": "tile_r_1x8x1x375_reps_113751.json",
+    "status": "decoded",
+    "error": null,
+    "operation": "tile",
+    "shape": [
+      1,
+      8,
+      1,
+      375
+    ],
+    "result_shape": [
+      1,
+      8,
+      375,
+      375
+    ],
+    "amounts": [
+      1,
+      1,
+      375,
+      1
+    ],
+    "task_count": 1,
+    "hwx_sha256": "45154383bb5fc12168a575ba9a2aa62e284650db86d67092f8480ca1f3930933",
+    "hwx_bytes": 49152,
+    "tensor_shapes": [
+      [
+        1,
+        8,
+        1,
+        375
+      ],
+      [
+        1,
+        8,
+        375,
+        375
+      ]
+    ],
+    "tensor_total_bytes": [
+      6144,
+      2304000
+    ],
+    "constant_bytes": 16384,
+    "constant_sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe",
+    "sidecars": {
+      "const.bin": {
+        "file": "tile_r_1x8x1x375_reps_113751.const.bin",
+        "bytes": 16384,
+        "sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe"
+      }
+    }
+  }
+]

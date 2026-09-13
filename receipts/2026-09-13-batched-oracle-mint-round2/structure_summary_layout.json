@@ -1,0 +1,466 @@
+{
+  "cases": 10,
+  "decoded": 4,
+  "rejected": 6,
+  "reports": [
+    {
+      "amounts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "case": "pad_r_1x64x1x1_to_1x64x1x1_a00000000",
+      "error": "callback_status=1",
+      "operation": "pad",
+      "result_shape": [
+        1,
+        64,
+        1,
+        1
+      ],
+      "shape": [
+        1,
+        64,
+        1,
+        1
+      ],
+      "status": "rejected"
+    },
+    {
+      "amounts": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "case": "tile_r_1x64x1x1_reps_1111",
+      "const_raw_path": "tile_r_1x64x1x1_reps_1111.const.bin",
+      "constant_bytes": 16384,
+      "constant_sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe",
+      "hwx_bytes": 49152,
+      "operation": "tile",
+      "packing": {
+        "first_16_u16": [
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": true,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 1
+      },
+      "program_count": 1,
+      "result_shape": [
+        1,
+        64,
+        1,
+        1
+      ],
+      "shape": [
+        1,
+        64,
+        1,
+        1
+      ],
+      "status": "decoded",
+      "task_count": 1,
+      "task_sizes": [
+        504
+      ],
+      "tensor_shapes": [
+        [
+          1,
+          64,
+          1,
+          1
+        ],
+        [
+          1,
+          64,
+          1,
+          1
+        ]
+      ],
+      "tensor_total_bytes": [
+        4096,
+        4096
+      ],
+      "verdict": "identity"
+    },
+    {
+      "amounts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      "case": "pad_r_1x1x749x375_to_1x1x750x375_a00000010",
+      "error": "callback_status=1",
+      "operation": "pad",
+      "result_shape": [
+        1,
+        1,
+        750,
+        375
+      ],
+      "shape": [
+        1,
+        1,
+        749,
+        375
+      ],
+      "status": "rejected"
+    },
+    {
+      "amounts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      "case": "pad_b_1x1x749x375_to_1x1x750x375_a00000010_idx",
+      "error": "callback_status=1",
+      "operation": "pad",
+      "result_shape": [
+        1,
+        1,
+        750,
+        375
+      ],
+      "shape": [
+        1,
+        1,
+        749,
+        375
+      ],
+      "status": "rejected"
+    },
+    {
+      "amounts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      "case": "pad_r_1x8x375x749_to_1x8x375x750_a00000010",
+      "error": "callback_status=1",
+      "operation": "pad",
+      "result_shape": [
+        1,
+        8,
+        375,
+        750
+      ],
+      "shape": [
+        1,
+        8,
+        375,
+        749
+      ],
+      "status": "rejected"
+    },
+    {
+      "amounts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "case": "pad_r_1x8x375x749_to_1x8x375x750_a00000001",
+      "error": "callback_status=1",
+      "operation": "pad",
+      "result_shape": [
+        1,
+        8,
+        375,
+        750
+      ],
+      "shape": [
+        1,
+        8,
+        375,
+        749
+      ],
+      "status": "rejected"
+    },
+    {
+      "amounts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "case": "pad_b_1x8x375x749_to_1x8x375x750_a00000001_idx",
+      "error": "callback_status=1",
+      "operation": "pad",
+      "result_shape": [
+        1,
+        8,
+        375,
+        750
+      ],
+      "shape": [
+        1,
+        8,
+        375,
+        749
+      ],
+      "status": "rejected"
+    },
+    {
+      "amounts": [
+        1,
+        375,
+        1
+      ],
+      "case": "tile_r_1x1x375_reps_13751",
+      "const_raw_path": "tile_r_1x1x375_reps_13751.const.bin",
+      "constant_bytes": 16384,
+      "constant_sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe",
+      "hwx_bytes": 49152,
+      "operation": "tile",
+      "packing": {
+        "first_16_u16": [
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": true,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 1
+      },
+      "program_count": 1,
+      "result_shape": [
+        1,
+        375,
+        375
+      ],
+      "shape": [
+        1,
+        1,
+        375
+      ],
+      "status": "decoded",
+      "task_count": 1,
+      "task_sizes": [
+        504
+      ],
+      "tensor_shapes": [
+        [
+          1,
+          1,
+          1,
+          375
+        ],
+        [
+          1,
+          1,
+          375,
+          375
+        ]
+      ],
+      "tensor_total_bytes": [
+        768,
+        288000
+      ],
+      "verdict": "unclear"
+    },
+    {
+      "amounts": [
+        1,
+        375,
+        1
+      ],
+      "case": "tile_b_1x1x375_reps_13751_idx",
+      "const_raw_path": "tile_b_1x1x375_reps_13751_idx.const.bin",
+      "constant_bytes": 768,
+      "constant_sha256": "3d5be0a1d755ec491a056c681a04c38fbcaefa151ae6be57be52f27447f83e1f",
+      "hwx_bytes": 32768,
+      "operation": "tile",
+      "packing": {
+        "first_16_u16": [
+          "0x0001",
+          "0x0000",
+          "0x0002",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": false,
+        "prefix_bytes": 768,
+        "prefix_u16": 384,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 315
+      },
+      "program_count": 1,
+      "result_shape": [
+        1,
+        375,
+        375
+      ],
+      "shape": [
+        1,
+        1,
+        375
+      ],
+      "status": "decoded",
+      "task_count": 1,
+      "task_sizes": [
+        504
+      ],
+      "tensor_shapes": [
+        [
+          1,
+          1,
+          375,
+          375
+        ]
+      ],
+      "tensor_total_bytes": [
+        288000
+      ],
+      "verdict": "unclear"
+    },
+    {
+      "amounts": [
+        1,
+        1,
+        375,
+        1
+      ],
+      "case": "tile_r_1x8x1x375_reps_113751",
+      "const_raw_path": "tile_r_1x8x1x375_reps_113751.const.bin",
+      "constant_bytes": 16384,
+      "constant_sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe",
+      "hwx_bytes": 49152,
+      "operation": "tile",
+      "packing": {
+        "first_16_u16": [
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": true,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 1
+      },
+      "program_count": 1,
+      "result_shape": [
+        1,
+        8,
+        375,
+        375
+      ],
+      "shape": [
+        1,
+        8,
+        1,
+        375
+      ],
+      "status": "decoded",
+      "task_count": 1,
+      "task_sizes": [
+        504
+      ],
+      "tensor_shapes": [
+        [
+          1,
+          8,
+          1,
+          375
+        ],
+        [
+          1,
+          8,
+          375,
+          375
+        ]
+      ],
+      "tensor_total_bytes": [
+        6144,
+        2304000
+      ],
+      "verdict": "unclear"
+    }
+  ]
+}

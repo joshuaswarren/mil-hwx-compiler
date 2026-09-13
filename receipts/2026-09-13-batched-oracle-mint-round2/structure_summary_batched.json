@@ -1,0 +1,1717 @@
+{
+  "cases": 18,
+  "decoded": 18,
+  "rejected": 0,
+  "reports": [
+    {
+      "batch": 2,
+      "case": "bmm_r3rb_m375_k128_n749_tx0_ty0_b2_idx",
+      "columns": 749,
+      "const_raw_path": "bmm_r3rb_m375_k128_n749_tx0_ty0_b2_idx.const.bin",
+      "constant_bytes": 393216,
+      "constant_nonzero_bytes": 381854,
+      "constant_sha256": "e63bc91130c9f69a57c15c2d52df655261b18a0c84ce7e553baf9b587dfabb53",
+      "distinct_src_off": 2,
+      "has_batch_dim": true,
+      "hwx_bytes": 458752,
+      "layout": "r3",
+      "packing": {
+        "first_16_u16": [
+          "0x0001",
+          "0x0000",
+          "0x0002",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": false,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 3941
+      },
+      "program_count": 1,
+      "reduction": 128,
+      "resource_addresses": [
+        "0x30000000",
+        "0x3011c000",
+        "0x0",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 52,
+      "tensor_shapes": [
+        [
+          1,
+          2,
+          375,
+          128
+        ],
+        [
+          1,
+          2,
+          375,
+          749
+        ]
+      ],
+      "tensor_strides": [
+        [
+          192000,
+          96000,
+          256,
+          2
+        ],
+        [
+          1152000,
+          576000,
+          1536,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        192000,
+        1152000
+      ],
+      "tx": false,
+      "ty": false,
+      "verdict": "batched",
+      "w_shape": [
+        2,
+        128,
+        749
+      ],
+      "w_storage": "blob",
+      "weight_mode": "index"
+    },
+    {
+      "batch": 4,
+      "case": "bmm_r3rb_m375_k128_n749_tx0_ty0_b4_idx",
+      "columns": 749,
+      "const_raw_path": "bmm_r3rb_m375_k128_n749_tx0_ty0_b4_idx.const.bin",
+      "constant_bytes": 786432,
+      "constant_nonzero_bytes": 763825,
+      "constant_sha256": "100fc2760ef9ccff34896c84139a0e83bf2e3b50f28590108e10056b1a6197b3",
+      "distinct_src_off": 4,
+      "has_batch_dim": true,
+      "hwx_bytes": 884736,
+      "layout": "r3",
+      "packing": {
+        "first_16_u16": [
+          "0x0001",
+          "0x0000",
+          "0x0002",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": false,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 3941
+      },
+      "program_count": 1,
+      "reduction": 128,
+      "resource_addresses": [
+        "0x30000000",
+        "0x30234000",
+        "0x0",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 104,
+      "tensor_shapes": [
+        [
+          1,
+          4,
+          375,
+          128
+        ],
+        [
+          1,
+          4,
+          375,
+          749
+        ]
+      ],
+      "tensor_strides": [
+        [
+          384000,
+          96000,
+          256,
+          2
+        ],
+        [
+          2304000,
+          576000,
+          1536,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        384000,
+        2304000
+      ],
+      "tx": false,
+      "ty": false,
+      "verdict": "batched",
+      "w_shape": [
+        4,
+        128,
+        749
+      ],
+      "w_storage": "blob",
+      "weight_mode": "index"
+    },
+    {
+      "batch": 8,
+      "case": "bmm_r3rb_m375_k128_n749_tx0_ty0_b8_idx",
+      "columns": 749,
+      "const_raw_path": "bmm_r3rb_m375_k128_n749_tx0_ty0_b8_idx.const.bin",
+      "constant_bytes": 1572864,
+      "constant_nonzero_bytes": 1527767,
+      "constant_sha256": "c1a796a0ce6e2a49d7a893eb0a2999bb68e801db4a2bcfd798e79a8223e7f27b",
+      "distinct_src_off": 8,
+      "has_batch_dim": true,
+      "hwx_bytes": 1753088,
+      "layout": "r3",
+      "packing": {
+        "first_16_u16": [
+          "0x0001",
+          "0x0000",
+          "0x0002",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": false,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 3941
+      },
+      "program_count": 1,
+      "reduction": 128,
+      "resource_addresses": [
+        "0x30000000",
+        "0x30468000",
+        "0x0",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 208,
+      "tensor_shapes": [
+        [
+          1,
+          8,
+          375,
+          128
+        ],
+        [
+          1,
+          8,
+          375,
+          749
+        ]
+      ],
+      "tensor_strides": [
+        [
+          768000,
+          96000,
+          256,
+          2
+        ],
+        [
+          4608000,
+          576000,
+          1536,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        768000,
+        4608000
+      ],
+      "tx": false,
+      "ty": false,
+      "verdict": "batched",
+      "w_shape": [
+        8,
+        128,
+        749
+      ],
+      "w_storage": "blob",
+      "weight_mode": "index"
+    },
+    {
+      "batch": 16,
+      "case": "bmm_r3rb_m375_k128_n749_tx0_ty0_b16_idx",
+      "columns": 749,
+      "const_raw_path": "bmm_r3rb_m375_k128_n749_tx0_ty0_b16_idx.const.bin",
+      "constant_bytes": 3145728,
+      "constant_nonzero_bytes": 3055651,
+      "constant_sha256": "e7b797ce5109a7c8b66e513a6d61f5e17f5f414adb08fde04a4f3f4736c356ff",
+      "distinct_src_off": 16,
+      "has_batch_dim": true,
+      "hwx_bytes": 3489792,
+      "layout": "r3",
+      "packing": {
+        "first_16_u16": [
+          "0x0001",
+          "0x0000",
+          "0x0002",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": false,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 3941
+      },
+      "program_count": 1,
+      "reduction": 128,
+      "resource_addresses": [
+        "0x30000000",
+        "0x308cc000",
+        "0x0",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 416,
+      "tensor_shapes": [
+        [
+          1,
+          16,
+          375,
+          128
+        ],
+        [
+          1,
+          16,
+          375,
+          749
+        ]
+      ],
+      "tensor_strides": [
+        [
+          1536000,
+          96000,
+          256,
+          2
+        ],
+        [
+          9216000,
+          576000,
+          1536,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        1536000,
+        9216000
+      ],
+      "tx": false,
+      "ty": false,
+      "verdict": "batched",
+      "w_shape": [
+        16,
+        128,
+        749
+      ],
+      "w_storage": "blob",
+      "weight_mode": "index"
+    },
+    {
+      "batch": 2,
+      "case": "bmm_r3rb_m375_k375_n128_tx0_ty0_b2_idx",
+      "columns": 128,
+      "const_raw_path": "bmm_r3rb_m375_k375_n128_tx0_ty0_b2_idx.const.bin",
+      "constant_bytes": 192000,
+      "constant_nonzero_bytes": 190996,
+      "constant_sha256": "6003888ea1139bfd75ec952dd03a3a6e746e47378a36f5233314861293d76a4a",
+      "distinct_src_off": 2,
+      "has_batch_dim": true,
+      "hwx_bytes": 262144,
+      "layout": "r3",
+      "packing": {
+        "first_16_u16": [
+          "0x0001",
+          "0x0000",
+          "0x0002",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": false,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 4036
+      },
+      "program_count": 1,
+      "reduction": 375,
+      "resource_addresses": [
+        "0x30000000",
+        "0x30030000",
+        "0x0",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 52,
+      "tensor_shapes": [
+        [
+          1,
+          2,
+          375,
+          375
+        ],
+        [
+          1,
+          2,
+          375,
+          128
+        ]
+      ],
+      "tensor_strides": [
+        [
+          576000,
+          288000,
+          768,
+          2
+        ],
+        [
+          192000,
+          96000,
+          256,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        576000,
+        192000
+      ],
+      "tx": false,
+      "ty": false,
+      "verdict": "batched",
+      "w_shape": [
+        2,
+        375,
+        128
+      ],
+      "w_storage": "blob",
+      "weight_mode": "index"
+    },
+    {
+      "batch": 4,
+      "case": "bmm_r3rb_m375_k375_n128_tx0_ty0_b4_idx",
+      "columns": 128,
+      "const_raw_path": "bmm_r3rb_m375_k375_n128_tx0_ty0_b4_idx.const.bin",
+      "constant_bytes": 384000,
+      "constant_nonzero_bytes": 382365,
+      "constant_sha256": "12777aef485ca3b78e6201b60716cee945f408d806abb59518834b07febffcfc",
+      "distinct_src_off": 4,
+      "has_batch_dim": true,
+      "hwx_bytes": 491520,
+      "layout": "r3",
+      "packing": {
+        "first_16_u16": [
+          "0x0001",
+          "0x0000",
+          "0x0002",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": false,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 4036
+      },
+      "program_count": 1,
+      "reduction": 375,
+      "resource_addresses": [
+        "0x30000000",
+        "0x30060000",
+        "0x0",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 104,
+      "tensor_shapes": [
+        [
+          1,
+          4,
+          375,
+          375
+        ],
+        [
+          1,
+          4,
+          375,
+          128
+        ]
+      ],
+      "tensor_strides": [
+        [
+          1152000,
+          288000,
+          768,
+          2
+        ],
+        [
+          384000,
+          96000,
+          256,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        1152000,
+        384000
+      ],
+      "tx": false,
+      "ty": false,
+      "verdict": "batched",
+      "w_shape": [
+        4,
+        375,
+        128
+      ],
+      "w_storage": "blob",
+      "weight_mode": "index"
+    },
+    {
+      "batch": 8,
+      "case": "bmm_r3rb_m375_k375_n128_tx0_ty0_b8_idx",
+      "columns": 128,
+      "const_raw_path": "bmm_r3rb_m375_k375_n128_tx0_ty0_b8_idx.const.bin",
+      "constant_bytes": 768000,
+      "constant_nonzero_bytes": 764847,
+      "constant_sha256": "b98bbfa59341291146be7cd38427a2a7e0d95864b8e0c2fab7dfc8249398b24a",
+      "distinct_src_off": 8,
+      "has_batch_dim": true,
+      "hwx_bytes": 950272,
+      "layout": "r3",
+      "packing": {
+        "first_16_u16": [
+          "0x0001",
+          "0x0000",
+          "0x0002",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": false,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 4036
+      },
+      "program_count": 1,
+      "reduction": 375,
+      "resource_addresses": [
+        "0x30000000",
+        "0x300bc000",
+        "0x0",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 208,
+      "tensor_shapes": [
+        [
+          1,
+          8,
+          375,
+          375
+        ],
+        [
+          1,
+          8,
+          375,
+          128
+        ]
+      ],
+      "tensor_strides": [
+        [
+          2304000,
+          288000,
+          768,
+          2
+        ],
+        [
+          768000,
+          96000,
+          256,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        2304000,
+        768000
+      ],
+      "tx": false,
+      "ty": false,
+      "verdict": "batched",
+      "w_shape": [
+        8,
+        375,
+        128
+      ],
+      "w_storage": "blob",
+      "weight_mode": "index"
+    },
+    {
+      "batch": 16,
+      "case": "bmm_r3rb_m375_k375_n128_tx0_ty0_b16_idx",
+      "columns": 128,
+      "const_raw_path": "bmm_r3rb_m375_k375_n128_tx0_ty0_b16_idx.const.bin",
+      "constant_bytes": 1536000,
+      "constant_nonzero_bytes": 1529811,
+      "constant_sha256": "5335bc020715c8182afd45d6e1899b9ba646db69db1b4dd612fac35ffbc5ece9",
+      "distinct_src_off": 16,
+      "has_batch_dim": true,
+      "hwx_bytes": 1884160,
+      "layout": "r3",
+      "packing": {
+        "first_16_u16": [
+          "0x0001",
+          "0x0000",
+          "0x0002",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": false,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 4036
+      },
+      "program_count": 1,
+      "reduction": 375,
+      "resource_addresses": [
+        "0x30000000",
+        "0x30178000",
+        "0x0",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 416,
+      "tensor_shapes": [
+        [
+          1,
+          16,
+          375,
+          375
+        ],
+        [
+          1,
+          16,
+          375,
+          128
+        ]
+      ],
+      "tensor_strides": [
+        [
+          4608000,
+          288000,
+          768,
+          2
+        ],
+        [
+          1536000,
+          96000,
+          256,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        4608000,
+        1536000
+      ],
+      "tx": false,
+      "ty": false,
+      "verdict": "batched",
+      "w_shape": [
+        16,
+        375,
+        128
+      ],
+      "w_storage": "blob",
+      "weight_mode": "index"
+    },
+    {
+      "batch": 8,
+      "case": "bmm_r4headsrb_m375_k128_n749_tx0_ty0_b8_r4heads_idx",
+      "columns": 749,
+      "const_raw_path": "bmm_r4headsrb_m375_k128_n749_tx0_ty0_b8_r4heads_idx.const.bin",
+      "constant_bytes": 1572864,
+      "constant_nonzero_bytes": 1527767,
+      "constant_sha256": "c1a796a0ce6e2a49d7a893eb0a2999bb68e801db4a2bcfd798e79a8223e7f27b",
+      "distinct_src_off": 8,
+      "has_batch_dim": true,
+      "hwx_bytes": 1753088,
+      "layout": "r4heads",
+      "packing": {
+        "first_16_u16": [
+          "0x0001",
+          "0x0000",
+          "0x0002",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": false,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 3941
+      },
+      "program_count": 1,
+      "reduction": 128,
+      "resource_addresses": [
+        "0x30000000",
+        "0x30468000",
+        "0x0",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 208,
+      "tensor_shapes": [
+        [
+          1,
+          8,
+          375,
+          128
+        ],
+        [
+          1,
+          8,
+          375,
+          749
+        ]
+      ],
+      "tensor_strides": [
+        [
+          768000,
+          96000,
+          256,
+          2
+        ],
+        [
+          4608000,
+          576000,
+          1536,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        768000,
+        4608000
+      ],
+      "tx": false,
+      "ty": false,
+      "verdict": "batched",
+      "w_shape": [
+        1,
+        8,
+        128,
+        749
+      ],
+      "w_storage": "blob",
+      "weight_mode": "index"
+    },
+    {
+      "batch": 8,
+      "case": "bmm_r4headsrb_m375_k375_n128_tx0_ty0_b8_r4heads_idx",
+      "columns": 128,
+      "const_raw_path": "bmm_r4headsrb_m375_k375_n128_tx0_ty0_b8_r4heads_idx.const.bin",
+      "constant_bytes": 768000,
+      "constant_nonzero_bytes": 764847,
+      "constant_sha256": "b98bbfa59341291146be7cd38427a2a7e0d95864b8e0c2fab7dfc8249398b24a",
+      "distinct_src_off": 8,
+      "has_batch_dim": true,
+      "hwx_bytes": 950272,
+      "layout": "r4heads",
+      "packing": {
+        "first_16_u16": [
+          "0x0001",
+          "0x0000",
+          "0x0002",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": false,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 4036
+      },
+      "program_count": 1,
+      "reduction": 375,
+      "resource_addresses": [
+        "0x30000000",
+        "0x300bc000",
+        "0x0",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 208,
+      "tensor_shapes": [
+        [
+          1,
+          8,
+          375,
+          375
+        ],
+        [
+          1,
+          8,
+          375,
+          128
+        ]
+      ],
+      "tensor_strides": [
+        [
+          2304000,
+          288000,
+          768,
+          2
+        ],
+        [
+          768000,
+          96000,
+          256,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        2304000,
+        768000
+      ],
+      "tx": false,
+      "ty": false,
+      "verdict": "batched",
+      "w_shape": [
+        1,
+        8,
+        375,
+        128
+      ],
+      "w_storage": "blob",
+      "weight_mode": "index"
+    },
+    {
+      "batch": 8,
+      "case": "bmm_r3rr_m375_k375_n128_tx0_ty1_b8",
+      "columns": 128,
+      "const_raw_path": "bmm_r3rr_m375_k375_n128_tx0_ty1_b8.const.bin",
+      "constant_bytes": 16384,
+      "constant_nonzero_bytes": 0,
+      "constant_sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe",
+      "distinct_src_off": 1,
+      "has_batch_dim": true,
+      "hwx_bytes": 212992,
+      "layout": "r3",
+      "packing": {
+        "first_16_u16": [
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": true,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 1
+      },
+      "program_count": 1,
+      "reduction": 375,
+      "resource_addresses": [
+        "0x30000000",
+        "0x300bc000",
+        "0x3017c000",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 209,
+      "tensor_shapes": [
+        [
+          1,
+          8,
+          128,
+          375
+        ],
+        [
+          1,
+          8,
+          375,
+          375
+        ],
+        [
+          1,
+          8,
+          375,
+          128
+        ]
+      ],
+      "tensor_strides": [
+        [
+          786432,
+          98304,
+          768,
+          2
+        ],
+        [
+          2304000,
+          288000,
+          768,
+          2
+        ],
+        [
+          768000,
+          96000,
+          256,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        786432,
+        2304000,
+        768000
+      ],
+      "tx": false,
+      "ty": true,
+      "verdict": "batched",
+      "w_shape": [
+        8,
+        128,
+        375
+      ],
+      "w_storage": "runtime",
+      "weight_mode": "uniform"
+    },
+    {
+      "batch": 8,
+      "case": "bmm_r3rr_m375_k375_n128_tx1_ty0_b8",
+      "columns": 128,
+      "const_raw_path": "bmm_r3rr_m375_k375_n128_tx1_ty0_b8.const.bin",
+      "constant_bytes": 16384,
+      "constant_nonzero_bytes": 0,
+      "constant_sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe",
+      "distinct_src_off": 8,
+      "has_batch_dim": true,
+      "hwx_bytes": 212992,
+      "layout": "r3",
+      "packing": {
+        "first_16_u16": [
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": true,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 1
+      },
+      "program_count": 1,
+      "reduction": 375,
+      "resource_addresses": [
+        "0x30234000",
+        "0x302f0000",
+        "0x303ac000",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 209,
+      "tensor_shapes": [
+        [
+          1,
+          8,
+          375,
+          128
+        ],
+        [
+          1,
+          8,
+          375,
+          375
+        ],
+        [
+          1,
+          8,
+          375,
+          128
+        ]
+      ],
+      "tensor_strides": [
+        [
+          768000,
+          96000,
+          256,
+          2
+        ],
+        [
+          2304000,
+          288000,
+          768,
+          2
+        ],
+        [
+          768000,
+          96000,
+          256,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        768000,
+        2304000,
+        768000
+      ],
+      "tx": true,
+      "ty": false,
+      "verdict": "batched",
+      "w_shape": [
+        8,
+        375,
+        128
+      ],
+      "w_storage": "runtime",
+      "weight_mode": "uniform"
+    },
+    {
+      "batch": 8,
+      "case": "bmm_r3rb_m375_k128_n749_tx0_ty1_b8_idx",
+      "columns": 749,
+      "const_raw_path": "bmm_r3rb_m375_k128_n749_tx0_ty1_b8_idx.const.bin",
+      "constant_bytes": 1533952,
+      "constant_nonzero_bytes": 1527767,
+      "constant_sha256": "09b21e8864ebbd5b1cd9796474574cc9633c2577a6293b37abc437acd3db406f",
+      "distinct_src_off": 1,
+      "has_batch_dim": true,
+      "hwx_bytes": 1720320,
+      "layout": "r3",
+      "packing": {
+        "first_16_u16": [
+          "0x0001",
+          "0x0000",
+          "0x0002",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": false,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 4036
+      },
+      "program_count": 1,
+      "reduction": 128,
+      "resource_addresses": [
+        "0x30000000",
+        "0x30468000",
+        "0x0",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 209,
+      "tensor_shapes": [
+        [
+          1,
+          8,
+          375,
+          128
+        ],
+        [
+          1,
+          8,
+          375,
+          749
+        ]
+      ],
+      "tensor_strides": [
+        [
+          768000,
+          96000,
+          256,
+          2
+        ],
+        [
+          4608000,
+          576000,
+          1536,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        768000,
+        4608000
+      ],
+      "tx": false,
+      "ty": true,
+      "verdict": "batched",
+      "w_shape": [
+        8,
+        749,
+        128
+      ],
+      "w_storage": "blob",
+      "weight_mode": "index"
+    },
+    {
+      "batch": 8,
+      "case": "bmm_r3rb_m375_k128_n749_tx1_ty0_b8_idx",
+      "columns": 749,
+      "const_raw_path": "bmm_r3rb_m375_k128_n749_tx1_ty0_b8_idx.const.bin",
+      "constant_bytes": 1572864,
+      "constant_nonzero_bytes": 1527767,
+      "constant_sha256": "c1a796a0ce6e2a49d7a893eb0a2999bb68e801db4a2bcfd798e79a8223e7f27b",
+      "distinct_src_off": 8,
+      "has_batch_dim": true,
+      "hwx_bytes": 1753088,
+      "layout": "r3",
+      "packing": {
+        "first_16_u16": [
+          "0x0001",
+          "0x0000",
+          "0x0002",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": false,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 3941
+      },
+      "program_count": 1,
+      "reduction": 128,
+      "resource_addresses": [
+        "0x300bc000",
+        "0x30524000",
+        "0x0",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 209,
+      "tensor_shapes": [
+        [
+          1,
+          8,
+          128,
+          375
+        ],
+        [
+          1,
+          8,
+          375,
+          749
+        ]
+      ],
+      "tensor_strides": [
+        [
+          786432,
+          98304,
+          768,
+          2
+        ],
+        [
+          4608000,
+          576000,
+          1536,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        786432,
+        4608000
+      ],
+      "tx": true,
+      "ty": false,
+      "verdict": "batched",
+      "w_shape": [
+        8,
+        128,
+        749
+      ],
+      "w_storage": "blob",
+      "weight_mode": "index"
+    },
+    {
+      "batch": 8,
+      "case": "bmm_r3rr_m375_k128_n375_tx0_ty0_b8",
+      "columns": 375,
+      "const_raw_path": "bmm_r3rr_m375_k128_n375_tx0_ty0_b8.const.bin",
+      "constant_bytes": 16384,
+      "constant_nonzero_bytes": 0,
+      "constant_sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe",
+      "distinct_src_off": 8,
+      "has_batch_dim": true,
+      "hwx_bytes": 212992,
+      "layout": "r3",
+      "packing": {
+        "first_16_u16": [
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": true,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 1
+      },
+      "program_count": 1,
+      "reduction": 128,
+      "resource_addresses": [
+        "0x30000000",
+        "0x30234000",
+        "0x302f4000",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 208,
+      "tensor_shapes": [
+        [
+          1,
+          8,
+          128,
+          375
+        ],
+        [
+          1,
+          8,
+          375,
+          128
+        ],
+        [
+          1,
+          8,
+          375,
+          375
+        ]
+      ],
+      "tensor_strides": [
+        [
+          786432,
+          98304,
+          768,
+          2
+        ],
+        [
+          768000,
+          96000,
+          256,
+          2
+        ],
+        [
+          2304000,
+          288000,
+          768,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        786432,
+        768000,
+        2304000
+      ],
+      "tx": false,
+      "ty": false,
+      "verdict": "batched",
+      "w_shape": [
+        8,
+        128,
+        375
+      ],
+      "w_storage": "runtime",
+      "weight_mode": "uniform"
+    },
+    {
+      "batch": 8,
+      "case": "bmm_r3rr_m375_k128_n375_tx0_ty1_b8",
+      "columns": 375,
+      "const_raw_path": "bmm_r3rr_m375_k128_n375_tx0_ty1_b8.const.bin",
+      "constant_bytes": 16384,
+      "constant_nonzero_bytes": 0,
+      "constant_sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe",
+      "distinct_src_off": 1,
+      "has_batch_dim": true,
+      "hwx_bytes": 212992,
+      "layout": "r3",
+      "packing": {
+        "first_16_u16": [
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": true,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 1
+      },
+      "program_count": 1,
+      "reduction": 128,
+      "resource_addresses": [
+        "0x30000000",
+        "0x30234000",
+        "0x302f0000",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 209,
+      "tensor_shapes": [
+        [
+          1,
+          8,
+          375,
+          128
+        ],
+        [
+          1,
+          8,
+          375,
+          128
+        ],
+        [
+          1,
+          8,
+          375,
+          375
+        ]
+      ],
+      "tensor_strides": [
+        [
+          768000,
+          96000,
+          256,
+          2
+        ],
+        [
+          768000,
+          96000,
+          256,
+          2
+        ],
+        [
+          2304000,
+          288000,
+          768,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        768000,
+        768000,
+        2304000
+      ],
+      "tx": false,
+      "ty": true,
+      "verdict": "batched",
+      "w_shape": [
+        8,
+        375,
+        128
+      ],
+      "w_storage": "runtime",
+      "weight_mode": "uniform"
+    },
+    {
+      "batch": 8,
+      "case": "bmm_r3rb_m375_k128_n375_tx0_ty0_b8_idx",
+      "columns": 375,
+      "const_raw_path": "bmm_r3rb_m375_k128_n375_tx0_ty0_b8_idx.const.bin",
+      "constant_bytes": 786432,
+      "constant_nonzero_bytes": 764847,
+      "constant_sha256": "2daeb9f1fe07cce362437086ec83cdd6fbc53691bae0b3fefcc51eeb08651188",
+      "distinct_src_off": 8,
+      "has_batch_dim": true,
+      "hwx_bytes": 966656,
+      "layout": "r3",
+      "packing": {
+        "first_16_u16": [
+          "0x0001",
+          "0x0000",
+          "0x0002",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": false,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 3946
+      },
+      "program_count": 1,
+      "reduction": 128,
+      "resource_addresses": [
+        "0x30000000",
+        "0x30234000",
+        "0x0",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 208,
+      "tensor_shapes": [
+        [
+          1,
+          8,
+          375,
+          128
+        ],
+        [
+          1,
+          8,
+          375,
+          375
+        ]
+      ],
+      "tensor_strides": [
+        [
+          768000,
+          96000,
+          256,
+          2
+        ],
+        [
+          2304000,
+          288000,
+          768,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        768000,
+        2304000
+      ],
+      "tx": false,
+      "ty": false,
+      "verdict": "batched",
+      "w_shape": [
+        8,
+        128,
+        375
+      ],
+      "w_storage": "blob",
+      "weight_mode": "index"
+    },
+    {
+      "batch": 8,
+      "case": "bmm_r3rb_m375_k128_n375_tx0_ty1_b8_idx",
+      "columns": 375,
+      "const_raw_path": "bmm_r3rb_m375_k128_n375_tx0_ty1_b8_idx.const.bin",
+      "constant_bytes": 768000,
+      "constant_nonzero_bytes": 764847,
+      "constant_sha256": "b98bbfa59341291146be7cd38427a2a7e0d95864b8e0c2fab7dfc8249398b24a",
+      "distinct_src_off": 1,
+      "has_batch_dim": true,
+      "hwx_bytes": 950272,
+      "layout": "r3",
+      "packing": {
+        "first_16_u16": [
+          "0x0001",
+          "0x0000",
+          "0x0002",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000",
+          "0x0000"
+        ],
+        "prefix_all_zero": false,
+        "prefix_bytes": 8192,
+        "prefix_u16": 4096,
+        "prefix_uniform_0x3800": false,
+        "unique_u16_in_prefix": 4036
+      },
+      "program_count": 1,
+      "reduction": 128,
+      "resource_addresses": [
+        "0x30000000",
+        "0x30234000",
+        "0x0",
+        "0x0",
+        "0x0"
+      ],
+      "rows": 375,
+      "status": "decoded",
+      "task_count": 209,
+      "tensor_shapes": [
+        [
+          1,
+          8,
+          375,
+          128
+        ],
+        [
+          1,
+          8,
+          375,
+          375
+        ]
+      ],
+      "tensor_strides": [
+        [
+          768000,
+          96000,
+          256,
+          2
+        ],
+        [
+          2304000,
+          288000,
+          768,
+          2
+        ]
+      ],
+      "tensor_total_bytes": [
+        768000,
+        2304000
+      ],
+      "tx": false,
+      "ty": true,
+      "verdict": "batched",
+      "w_shape": [
+        8,
+        375,
+        128
+      ],
+      "w_storage": "blob",
+      "weight_mode": "index"
+    }
+  ]
+}
