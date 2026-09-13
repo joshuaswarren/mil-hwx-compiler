@@ -51,6 +51,15 @@ Fresh v2 producer packages were emitted under `/tmp/h13-v2-b12b03f`. The compile
 
 The producing `build/mil-hwxc` SHA-256 was `b3587e4d87bad93d95c1b1e69c3164d7f445787c65f9bdf2d81978e17d128a9e`.
 
+Each package used the same commands, with `NAME` set to `ordinary`, `duplicate`, `sliced`, or `reshaped`:
+
+```text
+build/mil-hwxc --mil /tmp/h13-v2-b12b03f/NAME.mil --model-root /tmp/h13-v2-b12b03f --output /tmp/h13-v2-b12b03f/NAME-package --target H13 --format anec
+python3 research/inspect_anec.py /tmp/h13-v2-b12b03f/NAME-package
+```
+
+The source SHA-256 values are `747a5cad80437a9cc9aacbf66144ec2bd8e33a047772a7956c3a49531716210f` for ordinary, `fe6a6dd165c47f3cd39efb9e7ec5764d395a64fab11dc1c46aa7410c607bc9bf` for duplicate, `c93b84cfed35e01d04bf1fb33eeac6bcb39af5bbaef5b3489b064deed6eea1e1` for sliced, and `8488b0bb027f8b0fcd3cd9019ba4893bbc594831ffa870bf6be3392a9fc31704` for reshaped.
+
 An independent compiler review at `a3665cd` repeated the original split CLI and provenance checks without a remaining compiler finding. At `b12b03f`, the integrated adapter source reached its ordered FP32 and int32 returns and returned exit 65 with `h13.unsupported-logical-result-conversion` at line 3353. The full faithful source still reaches the previously recorded `mil.import.unsupported-type` boundary for `uint4`.
 
 A standard `make -j4 test` was attempted before v2. This Linux host cannot complete the repository-wide target unchanged: the Makefile applies Objective-C flags to `test_benchmark_stats.cpp`, four older tests include Apple-only `CommonCrypto`, two fixtures use clang-14-unsupported `_Float16`, and `test_runtime_contract` imports Apple-only `IOSurface`. Later, `tests/test_h13_cli.py` reached its known stale HWX-to-ANEC parity assertion at line 1237 after exercising the v2 schema and returned-view checks. No guessed descriptor or oracle change was retained.
