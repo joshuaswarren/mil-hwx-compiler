@@ -1,0 +1,10 @@
+STRICT_PACKAGE_PLAN_OK programs=77 taskDescriptors=77 calls=686 encoders={'h13-source-qualified': 76, 'h13-oracle-parity': 1} scratch={0: 77}
+PASS y: 1536 fp16 bytes satisfy the reference criterion; wrote /tmp/h13-baseM1-aa688df/run-rung8/y.out.fp16
+reference-criterion |device - reference| <= 0.02 + 0.02 * |reference|
+actual-sha256 dfaa81560221487a724fc17031ac579c13cba7d50d5cb5b7826bc0815b4df056
+expected-sha256 2276bbf08fb3226e0dc4eae95ba2364bf2a8aa4de4289fd9aa2271235bfb141b
+mismatched-fp16 109
+finite-actual true
+max-abs-error 0.0009765625 index=736 expected=-1.068359375 actual=-1.0693359375 allowed=0.0413671875
+max-finite-relative-error 0.0009140767824497258 index=1
+outside-tolerance 0

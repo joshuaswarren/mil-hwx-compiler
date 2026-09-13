@@ -1,0 +1,5 @@
+STRICT_PACKAGE_PLAN_OK programs=2 taskDescriptors=2 encoders={'h13-oracle-parity': 2} scratch={0: 2}
+PASS y: 128 fp16 bytes match the reference; wrote /tmp/h13-baseM1-aa688df/run-rung6/y.out.fp16
+actual-sha256 8cdcd9ef211ab08d1fc1c3c24fa33467acb90509aab4a6a10ebe0f8bbf4ddf47
+expected-sha256 8cdcd9ef211ab08d1fc1c3c24fa33467acb90509aab4a6a10ebe0f8bbf4ddf47
+RUNG6_RECHECK_BYTE_IDENTICAL
