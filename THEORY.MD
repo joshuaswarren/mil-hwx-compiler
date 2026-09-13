@@ -65,12 +65,13 @@ halves. Valid noncontiguous geometry fails with
 h13.noncontiguous-split-axis, and a valid three-result split fails with
 h13.unsupported-split-count.
 
-Direct, reshape-view, and split-subslice outputs compile as duplicate ordered
-identity results. The reshape case keeps a [1,64,1,1] physical buffer while
-returning [1,1,8,8] logical views. The split-subslice case returns offset 64,
-count 64 from a 128-element physical output. The strict inspector accepts both
-duplicates and rejects a logical physicalElements field because that field
-belongs only to ANEC program binding geometry.
+Direct, reshape-view, split-subslice, and distinct view outputs compile as
+ordered identity results. One split-backed physical output can expose differently
+shaped logical views at offsets 0 and 64 in either MIL return order. Independent
+terminal producers keep their physical output order while logicalResults follows
+the declared return order. The strict inspector accepts these mappings and rejects
+a logical physicalElements field because that field belongs only to ANEC program
+binding geometry.
 
 Direct and reshape-chained constant split sources fail with
 h13.unsupported-constant-split-source before blob access or alias creation. A

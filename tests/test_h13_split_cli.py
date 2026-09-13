@@ -84,6 +84,37 @@ def sliced_duplicate_result_source():
 }
 """
 
+def distinct_split_result_source(reverse=False):
+    returned = "wide, tall" if reverse else "tall, wide"
+    return f"""program(1) {{
+  func main<CoreML8>(tensor<fp16, [1, 128, 1, 1]> input) {{
+    tensor<fp16, [1, 128, 1, 1]> output = relu(x = input);
+    tensor<int32, []> count = const()[val = tensor<int32, []>(2)];
+    tensor<int32, []> axis = const()[val = tensor<int32, []>(1)];
+    (tensor<fp16, [1, 64, 1, 1]> first, tensor<fp16, [1, 64, 1, 1]> second) = split(axis = axis, num_splits = count, x = output);
+    tensor<int32, [4]> tall_shape = const()[val = tensor<int32, [4]>([1, 8, 8, 1])];
+    tensor<int32, [4]> wide_shape = const()[val = tensor<int32, [4]>([1, 1, 8, 8])];
+    tensor<fp16, [1, 8, 8, 1]> tall = reshape(shape = tall_shape, x = first);
+    tensor<fp16, [1, 1, 8, 8]> wide = reshape(shape = wide_shape, x = second);
+  }} -> ({returned});
+}}
+"""
+
+
+def independent_result_source(reverse=False):
+    returned = "wide, tall" if reverse else "tall, wide"
+    return f"""program(1) {{
+  func main<CoreML8>(tensor<fp16, [1, 64, 1, 1]> tall_input, tensor<fp16, [1, 64, 1, 1]> wide_input) {{
+    tensor<fp16, [1, 64, 1, 1]> tall_storage = relu(x = tall_input);
+    tensor<int32, [4]> tall_shape = const()[val = tensor<int32, [4]>([1, 8, 8, 1])];
+    tensor<fp16, [1, 8, 8, 1]> tall = reshape(shape = tall_shape, x = tall_storage);
+    tensor<fp16, [1, 64, 1, 1]> wide_storage = sigmoid(x = wide_input);
+    tensor<int32, [4]> wide_shape = const()[val = tensor<int32, [4]>([1, 1, 8, 8])];
+    tensor<fp16, [1, 1, 8, 8]> wide = reshape(shape = wide_shape, x = wide_storage);
+  }} -> ({returned});
+}}
+"""
+
 
 def mixed_result_source():
     return """program(1) {
@@ -201,6 +232,93 @@ with tempfile.TemporaryDirectory() as temporary:
         [sys.executable, inspector, str(sliced)], capture_output=True,
         text=True, timeout=30, check=False)
     assert sliced_inspected.returncode == 0, sliced_inspected.stderr
+    tall_mapping = {
+        "name": "tall",
+        "dtype": "float16",
+        "shape": [1, 8, 8, 1],
+        "physical": {
+            "tensor": "output",
+            "elementOffset": 0,
+            "elementCount": 64,
+        },
+        "conversion": "identity",
+    }
+    wide_mapping = {
+        "name": "wide",
+        "dtype": "float16",
+        "shape": [1, 1, 8, 8],
+        "physical": {
+            "tensor": "output",
+            "elementOffset": 64,
+            "elementCount": 64,
+        },
+        "conversion": "identity",
+    }
+    for reverse, expected_logical in (
+        (False, [tall_mapping, wide_mapping]),
+        (True, [wide_mapping, tall_mapping]),
+    ):
+        distinct_package = compile_source(
+            root,
+            f"distinct-{'reverse' if reverse else 'forward'}",
+            distinct_split_result_source(reverse),
+        )
+        distinct_manifest = json.loads(
+            (distinct_package / "manifest.json").read_text())
+        assert distinct_manifest["physicalOutputs"] == [sliced_physical]
+        assert distinct_manifest["logicalResults"] == expected_logical
+        distinct_inspected = subprocess.run(
+            [sys.executable, inspector, str(distinct_package)], capture_output=True,
+            text=True, timeout=30, check=False)
+        assert distinct_inspected.returncode == 0, distinct_inspected.stderr
+
+    independent_physical = [
+        {
+            "tensor": "tall_storage",
+            "dtype": "float16",
+            "shape": [1, 64, 1, 1],
+            "logicalBytes": 128,
+        },
+        {
+            "tensor": "wide_storage",
+            "dtype": "float16",
+            "shape": [1, 64, 1, 1],
+            "logicalBytes": 128,
+        },
+    ]
+    independent_tall_mapping = {
+        **tall_mapping,
+        "physical": {
+            "tensor": "tall_storage",
+            "elementOffset": 0,
+            "elementCount": 64,
+        },
+    }
+    independent_wide_mapping = {
+        **wide_mapping,
+        "physical": {
+            "tensor": "wide_storage",
+            "elementOffset": 0,
+            "elementCount": 64,
+        },
+    }
+    for reverse, expected_logical in (
+        (False, [independent_tall_mapping, independent_wide_mapping]),
+        (True, [independent_wide_mapping, independent_tall_mapping]),
+    ):
+        independent_package = compile_source(
+            root,
+            f"independent-{'reverse' if reverse else 'forward'}",
+            independent_result_source(reverse),
+        )
+        independent_manifest = json.loads(
+            (independent_package / "manifest.json").read_text())
+        assert independent_manifest["physicalOutputs"] == independent_physical
+        assert independent_manifest["logicalResults"] == expected_logical
+        independent_inspected = subprocess.run(
+            [sys.executable, inspector, str(independent_package)], capture_output=True,
+            text=True, timeout=30, check=False)
+        assert independent_inspected.returncode == 0, independent_inspected.stderr
 
     sliced_manifest["logicalResults"][0]["physical"]["physicalElements"] = 128
     (sliced / "manifest.json").write_text(json.dumps(sliced_manifest))
