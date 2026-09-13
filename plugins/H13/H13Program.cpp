@@ -866,6 +866,8 @@ const OracleBatchedMatmulTemplate *batchedTemplate(BatchedMatmulShape shape) {
         if (candidate.rows == shape.rows &&
             candidate.reduction == shape.reduction &&
             candidate.columns == shape.columns &&
+            candidate.transposeX == shape.transposeX &&
+            candidate.transposeY == shape.transposeY &&
             candidate.batch == shape.batch &&
             candidate.storage == (shape.runtimeWeight
                                       ? BatchedWeight::Runtime
@@ -878,9 +880,8 @@ bool supportsBatchedMatmul(BatchedMatmulShape shape) {
     return batchedTemplate(shape) != nullptr;
 }
 
-/// The batched surface: one [1, B, rows, width] descriptor whose rows pad to
-/// the 64-byte stride every H13 surface uses and whose allocation covers
-/// exactly B planes with no tile rounding — the decoded descriptors carry
+/// The batched surface: one [1, B, rows, width] descriptor whose rows pad
+/// to the 64-byte stride every H13 surface uses.
 TensorLayout batchedTensor(std::uint32_t index, std::uint32_t batch,
                            std::uint32_t rows, std::uint32_t width) {
     const std::uint64_t row = (width * 2 + 63) / 64 * 64;
@@ -889,8 +890,43 @@ TensorLayout batchedTensor(std::uint32_t index, std::uint32_t batch,
             {1, batch, rows, width, plane, row},
             alignTile(plane * batch)};
 }
+
+std::vector<std::uint8_t> packBatchedWeights(BatchedMatmulShape shape,
+                                             const std::uint8_t *weights,
+                                             std::size_t weightBytes) {
+    const auto *source = batchedTemplate(shape);
+    if (!source || source->storage != BatchedWeight::Packed || !source->packHeader)
+        throw std::invalid_argument(
+            "H13 batched packing needs a decoded packed template");
+    if (weightBytes != static_cast<std::size_t>(source->batch) *
+            source->packRows * source->packCols * 2)
+        throw std::invalid_argument(
+            "H13 batched weight must be the dense B-plane blob");
+    const std::uint32_t padded = (source->packCols + 31) / 32 * 32;
+    std::vector<std::uint8_t> packed(source->constantBytes, 0);
+    constexpr std::size_t packHeaderBytes = 128;
+    constexpr std::size_t packPhaseHalfwords = 64;
+    std::memcpy(packed.data(), source->packHeader, packHeaderBytes);
+    const std::uint32_t rows = source->batch * source->packRows;
+    for (std::uint32_t row = 0; row < rows; ++row) {
+        std::size_t lo, at;
+        if (row == 0) {
+            lo = 0;
+            at = packHeaderBytes;
+        } else {
+            lo = static_cast<std::size_t>(row) * source->packCols -
+                packPhaseHalfwords;
+            at = static_cast<std::size_t>(row) * padded * 2;
+        }
+        const std::size_t count = source->packCols -
+            (row == 0 ? packPhaseHalfwords : 0);
+        std::memcpy(packed.data() + at, weights + lo * 2, count * 2);
+    }
+    return packed;
+}
+
 Program encodeBatchedMatmul(BatchedMatmulShape shape,
-                            const std::uint8_t *packedPlanes,
+                            const std::uint8_t *packed,
                             std::size_t packedBytes) {
     constexpr std::size_t tasksPerBatch = 26;
     const auto *source = batchedTemplate(shape);
@@ -898,22 +934,35 @@ Program encodeBatchedMatmul(BatchedMatmulShape shape,
         throw std::invalid_argument(
             "H13 batched matmul is outside the decoded envelope");
     if (source->storage == BatchedWeight::Runtime) {
-        if (packedPlanes || packedBytes)
+        if (packed || packedBytes)
             throw std::invalid_argument(
                 "H13 runtime-operand batched matmul takes no constant weight");
-    } else if (!packedPlanes || packedBytes != source->constantBytes) {
+    } else if (!packed || packedBytes != source->constantBytes) {
         throw std::invalid_argument(
-            "H13 batched constant weight must be B padded planes");
+            "H13 batched constant weight must be packed for the geometry");
     }
     if (source->groupWordCount % tasksPerBatch)
         throw std::logic_error(
             "H13 batched template group is not a whole task set");
     const std::size_t taskWords = source->groupWordCount / tasksPerBatch;
     Program program;
-    // Stamp batch zero's task group once per batch with the per-batch word
-    // rules, following each task's patched link pointer for placement; the
-    // gaps between tasks stay zero, exactly as decoded.
+    // Emit the optional prefix task (the fold-flag forms), then stamp batch
+    // zero's task group once per batch with the per-batch word rules,
+    // following each task's patched link pointer for placement; the gaps
+    // between tasks stay zero, exactly as decoded.
     std::size_t offset = 0;
+    auto emit = [&](const std::uint32_t *words, std::size_t count) {
+        if (program.task.size() < offset + count * 4)
+            program.task.resize(offset + count * 4);
+        std::memcpy(program.task.data() + offset, words, count * 4);
+        offset = words[7];
+    };
+    if (source->prefixWordCount) {
+        emit(source->prefixWords, source->prefixWordCount);
+        if (!offset)
+            throw std::logic_error(
+                "H13 batched prefix does not link into the stream");
+    }
     for (std::uint32_t batch = 0; batch < source->batch; ++batch) {
         for (std::size_t index = 0; index < tasksPerBatch; ++index) {
             std::vector<std::uint32_t> words(
@@ -944,21 +993,19 @@ Program encodeBatchedMatmul(BatchedMatmulShape shape,
                 words[7])
                 throw std::logic_error(
                     "H13 batched template final task does not end the stream");
-            if (program.task.size() < offset + words.size() * 4)
-                program.task.resize(offset + words.size() * 4);
-            std::memcpy(program.task.data() + offset, words.data(),
-                        words.size() * 4);
-            offset = words[7];
+            emit(words.data(), words.size());
         }
     }
     if (offset != 0)
         throw std::logic_error(
             "H13 batched template link chain does not terminate");
-    program.taskCount = tasksPerBatch * source->batch;
-    program.firstTaskBytes = taskWords * 4;
+    program.taskCount = static_cast<std::uint32_t>(
+        tasksPerBatch * source->batch + (source->prefixWordCount ? 1 : 0));
+    program.firstTaskBytes = (source->prefixWordCount
+        ? source->prefixWordCount : taskWords) * 4;
     program.constants.assign(source->constantBytes, 0);
-    if (packedPlanes)
-        std::memcpy(program.constants.data(), packedPlanes, packedBytes);
+    if (packed)
+        std::memcpy(program.constants.data(), packed, packedBytes);
     program.constantOffsetBytes = (program.task.size() + 127) / 128 * 128;
     if (shape.runtimeWeight) {
         program.inputs = {batchedTensor(5, shape.batch, shape.reduction,

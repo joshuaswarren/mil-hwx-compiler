@@ -142,25 +142,36 @@ Program encodeMatmulParity(MatmulShape shape, const std::uint8_t *weights,
                            std::size_t weightBytes);
 /// One decoded Apple batched-matmul geometry: B independent per-batch GEMMs
 /// of [rows, reduction] by [reduction, columns] over batch-major contiguous
-/// operand planes, lowered as one task stream of 26 tasks per batch. The
-/// transpose flags are false in every decoded form.
+/// operand planes, lowered as one task stream of an optional prefix task
+/// plus 26 tasks per batch (the fold-flag forms carry the prefix).
 struct BatchedMatmulShape {
     std::uint32_t batch = 1;
     std::uint32_t rows;
     std::uint32_t reduction;
     std::uint32_t columns;
+    bool transposeX = false;
+    bool transposeY = false;
     bool runtimeWeight = false;
 };
 
 /// True when the decoded batched corpus covers this geometry as one program.
 bool supportsBatchedMatmul(BatchedMatmulShape shape);
 
-/// Encodes Apple's own batched task stream for the geometry. `packedPlanes`
-/// carries the constant weight as B consecutive [reduction, columns] planes,
-/// each row padded to the 64-byte surface stride, and must be null for a
-/// runtime second operand.
+/// Packs a constant weight for a covered packed geometry, byte-exactly as
+/// the decoded sections carry: the template's kernel header, then the
+/// weight matrix — transposed for transpose_y forms — cut into packCols
+/// chunks placed at the padded row stride with a -64 phase, final 64
+/// source halves unwritten. `weights` is the dense row-major
+/// [B, packRows, packCols] fp16 blob exactly as the MIL resolves it.
+std::vector<std::uint8_t> packBatchedWeights(BatchedMatmulShape shape,
+                                             const std::uint8_t *weights,
+                                             std::size_t weightBytes);
+
+/// Encodes Apple's own batched task stream for the geometry. `packed` is
+/// the packBatchedWeights output for a constant second operand and null
+/// for a runtime one.
 Program encodeBatchedMatmul(BatchedMatmulShape shape,
-                            const std::uint8_t *packedPlanes,
+                            const std::uint8_t *packed,
                             std::size_t packedBytes);
 /// Apple's constant-section permutation for a [columns, reduction] fp16
 /// weight, whose row-group size depends on `rows` and `reduction`.
