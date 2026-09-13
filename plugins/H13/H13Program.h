@@ -97,6 +97,10 @@ struct TensorLayout {
     std::uint32_t index;
     std::array<std::uint64_t, 6> nchw;
     std::uint64_t allocationBytes;
+    /// Element size in bytes: 2 for the fp16 surfaces every decoded form
+    /// used before the boolean ops, 1 for the bool compare/cond surfaces
+    /// the boolean captures bind. Defaults keep old initializers valid.
+    std::uint32_t elementSize = 2;
 };
 
 struct Program {
@@ -118,7 +122,7 @@ struct Program {
     /// broadcast, which puts it between the two operands.
     std::size_t outputBindingIndex = static_cast<std::size_t>(-1);
     /// Descriptor channels in output, input0, input1 order, before ANEC rebinding.
-    std::array<std::uint32_t, 3> taskSurfaceChannels{4, 5, 6};
+    std::array<std::uint32_t, 4> taskSurfaceChannels{4, 5, 6, 7};
 };
 
 Program encodeBinary(BinaryOperation operation);
@@ -170,6 +174,34 @@ std::vector<std::uint8_t> packBatchedWeights(BatchedMatmulShape shape,
 /// Encodes Apple's own batched task stream for the geometry. `packed` is
 /// the packBatchedWeights output for a constant second operand and null
 /// for a runtime one.
+
+/// One decoded boolean-op geometry: the compare/floor/select/floor_div
+/// families with their fixed task streams. `channels/height/width` is the
+/// CHW surface; `constInput` selects the captured constant-operand twin
+/// (blob x for floor, the scalar-2.0 divisor for floor_div). The element
+/// dtype follows the family: less emits a bool result and select reads a
+/// bool cond — 1-byte surfaces — while every operand stays fp16.
+enum class H13BooleanKind : std::uint8_t { Less, Floor, Select, FloorDiv };
+
+struct H13BooleanShape {
+    H13BooleanKind kind = H13BooleanKind::Floor;
+    bool constInput = false;
+    std::uint32_t channels = 1;
+    std::uint32_t height = 1;
+    std::uint32_t width = 1;
+};
+
+/// True when the decoded boolean corpus covers this geometry.
+bool supportsBooleanOp(H13BooleanShape shape);
+
+/// Encodes the captured task stream verbatim with its constant section.
+/// scalarInput carries the single fp16 lane of a constant-operand twin
+/// (floor over a blob x); it replaces the section's head word and must be
+/// null for runtime-operand forms.
+ane::h13::Program encodeBooleanOp(H13BooleanShape shape,
+                                  const std::uint8_t *scalarInput = nullptr,
+                                  std::size_t scalarBytes = 0);
+
 Program encodeBatchedMatmul(BatchedMatmulShape shape,
                             const std::uint8_t *packed,
                             std::size_t packedBytes);
@@ -238,4 +270,25 @@ void fuseElementwisePostOperation(Program &program, PostOperation operation);
 Program composePrograms(const std::vector<Program> &programs);
 std::vector<std::uint8_t> encodeANEC(const Program &program);
 
+/// One decoded tile geometry: the input CHW surface replicated repC/repH/repW
+/// times into the output surface. Apple's form is materialized — input and
+/// output are distinct bindings, and the const-x twin carries the
+/// unexpanded payload in the constant section.
+struct H13TileShape {
+    std::uint32_t inChannels = 1;
+    std::uint32_t inHeight = 1;
+    std::uint32_t inWidth = 1;
+    std::uint32_t repChannels = 1;
+    std::uint32_t repHeight = 1;
+    std::uint32_t repWidth = 1;
+    bool runtimeInput = true;
+};
+
+/// True when the decoded tile corpus covers this geometry.
+bool supportsTileOp(H13TileShape shape);
+
+/// Encodes the captured task stream with its constant section.
+ane::h13::Program encodeTileOp(H13TileShape shape);
+
 }
+

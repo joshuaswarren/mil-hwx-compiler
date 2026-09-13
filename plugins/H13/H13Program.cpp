@@ -421,6 +421,8 @@ struct OracleBroadcastTemplate {
 #include "H13EnvelopeTemplates.inc"
 #include "H13ConvTemplates.inc"
 #include "H13BatchedMatmulTemplates.inc"
+#include "H13BooleanTemplates.inc"
+#include "H13TileTemplates.inc"
 
 bool sameShape(ElementwiseShape left, ElementwiseShape right) {
     return left.channels == right.channels && left.height == right.height &&
@@ -685,7 +687,7 @@ Program oracleProgram(const OracleTaskTemplate &source,
     Program program{taskBytesFor(source.words, source.wordCount), std::move(constants),
                     std::move(inputs), elementwiseTensor(4, source.shape),
                     source.firstTaskBytes, source.taskCount, constantOffsetBytes, {}};
-    program.taskSurfaceChannels = {5, 4, 6};
+    program.taskSurfaceChannels = {5, 4, 6, 7};
     return program;
 }
 
@@ -1021,6 +1023,214 @@ Program encodeBatchedMatmul(BatchedMatmulShape shape,
     return program;
 }
 
+const H13BooleanTemplate *booleanTemplate(H13BooleanShape shape) {
+    for (const auto &candidate : kBooleanTasks)
+        if (candidate.kind == shape.kind &&
+            candidate.constInput == shape.constInput &&
+            candidate.channels == shape.channels &&
+            candidate.height == shape.height &&
+            candidate.width == shape.width)
+            return &candidate;
+    return nullptr;
+}
+
+bool supportsBooleanOp(H13BooleanShape shape) {
+    return booleanTemplate(shape) != nullptr;
+}
+
+/// The boolean surface: [1, C, H, W] with the row padded to the 64-byte
+/// stride over the family's element size — fp16 operands, bool results.
+TensorLayout booleanTensor(std::uint32_t index, H13BooleanShape shape,
+                           bool boolElements) {
+    const std::uint32_t element = boolElements ? 1 : 2;
+    const std::uint64_t row =
+        (shape.width * element + 63) / 64 * 64;
+    const std::uint64_t plane = row * shape.height;
+    return {index,
+            {1, shape.channels, shape.height, shape.width, plane, row},
+            alignTile(plane * shape.channels), element};
+}
+
+Program encodeBooleanOp(H13BooleanShape shape,
+                            const std::uint8_t *scalarInput,
+                            std::size_t scalarBytes) {
+    const auto *source = booleanTemplate(shape);
+    if (!source)
+        throw std::invalid_argument(
+            "H13 boolean op is outside the decoded envelope");
+    if (scalarInput && scalarBytes != 2)
+        throw std::invalid_argument(
+            "H13 boolean scalar input must be one fp16 lane");
+    Program program;
+    // Replay the captured words at their linked offsets: the generator
+    // concatenates the tasks densely, so walk the first task's size words,
+    // place, follow its link, and continue — the gaps stay zero.
+    std::size_t cursor = 0;
+    std::size_t offset = 0;
+    // Channel 3 passes bindTasks through untouched (only channels 4..7
+    // remap), so any template task selecting it stages through the
+    // scratch surface and the program must back it.
+    bool stagesThroughScratch = false;
+    for (std::size_t index = 0; index < source->taskCount; ++index) {
+        // The decoded header's size field can disagree with the record
+        // size the capture walked, so the template carries the record
+        // sizes and the links carry the placement.
+        const std::uint32_t sizeWords = source->taskWords[index];
+        if (cursor + sizeWords > source->wordCount)
+            throw std::logic_error("H13 boolean template is truncated");
+        const std::uint32_t *words = source->words + cursor;
+        if (program.task.size() < offset + sizeWords * 4)
+            program.task.resize(offset + sizeWords * 4);
+        std::memcpy(program.task.data() + offset, words, sizeWords * 4);
+        const std::uint32_t selectors = words[8];
+        for (unsigned shift : {0u, 6u, 12u})
+            stagesThroughScratch =
+                stagesThroughScratch || ((selectors >> shift) & 31) == 3;
+        const std::size_t next = words[7];
+        cursor += sizeWords;
+        if (index + 1 == source->taskCount) {
+            if (next)
+                throw std::logic_error(
+                    "H13 boolean template final task links on");
+            break;
+        }
+        if (next <= offset + sizeWords * 4 || next % 4)
+            throw std::logic_error("H13 boolean template link is invalid");
+        offset = next;
+    }
+    program.taskCount = static_cast<std::uint32_t>(source->taskCount);
+    program.firstTaskBytes = source->taskWords[0] * 4;
+    program.constants.assign(source->constants, source->constants +
+                                               source->constantBytes);
+    if (scalarInput && !program.constants.empty())
+        std::memcpy(program.constants.data(), scalarInput, 2);
+    program.constantOffsetBytes = (program.task.size() + 127) / 128 * 128;
+    switch (shape.kind) {
+    case H13BooleanKind::Less:
+        program.inputs = {booleanTensor(5, shape, false),
+                          booleanTensor(6, shape, false)};
+        program.output = booleanTensor(4, shape, true);
+        // Words select x on 4 and y on 5 with the result on 6: allocated
+        // channel 4 is the output, 5 and 6 the operands.
+        program.taskSurfaceChannels = {6, 4, 5, 7};
+        break;
+    case H13BooleanKind::Floor:
+        // The blob-x twin reads its operand from the constant section
+        // head, so it binds no runtime surface. The capture writes the
+        // result through channel 5, so the blob twin's output takes the
+        // first-input slot; the runtime-operand form keeps it on 4.
+        program.inputs =
+            shape.constInput
+                ? std::vector<TensorLayout>{}
+                : std::vector<TensorLayout>{booleanTensor(5, shape, false)};
+        program.output =
+            booleanTensor(shape.constInput ? 5 : 4, shape, false);
+        // Words select x on 4 and the result on 5: with a runtime x the
+        // remap lands x on slot 5 and the result on slot 4, while the
+        // blob twin's write through template 4 lands on slot 5.
+        program.taskSurfaceChannels = {5, 4, 6, 7};
+        break;
+    case H13BooleanKind::FloorDiv:
+        program.inputs = shape.constInput
+            ? std::vector<TensorLayout>{booleanTensor(5, shape, false)}
+            : std::vector<TensorLayout>{booleanTensor(5, shape, false),
+                                        booleanTensor(6, shape, false)};
+        program.output = booleanTensor(4, shape, false);
+        // Words select x on 4 and the result on 5 (the s2 divisor rides
+        // the constant section; the rr form selects y like floor's input).
+        program.taskSurfaceChannels = {5, 4, 6, 7};
+        break;
+    case H13BooleanKind::Select:
+        program.inputs = {booleanTensor(5, shape, false),
+                          booleanTensor(6, shape, false),
+                          booleanTensor(7, shape, true)};
+        program.output = booleanTensor(4, shape, false);
+        // Words select a on 6, b on 4, the bool cond on 5, and the result
+        // on 7: four surfaces across channels 4..7.
+        program.taskSurfaceChannels = {7, 6, 4, 5};
+        break;
+    }
+    if (stagesThroughScratch) {
+        // The scratch staging moves operand/result data, so it never
+        // exceeds one surface: back it with the output allocation (the
+        // allocator's own exact number), erring toward hardware safety
+        // over tightness since the captures record no scratch size.
+        program.scratchAllocationBytes = program.output.allocationBytes;
+    }
+    return program;
+}
+
+const H13TileTemplate *tileTemplate(H13TileShape shape) {
+    for (const auto &candidate : kTileTasks)
+        if (candidate.inChannels == shape.inChannels &&
+            candidate.inHeight == shape.inHeight &&
+            candidate.inWidth == shape.inWidth &&
+            candidate.repChannels == shape.repChannels &&
+            candidate.repHeight == shape.repHeight &&
+            candidate.repWidth == shape.repWidth &&
+            candidate.constInput == !shape.runtimeInput)
+            return &candidate;
+    return nullptr;
+}
+
+bool supportsTileOp(H13TileShape shape) {
+    return tileTemplate(shape) != nullptr;
+}
+
+Program encodeTileOp(H13TileShape shape) {
+    const auto *source = tileTemplate(shape);
+    if (!source)
+        throw std::invalid_argument(
+            "H13 tile is outside the decoded envelope");
+    Program program;
+    std::size_t cursor = 0;
+    std::size_t offset = 0;
+    for (std::size_t index = 0; index < source->taskCount; ++index) {
+        const std::uint32_t sizeWords = source->taskWords[index];
+        if (cursor + sizeWords > source->wordCount)
+            throw std::logic_error("H13 tile template is truncated");
+        if (program.task.size() < offset + sizeWords * 4)
+            program.task.resize(offset + sizeWords * 4);
+        std::memcpy(program.task.data() + offset,
+                    source->words + cursor, sizeWords * 4);
+        const std::size_t next =
+            (source->words + cursor)[7];
+        cursor += sizeWords;
+        if (index + 1 == source->taskCount) {
+            if (next)
+                throw std::logic_error(
+                    "H13 tile template final task links on");
+            break;
+        }
+        if (next <= offset + sizeWords * 4 || next % 4)
+            throw std::logic_error("H13 tile template link is invalid");
+        offset = next;
+    }
+    program.taskCount = static_cast<std::uint32_t>(source->taskCount);
+    program.firstTaskBytes = source->taskWords[0] * 4;
+    program.constants.assign(source->constants, source->constants +
+                                               source->constantBytes);
+    program.constantOffsetBytes = (program.task.size() + 127) / 128 * 128;
+    const std::uint32_t inChannels = source->inChannels == 1 &&
+            shape.inChannels != 1 ? shape.inChannels : source->inChannels;
+    program.inputs = shape.runtimeInput
+        ? std::vector<TensorLayout>{booleanTensor(5, {H13BooleanKind::Floor, false,
+                                                      inChannels, source->inHeight,
+                                                      source->inWidth}, false)}
+        : std::vector<TensorLayout>{};
+    program.output = booleanTensor(shape.runtimeInput ? 4 : 5,
+                                   {H13BooleanKind::Floor, false,
+                                    source->outChannels, source->outHeight,
+                                    source->outWidth}, false);
+    // The runtime input selects 4 and the result 5; the remap lands the
+    // input on slot 5 and the result on slot 4. The blob twin reads its
+    // operand from the constant section and writes through template 4,
+    // which lands on slot 5 — the same first-input slot the blob floor
+    // twin uses.
+    program.taskSurfaceChannels = {5, 4, 6, 7};
+    return program;
+}
+
 bool supportsBroadcast(BinaryOperation operation, BroadcastOperand operand,
                        BroadcastShape shape) {
     return broadcastTemplate(operation, operand, shape);
@@ -1037,7 +1247,7 @@ Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
         throw std::invalid_argument(
             "H13 scalar broadcast requires the decoded fp16 0.5 operand");
     Program program;
-    program.taskSurfaceChannels = {5, 4, 6};
+    program.taskSurfaceChannels = {5, 4, 6, 7};
     program.task = taskBytesFor(source->words, source->wordCount);
     if (operand == BroadcastOperand::Constant) {
         if (!constant ||
@@ -1074,7 +1284,7 @@ Program encodeNormParity(NormOperation operation, NormShape shape) {
         throw std::invalid_argument(
             "H13 normalization geometry is outside the decoded parity envelope");
     Program program;
-    program.taskSurfaceChannels = {5, 4, 6};
+    program.taskSurfaceChannels = {5, 4, 6, 7};
     program.task = taskBytesFor(source->words, source->wordCount);
     program.constants = normConstants(source->constants, source->constantBytes);
     program.inputs = {elementwiseTensor(5, source->input)};
@@ -1337,7 +1547,7 @@ Program encodeConvParity(ConvShape shape, const std::uint8_t *weights,
         throw std::invalid_argument(
             "H13 convolution geometry is outside the decoded parity envelope");
     Program program;
-    program.taskSurfaceChannels = {5, 4, 6};
+    program.taskSurfaceChannels = {5, 4, 6, 7};
     program.task = taskBytesFor(source->words, source->wordCount);
     program.constants =
         packConvWeights(shape, weights, weightBytes, bias, biasBytes);
