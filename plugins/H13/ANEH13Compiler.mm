@@ -141,6 +141,67 @@ static BOOL int32Literal(ANEGraphArgument *argument, long long *value) {
     return YES;
 }
 
+static BOOL int32TensorScalar(ANEGraphValue *value, long long *result) {
+    if (!value || ![value.producer.operationName isEqualToString:@"const"] ||
+        value.producer.arguments.count ||
+        value.type.kind != ANEValueTypeKindTensor || value.type.shape.count ||
+        value.type.elementType != ANEElementTypeInt32) return NO;
+    ANEGraphArgument *literal = value.producer.attributes[@"val"];
+    if (literal.kind != ANEGraphArgumentKindCall ||
+        ![literal.calleeValueType isEqualToValueType:value.type] ||
+        literal.callArguments.count != 1) return NO;
+    return int32Literal(literal.callArguments[0].value, result);
+}
+
+struct H13SplitAliasPlan {
+    NSUInteger resultElements;
+};
+
+static BOOL splitAliasPlan(ANEGraphOperation *operation,
+                           ANEDiagnosticEngine *diagnostics,
+                           H13SplitAliasPlan *plan) {
+    ANEGraphValue *x = operation.operands[@"x"].value;
+    long long axis = 0, count = 0;
+    if (operation.arguments.count != 3 || !x ||
+        !int32TensorScalar(operation.operands[@"axis"].value, &axis) ||
+        !int32TensorScalar(operation.operands[@"num_splits"].value, &count))
+        return reject(diagnostics,
+            @"H13 split requires x and exact rank-zero tensor<int32,[]> axis and num_splits constants",
+            operation, @"h13.invalid-split-parameters");
+    if (count != 2 || operation.results.count != 2)
+        return reject(diagnostics, @"H13 split supports exactly two results",
+            operation, @"h13.unsupported-split-count");
+    if (!fp16Tensor(x) || !x.type.shape.count)
+        return reject(diagnostics,
+            @"H13 split requires a positive-rank static fp16 input",
+            operation, @"h13.invalid-split-shape");
+    if (axis < 0) axis += (long long)x.type.shape.count;
+    if (axis < 0 || axis >= (long long)x.type.shape.count)
+        return reject(diagnostics, @"H13 split axis is out of range",
+            operation, @"h13.unsupported-split-axis");
+    for (NSUInteger index = 0; index < (NSUInteger)axis; ++index)
+        if (x.type.shape[index].unsignedIntegerValue != 1)
+            return reject(diagnostics,
+                @"H13 split requires unit dimensions before its axis because one binding slice cannot represent interleaved output chunks",
+                operation, @"h13.noncontiguous-split-axis");
+    NSUInteger inputElements = 0, resultElements = 0;
+    if (!tensorElementCount(x, &inputElements) ||
+        !tensorElementCount(operation.results[0], &resultElements) ||
+        resultElements > NSUIntegerMax / 2 || inputElements != resultElements * 2)
+        return reject(diagnostics,
+            @"H13 split requires two equal positive static fp16 result shapes",
+            operation, @"h13.invalid-split-shape");
+    for (ANEGraphValue *result in operation.results) {
+        NSUInteger elements = 0;
+        if (!tensorElementCount(result, &elements) || elements != resultElements)
+            return reject(diagnostics,
+                @"H13 split requires two equal positive static fp16 result shapes",
+                operation, @"h13.invalid-split-shape");
+    }
+    plan->resultElements = resultElements;
+    return YES;
+}
+
 /// Resolves a constant axis operand — softmax's `int32` scalar or a rank-1
 /// `int32` axes tensor — into the NCHW mask of the physical surface, with
 /// `axisShift` mapping logical axes onto the canonical CHW the encoder keys
@@ -1387,11 +1448,16 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     if (module.functions.count != 1)
         return reject(diagnostics, @"H13 requires exactly one function");
     ANEGraphFunction *function = module.functions[0];
-    for (ANEGraphOperation *candidate in function.operations)
-        if (candidate.results.count != 1)
+    for (ANEGraphOperation *candidate in function.operations) {
+        if ([candidate.operationName isEqualToString:@"split"]) {
+            H13SplitAliasPlan plan{};
+            if (!splitAliasPlan(candidate, diagnostics, &plan)) return NO;
+        } else if (candidate.results.count != 1) {
             return reject(diagnostics,
                 @"H13 does not lower multi-result operations",
                 candidate, @"h13.unsupported-multi-result-operation");
+        }
+    }
     NSMutableArray<ANEGraphOperation *> *sourceOperations = [NSMutableArray array];
     for (ANEGraphOperation *candidate in function.operations)
         if (![candidate.operationName isEqualToString:@"const"])
@@ -1419,16 +1485,17 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 sourceOperations[0], chain ? chainCode : @"h13.unsupported-program");
     }
     for (NSUInteger index = 0; index + 1 < sourceOperations.count; ++index) {
-        ANEGraphValue *value = sourceOperations[index].results[0];
-        BOOL used = NO;
-        for (NSUInteger consumer = index + 1;
-             consumer < sourceOperations.count; ++consumer)
-            for (ANEGraphArgument *operand in sourceOperations[consumer].operands.allValues)
-                if (operand.value == value) used = YES;
-        if (!used)
-            return reject(diagnostics,
-                @"H13 operation results not returned must be consumed by a later operation",
-                sourceOperations[index], chainCode);
+        for (ANEGraphValue *value in sourceOperations[index].results) {
+            BOOL used = NO;
+            for (NSUInteger consumer = index + 1;
+                 consumer < sourceOperations.count; ++consumer)
+                for (ANEGraphArgument *operand in sourceOperations[consumer].operands.allValues)
+                    if (operand.value == value) used = YES;
+            if (!used)
+                return reject(diagnostics,
+                    @"H13 operation results not returned must be consumed by a later operation",
+                    sourceOperations[index], chainCode);
+        }
     }
 
     NSMutableArray<ANEGraphOperation *> *operations = [NSMutableArray array];
@@ -1448,6 +1515,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     NSMutableSet<NSString *> *chunkedAccumulations = [NSMutableSet set];
     NSMapTable<ANEGraphValue *, ANEGraphValue *> *loweredValues =
         [NSMapTable strongToStrongObjectsMapTable];
+    NSMapTable<ANEGraphValue *, NSNumber *> *valueBaseOffsets =
+        [NSMapTable strongToStrongObjectsMapTable];
     for (ANEGraphOperation *candidate in sourceOperations) {
         NSMutableDictionary<NSString *, ANEGraphArgument *> *arguments =
             [candidate.arguments mutableCopy];
@@ -1458,6 +1527,25 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         }
         NSString *name = candidate.operationName;
         ANEGraphValue *x = arguments[@"x"].value;
+        if ([name isEqualToString:@"split"]) {
+            H13SplitAliasPlan plan{};
+            if (!splitAliasPlan(candidate, diagnostics, &plan)) return NO;
+            NSUInteger baseOffset =
+                [[valueBaseOffsets objectForKey:x] unsignedIntegerValue];
+            for (NSUInteger index = 0; index < candidate.results.count; ++index) {
+                if (index && plan.resultElements >
+                    (NSUIntegerMax - baseOffset) / index)
+                    return reject(diagnostics, @"H13 split alias offset overflows",
+                        candidate, @"h13.invalid-split-shape");
+                ANEGraphValue *sourceResult = candidate.results[index];
+                ANEGraphValue *alias = [[ANEGraphValue alloc]
+                    initWithName:x.name type:sourceResult.type];
+                [loweredValues setObject:alias forKey:sourceResult];
+                [valueBaseOffsets setObject:
+                    @(baseOffset + index * plan.resultElements) forKey:alias];
+            }
+            continue;
+        }
         BOOL reshape = [name isEqualToString:@"reshape"];
         BOOL squeeze = [name isEqualToString:@"squeeze"];
         BOOL expand = [name isEqualToString:@"expand_dims"];
@@ -1479,9 +1567,15 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     candidate, @"h13.invalid-shape-alias");
             ANEGraphValue *alias = [[ANEGraphValue alloc]
                 initWithName:x.name type:candidate.results[0].type];
-            aliases[candidate.results[0].name] = @{
-                @"aliasOf": x.name, @"shape": candidate.results[0].type.shape};
-            [manifestValues addObject:candidate.results[0]];
+            NSNumber *baseOffset = [valueBaseOffsets objectForKey:x];
+            if (baseOffset) {
+                [valueBaseOffsets setObject:baseOffset forKey:alias];
+            } else {
+                aliases[candidate.results[0].name] = @{
+                    @"aliasOf": x.name,
+                    @"shape": candidate.results[0].type.shape};
+                [manifestValues addObject:candidate.results[0]];
+            }
             [loweredValues setObject:alias forKey:candidate.results[0]];
             continue;
         }
@@ -1968,9 +2062,15 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                         [binding(input, logicalShape, program.inputs.at(index)) mutableCopy];
                     BOOL aliasShape =
                         ![fullShape isEqualToArray:tensors[input.name][@"shape"]];
-                    if (inputOffset || sliceElements != fullElements ||
+                    NSUInteger baseOffset =
+                        [[valueBaseOffsets objectForKey:input] unsignedIntegerValue];
+                    if (inputOffset > NSUIntegerMax - baseOffset)
+                        return reject(diagnostics, @"H13 input alias slice overflows",
+                            operation, @"h13.invalid-alias-slice");
+                    NSUInteger bindingOffset = baseOffset + inputOffset;
+                    if (bindingOffset || sliceElements != fullElements ||
                         physicalElements != sliceElements || aliasShape)
-                        addSlice(record, input, inputOffset, sliceElements,
+                        addSlice(record, input, bindingOffset, sliceElements,
                                  physicalElements);
                     if (input == constantInput) {
                         record[@"binding"] = @"constant";

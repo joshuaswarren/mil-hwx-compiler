@@ -1,29 +1,63 @@
-# Theory: Ordered MIL Results as a Semantic Boundary
+# Theory: H13 Split Results as Buffer Views
 
 ## Problem
 
-The textual MIL frontend preserved operation order, program version, and function opset, but its semantic graph collapsed every operation to one result and dropped the metadata. The result model both rejected faithful Core ML text at the grammar boundary and risked a more serious downstream error: accepting a multi-result operation while compiling only its first value. The pinned encoder exposes the loss through 24 two-result `split` operations whose outputs have distinct consumers.
+The textual MIL frontend now preserves ordered operation results, but H13 still
+rejected every multi-result operation before lowering. The pinned CoreML 8
+encoder uses two-result channel splits whose first half feeds a multiply and
+whose second half feeds a sigmoid. Treating both values as the whole source
+buffer would compile the graph but bind the wrong data.
 
 ## Operating Theory
 
-An operation owns an ordered list of SSA results. Each result is an independent typed value with the same defining operation, not a tuple wrapper or synthetic aggregate. The text grammar therefore keeps the unparenthesized typed binding for one result and adds a parenthesized, comma-separated list for multiple results. The importer reserves and registers every name as one operation so duplicate names cannot partially mutate the symbol table.
+A split needs no ANE program when each result is one contiguous interval of the
+source buffer. For an equal two-way split, this is true only when every logical
+dimension before the split axis is one. Result order then determines exact
+base offsets: result zero starts at the source base, and result one starts one
+result-sized interval later. Consumers keep the source tensor name and add the
+view base to their existing operation-local slice offset.
 
-Program version and function opset are semantic compatibility claims. The graph retains them, and the verifier accepts the two contracts present in this repository and the faithful input: `program(1.3)` with `ios18`, and `program(1)` with `CoreML8`. Other pairings fail explicitly.
-
-The semantic verifier accepts the known equal-partition split form. It requires each axis and partition-count SSA declaration and its typed constant literal to match rank-zero `tensor<int32, []>`, plus a ranked tensor input, divisible positive geometry, one result per partition, matching result types, and correct producer identity. It rejects type mismatches and unknown parameter forms instead of trusting the literal alone.
+The package schema has one slice per binding. It cannot represent the disjoint
+chunks produced when a non-unit prefix precedes the split axis. Such shapes
+must fail with a named diagnostic rather than acquire guessed strides or host
+materialization. Split values also do not become tensor aliases in the
+manifest: that alias contract requires the alias and underlying tensor to have
+the same element count. Their semantics live in consumer binding slices.
 
 ## Lowering Boundary
 
-The semantic graph can represent split without claiming that a hardware backend can encode it. H13 and H14 consume GraphIR directly, while H16G first converts it to a one-node-per-operation graph. Each path now rejects a multi-result operation with a named diagnostic before indexing a result. There is no singular result compatibility API that could hide later outputs.
+H13 accepts only an exact rank-zero tensor<int32, []> axis, an exact rank-zero
+tensor<int32, []> partition count of two, two equal positive static FP16
+results, and a contiguous axis. It maps both ordered SSA results to typed views,
+propagates view offsets through shape-only aliases, and validates offset
+addition before recording a binding. Liveness checks every ordered result.
+Other multi-result operations retain the existing refusal.
 
-This boundary keeps numerical and hardware claims honest. Adding ordered SSA results proves frontend representation and validation. It does not prove a split encoding, full H13 operation coverage, or encoder execution.
+The function-output contract remains separate. H13 still requires one return
+that names the last encoded operation result. Supporting split views does not
+imply support for multiple function outputs, unsupported operations, full
+encoder compilation, or device execution.
 
 ## Verified Outcome
 
-The parser, printer, importer, verifier, operation graph, graph transforms, and structural fusion scoped tests pass. A representative split with axis 1, count 2, two `[1, 1024, 375]` results, first-to-`mul`, and second-to-`sigmoid` imports and verifies. A declared FP16 axis carrying an int32 literal now fails semantic verification. H13 and H14 reject a valid multi-result graph as unsupported rather than truncating it.
+The host-only split contract compiles a valid channel split followed by sigmoid
+and multiply. The manifest contains only the two encoded operations. Their
+source bindings select offsets 64 and 0 respectively from the same 128-element
+input, and the package inspector accepts the result. A dense independent
+reference confirms that those intervals are the ordered second and first
+halves. Valid noncontiguous geometry fails with
+h13.noncontiguous-split-axis, and a valid three-result split fails with
+h13.unsupported-split-count.
 
-The real compiler CLI parses the raw faithful encoder and then stops at line 125 with `mil.import.unsupported-type` for `uint4`. The adapter-normalized source replaces that form with ordinary FP16 constants. The compiler imports the normalized program, validates its split metadata, and stops at the first split on line 265 with the named H13 lowering refusal. These two probes separate grammar acceptance, adapter normalization, semantic split validation, and hardware lowering. No hardware result follows from them.
+The pinned adapter output at
+/tmp/ane-runtime-adapter-integrated-20260913/model.mil passes the former blanket
+split precheck. Its next compiler boundary is the two-value function return at
+line 3355, rejected by h13.unsupported-chain. No hardware command was run.
 
 ## Repository Shape
 
-The implementation lives in the isolated worktree for source commit `a0ce354cf800011a84420da4e12013eb8140b2a5`. The similarly named research mirror has different history and is not a valid base. The coordinated adapter syntax is `(type first, type second)` in protobuf output order, with downstream uses bound by the original SSA names.
+This change starts from ordered-result commit
+a1bfea0cd52208ac9f168791e8c6e9a83ddc8efb in an isolated worktree. The
+adapter input came from rootadapter commit
+eac5eed9 and retains program(1), CoreML8, and ordered parenthesized result
+lists.

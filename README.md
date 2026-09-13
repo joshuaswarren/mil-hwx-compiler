@@ -83,6 +83,12 @@ feed a later operation. The function must return exactly the last operation's
 result. A returned shape alias of that result promotes the underlying tensor to
 the output and applies the alias's logical shape.
 
+A two-result equal split is a zero-program view when every dimension before the
+split axis is one. Consumers bind the original tensor with ordered element
+offsets, so no host tensor copy or arithmetic is involved. H13 rejects other
+split counts and axes whose results would require more than one disjoint binding
+slice.
+
 Programs are ordered by operation and then by logical slice. Producer slices
 must exactly tile every stored intermediate without overlapping physical write
 ranges. Repeated and fan-out consumer slices are valid, but every consumer
