@@ -78,6 +78,12 @@ emits dtype bool on physicalOutputs and logicalResults. Bool reshape-family
 views get the same static equal-count alias as fp16. Mixed FP32 or int32
 returns still fail with h13.unsupported-logical-result-conversion until an
 explicit hardware or GPU conversion path exists.
+Bool transpose uses the same exact-perm contract as fp16: a layout-preserving
+permutation is a free alias, a tail-swap can fold into a matmul flag, and
+every other perm stays h13.nonfoldable-transpose. The encoder's
+attention_mask transpose bool [1,375,375] perm [0,2,1] is a fast-axis
+tail-swap, not a view.
+
 
 ## Verified Outcome
 

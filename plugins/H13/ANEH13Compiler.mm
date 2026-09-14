@@ -321,9 +321,9 @@ static BOOL transposeViewPlan(ANEGraphOperation *operation,
         int32TensorElements(operation.operands[@"perm"].value);
     if (operation.results.count != 1 || operation.arguments.count != 2 ||
         !x || perm.count != x.type.shape.count ||
-        !fp16Tensor(x) || !x.type.shape.count)
+        (!fp16Tensor(x) && !boolTensor(x)) || !x.type.shape.count)
         return reject(diagnostics,
-            @"H13 transpose requires x and an exact rank-matching tensor<int32,[rank]> perm constant over a positive-rank static fp16 input",
+            @"H13 transpose requires x and an exact rank-matching tensor<int32,[rank]> perm constant over a positive-rank static fp16 or bool input",
             operation, @"h13.invalid-transpose-parameters");
     const NSUInteger rank = x.type.shape.count;
     std::vector<NSUInteger> source(rank);
@@ -347,6 +347,7 @@ static BOOL transposeViewPlan(ANEGraphOperation *operation,
     for (NSUInteger index = 0; index < rank; ++index)
         [expected addObject:x.type.shape[source[index]]];
     if (operation.results[0].type.kind != ANEValueTypeKindTensor ||
+        operation.results[0].type.elementType != x.type.elementType ||
         ![operation.results[0].type.shape isEqualToArray:expected])
         return reject(diagnostics,
             @"H13 transpose result shape must be the permuted input shape",

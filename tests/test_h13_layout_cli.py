@@ -8,7 +8,7 @@ transpose flag — plus the exact rejection contracts for the encoder
 forms that need a data-movement program the decoded corpus lacks.
 The transpose-absorb extension adds the per-class encoder blocker
 contracts: fast-axis swaps, multi-consumer views, shape-view composites,
-middle-swap matmul feeds, and the fp16-only bool case.
+middle-swap matmul feeds, and bool transposes under the same perm contract.
 """
 import json
 import subprocess
@@ -248,18 +248,33 @@ def encoder_matmul_source():
 
 
 def encoder_bool_source():
-    """The encoder's single bool mask transpose feeding logical_and."""
+    """Encoder attention_mask transpose: bool [1,375,375] perm [0,2,1].
+
+    Frontend folded the logical_and. The perm is exact; it is a tail-swap
+    that moves the storage-fastest axis, so it is not a row-major view.
+    """
     body = tensor_const("perm", "int32", (0, 2, 1))
     body += ("    tensor<bool, [1, 375, 375]> t = transpose(perm = perm, x = a)"
              "[name = string(\"t\")];\n")
-    body += ("    tensor<bool, [1, 375, 375]> m = logical_and(x = b, y = t)"
-             "[name = string(\"m\")];\n")
-    body += ("    tensor<fp16, [1, 375, 375]> y = select(a = c, b = d, cond = m)"
+    body += ("    tensor<fp16, [1, 375, 375]> y = select(a = c, b = d, cond = t)"
              "[name = string(\"y\")];\n")
     return source(body,
-                  "tensor<bool, [1, 375, 375]> a, tensor<bool, [1, 375, 375]> b,"
-                  " tensor<fp16, [1, 375, 375]> c, tensor<fp16, [1, 375, 375]> d",
+                  "tensor<bool, [1, 375, 375]> a, "
+                  "tensor<fp16, [1, 375, 375]> c, tensor<fp16, [1, 375, 375]> d",
                   "y")
+
+
+def bool_view_transpose_source():
+    """A layout-preserving bool transpose is the same free alias as fp16."""
+    body = tensor_const("perm", "int32", (0, 2, 1, 3))
+    body += ("    tensor<bool, [1, 64, 1, 1]> m = less(x = a, y = b)"
+             "[name = string(\"m\")];\n")
+    body += ("    tensor<bool, [1, 1, 64, 1]> t = transpose(perm = perm, x = m)"
+             "[name = string(\"t\")];\n")
+    return source(body,
+                  "tensor<fp16, [1, 64, 1, 1]> a, "
+                  "tensor<fp16, [1, 64, 1, 1]> b",
+                  "t")
 
 
 
@@ -407,10 +422,20 @@ with tempfile.TemporaryDirectory() as temporary:
                    encoder_matmul_source(),
                    expected_code="h13.nonfoldable-transpose",
                    expected_message="no decoded encoder permutes surface strides")
-    # The single bool mask transpose: the H13 path is fp16-only.
+    # Encoder-shaped bool [1,375,375] perm [0,2,1]: same exact-perm
+    # contract as fp16, so this fast-axis tail-swap is not a view.
     compile_source(root, "transpose-encoder-bool",
                    encoder_bool_source(),
-                   expected_code="h13.invalid-transpose-parameters")
+                   expected_code="h13.nonfoldable-transpose",
+                   expected_message="moves the storage-fastest axis")
+    view = compile_source(root, "transpose-bool-view",
+                          bool_view_transpose_source())
+    view_manifest = json.loads((view / "manifest.json").read_text())
+    assert view_manifest["tensors"]["t"]["aliasOf"] == "m"
+    assert view_manifest["tensors"]["t"]["dtype"] == "bool"
+    assert view_manifest["tensors"]["t"]["shape"] == [1, 1, 64, 1]
+    assert view_manifest["logicalResults"][0]["dtype"] == "bool"
+    validate(root, view)
 
     # Positive control for the composite rule: a layout-preserving
     # permutation feeding a reshape stays the free alias the transpose
