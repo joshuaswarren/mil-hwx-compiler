@@ -75,7 +75,12 @@ Select keys `(constInput, CHW)`. Runtime-a bool-cond hits
 `(false, 8, 375, 375)` and `(false, 64, 1, 1)`. Constant-a is refused
 before lookup. `bindTasks` order is `[y, a, b, cond]` template
 channels `{7, 5, 4, 6}`: 375-wide DMA row 384 is cond, row 768 is fp16.
-`{7, 6, 4, 5}` put 384-stride DMA on `a`.
+`{7, 6, 4, 5}` put 384-stride DMA on `a`. Apple task 0 L2 is already
+`0x0480c=0x180` and `0x04810=0xc00` (3072=8×384). Constants start
+`0x8001, 0x0001`. `bindTasks` remaps selectors only. Linux leftover
+5412 `-inf` is that first 8-row L2 tile plus H=8, 48-period wedge
+(compare-to-`0x0001`). Named hole `h13.select-first-l2-tile`. Do not
+retune L2. Receipt: `receipts/2026-09-14-h13-select-l2-tile.md`.
 
 Chain fusion is a third table, not a package stitch. `--schedule=chain`
 accepts only two ops, at most two boundary inputs, every input on the
@@ -96,12 +101,14 @@ for `--schedule=chain` on that island. Name `h13.linear-outside-envelope`
 for `(375,1024,128)` const-W. Name `h13.unary-outside-envelope` for GLU
 silu/sigmoid. Keep `h13.norm-outside-envelope` for encoder
 layer_norm/softmax. Keep `h13.conv-outside-envelope` for every encoder
-conv. Keep `h13.select-needs-decoded-encoder` for constant-a select. Do
+conv. Keep `h13.select-needs-decoded-encoder` for constant-a select.
+Name `h13.select-first-l2-tile` for the first 8-row L2 cond tile. Do
 not pad N. Do not emit mul-by-1 copies. Do not steal `(375,128,749)` for
 the linear GEMM. Do not tile LUT unaries. Do not emit 375 vector
 layer_norms or pad softmax 375 to 512. Do not tile `{256,750,32}` into
 32×32 convs. Do not emit the `-inf` packing as a general const-a
 encoder. Do not relink the 208-task score matmul onto the 5-task select.
+Do not patch select L2 `0xc00` or const `0x0001`.
 
 Concat stays unlowered. Split of one buffer stays a view. Encoder
 select closes if the frontend materializes the fill as runtime-a, then
@@ -145,5 +152,6 @@ one LUT unary for `[1,1024,375]`, one affine layer_norm for
 `[1,375,1024]`, one softmax for `[1,8,375,375]`, one conv for
 `[1,256,750,32]` / the 1D k9, or one fused score-matmul+select. Until
 those captures exist, the ISA cannot express them here. Encoder select
-does not wait on a new capture: runtime-a at `[1,8,375,375]` is already
-decoded, and the island's close is the two-program package.
+runtime-a at `[1,8,375,375]` is already decoded. The first-L2-tile
+cond compare-to-`0x0001` leftover is `h13.select-first-l2-tile` until a
+new capture exists.
