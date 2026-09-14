@@ -28,12 +28,17 @@ static BOOL fp16Tensor(ANEGraphValue *value) {
         value.type.elementType == ANEElementTypeFP16;
 }
 
+static BOOL boolTensor(ANEGraphValue *value) {
+    return value.type.kind == ANEValueTypeKindTensor &&
+        value.type.elementType == ANEElementTypeBool;
+}
+
 static BOOL tensor(ANEGraphValue *value, NSArray<NSNumber *> *shape) {
     return fp16Tensor(value) && [value.type.shape isEqualToArray:shape];
 }
 
 static BOOL tensorElementCount(ANEGraphValue *value, NSUInteger *count) {
-    if (!fp16Tensor(value)) return NO;
+    if (!fp16Tensor(value) && !boolTensor(value)) return NO;
     NSUInteger elements = 1;
     for (NSNumber *number in value.type.shape) {
         NSUInteger dimension = number.unsignedIntegerValue;
@@ -2234,7 +2239,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         return reject(diagnostics, @"H13 requires at least one function result",
             lastSourceOperation, chain ? chainCode : @"h13.unsupported-program");
     for (ANEGraphValue *returnedValue in function.returnValues)
-        if (!fp16Tensor(returnedValue))
+        if (!fp16Tensor(returnedValue) && !boolTensor(returnedValue))
             return reject(diagnostics,
                 @"H13 logical result conversions require explicit hardware or GPU coverage",
                 returnedValue.producer ?: lastSourceOperation,
@@ -2596,7 +2601,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 !tensorElementCount(candidate.results[0], &resultElements) ||
                 inputElements != resultElements)
                 return reject(diagnostics,
-                    @"H13 shape aliases require static fp16 input and result shapes with equal element counts and constant shape parameters",
+                    @"H13 shape aliases require static fp16 or bool input and result shapes with equal element counts and constant shape parameters",
                 candidate, @"h13.invalid-shape-alias");
             if (constantBackedView(candidate.operands[@"x"].value))
                 return reject(diagnostics,
@@ -3278,11 +3283,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 } else if (parity || broadcast || normalization || convolution) {
                     outputOffset =
                         [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
-                } else if (!tiled) {
-                    // A materialized tile reads its whole input surface and
-                    // writes its whole output surface in one program; the
-                    // tiled metadata above already sized both slice spans,
-                    // so the 64-lane split must not clobber them.
+                } else if (!tiled && !booleanLowered) {
+                    // Tile and boolean programs already sized whole-tensor
+                    // spans. The 64-lane split must not clobber them.
                     inputOffset = sliceIndex * 64;
                     outputOffset = inputOffset +
                         [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
@@ -3515,8 +3518,12 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             elements *= dimension.unsignedIntegerValue;
         NSString *role = [returnedSourceNames containsObject:name]
             ? @"output" : @"intermediate";
-        tensors[name] = @{@"shape": shape, @"logicalBytes": @(elements * 2),
-                          @"role": role, @"aliasOf": alias[@"aliasOf"]};
+        BOOL boolAlias = [tensors[alias[@"aliasOf"]][@"dtype"] isEqualToString:@"bool"];
+        tensors[name] = boolAlias
+            ? @{@"shape": shape, @"logicalBytes": @(elements),
+                @"role": role, @"aliasOf": alias[@"aliasOf"], @"dtype": @"bool"}
+            : @{@"shape": shape, @"logicalBytes": @(elements * 2),
+                @"role": role, @"aliasOf": alias[@"aliasOf"]};
     }
     for (NSString *name in intermediateStorageNames) {
         NSMutableArray<NSArray<NSNumber *> *> *produced = [NSMutableArray array];
@@ -3592,7 +3599,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             physicalElements *= dimension.unsignedIntegerValue;
         physicalElementCounts[storageName] = @(physicalElements);
         [physicalOutputs addObject:@{
-            @"tensor": storageName, @"dtype": @"float16",
+            @"tensor": storageName,
+            @"dtype": [physicalTensor[@"dtype"] isEqualToString:@"bool"]
+                ? @"bool" : @"float16",
             @"shape": physicalShape,
             @"logicalBytes": physicalTensor[@"logicalBytes"],
         }];
@@ -3614,7 +3623,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 logical.producer ?: lastSourceOperation,
                 @"h13.unsupported-logical-result-storage");
         [logicalResults addObject:@{
-            @"name": logical.name, @"dtype": @"float16",
+            @"name": logical.name,
+            @"dtype": boolTensor(logical) ? @"bool" : @"float16",
             @"shape": logical.type.shape, @"conversion": @"identity",
             @"physical": @{
                 @"tensor": storageName,

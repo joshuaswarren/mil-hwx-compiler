@@ -72,9 +72,12 @@ transfer, allocates declared scratch, pins device index zero to the attested
 node, and requires a finite whole-device-phase deadline before each program.
 The same deadline applies to correctness-gated benchmark preparation and each
 warmup or measured dispatch; it cannot interrupt an in-flight submission.
-Mixed FP32 or int32 returns fail with
-h13.unsupported-logical-result-conversion until an explicit hardware or GPU
-conversion path exists.
+Bool less results are identity logical results: the task stream already
+writes a 1-byte surface (Apple out6 remapped to ANEC in4), so the package
+emits dtype bool on physicalOutputs and logicalResults. Bool reshape-family
+views get the same static equal-count alias as fp16. Mixed FP32 or int32
+returns still fail with h13.unsupported-logical-result-conversion until an
+explicit hardware or GPU conversion path exists.
 
 ## Verified Outcome
 

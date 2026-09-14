@@ -187,7 +187,8 @@ def check_tensor(name, tensor):
     require(fields in ({'shape', 'logicalBytes', 'role'},
                        {'shape', 'logicalBytes', 'role', 'aliasOf'},
                        {'shape', 'logicalBytes', 'role', 'accumulation'},
-                       {'shape', 'logicalBytes', 'role', 'dtype'}),
+                       {'shape', 'logicalBytes', 'role', 'dtype'},
+                       {'shape', 'logicalBytes', 'role', 'aliasOf', 'dtype'}),
             'tensor record has incorrect fields')
     require('accumulation' not in tensor or
             tensor['accumulation'] == 'chunked-fp16',
@@ -476,13 +477,14 @@ def check_result_metadata(manifest, tensors, produced_outputs):
         shape = output.get('shape')
         require(isinstance(name, str) and name and name not in physical_by_name,
                 'physical output tensor names must be unique and non-empty')
-        require(output.get('dtype') == 'float16',
-                'physical output must use float16')
+        require(output.get('dtype') in ('float16', 'bool'),
+                'physical output must use float16 or bool')
         require(isinstance(shape, list) and shape and
                 all(type(n) is int and n > 0 for n in shape),
                 'physical output shape must have positive static dimensions')
+        element = 1 if output.get('dtype') == 'bool' else 2
         require(type(output.get('logicalBytes')) is int and
-                output['logicalBytes'] == math.prod(shape) * 2,
+                output['logicalBytes'] == math.prod(shape) * element,
                 'physical output byte count does not match its shape')
         require(name in tensors and 'aliasOf' not in tensors[name] and
                 tensors[name]['role'] == 'output' and
