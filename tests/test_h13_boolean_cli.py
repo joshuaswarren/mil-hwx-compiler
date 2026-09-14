@@ -158,9 +158,13 @@ def assert_select_375_bool_dma(anec):
     words0, regs0 = h13_registers(tasks[0])
     assert (words0[8] & 0x1F) == 7
     assert regs0[0x1380c] == 384 and regs0[0x13810] == 144000
+    assert regs0[0x0480c] == 384 and regs0[0x04810] == 3072
     words1, regs1 = h13_registers(tasks[1])
     assert ((words1[8] >> 6) & 0x1F) == 5
     assert regs1[0x13820] == 768 and regs1[0x13824] == 288000
+    task_size = struct.unpack_from("<Q", anec, 16)[0]
+    const_off = (task_size + 127) // 128 * 128
+    assert struct.unpack_from("<2H", anec, 0x1000 + const_off) == (0x8001, 0x0001)
 
 
 
