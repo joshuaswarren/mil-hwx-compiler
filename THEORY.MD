@@ -74,13 +74,19 @@ templates, spatial square 1/8/16/32/64. Encoder 1×1 is `{256,750,32}`.
 Select keys `(constInput, CHW)`. Runtime-a bool-cond hits
 `(false, 8, 375, 375)` and `(false, 64, 1, 1)`. Constant-a is refused
 before lookup. `bindTasks` order is `[y, a, b, cond]` template
-channels `{7, 5, 4, 6}`: 375-wide DMA row 384 is cond, row 768 is fp16.
-`{7, 6, 4, 5}` put 384-stride DMA on `a`. Apple task 0 L2 is already
-`0x0480c=0x180` and `0x04810=0xc00` (3072=8×384). Constants start
-`0x8001, 0x0001`. `bindTasks` remaps selectors only. Linux leftover
-5412 `-inf` is that first 8-row L2 tile plus H=8, 48-period wedge
-(compare-to-`0x0001`). Named hole `h13.select-first-l2-tile`. Do not
-retune L2. Receipt: `receipts/2026-09-14-h13-select-l2-tile.md`.
+channels `{7, 4, 5, 6}`. Template 6 is the 1-byte cond (375-wide DMA
+row 384). Templates 4 and 5 are fp16 (row 768). MIL `select(a, b,
+cond)` is `cond ? a : b`. Apple's kernel is `cond ? template4 :
+template5`. Binding a to 5 inverted polarity: `{64,1,1}` was
+bit-exact only after host invert-cond. Operand swap, not cond
+negate. `{7, 6, 4, 5}` put 384-stride DMA on `a`. Apple task 0 L2 is
+already `0x0480c=0x180` and `0x04810=0xc00` (3072=8×384). Constants
+start `0x8001, 0x0001`. `bindTasks` remaps selectors only. Linux
+leftover 5412 `-inf` is that first 8-row L2 tile plus H=8, 48-period
+wedge (compare-to-`0x0001`). Named hole `h13.select-first-l2-tile`.
+Do not retune L2. Receipts: `receipts/2026-09-14-h13-bool-dma-stride.md`,
+`receipts/2026-09-14-h13-select-polarity.md`,
+`receipts/2026-09-14-h13-select-l2-tile.md`.
 
 Chain fusion is a third table, not a package stitch. `--schedule=chain`
 accepts only two ops, at most two boundary inputs, every input on the
@@ -108,7 +114,8 @@ the linear GEMM. Do not tile LUT unaries. Do not emit 375 vector
 layer_norms or pad softmax 375 to 512. Do not tile `{256,750,32}` into
 32×32 convs. Do not emit the `-inf` packing as a general const-a
 encoder. Do not relink the 208-task score matmul onto the 5-task select.
-Do not patch select L2 `0xc00` or const `0x0001`.
+Do not patch select L2 `0xc00` or const `0x0001`. Do not host-invert
+select cond; bind a to template 4.
 
 Concat stays unlowered. Split of one buffer stays a view. Encoder
 select closes if the frontend materializes the fill as runtime-a, then
@@ -138,10 +145,11 @@ envelope adds and 750 64-lane bias adds. Native matvec rejects reduction
 `supportsBooleanOp({Select, true, 8, 375, 375})` is true in the table
 and refused at the MIL gate.
 
-Attn+select per-op: 2 programs. Select anec after the cond DMA remap is
-`27dc7f35fc9efc9431e4d05847798390fe0cfe79f930c3040f32dd76ef8e8e73`
-(was `860de06c` with 768-stride DMA on header ch7). Chain on the same
-MIL: `h13.chain-outside-envelope`, four inputs, rc 65. Add+relu
+Attn+select per-op: 2 programs. Select anec after the polarity remap is
+`d40ec023cfd5b2c5d5cfeb95f4a4673024f495224acd4448e8498bf50114780f`
+(375) and `732301a3cae256dca2a8483e49d92f3831c484f9873fdd9ee35e359e85ff508d`
+(64). Cond DMA stays 384 on header ch7. Chain on the same MIL:
+`h13.chain-outside-envelope`, four inputs, rc 65. Add+relu
 `[1,512,1,1]` still fuses. Batched-matmul+relu (2 inputs) is
 `h13.chain-unrepresentable-edge`: that encoder has no post-op field.
 
@@ -152,6 +160,6 @@ one LUT unary for `[1,1024,375]`, one affine layer_norm for
 `[1,375,1024]`, one softmax for `[1,8,375,375]`, one conv for
 `[1,256,750,32]` / the 1D k9, or one fused score-matmul+select. Until
 those captures exist, the ISA cannot express them here. Encoder select
-runtime-a at `[1,8,375,375]` is already decoded. The first-L2-tile
-cond compare-to-`0x0001` leftover is `h13.select-first-l2-tile` until a
-new capture exists.
+runtime-a at `[1,8,375,375]` is already decoded. `{64,1,1}` polarity
+is the operand remap. The first-L2-tile cond compare-to-`0x0001`
+leftover is `h13.select-first-l2-tile` until a new capture exists.
