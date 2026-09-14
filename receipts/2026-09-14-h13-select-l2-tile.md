@@ -1,5 +1,7 @@
 # H13 select first L2 tile (2026-09-14)
 
+SUPERSEDED-BY: `receipts/2026-09-14-h13-select-l2-fix.md` (2026-09-14). The `h13.select-first-l2-tile` hole named below is retracted: the 5412 `-inf` leftover was channel-3 scratch sized at 2310144 instead of the 6832128 arena, not an L2 tile. The L2 words and const `0x0001` analysed here were never the defect. Kept as history.
+
 Host-only. No ANE, no SSH, no `ane-linux-experiments`, no jwm1.
 
 Executing model: `openai-codex/gpt-5.6-sol` (assigned route; no fallback observed).

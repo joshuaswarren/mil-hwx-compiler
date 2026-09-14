@@ -79,14 +79,24 @@ row 384). Templates 4 and 5 are fp16 (row 768). MIL `select(a, b,
 cond)` is `cond ? a : b`. Apple's kernel is `cond ? template4 :
 template5`. Binding a to 5 inverted polarity: `{64,1,1}` was
 bit-exact only after host invert-cond. Operand swap, not cond
-negate. `{7, 6, 4, 5}` put 384-stride DMA on `a`. Apple task 0 L2 is
-already `0x0480c=0x180` and `0x04810=0xc00` (3072=8×384). Constants
-start `0x8001, 0x0001`. `bindTasks` remaps selectors only. Linux
-leftover 5412 `-inf` is that first 8-row L2 tile plus H=8, 48-period
-wedge (compare-to-`0x0001`). Named hole `h13.select-first-l2-tile`.
-Do not retune L2. Receipts: `receipts/2026-09-14-h13-bool-dma-stride.md`,
+negate. `{7, 6, 4, 5}` put 384-stride DMA on `a`. `bindTasks` remaps
+selectors only. The 375-wide select blends through channel 3, and Apple
+uses channel 3 as a three-stage scratch arena (cond-false half at 0,
+cond expanded to fp16 at 2256000, cond-true half at 4560000), 6816000
+bytes touched. `encodeBooleanOp` sized channel 3 as one output surface,
+2310144 bytes, so tasks 3 and 4 ran 4.5 MB past the declared scratch.
+Channel 3 is now sized from the task descriptors' own channel-3 extent:
+`alignTile(scratchExtent)` = 6832128 = 417 tiles, equal to Apple's
+`__DATA/__bss` gap on 1451 of 1452 captures, 0 under-estimates. On
+device this took island B from 10728 wrong lanes to 0. The earlier
+"first 8-row L2 tile" reading (`h13.select-first-l2-tile`) is retracted;
+the L2 words `0x0480c=0x180`, `0x04810=0xc00` and const `0x0001` were
+never the defect. A rebuilt anec needs its manifest `scratch_bytes`
+re-stamped: `load_bundle` gates on exact equality. Receipts:
+`receipts/2026-09-14-h13-bool-dma-stride.md`,
 `receipts/2026-09-14-h13-select-polarity.md`,
-`receipts/2026-09-14-h13-select-l2-tile.md`.
+`receipts/2026-09-14-h13-select-l2-fix.md` (supersedes
+`receipts/2026-09-14-h13-select-l2-tile.md`).
 
 Chain fusion is a third table, not a package stitch. `--schedule=chain`
 accepts only two ops, at most two boundary inputs, every input on the
@@ -108,7 +118,7 @@ for `(375,1024,128)` const-W. Name `h13.unary-outside-envelope` for GLU
 silu/sigmoid. Keep `h13.norm-outside-envelope` for encoder
 layer_norm/softmax. Keep `h13.conv-outside-envelope` for every encoder
 conv. Keep `h13.select-needs-decoded-encoder` for constant-a select.
-Name `h13.select-first-l2-tile` for the first 8-row L2 cond tile. Do
+Size channel 3 from the task descriptors, never from one surface. Do
 not pad N. Do not emit mul-by-1 copies. Do not steal `(375,128,749)` for
 the linear GEMM. Do not tile LUT unaries. Do not emit 375 vector
 layer_norms or pad softmax 375 to 512. Do not tile `{256,750,32}` into
@@ -160,6 +170,6 @@ one LUT unary for `[1,1024,375]`, one affine layer_norm for
 `[1,375,1024]`, one softmax for `[1,8,375,375]`, one conv for
 `[1,256,750,32]` / the 1D k9, or one fused score-matmul+select. Until
 those captures exist, the ISA cannot express them here. Encoder select
-runtime-a at `[1,8,375,375]` is already decoded. `{64,1,1}` polarity
-is the operand remap. The first-L2-tile cond compare-to-`0x0001`
-leftover is `h13.select-first-l2-tile` until a new capture exists.
+runtime-a at `[1,8,375,375]` is already decoded and exact on device once
+channel 3 is sized as the scratch arena. `{64,1,1}` polarity is the
+operand remap.
