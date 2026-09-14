@@ -1,65 +1,147 @@
-# Theory: H13 Layout Views and the Concat Hole
+# Theory: Encoder Coverage Is Exact Template Match
 
 ## Problem
 
-The encoder's heads_layout stack is concat of independent `[1,1,375,128]`
-fp16 sources on axis 1. Split of one contiguous buffer is already a view.
-Concat looks like the inverse, but the sources are distinct buffers, so the
-result is a new surface. Treating concat as a view would bind the wrong data.
-Inventing a copy program would fake an encoder the decoded corpus does not
-hold.
+The encoder's remaining H13 work is not one missing rewrite. Each
+family keys a decoded table, and the encoder shapes land on different
+sides of those tables.
+
+Per-head linear `[1,375,1024] × [128,1024] + bias[128] → [1,375,128]`
+compiles to 1875 programs (750 matmul + 1125 add) and 412 MB. That is
+the M=1 native fallback, not a missed larger tile.
+
+Attention scores `[1,8,375,128] × [1,8,128,375] → [1,8,375,375]` compile
+to one program. That form is already in `kBatchedTasks`. Combined with
+runtime-a select at the same shape, the island compiles as two programs.
+`--schedule=chain` does not fuse them.
+
+GLU `silu`/`sigmoid` at `[1,1024,375]` does not compile. 64-CHW and
+512-CHW do. Concat of stacked heads remains `h13.unsupported-concat`.
+
+Encoder `layer_norm` at `[1,375,1024]` (120 ops, gamma/beta present) and
+`softmax` at `[1,8,375,375]` (24 ops) stay `h13.norm-outside-envelope`.
+Vector `layer_norm` `[1,1024,1,1]` and softmax `[1,8,128,128]` do compile.
+
+All 101 encoder `conv`s stay `h13.conv-outside-envelope`. Nearby square
+1×1 `{256,32,32}` compiles. Encoder 1×1 is `{256,750,32}`.
+
+The leftover 24 attention-bias `select`s are encoder-shaped. Runtime-a
+at `[1,8,375,375]` with a bool cond compiles. Constant `-inf` a does
+not. That is `h13.select-needs-decoded-encoder`, not a missing CHW.
 
 ## Operating Theory
 
-A split needs no ANE program when each result is one contiguous interval of
-the source buffer. For an equal two-way split, this is true only when every
-logical dimension before the split axis is one. Result order then determines
-exact base offsets.
+H13 emission is exact-match against decoded templates.
 
-Concat of independent sources is the opposite dataflow: N buffers into one.
-The package schema has one slice per binding. That ABI can *read* a
-contiguous window of one tensor. It cannot *write* N sources into one dest
-without a program that copies. Tile is the only decoded data-movement
-encoder, and it replicates one input. Pad is refused because Apple's own
-tool rejects it. No concat or identity-copy capture exists.
+Matmul:
 
-Liveness used to inspect only `operands`, which are Value-kind arguments.
-Concat's `values = (a, b)` is a tuple, so a and b were invisible and a
-standalone concat failed as unused inputs before the hole could be named.
-Use-tracking now walks tuple and list argument elements.
+- Single-batch envelope: no M=375, no `(*, 1024, 128)`. Const-weight
+  N=128 exists only as `(1,256,128)` and `(32,256,128)` (K=256).
+- Native `encodeMatvec`: reduction 256 or 512, always 512 output columns.
+- Batched envelope: `(375,128,375)`, `(375,128,749)`, `(375,375,128)` at
+  B∈{2,4,8,16}. Rank-3 and rank-4 share an entry. B=1 is not batched.
 
-## Lowering Boundary
+The linear is constant-weight `(375,1024,128)`, ty=1. Bias plus
+`rows > 1` lowers to one M=1 linear per row. K=1024 splits into two
+512-chunks. N=128 pads to 512. Each row pays 2 matmuls + 1 runtime
+`{128,1,1}` add + 2 64-lane bias adds: `375 × 5 = 1875`.
 
-Valid concat is static fp16 sources of equal rank, an exact rank-zero
-`tensor<int32, []>` axis, matching off-axis extents, and a result whose axis
-extent is the sum of the sources. That form still fails with
-`h13.unsupported-concat`: H13 has no concat encoder. Invalid parameters and
-shapes fail first with `h13.invalid-concat-parameters`,
-`h13.invalid-concat-shape`, or `h13.unsupported-concat-axis`.
+A 32-row const template cannot compose over K=1024: a 32×256 tile of
+row-major `[375,1024]` is 32 strided 256-element segments, and one
+binding is one contiguous slice. `(32,1024,128)` is absent.
 
-Split, reshape-family aliases, layout-preserving transpose, and identity
-pad/tile stay host-side views. Bool transpose uses the same exact-perm
-contract as fp16. Mixed FP32 or int32 returns still fail with
-`h13.unsupported-logical-result-conversion`.
+Attention scores use the full last axis of `[1,8,375,128]` as K, with a
+per-batch y. That is exactly `(B=8, 375, 128, 375, runtime)`. Flattening
+to 3000 rows would multiply every batch against one shared y.
+
+LUT unaries (`silu`, `sigmoid`, and the rest of that row in
+`kElementwiseTasks`) capture only CHW `(64,1,1)` and `(512,1,1)`.
+`parityPlan` flattens rank-3 `[1,1024,375]` to `{384000,1,1}`. The
+64-lane split is binary-only. Relu at this size rewrites to `maximum`
+against zero, then 64-lane splits. Do not compile relu on the 375×375
+score surface.
+
+Norm keys `(operation, input CHW, output CHW, axisMask, keepDims)`.
+Rank-3 `[1,375,1024]` last-axis is `{1,375,1024}` `0x08`. Rank-4
+`[1,8,375,375]` last-axis is `{8,375,375}` `0x08`. Neither is in
+`kNormTasks`. Affine gamma/beta are a second miss. Encoder epsilon is a
+`tensor<fp16,[]>` blob, not `fp32(1e-5)`.
+
+Conv keys `(kernel, stride, groups, bias, input CHW, output CHW)`. 175
+templates, spatial square 1/8/16/32/64. Encoder 1×1 is `{256,750,32}`.
+`750/32` is not an integer. Rank-3 1D never reaches the table.
+
+Select keys `(constInput, CHW)`. Runtime-a bool-cond hits
+`(false, 8, 375, 375)` and `(false, 64, 1, 1)`. Constant-a is refused
+before lookup.
+
+Chain fusion is a third table, not a package stitch. `--schedule=chain`
+accepts only two ops, at most two boundary inputs, every input on the
+producer, and a final `relu`. The producer must be `apple-parity-matvec`
+or `h13-oracle-parity`. `PostOperation` is only `Relu` (one clamp bit).
+`composePrograms` returns that single fused program and refuses a
+multi-program relink: task DMA is wired to boundary channels, with no
+addressing for a declared intermediate. The attn+select island has four
+boundary inputs, a batched-matmul producer, and a select consumer. The
+package envelope is per-op two programs. The chain envelope is
+`h13.chain-outside-envelope`.
 
 ## Strategy
 
-Name the hole exactly, then stop. Do not emit mul-by-1 copies into output
-slices, do not alias independent sources, and do not mint a task stream
-without a capture. A concat encoder exists only if a decoded Apple program
-for this geometry appears.
+Pin the batched scores path with a rank-4 compile. Keep the attn+select
+island as a two-program per-op package. Name `h13.chain-outside-envelope`
+for `--schedule=chain` on that island. Name `h13.linear-outside-envelope`
+for `(375,1024,128)` const-W. Name `h13.unary-outside-envelope` for GLU
+silu/sigmoid. Keep `h13.norm-outside-envelope` for encoder
+layer_norm/softmax. Keep `h13.conv-outside-envelope` for every encoder
+conv. Keep `h13.select-needs-decoded-encoder` for constant-a select. Do
+not pad N. Do not emit mul-by-1 copies. Do not steal `(375,128,749)` for
+the linear GEMM. Do not tile LUT unaries. Do not emit 375 vector
+layer_norms or pad softmax 375 to 512. Do not tile `{256,750,32}` into
+32×32 convs. Do not emit the `-inf` packing as a general const-a
+encoder. Do not relink the 208-task score matmul onto the 5-task select.
+
+Concat stays unlowered. Split of one buffer stays a view. Encoder
+select closes if the frontend materializes the fill as runtime-a, then
+the island is the two-program package.
 
 ## Key Discoveries
 
-Split is a view because one buffer already holds both halves. Concat of the
-encoder's stacked heads is not a view because the heads are independently
-produced. The first compile of a 2-way `[1,1,375,128]` axis-1 concat failed
-`H13 function inputs must all be used` until tuple uses counted. After that,
-the named hole is the fail-fast for 2-way, 8-way, and the 8-way binary tree.
+The 750/1125 split is arithmetic: 375 rows × 2 K512 matvecs, plus 375
+envelope adds and 750 64-lane bias adds. Native matvec rejects reduction
+128, so N=128 cannot be the K tile.
+
+`supportsBatchedMatmul({8,375,128,375,false,false,true})` is true.
+`supportsMatmulParity({375,128,375,false,false,true})` is false.
+
+`supportsElementwise(Silu, {64,1,1})` and `{512,1,1}` are true.
+`supportsElementwise(Silu, {384000,1,1})` is false.
+
+`supportsNormParity(LayerNorm, {1024,1,1}, 0x02)` is true.
+`supportsNormParity(LayerNorm, {1,375,1024}, 0x08)` is false.
+`supportsNormParity(Softmax, {8,128,128}, 0x08)` is true.
+`supportsNormParity(Softmax, {8,375,375}, 0x08)` is false.
+
+`supportsConvParity({1,1,1,true,{256,32,32},{256,32,32}})` is true.
+`supportsConvParity({1,1,1,true,{256,750,32},{256,750,32}})` is false.
+
+`supportsBooleanOp({Select, false, 8, 375, 375})` is true.
+`supportsBooleanOp({Select, true, 8, 375, 375})` is true in the table
+and refused at the MIL gate.
+
+Attn+select per-op: 2 programs, hashes
+`a3aa2fe1333a48eba3e7fcae5b848563e2bfa747a232dadf9ed2d568821c5627` and
+`860de06c53e3fdfed9452859042df59902fb733bef0a364b134dd9d9d6374cdd`.
+Chain on the same MIL: `h13.chain-outside-envelope`, four inputs, rc 65.
+Add+relu `[1,512,1,1]` still fuses. Batched-matmul+relu (2 inputs) is
+`h13.chain-unrepresentable-edge`: that encoder has no post-op field.
 
 ## Open Questions
 
-Whether Apple ever emits a concat or DMA-copy program for this stack. Until
-a capture exists, the ISA cannot express it. Adjacent split halves of one
-tensor concatenated back along the same axis could alias the source; the
-encoder does not emit that form, so it stays unlowered.
+Whether Apple emits one fused matmul+bias program for `(375,1024,128)`,
+one LUT unary for `[1,1024,375]`, one affine layer_norm for
+`[1,375,1024]`, one softmax for `[1,8,375,375]`, one conv for
+`[1,256,750,32]` / the 1D k9, or one fused score-matmul+select. Until
+those captures exist, the ISA cannot express them here. Encoder select
+does not wait on a new capture: runtime-a at `[1,8,375,375]` is already
+decoded, and the island's close is the two-program package.
