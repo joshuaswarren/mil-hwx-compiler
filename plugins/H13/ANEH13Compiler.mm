@@ -2267,6 +2267,12 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                  "or 'valid', and a kernel, stride, group count and surface pair "
                  "inside the oracle parity envelope",
                 operation, @"h13.conv-outside-envelope");
+        ane::h13::UnaryOperation unaryOperation{};
+        if (unaryEncoding(name, &unaryOperation))
+            return reject(diagnostics, [NSString stringWithFormat:
+                @"H13 %@ is outside the decoded unary envelope: the captured geometries are silu, sigmoid, exp, gelu, leaky_relu, relu, rsqrt, sqrt, and tanh at CHW (64,1,1)/(512,1,1), and abs at (64,1,1)/(128,1,1)/(256,1,1)/(512,1,1)/(1024,1,1)/(2048,1,1)/(4096,1,1) — LUT unaries have no 64-lane split",
+                name],
+                operation, @"h13.unary-outside-envelope");
         return reject(diagnostics, [NSString stringWithFormat:
             @"H13 has no source-qualified encoder for '%@'", name], operation);
     }

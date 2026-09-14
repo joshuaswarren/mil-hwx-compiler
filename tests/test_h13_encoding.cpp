@@ -269,6 +269,100 @@ void checkMatvecValidation() {
     rejects([&] { ane::h13::encodeMatvec(256, nullptr, weights.size(), true); });
 }
 
+void checkEncoderLinearEnvelopeHole() {
+    using ane::h13::BinaryOperation;
+    using ane::h13::supportsElementwise;
+    using ane::h13::supportsMatmulParity;
+    // Per-head encoder linear [1,375,1024] x [128,1024], ty=1, constant W.
+    assert(!supportsMatmulParity({375, 1024, 128, false, true, false}));
+    assert(!supportsMatmulParity({1, 1024, 128, false, true, false}));
+    assert(!supportsMatmulParity({1, 512, 128, false, true, false}));
+    assert(supportsMatmulParity({1, 256, 128, false, true, false}));
+    assert(supportsMatmulParity({1, 1024, 256, false, true, false}));
+    assert(supportsMatmulParity({1, 1024, 512, false, true, false}));
+    assert(supportsMatmulParity({1, 1024, 1024, false, true, false}));
+    assert(supportsElementwise(BinaryOperation::Add, {128, 1, 1}, false));
+    assert(!supportsElementwise(BinaryOperation::Add, {128, 1, 1}, true));
+}
+
+void checkAttentionBatchedEnvelope() {
+    using ane::h13::supportsBatchedMatmul;
+    using ane::h13::supportsMatmulParity;
+    // Encoder attention [1,8,375,128] x [1,8,128,375], tx=0, ty=0, runtime y.
+    assert(supportsBatchedMatmul({8, 375, 128, 375, false, false, true}));
+    assert(!supportsBatchedMatmul({8, 375, 1024, 128, false, true, false}));
+    assert(!supportsBatchedMatmul({1, 375, 1024, 128, false, true, false}));
+    assert(!supportsMatmulParity({375, 128, 375, false, false, true}));
+}
+
+void checkEncoderUnaryEnvelope() {
+    using ane::h13::UnaryOperation;
+    using ane::h13::supportsElementwise;
+    assert(supportsElementwise(UnaryOperation::Silu, {64, 1, 1}));
+    assert(supportsElementwise(UnaryOperation::Silu, {512, 1, 1}));
+    assert(supportsElementwise(UnaryOperation::Sigmoid, {64, 1, 1}));
+    assert(supportsElementwise(UnaryOperation::Sigmoid, {512, 1, 1}));
+    assert(!supportsElementwise(UnaryOperation::Silu, {128, 1, 1}));
+    assert(!supportsElementwise(UnaryOperation::Silu, {1024, 1, 1}));
+    assert(!supportsElementwise(UnaryOperation::Silu, {384000, 1, 1}));
+    assert(!supportsElementwise(UnaryOperation::Silu, {1024, 375, 1}));
+    assert(!supportsElementwise(UnaryOperation::Silu, {1, 1024, 375}));
+    assert(!supportsElementwise(UnaryOperation::Sigmoid, {384000, 1, 1}));
+    assert(!supportsElementwise(UnaryOperation::Sigmoid, {1024, 375, 1}));
+}
+
+void checkEncoderNormEnvelope() {
+    using ane::h13::NormOperation;
+    using ane::h13::supportsNormParity;
+    assert(supportsNormParity(NormOperation::LayerNorm,
+                              {{1024, 1, 1}, {1024, 1, 1}, 0x02, true}));
+    assert(supportsNormParity(NormOperation::LayerNorm,
+                              {{512, 1, 1}, {512, 1, 1}, 0x02, true}));
+    assert(supportsNormParity(NormOperation::Softmax,
+                              {{512, 1, 1}, {512, 1, 1}, 0x02, true}));
+    assert(supportsNormParity(NormOperation::Softmax,
+                              {{8, 128, 128}, {8, 128, 128}, 0x08, true}));
+    assert(!supportsNormParity(NormOperation::LayerNorm,
+                               {{1, 375, 1024}, {1, 375, 1024}, 0x08, true}));
+    assert(!supportsNormParity(NormOperation::LayerNorm,
+                               {{375, 1024, 1}, {375, 1024, 1}, 0x04, true}));
+    assert(!supportsNormParity(NormOperation::Softmax,
+                               {{8, 375, 375}, {8, 375, 375}, 0x08, true}));
+    assert(!supportsNormParity(NormOperation::Softmax,
+                               {{1, 375, 375}, {1, 375, 375}, 0x08, true}));
+}
+
+void checkEncoderConvEnvelope() {
+    using ane::h13::supportsConvParity;
+    assert(supportsConvParity({1, 1, 1, true, {256, 32, 32}, {256, 32, 32}}));
+    assert(supportsConvParity({1, 1, 1, true, {256, 16, 16}, {256, 16, 16}}));
+    assert(supportsConvParity({1, 2, 1, false, {64, 16, 16}, {64, 8, 8}}));
+    assert(!supportsConvParity({1, 1, 1, true, {256, 750, 32}, {256, 750, 32}}));
+    assert(!supportsConvParity({1, 1, 1, true, {256, 375, 16}, {256, 375, 16}}));
+    assert(!supportsConvParity({3, 2, 1, true, {1, 3000, 128}, {256, 1500, 64}}));
+    assert(!supportsConvParity({3, 2, 256, true, {256, 1500, 64}, {256, 750, 32}}));
+    assert(!supportsConvParity({3, 2, 256, true, {256, 750, 32}, {256, 375, 16}}));
+    assert(!supportsConvParity({1, 1, 8, false, {8, 375, 749}, {8, 375, 750}}));
+    assert(!supportsConvParity({1, 1, 1, false, {1024, 375, 1}, {2048, 375, 1}}));
+    assert(!supportsConvParity({1, 1, 1, false, {1024, 375, 1}, {1024, 375, 1}}));
+    assert(!supportsConvParity({9, 1, 1024, true, {1024, 375, 1}, {1024, 375, 1}}));
+    assert(!supportsConvParity({3, 2, 1, false, {64, 16, 16}, {64, 8, 8}}));
+}
+
+void checkEncoderSelectEnvelope() {
+    using ane::h13::H13BooleanKind;
+    using ane::h13::supportsBooleanOp;
+    assert(supportsBooleanOp({H13BooleanKind::Select, false, 8, 375, 375}));
+    assert(supportsBooleanOp({H13BooleanKind::Select, false, 64, 1, 1}));
+    assert(supportsBooleanOp({H13BooleanKind::Select, true, 8, 375, 375}));
+    assert(!supportsBooleanOp({H13BooleanKind::Select, true, 64, 1, 1}));
+    assert(!supportsBooleanOp({H13BooleanKind::Select, false, 1024, 375, 1}));
+    assert(!supportsBooleanOp({H13BooleanKind::Select, false, 1, 1024, 375}));
+    assert(!supportsBooleanOp({H13BooleanKind::Select, false, 8, 128, 128}));
+}
+
+
+
 } // namespace
 
 int main() {
@@ -276,5 +370,11 @@ int main() {
     checkMatvec(256);
     checkMatvec(512);
     checkMatvecValidation();
+    checkEncoderLinearEnvelopeHole();
+    checkAttentionBatchedEnvelope();
+    checkEncoderUnaryEnvelope();
+    checkEncoderNormEnvelope();
+    checkEncoderConvEnvelope();
+    checkEncoderSelectEnvelope();
     std::cout << "H13_ENCODING_OK\n";
 }
