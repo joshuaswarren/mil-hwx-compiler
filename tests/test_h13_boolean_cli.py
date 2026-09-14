@@ -6,9 +6,9 @@ byte-exact after the selector remap the ANEC encoder always applies: the
 captured words carry Apple's channel numbering, the emitted stream carries
 the canonical 4..7 allocation, and the deterministic bijection between them
 is applied to the expectation before comparison — every other word and the
-whole constant section are compared raw. The fp16-result less and
-fp16-cond select forms stay rejected: Apple's own tool refuses them, so no
-device form exists.
+whole constant section are compared raw. Bool less is a graph output.
+The fp16-result less and fp16-cond select forms stay rejected: Apple's
+own tool refuses them, so no device form exists.
 """
 import glob
 import json
@@ -121,10 +121,9 @@ def anec_task_stream(path):
 with tempfile.TemporaryDirectory() as temporary:
     root = Path(temporary)
 
-    # Byte-exactness over every implementable capture. The compile needs an
-    # fp16 function result, so the pure bool-producing less is wrapped in
-    # the captured cast-to-fp16 form and everything else compiles as-is;
-    # const-input floor and the -inf select keep their exact rejections.
+    # Byte-exactness over every implementable capture. Bool less is a
+    # graph output (identity logical result). Const-input floor and the
+    # -inf select keep their exact rejections.
     verified = 0
     for capture in captures:
         record = json.loads(capture.read_text())
@@ -136,8 +135,6 @@ with tempfile.TemporaryDirectory() as temporary:
         if stem.startswith("floor_b") or stem.startswith("select_ninf"):
             continue  # const-input twins: pending index-valued re-mints
         mil = record["mil"]
-        if stem.startswith("less_bool_rr"):
-            continue  # covered by the less→select composite below
         package = deterministic(root, f"bool-{stem}", mil)
         manifest = json.loads((package / "manifest.json").read_text())
         programs = manifest["programs"]
@@ -148,6 +145,10 @@ with tempfile.TemporaryDirectory() as temporary:
         assert anec_task_stream(
             package / f"program-{programs.index(booleanProgram)}.anec") == \
             capture_stream(record, SELECTOR_REMAP[family(stem)]), stem
+        if family(stem) == "less":
+            assert manifest["logicalResults"][0]["dtype"] == "bool"
+            assert manifest["physicalOutputs"][0]["dtype"] == "bool"
+            validate(root, package)
         const_bin = capture.parent / (capture.stem + ".const.bin")
         if const_bin.exists():
             anec = (package /
@@ -231,10 +232,58 @@ with tempfile.TemporaryDirectory() as temporary:
         return (f"    {literal.split('(')[0]} {name} = const()"
                 f"[name = string(\"{name}\"), val = {literal}];\n")
 
-    def wrapped(body, inputs):
+    def wrapped(body, inputs, result="y"):
         return ("program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n"
                 f"  func main<ios18>({inputs}) {{\n" + body +
-                "  } -> (y);\n}\n")
+                f"  }} -> ({result});\n}}\n")
+
+
+    capture_1500 = json.loads((Path(__file__).resolve().parents[1] /
+        "research/oracles/h13/boolean/less_bool_rr_1500x1x1.json").read_text())
+    body = ("    tensor<bool, [1, 1500]> output_mask = less(x = a, y = b)"
+            "[name = string(\"output_mask\")];\n")
+    package = compile_source(
+        root, "bool-less-graph-output",
+        wrapped(body, "tensor<fp16, [1, 1500]> a, tensor<fp16, [1, 1500]> b",
+                "output_mask"))
+    manifest = json.loads((package / "manifest.json").read_text())
+    assert manifest["logicalResults"] == [{
+        "name": "output_mask", "dtype": "bool", "shape": [1, 1500],
+        "physical": {"tensor": "output_mask", "elementOffset": 0,
+                     "elementCount": 1500},
+        "conversion": "identity",
+    }]
+    assert manifest["physicalOutputs"] == [{
+        "tensor": "output_mask", "dtype": "bool", "shape": [1, 1500],
+        "logicalBytes": 1500,
+    }]
+    assert anec_task_stream(package / "program-0.anec") == \
+        capture_stream(capture_1500, SELECTOR_REMAP["less"])
+    validate(root, package)
+
+    body = const_("axes", "tensor<int32, [1]>([1])")
+    body += ("    tensor<bool, [1, 1500]> mask = less(x = a, y = b)"
+             "[name = string(\"mask\")];\n")
+    body += ("    tensor<bool, [1, 1, 1500]> output_mask = expand_dims("
+             "x = mask, axes = axes)[name = string(\"output_mask\")];\n")
+    package = compile_source(
+        root, "bool-expand-dims-alias",
+        wrapped(body, "tensor<fp16, [1, 1500]> a, tensor<fp16, [1, 1500]> b",
+                "output_mask"))
+    manifest = json.loads((package / "manifest.json").read_text())
+    assert manifest["tensors"]["output_mask"]["aliasOf"] == "mask"
+    assert manifest["tensors"]["output_mask"]["dtype"] == "bool"
+    assert manifest["tensors"]["output_mask"]["shape"] == [1, 1, 1500]
+    assert manifest["tensors"]["output_mask"]["logicalBytes"] == 1500
+    assert manifest["logicalResults"] == [{
+        "name": "output_mask", "dtype": "bool", "shape": [1, 1, 1500],
+        "physical": {"tensor": "mask", "elementOffset": 0,
+                     "elementCount": 1500},
+        "conversion": "identity",
+    }]
+    assert anec_task_stream(package / "program-0.anec") == \
+        capture_stream(capture_1500, SELECTOR_REMAP["less"])
+    validate(root, package)
 
     body = ("    tensor<fp16, [375, 1, 1]> y = less(x = a, y = a)"
             "[name = string(\"y\")];\n")
