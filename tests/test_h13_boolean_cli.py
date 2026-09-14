@@ -167,6 +167,37 @@ def assert_select_375_bool_dma(anec):
     assert struct.unpack_from("<2H", anec, 0x1000 + const_off) == (0x8001, 0x0001)
 
 
+def apple_scratch_bytes(record):
+    """Apple lays its `__DATA/__bss` scratch at 0x30000000, below every
+    resource address, so the gap under the lowest one is the scratch
+    allocation the program needs. Zero when the program stages nothing.
+    """
+    addresses = [int(address, 16) for address
+                 in record["program_descriptor"]["resource_addresses"]]
+    return min(address for address in addresses if address) - 0x30000000
+
+
+def assert_select_375_scratch(anec, scratch_bytes, record):
+    # Channel 3 is an arena, not one surface. The 375-wide select stages
+    # the expanded cond mask at 2256000 and one interleaved blend half at
+    # 0 and at 4560000; task 3's write of the cond-true half and task 4's
+    # read of it end at 6816000. Sizing the scratch to the output
+    # allocation (2310144) left both of those past the end of the surface
+    # the ANEC header declares, and the device answered with in-band fp16
+    # values added into the first nine interleaved rows.
+    tasks = [h13_registers(task) for task in anec_tasks(anec)]
+    for words, _ in tasks:
+        assert any(((words[8] >> shift) & 0x1F) == 3 for shift in (0, 6, 12))
+    stages = [(0, 0x17804, 0x17810, 2256000, 2304000),
+              (1, 0x17804, 0x17810, 0, 2256000),
+              (3, 0x17804, 0x17810, 4560000, 2256000),
+              (4, 0x13808, 0x13814, 4560000, 2256000)]
+    for index, base, depth, expect_base, expect_depth in stages:
+        regs = tasks[index][1]
+        assert regs[base] == expect_base and regs[depth] == expect_depth
+    assert struct.unpack_from("<32I", anec, 0x28)[3] == 417
+    assert scratch_bytes == 6832128 == apple_scratch_bytes(record)
+
 
 def assert_select_64_polarity(anec):
     # Apple cond-true is template 4, cond-false is 5. After remap those
@@ -208,14 +239,22 @@ with tempfile.TemporaryDirectory() as temporary:
         assert anec_task_stream(
             package / f"program-{programs.index(booleanProgram)}.anec") == \
             capture_stream(record, SELECTOR_REMAP[family(stem)]), stem
-        if stem == "select_rrb_1x8x375x375":
-            assert_select_375_bool_dma(
-                (package /
-                 f"program-{programs.index(booleanProgram)}.anec").read_bytes())
-        if stem == "select_rrb_1x64x1x1":
-            assert_select_64_polarity(
-                (package /
-                 f"program-{programs.index(booleanProgram)}.anec").read_bytes())
+        # The captures record no scratch size, so the encoder derives it
+        # from the channel-3 tile-DMA descriptors. Apple's own VM layout
+        # is the check: that derivation must land on the gap Apple left
+        # below its resource addresses, for every capture.
+        assert booleanProgram["scratchBytes"] == \
+            apple_scratch_bytes(record), stem
+        if stem.startswith("select"):
+            anec = (package /
+                    f"program-{programs.index(booleanProgram)}.anec").read_bytes()
+            if stem == "select_rrb_1x8x375x375":
+                assert_select_375_bool_dma(anec)
+                assert_select_375_scratch(
+                    anec, booleanProgram["scratchBytes"], record)
+            if stem == "select_rrb_1x64x1x1":
+                assert_select_64_polarity(anec)
+            validate(root, package)
 
         if family(stem) == "less":
             assert manifest["logicalResults"][0]["dtype"] == "bool"
@@ -267,6 +306,8 @@ with tempfile.TemporaryDirectory() as temporary:
         index = programs.index(booleanProgram)
         assert anec_task_stream(package / f"program-{index}.anec") == \
             capture_stream(record, SELECTOR_REMAP[family(stem)]), stem
+        assert booleanProgram["scratchBytes"] == \
+            apple_scratch_bytes(record), stem
         const_bin = capture.parent / f"{stem}.const.bin"
         if const_bin.exists() and "floor_b" not in stem:
             anec = (package / f"program-{index}.anec").read_bytes()
