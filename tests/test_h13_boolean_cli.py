@@ -29,7 +29,7 @@ SELECTOR_REMAP = {
     "less": {6: 4, 4: 5, 5: 6, 7: 7},
     "floor": {5: 4, 4: 5, 6: 6, 7: 7},
     "floor_div": {5: 4, 4: 5, 6: 6, 7: 7},
-    "select": {7: 4, 5: 5, 4: 6, 6: 7},
+    "select": {7: 4, 4: 5, 5: 6, 6: 7},
 }
 
 
@@ -160,12 +160,25 @@ def assert_select_375_bool_dma(anec):
     assert regs0[0x1380c] == 384 and regs0[0x13810] == 144000
     assert regs0[0x0480c] == 384 and regs0[0x04810] == 3072
     words1, regs1 = h13_registers(tasks[1])
-    assert ((words1[8] >> 6) & 0x1F) == 5
+    assert ((words1[8] >> 6) & 0x1F) == 6
     assert regs1[0x13820] == 768 and regs1[0x13824] == 288000
     task_size = struct.unpack_from("<Q", anec, 16)[0]
     const_off = (task_size + 127) // 128 * 128
     assert struct.unpack_from("<2H", anec, 0x1000 + const_off) == (0x8001, 0x0001)
 
+
+
+def assert_select_64_polarity(anec):
+    # Apple cond-true is template 4, cond-false is 5. After remap those
+    # are MIL a (slot 5) and b (slot 6); cond stays slot 7. Host invert
+    # of cond is not required.
+    tasks = anec_tasks(anec)
+    words0, _ = h13_registers(tasks[0])
+    assert (words0[8] & 0x1F) == 7
+    words1, _ = h13_registers(tasks[1])
+    assert ((words1[8] >> 6) & 0x1F) == 5
+    words3, _ = h13_registers(tasks[3])
+    assert ((words3[8] >> 6) & 0x1F) == 6
 
 
 with tempfile.TemporaryDirectory() as temporary:
@@ -197,6 +210,10 @@ with tempfile.TemporaryDirectory() as temporary:
             capture_stream(record, SELECTOR_REMAP[family(stem)]), stem
         if stem == "select_rrb_1x8x375x375":
             assert_select_375_bool_dma(
+                (package /
+                 f"program-{programs.index(booleanProgram)}.anec").read_bytes())
+        if stem == "select_rrb_1x64x1x1":
+            assert_select_64_polarity(
                 (package /
                  f"program-{programs.index(booleanProgram)}.anec").read_bytes())
 
