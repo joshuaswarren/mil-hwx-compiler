@@ -1145,11 +1145,11 @@ Program encodeBooleanOp(H13BooleanShape shape,
                           booleanTensor(6, shape, false),
                           booleanTensor(7, shape, true)};
         program.output = booleanTensor(4, shape, false);
-        // Words select a on 5, b on 4, the bool cond on 6, and the result
-        // on 7. 375-wide DMA row 384/plane 144000 is the 1-byte cond;
-        // row 768 is fp16. Pairing cond with template 5 put 768-stride
-        // DMA on the 384-stride header channel.
-        program.taskSurfaceChannels = {7, 5, 4, 6};
+        // Words select cond-true on 4, cond-false on 5, bool cond on 6,
+        // result on 7. MIL select(a, b, cond) is cond?a:b, so a binds to
+        // 4. a-on-5 was inverted: {64,1,1} matched only after host invert.
+        // 375-wide DMA row 384 is the 1-byte cond; row 768 is fp16.
+        program.taskSurfaceChannels = {7, 4, 5, 6};
         break;
     }
     if (stagesThroughScratch) {
