@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stream-2 layout lowering: transpose, slice_by_index, pad, tile.
+"""Stream-2 layout lowering: transpose, slice_by_index, pad, tile, concat.
 
 Covers the three host-side forms the H13 backend can express exactly —
 free aliases for row-major-preserving views, offset views for contiguous
@@ -9,6 +9,7 @@ forms that need a data-movement program the decoded corpus lacks.
 The transpose-absorb extension adds the per-class encoder blocker
 contracts: fast-axis swaps, multi-consumer views, shape-view composites,
 middle-swap matmul feeds, and bool transposes under the same perm contract.
+Concat of independent sources is the named ISA hole h13.unsupported-concat.
 """
 import json
 import subprocess
@@ -275,6 +276,50 @@ def bool_view_transpose_source():
                   "tensor<fp16, [1, 64, 1, 1]> a, "
                   "tensor<fp16, [1, 64, 1, 1]> b",
                   "t")
+
+def concat_source(parts=2, shape=(1, 1, 375, 128), axis=1):
+    """Standalone N-way concat along axis, encoder heads_layout stack."""
+    names = [f"a{index}" for index in range(parts)]
+    result = list(shape)
+    result[axis] = shape[axis] * parts
+    body = const("axis", f"tensor<int32, []>({axis})")
+    values = ", ".join(names)
+    body += (f"    {header(tuple(result))} y = concat(values = ({values}),"
+             f" axis = axis)[name = string(\"y\")];\n")
+    inputs = ", ".join(f"{header(shape)} {name}" for name in names)
+    return source(body, inputs, "y")
+
+
+def concat_tree_source(parts=8, shape=(1, 1, 375, 128), axis=1):
+    """Binary tree of 2-way concats, the other heads_layout emission."""
+    body = const("axis", f"tensor<int32, []>({axis})")
+    level = [f"a{index}" for index in range(parts)]
+    extents = [shape[axis]] * parts
+    generated = 0
+    while len(level) > 1:
+        nxt, next_ext = [], []
+        index = 0
+        while index < len(level):
+            if index + 1 == len(level):
+                nxt.append(level[index])
+                next_ext.append(extents[index])
+                break
+            left, right = level[index], level[index + 1]
+            width = extents[index] + extents[index + 1]
+            name = f"c{generated}"
+            generated += 1
+            result = list(shape)
+            result[axis] = width
+            body += (f"    {header(tuple(result))} {name} = concat("
+                     f"values = ({left}, {right}), axis = axis)"
+                     f"[name = string(\"{name}\")];\n")
+            nxt.append(name)
+            next_ext.append(width)
+            index += 2
+        level, extents = nxt, next_ext
+    inputs = ", ".join(f"{header(shape)} a{index}" for index in range(parts))
+    return source(body, inputs, level[0])
+
 
 
 
@@ -631,5 +676,20 @@ with tempfile.TemporaryDirectory() as temporary:
     assert materialized_manifest["programs"][0]["encoder"] == \
         "apple-parity-tile"
     validate(root, materialized)
+
+    # concat: encoder heads_layout stack. Independent [1,1,375,128] sources
+    # joined on axis 1 need a copy encoder the decoded corpus does not hold.
+    compile_source(root, "concat-encoder-2way",
+                   concat_source(),
+                   expected_code="h13.unsupported-concat",
+                   expected_message="H13 has no concat encoder")
+    compile_source(root, "concat-encoder-8way",
+                   concat_source(parts=8),
+                   expected_code="h13.unsupported-concat",
+                   expected_message="H13 has no concat encoder")
+    compile_source(root, "concat-encoder-8way-tree",
+                   concat_tree_source(),
+                   expected_code="h13.unsupported-concat",
+                   expected_message="H13 has no concat encoder")
 
     print("h13 layout cli: PASS")
