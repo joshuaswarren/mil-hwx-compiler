@@ -160,7 +160,9 @@ def check_layout(binding):
     nchw = binding.get('nchw') if isinstance(binding, dict) else None
     require(isinstance(nchw, list) and len(nchw) == 6 and
             all(type(value) is int and value > 0 for value in nchw) and
-            nchw == surface_layout(nchw[:4]), 'incorrect physical layout')
+            nchw == surface_layout(nchw[:4],
+                                   binding.get('dtype') == 'bool'),
+            'incorrect physical layout')
     return math.prod(nchw[:4])
 
 

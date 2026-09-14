@@ -28,6 +28,80 @@ void storeLE32(std::vector<std::uint8_t> &bytes, std::size_t offset,
         bytes[offset + byte] = static_cast<std::uint8_t>(value >> (byte * 8));
 }
 
+/// Byte offset of one 32-bit register word inside a decoded H13 task
+/// image: ten header words, one extra word when header[9] bit 1 is set,
+/// then register records headed by `((count - 1) << 26) | byte address`.
+/// False when the image does not carry that register.
+bool findH13Register(const std::vector<std::uint8_t> &task, std::size_t offset,
+                     std::size_t bytes, std::uint32_t address,
+                     std::size_t &word) {
+    if (offset + 40 > task.size() || bytes < 40 || offset + bytes > task.size())
+        throw std::invalid_argument("H13 task image is truncated");
+    const std::size_t extra =
+        (loadLE32(task, offset + 36) & 3) == 3 ? sizeof(std::uint32_t) : 0;
+    std::size_t cursor = offset + 40 + extra;
+    const std::size_t end = offset + bytes;
+    while (cursor + sizeof(std::uint32_t) <= end) {
+        const auto header = loadLE32(task, cursor);
+        const auto count = (header >> 26) + 1;
+        const auto base = header & 0x03ffffff;
+        if (address >= base && address < base + count * sizeof(std::uint32_t)) {
+            if ((address - base) % sizeof(std::uint32_t))
+                return false;
+            word = cursor + sizeof(std::uint32_t) + (address - base);
+            return word + sizeof(std::uint32_t) <= end;
+        }
+        cursor += sizeof(std::uint32_t) + count * sizeof(std::uint32_t);
+    }
+    return false;
+}
+
+std::size_t h13RegisterOffset(const std::vector<std::uint8_t> &task,
+                              std::size_t offset, std::size_t bytes,
+                              std::uint32_t address) {
+    std::size_t word = 0;
+    if (!findH13Register(task, offset, bytes, address, word))
+        throw std::invalid_argument(
+            "h13.chain-unrepresentable-edge: task image does not carry the "
+            "decoded register record");
+    return word;
+}
+
+/// Channel 3 is the scratch surface. A task selects it in the same three
+/// five-bit fields `bindTasks` rebinds, and each of those roles has its
+/// own tile-DMA descriptor pairing a base offset with a surface depth.
+struct ScratchSlot {
+    unsigned selectorShift;
+    std::uint32_t baseRegister;
+    std::uint32_t depthRegister;
+};
+constexpr ScratchSlot scratchSlots[] = {{0, 0x13808, 0x13814},
+                                        {6, 0x1381c, 0x13828},
+                                        {12, 0x17804, 0x17810}};
+constexpr std::uint32_t scratchChannel = 3;
+
+/// The highest scratch byte one task's channel-3 descriptors reach. The
+/// captures record no scratch size, so this is how the extent is
+/// recovered; it reproduces Apple's own `__DATA/__bss` gap below the
+/// resource addresses on every decoded boolean capture.
+std::uint64_t taskScratchExtent(const std::vector<std::uint8_t> &task,
+                                std::size_t offset, std::size_t bytes) {
+    const auto selectors = loadLE32(task, offset + 32);
+    std::uint64_t extent = 0;
+    for (const auto &slot : scratchSlots) {
+        if (((selectors >> slot.selectorShift) & 31) != scratchChannel)
+            continue;
+        std::size_t word = 0;
+        std::uint64_t reach = 0;
+        if (findH13Register(task, offset, bytes, slot.baseRegister, word))
+            reach = loadLE32(task, word);
+        if (findH13Register(task, offset, bytes, slot.depthRegister, word))
+            reach += loadLE32(task, word);
+        extent = std::max(extent, reach);
+    }
+    return extent;
+}
+
 namespace reg {
 constexpr std::size_t taskWord0 = 0x00;
 constexpr std::size_t executionCycles = 0x08;
@@ -1069,8 +1143,10 @@ Program encodeBooleanOp(H13BooleanShape shape,
     std::size_t offset = 0;
     // Channel 3 passes bindTasks through untouched (only channels 4..7
     // remap), so any template task selecting it stages through the
-    // scratch surface and the program must back it.
+    // scratch surface and the program must back it — with the extent the
+    // template's own channel-3 descriptors reach, not a guess.
     bool stagesThroughScratch = false;
+    std::uint64_t scratchExtent = 0;
     for (std::size_t index = 0; index < source->taskCount; ++index) {
         // The decoded header's size field can disagree with the record
         // size the capture walked, so the template carries the record
@@ -1086,6 +1162,9 @@ Program encodeBooleanOp(H13BooleanShape shape,
         for (unsigned shift : {0u, 6u, 12u})
             stagesThroughScratch =
                 stagesThroughScratch || ((selectors >> shift) & 31) == 3;
+        scratchExtent = std::max(
+            scratchExtent,
+            taskScratchExtent(program.task, offset, sizeWords * 4));
         const std::size_t next = words[7];
         cursor += sizeWords;
         if (index + 1 == source->taskCount) {
@@ -1153,11 +1232,17 @@ Program encodeBooleanOp(H13BooleanShape shape,
         break;
     }
     if (stagesThroughScratch) {
-        // The scratch staging moves operand/result data, so it never
-        // exceeds one surface: back it with the output allocation (the
-        // allocator's own exact number), erring toward hardware safety
-        // over tightness since the captures record no scratch size.
-        program.scratchAllocationBytes = program.output.allocationBytes;
+        // The scratch is an arena, not one surface: the 375-wide select
+        // stages the expanded cond mask at 2256000 and one interleaved
+        // blend half at 0 and 4560000, reaching 6816000 bytes — three
+        // times the output allocation the earlier guess used. Under that
+        // guess the cond-true half's write, and task 4's read of it, ran
+        // past the end of the surface the ANEC header declares.
+        if (!scratchExtent)
+            throw std::logic_error(
+                "H13 boolean task stages through the scratch surface with "
+                "no tile-DMA descriptor to size it");
+        program.scratchAllocationBytes = alignTile(scratchExtent);
     }
     return program;
 }
@@ -1579,41 +1664,6 @@ Program composePrograms(const std::vector<Program> &programs) {
         "words, which have no resolved formula, so no multi-program relink can "
         "be emitted correctly");
 }
-
-namespace {
-
-/// Byte offset of one 32-bit register word inside a decoded H13 task image:
-/// ten header words, one extra word when header[9] bit 1 is set, then
-/// register records headed by `((count - 1) << 26) | byte address`.
-std::size_t h13RegisterOffset(const std::vector<std::uint8_t> &task,
-                              std::size_t offset, std::size_t bytes,
-                              std::uint32_t address) {
-    if (offset + 40 > task.size() || bytes < 40 || offset + bytes > task.size())
-        throw std::invalid_argument("h13.chain-unrepresentable-edge: task image is truncated");
-    const std::size_t extra =
-        (loadLE32(task, offset + 36) & 3) == 3 ? sizeof(std::uint32_t) : 0;
-    std::size_t cursor = offset + 40 + extra;
-    const std::size_t end = offset + bytes;
-    while (cursor + sizeof(std::uint32_t) <= end) {
-        const auto header = loadLE32(task, cursor);
-        const auto count = (header >> 26) + 1;
-        const auto base = header & 0x03ffffff;
-        if (address >= base && address < base + count * sizeof(std::uint32_t)) {
-            if ((address - base) % sizeof(std::uint32_t))
-                break;
-            if (cursor + sizeof(std::uint32_t) + (address - base) + sizeof(std::uint32_t) >
-                end)
-                break;
-            return cursor + sizeof(std::uint32_t) + (address - base);
-        }
-        cursor += sizeof(std::uint32_t) + count * sizeof(std::uint32_t);
-    }
-    throw std::invalid_argument(
-        "h13.chain-unrepresentable-edge: task image does not carry the decoded "
-        "register record");
-}
-
-} // namespace
 
 void fuseMatmulPostOperation(Program &program, PostOperation operation) {
     if (operation != PostOperation::Relu)
