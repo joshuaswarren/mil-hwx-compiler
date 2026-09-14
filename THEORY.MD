@@ -73,7 +73,9 @@ templates, spatial square 1/8/16/32/64. Encoder 1×1 is `{256,750,32}`.
 
 Select keys `(constInput, CHW)`. Runtime-a bool-cond hits
 `(false, 8, 375, 375)` and `(false, 64, 1, 1)`. Constant-a is refused
-before lookup.
+before lookup. `bindTasks` order is `[y, a, b, cond]` template
+channels `{7, 5, 4, 6}`: 375-wide DMA row 384 is cond, row 768 is fp16.
+`{7, 6, 4, 5}` put 384-stride DMA on `a`.
 
 Chain fusion is a third table, not a package stitch. `--schedule=chain`
 accepts only two ops, at most two boundary inputs, every input on the
@@ -129,11 +131,11 @@ envelope adds and 750 64-lane bias adds. Native matvec rejects reduction
 `supportsBooleanOp({Select, true, 8, 375, 375})` is true in the table
 and refused at the MIL gate.
 
-Attn+select per-op: 2 programs, hashes
-`a3aa2fe1333a48eba3e7fcae5b848563e2bfa747a232dadf9ed2d568821c5627` and
-`860de06c53e3fdfed9452859042df59902fb733bef0a364b134dd9d9d6374cdd`.
-Chain on the same MIL: `h13.chain-outside-envelope`, four inputs, rc 65.
-Add+relu `[1,512,1,1]` still fuses. Batched-matmul+relu (2 inputs) is
+Attn+select per-op: 2 programs. Select anec after the cond DMA remap is
+`27dc7f35fc9efc9431e4d05847798390fe0cfe79f930c3040f32dd76ef8e8e73`
+(was `860de06c` with 768-stride DMA on header ch7). Chain on the same
+MIL: `h13.chain-outside-envelope`, four inputs, rc 65. Add+relu
+`[1,512,1,1]` still fuses. Batched-matmul+relu (2 inputs) is
 `h13.chain-unrepresentable-edge`: that encoder has no post-op field.
 
 ## Open Questions

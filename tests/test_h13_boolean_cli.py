@@ -29,7 +29,7 @@ SELECTOR_REMAP = {
     "less": {6: 4, 4: 5, 5: 6, 7: 7},
     "floor": {5: 4, 4: 5, 6: 6, 7: 7},
     "floor_div": {5: 4, 4: 5, 6: 6, 7: 7},
-    "select": {7: 4, 6: 5, 4: 6, 5: 7},
+    "select": {7: 4, 5: 5, 4: 6, 6: 7},
 }
 
 
@@ -117,6 +117,52 @@ def anec_task_stream(path):
     size = struct.unpack_from("<Q", data, 16)[0]
     return data[0x1000:0x1000 + size]
 
+def anec_tasks(data):
+    first = struct.unpack_from("<I", data, 8)[0]
+    count = struct.unpack_from("<I", data, 12)[0]
+    size = struct.unpack_from("<Q", data, 16)[0]
+    section = data[0x1000:0x1000 + size]
+    tasks, offset, nbytes = [], 0, first
+    for index in range(count):
+        task = section[offset:offset + nbytes]
+        tasks.append(task)
+        words = struct.unpack(f"<{len(task) // 4}I", task)
+        if index + 1 == count:
+            break
+        nbytes = (((words[1] >> 16) & 0x1FF) + 1) * 4
+        offset = words[7]
+    return tasks
+
+
+def h13_registers(task):
+    words = struct.unpack(f"<{len(task) // 4}I", task)
+    index = 10 + (1 if words[9] & 3 == 3 else 0)
+    regs = {}
+    while index < len(words):
+        header = words[index]
+        count = (header >> 26) + 1
+        base = header & 0x03FFFFFF
+        for step in range(count):
+            regs[base + step * 4] = words[index + 1 + step]
+        index += 1 + count
+    return words, regs
+
+
+def assert_select_375_bool_dma(anec):
+    layouts = struct.unpack_from("<192Q", anec, 0xa8)
+    def nchw(channel):
+        return list(layouts[channel * 6:(channel + 1) * 6])
+    assert nchw(4)[5] == 768 and nchw(5)[5] == 768 and nchw(6)[5] == 768
+    assert nchw(7) == [1, 8, 375, 375, 144000, 384]
+    tasks = anec_tasks(anec)
+    words0, regs0 = h13_registers(tasks[0])
+    assert (words0[8] & 0x1F) == 7
+    assert regs0[0x1380c] == 384 and regs0[0x13810] == 144000
+    words1, regs1 = h13_registers(tasks[1])
+    assert ((words1[8] >> 6) & 0x1F) == 5
+    assert regs1[0x13820] == 768 and regs1[0x13824] == 288000
+
+
 
 with tempfile.TemporaryDirectory() as temporary:
     root = Path(temporary)
@@ -145,6 +191,11 @@ with tempfile.TemporaryDirectory() as temporary:
         assert anec_task_stream(
             package / f"program-{programs.index(booleanProgram)}.anec") == \
             capture_stream(record, SELECTOR_REMAP[family(stem)]), stem
+        if stem == "select_rrb_1x8x375x375":
+            assert_select_375_bool_dma(
+                (package /
+                 f"program-{programs.index(booleanProgram)}.anec").read_bytes())
+
         if family(stem) == "less":
             assert manifest["logicalResults"][0]["dtype"] == "bool"
             assert manifest["physicalOutputs"][0]["dtype"] == "bool"
