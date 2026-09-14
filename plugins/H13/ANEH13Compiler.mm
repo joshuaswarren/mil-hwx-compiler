@@ -294,6 +294,105 @@ static BOOL splitAliasPlan(ANEGraphOperation *operation,
     plan->resultElements = resultElements;
     return YES;
 }
+
+static BOOL argumentUsesValue(ANEGraphArgument *argument, ANEGraphValue *value) {
+    if (!argument) return NO;
+    if (argument.kind == ANEGraphArgumentKindValue)
+        return argument.value == value;
+    if (argument.kind == ANEGraphArgumentKindTuple ||
+        argument.kind == ANEGraphArgumentKindList) {
+        for (ANEGraphArgument *element in argument.elements)
+            if (argumentUsesValue(element, value)) return YES;
+    }
+    return NO;
+}
+
+static BOOL operationUsesValue(ANEGraphOperation *operation, ANEGraphValue *value) {
+    for (ANEGraphArgument *argument in operation.arguments.allValues)
+        if (argumentUsesValue(argument, value)) return YES;
+    return NO;
+}
+
+static NSArray<ANEGraphValue *> *concatSources(ANEGraphOperation *operation) {
+    ANEGraphArgument *values = operation.arguments[@"values"];
+    if (!values || (values.kind != ANEGraphArgumentKindTuple &&
+                    values.kind != ANEGraphArgumentKindList) ||
+        !values.elements.count)
+        return nil;
+    NSMutableArray<ANEGraphValue *> *sources =
+        [NSMutableArray arrayWithCapacity:values.elements.count];
+    for (ANEGraphArgument *element in values.elements) {
+        if (element.kind != ANEGraphArgumentKindValue || !element.value)
+            return nil;
+        [sources addObject:element.value];
+    }
+    return sources;
+}
+
+/// Concat of independent sources is a named ISA hole: the decoded corpus
+/// has no concat or copy encoder, and one binding slice cannot join N
+/// buffers. Validate the encoder-shaped form, then refuse it.
+static BOOL concatPlan(ANEGraphOperation *operation,
+                       ANEDiagnosticEngine *diagnostics) {
+    NSArray<ANEGraphValue *> *sources = concatSources(operation);
+    long long axis = 0;
+    if (!sources || sources.count < 2 || operation.results.count != 1 ||
+        !int32TensorScalar(operation.operands[@"axis"].value, &axis))
+        return reject(diagnostics,
+            @"H13 concat requires a tuple of at least two values and an exact rank-zero tensor<int32,[]> axis",
+            operation, @"h13.invalid-concat-parameters");
+    ANEGraphValue *result = operation.results[0];
+    ANEGraphValue *first = sources[0];
+    if (!fp16Tensor(first) || !fp16Tensor(result) || !first.type.shape.count ||
+        result.type.shape.count != first.type.shape.count)
+        return reject(diagnostics,
+            @"H13 concat requires static fp16 sources and result of equal rank",
+            operation, @"h13.invalid-concat-shape");
+    const long long rank = (long long)first.type.shape.count;
+    if (axis < 0) axis += rank;
+    if (axis < 0 || axis >= rank)
+        return reject(diagnostics, @"H13 concat axis is out of range",
+            operation, @"h13.unsupported-concat-axis");
+    NSUInteger concatExtent = 0;
+    for (ANEGraphValue *source in sources) {
+        if (!fp16Tensor(source) ||
+            source.type.shape.count != first.type.shape.count)
+            return reject(diagnostics,
+                @"H13 concat requires static fp16 sources of equal rank",
+                operation, @"h13.invalid-concat-shape");
+        for (NSUInteger index = 0; index < (NSUInteger)rank; ++index) {
+            NSUInteger extent = source.type.shape[index].unsignedIntegerValue;
+            if (index == (NSUInteger)axis) {
+                if (!extent || concatExtent > NSUIntegerMax - extent)
+                    return reject(diagnostics,
+                        @"H13 concat requires positive static axis extents",
+                        operation, @"h13.invalid-concat-shape");
+                concatExtent += extent;
+                continue;
+            }
+            if (extent != first.type.shape[index].unsignedIntegerValue)
+                return reject(diagnostics,
+                    @"H13 concat requires matching extents off the concat axis",
+                    operation, @"h13.invalid-concat-shape");
+        }
+    }
+    if (result.type.shape[(NSUInteger)axis].unsignedIntegerValue != concatExtent)
+        return reject(diagnostics,
+            @"H13 concat result extent on the axis must equal the sum of the sources",
+            operation, @"h13.invalid-concat-shape");
+    for (NSUInteger index = 0; index < (NSUInteger)rank; ++index) {
+        if (index == (NSUInteger)axis) continue;
+        if (result.type.shape[index].unsignedIntegerValue !=
+            first.type.shape[index].unsignedIntegerValue)
+            return reject(diagnostics,
+                @"H13 concat result extents off the axis must match the sources",
+                operation, @"h13.invalid-concat-shape");
+    }
+    return reject(diagnostics,
+        @"H13 has no concat encoder: every decoded H13 program writes one output surface from one input or a broadcast pair, and the binding ABI carries one contiguous slice per binding, so joining independent sources into one buffer needs a data-movement program the decoded corpus does not hold",
+        operation, @"h13.unsupported-concat");
+}
+
 /// A MIL transpose resolves to one of three host-side forms: a free alias
 /// when the permutation preserves the row-major element order (only unit
 /// dimensions move), a fold into a consuming matmul's transpose flag when
@@ -2249,8 +2348,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     for (ANEGraphValue *input in function.inputs) {
         BOOL used = NO;
         for (ANEGraphOperation *candidate in sourceOperations)
-            for (ANEGraphArgument *operand in candidate.operands.allValues)
-                if (operand.value == input) used = YES;
+            if (operationUsesValue(candidate, input)) used = YES;
         if (!used)
             return reject(diagnostics, @"H13 function inputs must all be used",
                 sourceOperations[0], chain ? chainCode : @"h13.unsupported-program");
@@ -2261,8 +2359,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             if ([function.returnValues containsObject:value]) used = YES;
             for (NSUInteger consumer = index + 1;
                  consumer < sourceOperations.count; ++consumer)
-                for (ANEGraphArgument *operand in sourceOperations[consumer].operands.allValues)
-                    if (operand.value == value) used = YES;
+                if (operationUsesValue(sourceOperations[consumer], value))
+                    used = YES;
         }
         if (!used)
             return reject(diagnostics,
@@ -2364,6 +2462,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             }
             continue;
         }
+        if ([name isEqualToString:@"concat"])
+            return concatPlan(candidate, diagnostics);
+
         if ([name isEqualToString:@"transpose"]) {
             H13TransposeViewPlan plan{};
             if (!transposeViewPlan(candidate, diagnostics, &plan)) return NO;
