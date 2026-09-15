@@ -544,7 +544,7 @@ permutation, the blob-header bytes Apple's compiler packs ahead of the
 payload, the 1 KiB minimum section, and what stays unresolved.
 
 ```bash
-python3 research/mint_h14_matvec_probes.py --host studio-host  # re-mint (macOS host)
+python3 research/mint_h14_matvec_probes.py --host <macos-host>  # re-mint (macOS host)
 python3 research/mint_h14_matvec_probes.py --verify          # offline re-check
 ```
 
@@ -576,7 +576,7 @@ channel-axis or height-axis softmax also carries the reciprocal table in its
 final 128 bytes; `layer_norm` and every reduction leave the section zero.
 
 ```bash
-python3 research/mint_h14_norm_probes.py --host studio-host  # re-mint (macOS host)
+python3 research/mint_h14_norm_probes.py --host <macos-host>  # re-mint (macOS host)
 python3 research/mint_h14_norm_probes.py --emit-templates  # regenerate the table
 ```
 
