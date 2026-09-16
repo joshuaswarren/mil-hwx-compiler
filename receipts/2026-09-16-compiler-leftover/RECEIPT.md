@@ -86,3 +86,37 @@ bias region.
 - `make test-h13` PASS, `make test-h13-parity` PASS (846 cases, unchanged)
 - `git stash` holds the WIP plugin/tree edits; `plugins/H13` is byte-identical
   to `b61de468`
+
+## Lowering increment (same session, commit 2)
+
+Qualified the first lowering set from these oracles; parity grows 846 to
+**861** cases (3 rank-3 unaries, 3 encoder normalizations, 9 rank-3/rank-4
+broadcasts, all byte-compared against the decoded Apple task streams):
+
+- `elementwiseTensor`/`matvecTensor` rows pad to the 64-byte DMA stride
+  (`alignUp(width*2, 64)`), matching every decoded surface; W=1 rows are
+  unchanged, so all pre-existing tables and parity cases are unaffected.
+- `H13NormTemplates.inc` regenerated with the encoder rows:
+  `layer_norm [1,1,375,1024]` (5 tasks, zero section, mask 0x08),
+  `softmax [8,375,375]` (5 tasks, 1024-byte exp-table section — cheaper than
+  the 8-task C=1 form), `softmax [1,1,375,375]` (8 tasks). The emitter's
+  axis-mask now mirrors `constantAxisMask`'s surface shift exactly.
+- `H13EncoderUnaryTemplates.inc` (new): rank-3 `silu`/`sigmoid` rows whose
+  128-byte sections are the existing LUT tables verbatim;
+  `parityShapes` offers the canonical `[1,1,A,B]` candidate for rank-3.
+- `H13EnvelopeTemplates.inc` regenerated with the rank-3/rank-4 broadcast
+  rows: per-channel `mul`/`add` at `[1,375,1024]·[1,1,1024]`,
+  `[1,375,4096]·[1,1,4096]` (the layer_norm gamma/beta peel), runtime
+  `mul` at `[1,1024,375]` and `[1,375,4096]` (GLU / FFN gate product),
+  runtime `add` at `[1,8,375,375]` (attention residual). The emitter picks
+  dense-vs-bias/scale-block constant layout from the recorded section (wide
+  constants >= 1024 channels go dense); `encodeBroadcast` reproduces both.
+- `broadcastPlan` accepts rank-3 operands (Apple's own `[1,1,A,B]`
+  normalization) and prefers the decoded one-program form over the native
+  64-lane split only when the table covers the exact geometry — every shape
+  native already served stays native.
+
+Still outside the qualified set (records kept in `oracles-round1/`, refused
+forms stay refused): rank-3 linear + b8 bmm (m375 weight packing derivation
+pending), FFN chain program, rect conv respells, transpose/slice 1-task
+programs. `make test-h13` PASS, `make test-h13-parity` PASS (861 cases).

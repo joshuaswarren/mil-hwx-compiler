@@ -497,8 +497,21 @@ struct OracleBroadcastTemplate {
     std::uint64_t scratchAllocationBytes;
 };
 
+struct OracleUnaryTask {
+    UnaryOperation operation;
+    ElementwiseShape shape;
+    const std::uint32_t *words;
+    std::size_t wordCount;
+    std::size_t firstTaskBytes;
+    std::uint32_t taskCount;
+    std::size_t constantOffsetBytes;
+    std::size_t constantBytes;
+    std::uint64_t scratchAllocationBytes;
+};
+
 #include "H13ElementwiseTemplates.inc"
 #include "H13ElementwiseConstants.inc"
+#include "H13EncoderUnaryTemplates.inc"
 #include "H13MatvecTemplates.inc"
 #include "H13NormTemplates.inc"
 #include "H13EnvelopeTemplates.inc"
@@ -517,6 +530,16 @@ const OracleTaskTemplate *elementwiseTemplate(ElementwiseKind kind,
                                                ElementwiseShape shape) {
     for (const auto &candidate : kElementwiseTasks)
         if (candidate.kind == kind && candidate.operation == operation &&
+            sameShape(candidate.shape, shape)) return &candidate;
+    return nullptr;
+}
+
+/// The decoded rank-3 encoder spell: Apple normalizes [1, A, B] to the
+/// [1, 1, A, B] surface, so the lookup key is that canonical triple.
+const OracleUnaryTask *encoderUnaryTemplate(UnaryOperation operation,
+                                             ElementwiseShape shape) {
+    for (const auto &candidate : kEncoderUnaryTasks)
+        if (candidate.operation == operation &&
             sameShape(candidate.shape, shape)) return &candidate;
     return nullptr;
 }
@@ -592,7 +615,11 @@ std::uint64_t alignTile(std::uint64_t value) {
 /// covers every batch element even though the descriptor's declared size
 /// covers only one.
 TensorLayout elementwiseTensor(std::uint32_t index, BatchedShape shape) {
-    const std::uint64_t row = std::max<std::uint64_t>(64, shape.width * 2);
+    // Apple pads every elementwise/norm row to the 64-byte DMA stride, not
+    // merely up to it: a width of 375 takes a 768-byte row, which the
+    // encoder-geometry oracles record. Widths below 32 elements keep the
+    // 64-byte floor.
+    const std::uint64_t row = (shape.width * 2 + 63) / 64 * 64;
     const std::uint64_t plane = row * shape.height;
     const std::uint64_t element = plane * shape.channels;
     return {index,
@@ -617,11 +644,11 @@ TensorLayout flatElementwiseTensor(std::uint32_t index, ElementwiseShape shape) 
 }
 
 /// Apple's matvec surface: one dense [1, 1, rows, width] fp16 plane whose row
-/// stride is the logical row, padded up to the 64-byte floor every H13
+/// stride is the logical row, padded to the 64-byte DMA stride every H13
 /// surface uses.
 TensorLayout matvecTensor(std::uint32_t index, std::uint32_t rows,
                           std::uint32_t width) {
-    const std::uint64_t row = std::max<std::uint64_t>(64, width * 2);
+    const std::uint64_t row = (width * 2 + 63) / 64 * 64;
     const std::uint64_t plane = row * rows;
     return {index, {1, 1, rows, width, plane, row}, alignTile(plane)};
 }
@@ -820,7 +847,8 @@ bool supportsElementwise(BinaryOperation operation, ElementwiseShape shape,
 
 bool supportsElementwise(UnaryOperation operation, ElementwiseShape shape) {
     return elementwiseTemplate(ElementwiseKind::Unary,
-                               static_cast<std::uint8_t>(operation), shape);
+                               static_cast<std::uint8_t>(operation), shape) ||
+           encoderUnaryTemplate(operation, shape);
 }
 
 bool supportsElementwiseConstant(BinaryOperation operation,
@@ -877,9 +905,22 @@ Program encodeElementwiseConstant(BinaryOperation operation,
 Program encodeElementwise(UnaryOperation operation, ElementwiseShape shape) {
     const auto *source = elementwiseTemplate(
         ElementwiseKind::Unary, static_cast<std::uint8_t>(operation), shape);
-    if (!source)
+    if (source)
+        return oracleProgram(*source, unaryConstants(operation, source->constantBytes), 1);
+    const auto *encoder = encoderUnaryTemplate(operation, shape);
+    if (!encoder)
         throw std::invalid_argument("H13 unary operation is outside the decoded parity envelope");
-    return oracleProgram(*source, unaryConstants(operation, source->constantBytes), 1);
+    Program program;
+    program.taskSurfaceChannels = {5, 4, 6, 7};
+    program.task = taskBytesFor(encoder->words, encoder->wordCount);
+    program.constants = unaryConstants(operation, encoder->constantBytes);
+    program.inputs = {elementwiseTensor(5, shape)};
+    program.output = elementwiseTensor(4, shape);
+    program.firstTaskBytes = encoder->firstTaskBytes;
+    program.taskCount = encoder->taskCount;
+    program.constantOffsetBytes = encoder->constantOffsetBytes;
+    program.scratchAllocationBytes = encoder->scratchAllocationBytes;
+    return program;
 }
 
 Program encodeMatvec(std::uint32_t reduction, const std::uint8_t *weights,
@@ -1432,12 +1473,24 @@ Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
     program.taskSurfaceChannels = {5, 4, 6, 7};
     program.task = taskBytesFor(source->words, source->wordCount);
     if (operand == BroadcastOperand::Constant) {
-        if (!constant ||
-            constantBytes != static_cast<std::size_t>(shape.x.channels) * 2)
+        const std::size_t elements =
+            static_cast<std::size_t>(shape.y.channels) * shape.y.height *
+            shape.y.width;
+        if (!constant || constantBytes != elements * 2)
             throw std::invalid_argument(
                 "H13 per-channel broadcast requires one fp16 constant per channel");
-        program.constants = perChannelConstants(operation, shape.x.channels,
-                                                constant, source->constantBytes);
+        if (source->constantBytes == constantBytes) {
+            // The wide-constant rows (>= 1024 channels) carry one dense copy
+            // of the resolved constant, blob header halfwords included.
+            program.constants.assign(constant, constant + constantBytes);
+        } else if (source->constantBytes == constantBytes * 2) {
+            program.constants = perChannelConstants(operation, elements,
+                                                    constant,
+                                                    source->constantBytes);
+        } else {
+            throw std::invalid_argument(
+                "H13 per-channel section matches neither decoded layout");
+        }
     } else {
         program.constants.assign(source->constantBytes, 0);
     }
