@@ -892,11 +892,17 @@ static BOOL matmulGeometry(ANEGraphValue *x, ANEGraphValue *result,
 
 /// The NCHW surface a rank-4 elementwise operand lays out as, batch included.
 static BOOL batchedShape(ANEGraphValue *value, ane::h13::BatchedShape *shape) {
-    if (!fp16Tensor(value) || value.type.shape.count != 4) return NO;
-    uint64_t extents[4];
-    for (NSUInteger index = 0; index < 4; ++index) {
-        extents[index] = value.type.shape[index].unsignedLongLongValue;
-        if (!extents[index] || extents[index] > UINT32_MAX) return NO;
+    // The encoder-geometry oracles record the rank-3 spelling Apple's own
+    // frontend produces: [1, A, B] compiles as the [1, 1, A, B] surface.
+    if (!fp16Tensor(value) || value.type.shape.count < 3 ||
+        value.type.shape.count > 4) return NO;
+    uint64_t extents[4] = {1, 1, 1, 1};
+    NSUInteger base = 4 - value.type.shape.count;
+    for (NSUInteger index = 0; index < value.type.shape.count; ++index) {
+        extents[base + index] =
+            value.type.shape[index].unsignedLongLongValue;
+        if (!extents[base + index] || extents[base + index] > UINT32_MAX)
+            return NO;
     }
     *shape = {static_cast<std::uint32_t>(extents[0]),
               static_cast<std::uint32_t>(extents[1]),
@@ -1091,7 +1097,7 @@ struct H13ParityPlan {
 /// when spatial, and its channel-flattened form, which shares the physical
 /// 64-byte row layout the pipeline already packs logical tensors into.
 static NSUInteger parityShapes(ANEGraphValue *value,
-                               ane::h13::ElementwiseShape shapes[2]) {
+                               ane::h13::ElementwiseShape shapes[3]) {
     NSUInteger elements = 0;
     if (!tensorElementCount(value, &elements) || elements > UINT32_MAX) return 0;
     NSUInteger count = 0;
@@ -1099,6 +1105,18 @@ static NSUInteger parityShapes(ANEGraphValue *value,
     if (elementwiseShape(value, &literal) &&
         (literal.height != 1 || literal.width != 1))
         shapes[count++] = literal;
+    // The encoder's rank-3 spell: Apple normalizes [1, A, B] to the
+    // [1, 1, A, B] surface (encoder-geometry oracles), which is neither the
+    // literal rank-4 form nor the flattened channel form.
+    if (value.type.kind == ANEValueTypeKindTensor &&
+        value.type.elementType == ANEElementTypeFP16 &&
+        value.type.shape.count == 3 &&
+        value.type.shape[0].unsignedIntegerValue == 1)
+        shapes[count++] = {1,
+                           static_cast<std::uint32_t>(
+                               value.type.shape[1].unsignedIntegerValue),
+                           static_cast<std::uint32_t>(
+                               value.type.shape[2].unsignedIntegerValue)};
     shapes[count++] = {static_cast<std::uint32_t>(elements), 1, 1};
     return count;
 }
@@ -1221,7 +1239,24 @@ static BOOL broadcastPlan(ANEGraphOperation *operation,
                           NSDictionary<NSString *, NSData *> *synthesizedConstants,
                           BOOL preferNative, H13BroadcastPlan *plan,
                           ANEGraphValue *__autoreleasing *constantOut) {
-    if (preferNative && nativeBinaryPlan(operation)) return NO;
+    if (preferNative && nativeBinaryPlan(operation)) {
+        // Native keeps every shape it already served. Where the decoded
+        // table covers the exact geometry as one whole-tensor program, the
+        // broadcast beats the thousands-of-programs 64-lane split, so fall
+        // through only for covered shapes.
+        ANEGraphValue *x = operation.operands[@"x"].value;
+        ANEGraphValue *y = operation.operands[@"y"].value;
+        H13BroadcastPlan probe{};
+        if (!x || !y || !batchedShape(x, &probe.shape.x) ||
+            !batchedShape(operation.results[0], &probe.result) ||
+            !batchedShape(y, &probe.shape.y) ||
+            probe.shape.y.batch != probe.shape.x.batch ||
+            !binaryEncoding(operation.operationName, &probe.operation) ||
+            !ane::h13::supportsBroadcast(probe.operation,
+                                         ane::h13::BroadcastOperand::Runtime,
+                                         probe.shape))
+            return NO;
+    }
     ANEGraphValue *x = operation.operands[@"x"].value;
     ANEGraphValue *y = operation.operands[@"y"].value;
     H13BroadcastPlan candidate{};
@@ -1242,9 +1277,13 @@ static BOOL broadcastPlan(ANEGraphOperation *operation,
             candidate.operand = ane::h13::BroadcastOperand::Scalar;
         } else if (batchedShape(y, &candidate.shape.y) &&
                    candidate.shape.y.batch == 1 &&
-                   candidate.shape.y.height == 1 &&
-                   candidate.shape.y.width == 1 &&
-                   candidate.shape.y.channels == candidate.shape.x.channels) {
+                   (candidate.shape.y.channels == 1) +
+                           (candidate.shape.y.height == 1) +
+                           (candidate.shape.y.width == 1) ==
+                       2) {
+            // A per-channel vector aligned to one broadcastable axis (C for
+            // the classic form, H or W for the rank-3 encoder forms); the
+            // decoded table decides which alignments Apple lowers.
             candidate.operand = ane::h13::BroadcastOperand::Constant;
             constant = y;
         } else {
@@ -1624,8 +1663,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         NSData *values = nil;
         if (broadcast.operand == ane::h13::BroadcastOperand::Constant) {
             values = perChannelConstantData(broadcastConstant,
-                broadcast.shape.x.channels, modelRoot, diagnostics,
-                resolvedConstants);
+                (NSUInteger)broadcast.shape.y.channels *
+                    broadcast.shape.y.height * broadcast.shape.y.width,
+                modelRoot, diagnostics, resolvedConstants);
             if (!values) return NO;
         }
         program = ane::h13::encodeBroadcast(broadcast.operation,

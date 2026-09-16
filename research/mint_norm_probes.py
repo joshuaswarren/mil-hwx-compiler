@@ -380,7 +380,7 @@ def keep_dims(record: dict[str, Any]) -> bool:
 def surface(chw: tuple[int, int, int]) -> dict[str, Any]:
     """The tensor descriptor H13Program's surface formula produces for a CHW."""
     channels, height, width = chw
-    row = max(64, width * 2)
+    row = max(64, (width * 2 + 63) // 64 * 64)
     plane = row * height
     return {"element_code": 5, "shape": [1, channels, height, width],
             "strides": [plane * channels, plane, row, 2],
@@ -482,10 +482,22 @@ OPERATION_ENUM = {
 }
 
 
-def axis_mask(axes: tuple[int, ...]) -> int:
+def axis_mask(axes: tuple[int, ...], shape: tuple[int, ...] | None = None) -> int:
+    """The compiler's constantAxisMask convention: the surface bit is the
+    canonical CHW axis, which is the MIL axis shifted by the leading unit
+    dimensions normSurface drops and the unit dimensions it inserts, plus the
+    NCHW batch axis."""
+    dimensions = list(shape or ())
+    shift = 0
+    while len(dimensions) > 3 and dimensions[0] == 1:
+        dimensions.pop(0)
+        shift -= 1
+    while dimensions and len(dimensions) < 3:
+        dimensions.insert(0, 1)
+        shift += 1
     mask = 0
     for axis in axes:
-        mask |= 1 << axis
+        mask |= 1 << (axis + shift + 1)
     return mask
 
 
@@ -518,11 +530,15 @@ def emit(records: list[dict[str, Any]], out) -> None:
             print("};", file=out)
         operation, input_shape, axes, kept = template_key(record)
         output_shape = canonical_shape(result_shape(record))
+        # The axis shift mirrors normSurface on the original MIL shape, not
+        # the canonical shape (whose leading units are already gone).
+        mil_axes_mask = axis_mask(axes, tuple(record["parameters"]["shape"]))
         rows.append(
             f"    {{{OPERATION_ENUM[operation]}, "
             f"{{{input_shape[0]}, {input_shape[1]}, {input_shape[2]}}}, "
             f"{{{output_shape[0]}, {output_shape[1]}, {output_shape[2]}}}, "
-            f"0x{axis_mask(axes):02x}, {'true' if kept else 'false'}, "
+            f"0x{mil_axes_mask:02x}, "
+            f"{'true' if kept else 'false'}, "
             f"NormConstants::{constant_kind(record, tables)}, "
             f"{symbol}, std::size({symbol}), "
             f"{(descriptor['task_words_minus_one'] + 1) * 4}, "

@@ -313,7 +313,7 @@ def align(value: int, alignment: int) -> int:
 
 def elementwise_surface(shape: tuple[int, ...]) -> dict[str, Any]:
     batch, channels, height, width = shape
-    row = max(ROW_FLOOR, width * 2)
+    row = max(ROW_FLOOR, (width * 2 + 63) // 64 * 64)
     plane = row * height
     element = plane * channels
     return {"shape": [batch, channels, height, width],
@@ -576,18 +576,30 @@ def matmul_row(record: dict[str, Any], symbol: str,
             f"{constants}, {scratch}}},  // {record['case']}")
 
 
+def canonical_shape(shape: tuple[int, ...]) -> tuple[int, ...]:
+    """The rank-4 form a rank-3 MIL shape takes: one unit prepended.
+
+    Apple's encoder-geometry oracles record exactly this for the rank-3
+    unaries and broadcasts: [1, A, B] compiles as [1, 1, A, B].
+    """
+    dimensions = list(shape)
+    while len(dimensions) < 4:
+        dimensions.insert(0, 1)
+    return tuple(dimensions)
+
+
 def broadcast_row(record: dict[str, Any], symbol: str,
                   words: list[int]) -> str:
     parameters = record["parameters"]
     descriptor = record["program_descriptor"]
     operation = parameters["operation"]
     operand = parameters["operand"]
-    x_shape = tuple(parameters["shape"])
-    output_shape = tuple(parameters["output_shape"])
+    x_shape = canonical_shape(tuple(parameters["shape"]))
+    output_shape = canonical_shape(tuple(parameters["output_shape"]))
     x = elementwise_surface(x_shape)
     output = elementwise_surface(output_shape)
     if operand == "runtime":
-        y_shape = tuple(parameters["operand_shape"])
+        y_shape = canonical_shape(tuple(parameters["operand_shape"]))
         y = elementwise_surface(y_shape)
         # Identical operands are laid out in declaration order; any broadcast
         # puts the output between them.
@@ -596,11 +608,32 @@ def broadcast_row(record: dict[str, Any], symbol: str,
         content = bytes(record["constant_section"]["size"])
     else:
         y_shape = (0, 0, 0, 0) if operand == "scalar" \
-            else tuple(parameters["operand_shape"])
+            else canonical_shape(tuple(parameters["operand_shape"]))
         scratch = check_surfaces(record, [x, output], [0, 1])
-        content = bytes(record["constant_section"]["size"]) if operand == "scalar" \
-            else per_channel_constants(operation, x_shape[1],
-                                       uniform_blob(x_shape[1]))
+        if operand == "scalar":
+            content = bytes(record["constant_section"]["size"])
+        else:
+            elements = 1
+            for extent in parameters["operand_shape"] or ():
+                elements *= extent
+            blob = uniform_blob(elements)
+            section = record["constant_section"]
+            # Apple lays small per-channel constants out as a bias block plus
+            # a scale block and wide ones (>= 1024 channels) as one dense copy
+            # of the resolved constant; decide from the recorded section, not
+            # by the channel count.
+            blocked = per_channel_constants(operation, elements, blob)
+            dense = blob
+            if len(dense) == section["size"] and \
+                    hashlib.sha256(dense).hexdigest() == section["sha256"]:
+                content = dense
+            elif len(blocked) == section["size"] and \
+                    hashlib.sha256(blocked).hexdigest() == section["sha256"]:
+                content = blocked
+            else:
+                raise SystemExit(
+                    f"{record['case']} per-channel section matches neither "
+                    "the dense nor the block layout")
     constants = check_constants(record, content)
     if output_shape != tuple(max(left, right)
                              for left, right in zip(x_shape, y_shape or x_shape)):

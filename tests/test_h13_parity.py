@@ -327,9 +327,9 @@ def main():
     # Counts exclude the 73 NATIVE_SELECTION_CASES (4 binary_runtime,
     # 1 binary_constant, 34 env_broadcast, 20 env_matmul, 9 matmul,
     # 5 rrmm_matvec) that commit 4849a0e moved to native encoders.
-    expected = {"binary_runtime": 46, "binary_constant": 11, "unary": 25,
-                "matmul": 27, "normalization": 105, "reduction": 114,
-                "env_broadcast": 59, "env_matmul": 90, "env_conv": 15}
+    expected = {"binary_runtime": 46, "binary_constant": 11, "unary": 28,
+                "matmul": 27, "normalization": 108, "reduction": 114,
+                "env_broadcast": 68, "env_matmul": 90, "env_conv": 15}
     for family in ("rrmm_broadcast", "rrmm_matmul", "rrmm_matvec",
                    "conv_probe"):
         if families[family]:

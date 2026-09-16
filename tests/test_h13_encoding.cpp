@@ -306,7 +306,11 @@ void checkEncoderUnaryEnvelope() {
     assert(!supportsElementwise(UnaryOperation::Silu, {1024, 1, 1}));
     assert(!supportsElementwise(UnaryOperation::Silu, {384000, 1, 1}));
     assert(!supportsElementwise(UnaryOperation::Silu, {1024, 375, 1}));
-    assert(!supportsElementwise(UnaryOperation::Silu, {1, 1024, 375}));
+    // The encoder-geometry oracles (2026-09-16) decode the rank-3 spell
+    // [1, A, B] as the [1, 1, A, B] surface.
+    assert(supportsElementwise(UnaryOperation::Silu, {1, 1024, 375}));
+    assert(supportsElementwise(UnaryOperation::Silu, {1, 375, 4096}));
+    assert(supportsElementwise(UnaryOperation::Sigmoid, {1, 1024, 375}));
     assert(!supportsElementwise(UnaryOperation::Sigmoid, {384000, 1, 1}));
     assert(!supportsElementwise(UnaryOperation::Sigmoid, {1024, 375, 1}));
 }
@@ -322,14 +326,17 @@ void checkEncoderNormEnvelope() {
                               {{512, 1, 1}, {512, 1, 1}, 0x02, true}));
     assert(supportsNormParity(NormOperation::Softmax,
                               {{8, 128, 128}, {8, 128, 128}, 0x08, true}));
-    assert(!supportsNormParity(NormOperation::LayerNorm,
-                               {{1, 375, 1024}, {1, 375, 1024}, 0x08, true}));
+    // The encoder-geometry oracles (2026-09-16) decode the encoder norm
+    // shapes: last-axis layer_norm at [1,1,375,1024] and last-axis softmax
+    // over one and eight heads at [375,375].
+    assert(supportsNormParity(NormOperation::LayerNorm,
+                              {{1, 375, 1024}, {1, 375, 1024}, 0x08, true}));
     assert(!supportsNormParity(NormOperation::LayerNorm,
                                {{375, 1024, 1}, {375, 1024, 1}, 0x04, true}));
-    assert(!supportsNormParity(NormOperation::Softmax,
-                               {{8, 375, 375}, {8, 375, 375}, 0x08, true}));
-    assert(!supportsNormParity(NormOperation::Softmax,
-                               {{1, 375, 375}, {1, 375, 375}, 0x08, true}));
+    assert(supportsNormParity(NormOperation::Softmax,
+                              {{8, 375, 375}, {8, 375, 375}, 0x08, true}));
+    assert(supportsNormParity(NormOperation::Softmax,
+                              {{1, 375, 375}, {1, 375, 375}, 0x08, true}));
 }
 
 void checkEncoderConvEnvelope() {
