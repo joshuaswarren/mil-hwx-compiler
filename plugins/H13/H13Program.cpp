@@ -605,6 +605,17 @@ TensorLayout elementwiseTensor(std::uint32_t index, ElementwiseShape shape) {
                                                  shape.height, shape.width});
 }
 
+/// The decoded elementwise TDs address their surfaces through one flat window
+/// of 2·elements bytes (their DMA counts are the whole tensor, not one row),
+/// so staging maps logical element i to tile byte 2·i: a single wide row.
+/// The 64-byte row floor keeps sub-row scalars on Apple's padded surface.
+TensorLayout flatElementwiseTensor(std::uint32_t index, ElementwiseShape shape) {
+    const std::uint64_t elements = static_cast<std::uint64_t>(shape.channels) *
+                                   shape.height * shape.width;
+    const std::uint64_t row = std::max<std::uint64_t>(64, elements * 2);
+    return {index, {1, 1, 1, elements, row, row}, alignTile(row)};
+}
+
 /// Apple's matvec surface: one dense [1, 1, rows, width] fp16 plane whose row
 /// stride is the logical row, padded up to the 64-byte floor every H13
 /// surface uses.
@@ -852,9 +863,16 @@ Program encodeElementwiseConstant(BinaryOperation operation,
             "H13 constant-blob binary needs the whole fp16 blob");
     if (source->constantBytes != constantBytes)
         throw std::logic_error("H13 constant-blob constant size mismatch");
-    return oracleProgram(
+    // The decoded constant-blob TDs cover one 1024-byte span; staging the
+    // surface one-element-per-row reaches only the first 16 elements on
+    // hardware (jwm1 2026-09-15). Pack the tensor contiguously instead: the
+    // TD's whole span then covers every element.
+    auto program = oracleProgram(
         *source, std::vector<std::uint8_t>(constant, constant + constantBytes),
         1);
+    program.inputs.front() = flatElementwiseTensor(5, shape);
+    program.output = flatElementwiseTensor(4, shape);
+    return program;
 }
 Program encodeElementwise(UnaryOperation operation, ElementwiseShape shape) {
     const auto *source = elementwiseTemplate(
