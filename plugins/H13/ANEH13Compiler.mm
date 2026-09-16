@@ -1078,6 +1078,7 @@ static NSString *stringArgument(ANEGraphArgument *argument) {
 struct H13ParityPlan {
     BOOL unary;
     BOOL scalarConstant;
+    BOOL constantBlob;
     ane::h13::UnaryOperation unaryOperation;
     ane::h13::BinaryOperation binaryOperation;
     uint16_t scalarBits;
@@ -1167,22 +1168,29 @@ static BOOL parityPlan(ANEGraphOperation *operation,
     BOOL runtime = !synthesizedConstants[y.name] && !constantValue(y);
     if (runtime) {
         if (!tensor(y, operation.results[0].type.shape)) return NO;
+    } else if (y.type.kind == ANEValueTypeKindTensor &&
+               tensor(y, operation.results[0].type.shape)) {
+        // The decoded constant-blob twin: the whole constant rides the
+        // program's constant section, so no runtime surface binds it.
+        candidate.constantBlob = YES;
     } else if (synthesizedConstants[y.name] ||
                y.type.kind != ANEValueTypeKindScalar ||
-               y.type.elementType != ANEElementTypeFP16 ||
                y.producer.arguments.count ||
                !fp16Scalar(y.producer.attributes[@"val"], &candidate.scalarBits) ||
                candidate.scalarBits != 0x3800) {
         return NO;
     }
     for (NSUInteger index = 0; index < shapeCount; ++index) {
-        if (!ane::h13::supportsElementwise(candidate.binaryOperation, shapes[index],
-                                           !runtime))
+        if (candidate.constantBlob
+                ? !ane::h13::supportsElementwiseConstant(candidate.binaryOperation,
+                                                         shapes[index])
+                : !ane::h13::supportsElementwise(candidate.binaryOperation,
+                                                 shapes[index], !runtime))
             continue;
         candidate.shape = shapes[index];
         candidate.elements = (NSUInteger)shapes[index].channels *
             shapes[index].height * shapes[index].width;
-        candidate.scalarConstant = !runtime;
+        candidate.scalarConstant = !runtime && !candidate.constantBlob;
         candidate.inputCount = runtime ? 2 : 1;
         *plan = candidate;
         return YES;
@@ -1634,6 +1642,31 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
 
     H13ParityPlan plan{};
     if (parityPlan(operation, synthesizedConstants, preferNative, &plan)) {
+        if (plan.constantBlob) {
+            NSData *whole = resolvedConstants[y.name];
+            if (!whole) {
+                whole = synthesizedConstants[y.name];
+                if (!whole) {
+                    whole = [ANEBlobResolver loadConstantForOperation:y.producer
+                        expectedBytes:plan.elements * 2 modelRoot:modelRoot
+                        diagnostics:diagnostics];
+                    if (!whole) return NO;
+                }
+                resolvedConstants[y.name] = whole;
+            }
+            if (whole.length != plan.elements * 2)
+                return reject(diagnostics,
+                    @"H13 constant-blob payload has the wrong size",
+                    operation, @"h13.invalid-constant-payload");
+            program = ane::h13::encodeElementwiseConstant(plan.binaryOperation,
+                plan.shape, static_cast<const std::uint8_t *>(whole.bytes),
+                whole.length);
+            *inputsOut = @[x];
+            *constantInputOut = nil;
+            *constantDataOut = nil;
+            *manifestOperationOut = name;
+            return YES;
+        }
         program = plan.unary
             ? ane::h13::encodeElementwise(plan.unaryOperation, plan.shape)
             : ane::h13::encodeElementwise(plan.binaryOperation, plan.shape,

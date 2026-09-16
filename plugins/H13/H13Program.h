@@ -132,6 +132,16 @@ bool supportsElementwise(UnaryOperation operation, ElementwiseShape shape);
 Program encodeElementwise(BinaryOperation operation, ElementwiseShape shape,
                           bool scalarConstant = false,
                           std::uint16_t scalarBits = 0x3800);
+bool supportsElementwiseConstant(BinaryOperation operation,
+                                 ElementwiseShape shape);
+/// Encodes Apple's constant-blob twin: one runtime surface whose second
+/// source reads the operation's constant straight from the constant
+/// section. `constant` is the whole fp16 blob (elements * 2 bytes) exactly
+/// as the MIL resolves it.
+Program encodeElementwiseConstant(BinaryOperation operation,
+                                  ElementwiseShape shape,
+                                  const std::uint8_t *constant,
+                                  std::size_t constantBytes);
 Program encodeElementwise(UnaryOperation operation, ElementwiseShape shape);
 // Weights are row-major little-endian fp16; transposeY selects [512,K] instead of [K,512].
 Program encodeMatvec(std::uint32_t reduction,

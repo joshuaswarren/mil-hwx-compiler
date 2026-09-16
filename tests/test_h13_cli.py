@@ -1250,18 +1250,17 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
             (root / 'bias.bin').write_bytes(bias_blob)
             projected = compile_text(matmul_activation_chain_source(), 'matmul-add-relu')
             projected_manifest = json.loads((projected / 'manifest.json').read_text())
-            assert len(projected_manifest['programs']) == 10
+            assert len(projected_manifest['programs']) == 3
             assert [program['operation'] for program in projected_manifest['programs']] == \
-                ['matmul'] + ['add'] * 8 + ['relu']
-            assert projected_manifest['dispatchPlan'] == list(range(10))
+                ['matmul', 'add', 'relu']
+            assert projected_manifest['dispatchPlan'] == list(range(3))
             projected_manifest_path = projected / 'manifest.json'
             invalid_projected_manifest = json.loads(json.dumps(projected_manifest))
             invalid_projected_manifest['dispatchPlan'][:2] = [1, 0]
             projected_manifest_path.write_text(json.dumps(invalid_projected_manifest))
             inspect(projected, success=False)
             invalid_projected_manifest = json.loads(json.dumps(projected_manifest))
-            invalid_projected_manifest['programs'][1]['inputs'][0]['slice'][
-                'elementOffset'] = 64
+            invalid_projected_manifest['programs'][1]['taskDescriptors'] = 0
             projected_manifest_path.write_text(json.dumps(invalid_projected_manifest))
             inspect(projected, success=False)
             projected_manifest_path.write_text(json.dumps(projected_manifest))
