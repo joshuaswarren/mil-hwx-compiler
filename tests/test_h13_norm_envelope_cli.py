@@ -98,8 +98,18 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-norm-envelope-") as directo
     assert sm["programs"][0]["operation"] == "softmax"
     assert sm["programs"][0]["encoder"] == "apple-parity-norm"
     assert sm["programs"][0]["taskDescriptors"] == 6
-    compile_source(root, "ln-enc", ln_encoder, expected_code="h13.norm-outside-envelope")
+    # The 2026-09-16 encoder-geometry oracles decode the no-affine encoder
+    # forms; the affine form stays refused (Apple refuses it too).
+    ln_enc = compile_source(root, "ln-enc", ln_encoder)
+    assert len(ln_enc["programs"]) == 1
+    assert ln_enc["programs"][0]["operation"] == "layer_norm"
+    assert ln_enc["programs"][0]["encoder"] == "apple-parity-norm"
+    assert ln_enc["programs"][0]["taskDescriptors"] == 5
     compile_source(root, "ln-enc-aff", ln_encoder_affine,
                    expected_code="h13.norm-outside-envelope")
-    compile_source(root, "sm-enc", sm_encoder, expected_code="h13.norm-outside-envelope")
+    sm_enc = compile_source(root, "sm-enc", sm_encoder)
+    assert len(sm_enc["programs"]) == 1
+    assert sm_enc["programs"][0]["operation"] == "softmax"
+    assert sm_enc["programs"][0]["encoder"] == "apple-parity-norm"
+    assert sm_enc["programs"][0]["taskDescriptors"] == 5
 print("h13 norm envelope cli: PASS")

@@ -40,14 +40,12 @@ def compile_source(root, name, text, expected_code=None):
 with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-silu-envelope-") as directory:
     root = Path(directory)
     for op in ("silu", "sigmoid"):
-        for shape in ("[1, 64, 1, 1]", "[1, 512, 1, 1]"):
+        for shape in ("[1, 64, 1, 1]", "[1, 512, 1, 1]", "[1, 1024, 375]"):
             manifest = compile_source(root, f"{op}-{shape}", source(op, shape))
             assert len(manifest["programs"]) == 1, manifest["programs"]
             program = manifest["programs"][0]
             assert program["operation"] == op
             assert program["encoder"] == "h13-oracle-parity"
-        compile_source(root, f"{op}-glu", source(op, "[1, 1024, 375]"),
-                       expected_code="h13.unary-outside-envelope")
     compile_source(root, "silu-128", source("silu", "[1, 128, 1, 1]"),
                    expected_code="h13.unary-outside-envelope")
 print("h13 silu envelope cli: PASS")
