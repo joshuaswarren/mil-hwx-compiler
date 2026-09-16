@@ -15,13 +15,14 @@ HEADER = struct.Struct('<QIIQQII32I192Q')
 HEADER_BYTES = 0x1000
 TASK_BYTES = 0x274
 CONSTANT_OFFSET = 0x280
-TILE_BYTES = 0x4000
 PARITY_MATVEC = 'apple-parity-matvec'
 PARITY_MATMUL = 'apple-parity-matmul'
 PARITY_BATCHED_MATMUL = 'apple-parity-batched-matmul'
 PARITY_BATCHED_MATVEC = 'apple-parity-batched-matvec'
 PARITY_BOOLEAN = 'apple-parity-boolean'
 PARITY_BROADCAST = 'apple-parity-broadcast'
+TILE_BYTES = 0x4000
+PARITY_ORACLE = 'h13-oracle-parity'
 CHAIN_ENCODER = 'composed-chain'
 
 
@@ -110,13 +111,21 @@ def validate_task_headers(program, tasks, tiles):
                             program.get('constantBytes', 0) > 0,
                             f'H13 task[{index}] selects noncanonical channel 1')
                     continue
-                destination = registers.get(0x17800, H13_DMA_DISABLED)
-                destination_channel = (words[8] >> 12) & 0x1f
-                if program.get('encoder') == PARITY_BOOLEAN and                         program.get('constantBytes', 0) > 0:
+                if program.get('encoder') == PARITY_BOOLEAN and \
+                        program.get('constantBytes', 0) > 0:
                     # The boolean encoder reads its folded constant/blob
                     # surface on channel 1; runtime operands stay on 4-7.
                     require(address in (0x13800, 0x13804),
                             f'H13 task[{index}] selects noncanonical channel 1')
+                    continue
+                if program.get('encoder') == PARITY_ORACLE and \
+                        address in (0x13800, 0x13804) and \
+                        program.get('operation') in ('add', 'mul') and \
+                        len(program.get('inputs', ())) == 1 and \
+                        program.get('constantBytes', 0) > 0:
+                    # The oracle constant-blob twins (the decoded exported
+                    # fixtures): the second source reads the operation's
+                    # constant straight from the constant section.
                     continue
                 require(address in (0x13800, 0x13804) and
                         program.get('encoder') == PARITY_BROADCAST and

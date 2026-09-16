@@ -44,12 +44,18 @@ def const(name, literal):
            f"[name = string(\"{name}\"), val = {literal}];\n"
 
 
-def reconstruct_task(td):
+def reconstruct_task(td, name_second=False):
     words = [int(w, 16) for w in td["header_words"]]
     flat = {}
     for block in td["blocks"].values():
         for address, value in block["words"].items():
             flat[int(address, 16)] = int(value, 16)
+    if name_second and flat.get(0x13800, 0x00008880) != 0x00008880:
+        # The strict-bind gate: the encoder stamps the descriptors that read
+        # both runtime surfaces with a live source-2 DMA config naming
+        # channel 6, so the task stream names every declared surface.
+        words[8] = (words[8] & ~(0x1F << 6)) | (6 << 6)
+        flat[0x13804] = 0x00033880
     for record in td["records"]:
         words.append(int(record["header"], 16))
         base = int(record["address"], 16)
@@ -58,9 +64,10 @@ def reconstruct_task(td):
     return words
 
 
-def capture_stream(record):
+def capture_stream(record, name_second=False):
     """The full task byte stream with the link markers bindTasks applies."""
-    words_list = [reconstruct_task(t) for t in record["task_descriptors"]]
+    words_list = [reconstruct_task(t, name_second)
+                  for t in record["task_descriptors"]]
     stream = bytearray()
     offset = 0
     for index, words in enumerate(words_list):
@@ -147,8 +154,9 @@ with tempfile.TemporaryDirectory() as temporary:
         assert program["encoder"] == (
             "apple-parity-batched-matmul" if record["parameters"]["w_storage"] == "runtime"
             else "apple-parity-batched-matvec")
+        runtime = record["parameters"]["w_storage"] == "runtime"
         assert anec_task_stream(package / "program-0.anec") == \
-            capture_stream(record), capture.stem
+            capture_stream(record, runtime), capture.stem
         if const_bin.exists():
             anec = (package / "program-0.anec").read_bytes()
             task_size = struct.unpack_from("<Q", anec, 16)[0]

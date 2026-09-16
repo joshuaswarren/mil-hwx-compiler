@@ -385,7 +385,16 @@ std::vector<std::uint8_t> packWeights(std::uint32_t reduction,
     return packed;
 }
 
-enum class ElementwiseKind : std::uint8_t { BinaryRuntime, BinaryScalar, Unary };
+enum class ElementwiseKind : std::uint8_t {
+    BinaryRuntime,
+    BinaryScalar,
+    Unary,
+    /// Apple's constant-blob twin of the runtime binary form: one runtime
+    /// surface plus a second source the task reads straight from the
+    /// constant section (source 2 names the kernel BAR channel). Decoded
+    /// from the pinned exported fixtures.
+    BinaryConstant,
+};
 
 struct OracleTaskTemplate {
     ElementwiseKind kind;
@@ -802,6 +811,12 @@ bool supportsElementwise(UnaryOperation operation, ElementwiseShape shape) {
     return elementwiseTemplate(ElementwiseKind::Unary,
                                static_cast<std::uint8_t>(operation), shape);
 }
+
+bool supportsElementwiseConstant(BinaryOperation operation,
+                                 ElementwiseShape shape) {
+    return elementwiseTemplate(ElementwiseKind::BinaryConstant,
+                               static_cast<std::uint8_t>(operation), shape);
+}
 Program encodeElementwise(BinaryOperation operation, ElementwiseShape shape,
                           bool scalarConstant, std::uint16_t scalarBits) {
     const auto kind = scalarConstant ? ElementwiseKind::BinaryScalar
@@ -818,6 +833,28 @@ Program encodeElementwise(BinaryOperation operation, ElementwiseShape shape,
                               shape.width)
         : std::vector<std::uint8_t>(source->constantBytes, 0);
     return oracleProgram(*source, constants, scalarConstant ? 1 : 2);
+}
+
+Program encodeElementwiseConstant(BinaryOperation operation,
+                                  ElementwiseShape shape,
+                                  const std::uint8_t *constant,
+                                  std::size_t constantBytes) {
+    const auto *source = elementwiseTemplate(
+        ElementwiseKind::BinaryConstant,
+        static_cast<std::uint8_t>(operation), shape);
+    if (!source)
+        throw std::invalid_argument(
+            "H13 constant-blob binary is outside the decoded parity envelope");
+    const auto elements = static_cast<std::size_t>(shape.channels) *
+                          shape.height * shape.width;
+    if (!constant || constantBytes != elements * 2)
+        throw std::invalid_argument(
+            "H13 constant-blob binary needs the whole fp16 blob");
+    if (source->constantBytes != constantBytes)
+        throw std::logic_error("H13 constant-blob constant size mismatch");
+    return oracleProgram(
+        *source, std::vector<std::uint8_t>(constant, constant + constantBytes),
+        1);
 }
 Program encodeElementwise(UnaryOperation operation, ElementwiseShape shape) {
     const auto *source = elementwiseTemplate(
@@ -1001,6 +1038,43 @@ std::vector<std::uint8_t> packBatchedWeights(BatchedMatmulShape shape,
     return packed;
 }
 
+/// The batched-matmul staging tasks read both runtime surfaces, but Apple's
+/// decoded runtime template names only source 1: the source-2 selector keeps
+/// channel 0 and the source-2 DMA configuration word keeps the disabled
+/// encoding, even though those same tasks carry the source-2 transfer
+/// registers. A task stream that under-names the surfaces its header
+/// declares falls back to the positional channel map, which the strict
+/// bundle gate refuses, so stamp the second source onto the descriptors
+/// that read it: selector bits 6:10 name channel 6 and the configuration
+/// word takes the live encoding Apple's own two-source tasks carry.
+void nameSecondSource(std::vector<std::uint8_t> &task,
+                      std::size_t firstTaskBytes, std::uint32_t taskCount) {
+    constexpr std::uint32_t sourceOneConfig = 0x13800;
+    constexpr std::uint32_t sourceTwoConfig = 0x13804;
+    constexpr std::uint32_t disabled = 0x00008880;
+    constexpr std::uint32_t live = 0x00033880;
+    std::size_t offset = 0, bytes = firstTaskBytes;
+    for (std::uint32_t index = 0; index != taskCount; ++index) {
+        if (bytes < 40 || offset > task.size() || bytes > task.size() - offset)
+            throw std::logic_error("H13 batched task is truncated");
+        std::size_t word = 0;
+        if (findH13Register(task, offset, bytes, sourceOneConfig, word) &&
+            loadLE32(task, word) != disabled) {
+            const std::size_t selector = offset + 32;
+            storeLE32(task, selector,
+                      (loadLE32(task, selector) & ~(31u << 6)) | (6u << 6));
+            if (!findH13Register(task, offset, bytes, sourceTwoConfig, word))
+                throw std::logic_error(
+                    "H13 batched staging task carries no source-2 record");
+            storeLE32(task, word, live);
+        }
+        const auto next = loadLE32(task, offset + 28);
+        if (!next) break;
+        bytes = (((loadLE32(task, offset + 4) >> 16) & 0x1ff) + 1) * 4;
+        offset = next;
+    }
+}
+
 Program encodeBatchedMatmul(BatchedMatmulShape shape,
                             const std::uint8_t *packed,
                             std::size_t packedBytes) {
@@ -1092,6 +1166,9 @@ Program encodeBatchedMatmul(BatchedMatmulShape shape,
         program.inputs = {batchedTensor(5, shape.batch, shape.rows,
                                         shape.reduction)};
     }
+    if (shape.runtimeWeight)
+        nameSecondSource(program.task, program.firstTaskBytes,
+                         program.taskCount);
     program.output = batchedTensor(4, shape.batch, shape.rows, shape.columns);
     program.outputBindingIndex = 0;
     return program;
