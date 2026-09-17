@@ -1179,8 +1179,11 @@ Program encodeLinearParity(std::uint32_t rows, std::uint32_t reduction,
         throw std::logic_error(
             "H13 packed linear section differs from the decoded size");
     program.task = taskBytesFor(source->words, source->wordCount);
-    program.inputs = {matvecTensor(5, rows, reduction)};
-    program.output = matvecTensor(4, rows, columns);
+    // The decoded stream binds the input surface at channel 4 and the
+    // output at 5 (input-first); the manifest must name the same channels
+    // or the strict bundle gate refuses the mismatch.
+    program.inputs = {matvecTensor(4, rows, reduction)};
+    program.output = matvecTensor(5, rows, columns);
     program.firstTaskBytes = source->firstTaskBytes;
     program.taskCount = source->taskCount;
     program.constantOffsetBytes = source->constantOffsetBytes;
@@ -1260,8 +1263,10 @@ Program encodeFFNChain(std::uint32_t rows, std::uint32_t inner1,
     if (at != source->constantBytes || column != columns)
         throw std::logic_error("H13 FFN chain tile model misses the section");
     program.task = taskBytesFor(source->words, source->wordCount);
-    program.inputs = {matvecTensor(5, rows, inner1)};
-    program.output = matvecTensor(4, rows, columns);
+    // Input-first decoded binding, mirroring encodeLinearParity: the
+    // manifest names the channels the task stream actually selects.
+    program.inputs = {matvecTensor(4, rows, inner1)};
+    program.output = matvecTensor(5, rows, columns);
     program.firstTaskBytes = source->firstTaskBytes;
     program.taskCount = source->taskCount;
     program.constantOffsetBytes = source->constantOffsetBytes;
