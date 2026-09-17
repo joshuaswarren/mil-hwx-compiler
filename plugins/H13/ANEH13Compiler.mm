@@ -2291,7 +2291,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             static_cast<const uint8_t *>(weights.bytes), weights.length,
             biasMode == ane::h13::LinearBiasMode::Block
                 ? static_cast<const uint8_t *>(biasData.bytes) : nullptr,
-            biasMode == ane::h13::LinearBiasMode::Block ? biasData.length : 0);
+            biasMode == ane::h13::LinearBiasMode::Block ? biasData.length : 0,
+            biasMode == ane::h13::LinearBiasMode::Uniform
+                ? static_cast<const uint16_t *>(biasData.bytes)[0] : 0x3401);
         *inputsOut = @[x];
         *manifestOperationOut = name;
         return YES;
