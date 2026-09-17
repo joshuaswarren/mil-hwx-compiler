@@ -1174,27 +1174,62 @@ Program encodeLinearParity(std::uint32_t rows, std::uint32_t reduction,
         // The smaller geometries (n128, n640, n4096) have not been
         // measured on device; keep their identity packing so the parity
         // gates against the captured oracles keep passing.
+        // 2026-09-17 CRT (jw16, receipts/2026-09-17-ffn-mm2-plane.md):
+        // the (375, 1024, 4096) uniform linear reads the SAME inverse
+        // permutation, generalized to 256 planes of 16384 halves
+        // (plane P holds group g_inv(P), lane stride 16, no wrap at
+        // k=1024) — the g_inv formula below is bit-exact for 256
+        // planes too. The (375, 4096, 1024) uniform linear instead
+        // reads groups at IDENTITY plane order with a per-group 8/8
+        // column split: outputs c<8 live in plane 2g at lane stride 8,
+        // outputs c>=8 in plane 2g+1 at 8L + (c-8). Other geometries
+        // are still unmeasured on device and keep identity packing so
+        // the parity gates against the captured oracles keep passing.
         const std::uint32_t group = std::min<std::uint32_t>(16, columns);
         const auto *half = reinterpret_cast<const std::uint16_t *>(weights);
-        program.constants.assign(weightBytes, 0);
-        const std::size_t planeBytes =
-            static_cast<std::size_t>(group) * reduction * 2;
-        const bool usePermutation =
+        const bool mm1Permutation =
             group == 16 && reduction == 1024 && columns == 1024;
-        for (std::uint32_t plane = 0; plane != columns / group; ++plane) {
-            const std::uint32_t g = usePermutation
-                ? (((plane >> 5) << 5) | ((plane & 1) << 4) |
-                   ((plane >> 1) & 0xF))
-                : plane;
-            std::size_t at = plane * planeBytes;
-            for (std::uint32_t red = 0; red != reduction; ++red)
-                for (std::uint32_t c = 0; c != group; ++c) {
-                    std::memcpy(program.constants.data() + at,
-                                half + (g * group + c) *
+        const bool mm1Permutation256 =
+            group == 16 && reduction == 1024 && columns == 4096;
+        const bool mm2ColumnSplit =
+            group == 16 && reduction == 4096 && columns == 1024;
+        if (mm2ColumnSplit) {
+            program.constants.assign(weightBytes, 0);
+            for (std::uint32_t g = 0; g != columns / group; ++g) {
+                for (std::uint32_t half2 = 0; half2 != 2; ++half2) {
+                    std::size_t at = (2 * g + half2) *
+                        static_cast<std::size_t>(group / 2) * reduction * 2;
+                    for (std::uint32_t red = 0; red != reduction; ++red)
+                        for (std::uint32_t c = 0; c != group / 2; ++c) {
+                            std::memcpy(
+                                program.constants.data() + at,
+                                half + (g * group + half2 * (group / 2) + c) *
                                            static_cast<std::size_t>(reduction) + red,
                                 2);
-                    at += 2;
+                            at += 2;
+                        }
                 }
+            }
+        } else {
+            program.constants.assign(weightBytes, 0);
+            const std::size_t planeBytes =
+                static_cast<std::size_t>(group) * reduction * 2;
+            for (std::uint32_t plane = 0; plane != columns / group; ++plane) {
+                const std::uint32_t g =
+                    (mm1Permutation || mm1Permutation256)
+                    ? (((plane >> 5) << 5) | ((plane & 1) << 4) |
+                       ((plane >> 1) & 0xF))
+                    : plane;
+                std::size_t at = plane * planeBytes;
+                for (std::uint32_t red = 0; red != reduction; ++red)
+                    for (std::uint32_t c = 0; c != group; ++c) {
+                        std::memcpy(program.constants.data() + at,
+                                    half + (g * group + c) *
+                                               static_cast<std::size_t>(reduction) + red,
+                                    2);
+                        at += 2;
+                    }
+            }
         }
     }
     if (program.constants.size() != source->constantBytes)
