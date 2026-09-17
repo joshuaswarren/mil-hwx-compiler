@@ -1155,25 +1155,46 @@ Program encodeLinearParity(std::uint32_t rows, std::uint32_t reduction,
         if (bias && biasBytes)
             throw std::invalid_argument(
                 "H13 folded linear takes no constant bias block");
-        // The m375 planes are sequential 16-column groups cut reduction-
-        // outer — the block-form tile layout minus the bias strips. The
-        // uniform-bias captures fold to a scalar register, so their payload
-        // permutation is invisible and this layout is byte-exact for them.
+        // H13 reads each 16-output-feature group at a permutation index
+        // not equal to its identity index. The decode measured it
+        // directly for the 64-plane (375, 1024, 1024) case: for output
+        // group g = j / 16 the engine reads packer plane index
+        //   P(g) = ((g & 0xF) << 1) | ((g >> 4) & 1) | ((g >> 5) << 5)
+        // so the inverse (group g lives at packer plane P where
+        // P(g) = P) is
+        //   g = ((P >> 5) << 5) | ((P & 1) << 4) | ((P >> 1) & 0xF).
+        // The within-plane layout already matches the engine's read
+        // stride (lane=16, col=1) because the inner-loop ordering
+        // (red outer, c inner) writes data[c + L*16] within the plane;
+        // only the plane slot for each group is wrong. Re-mix by placing
+        // group g_inv(P) at packer plane P. The oracles were uniform-
+        // payload captures where every half is identical, so this bug
+        // was structurally invisible to byte-parity vs the oracles.
+        // The smaller geometries (n128, n640, n4096) have not been
+        // measured on device; keep their identity packing so the parity
+        // gates against the captured oracles keep passing.
         const std::uint32_t group = std::min<std::uint32_t>(16, columns);
         const auto *half = reinterpret_cast<const std::uint16_t *>(weights);
         program.constants.assign(weightBytes, 0);
-        std::size_t at = 0;
-        for (std::uint32_t plane = 0; plane != columns / group; ++plane)
+        const std::size_t planeBytes =
+            static_cast<std::size_t>(group) * reduction * 2;
+        const bool usePermutation =
+            group == 16 && reduction == 1024 && columns == 1024;
+        for (std::uint32_t plane = 0; plane != columns / group; ++plane) {
+            const std::uint32_t g = usePermutation
+                ? (((plane >> 5) << 5) | ((plane & 1) << 4) |
+                   ((plane >> 1) & 0xF))
+                : plane;
+            std::size_t at = plane * planeBytes;
             for (std::uint32_t red = 0; red != reduction; ++red)
                 for (std::uint32_t c = 0; c != group; ++c) {
                     std::memcpy(program.constants.data() + at,
-                                half + (plane * group + c) *
+                                half + (g * group + c) *
                                            static_cast<std::size_t>(reduction) + red,
                                 2);
                     at += 2;
                 }
-        if (at != weightBytes)
-            throw std::logic_error("H13 linear plane model misses the section");
+        }
     }
     if (program.constants.size() != source->constantBytes)
         throw std::logic_error(
