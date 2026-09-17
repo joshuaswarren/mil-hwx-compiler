@@ -220,6 +220,42 @@ Program encodeBatchedMatmul(BatchedMatmulShape shape,
 std::vector<std::uint8_t> packMatvecWeights(MatmulShape shape,
                                             const std::uint8_t *weights,
                                             std::size_t weightBytes);
+
+/// How a rank-3 linear's bias rides: absent or all-equal halves fold into a
+/// scalar register (the captured three-task form); distinct halves ride as
+/// per-column bias groups appended to the section.
+enum class LinearBiasMode : std::uint8_t { None, Uniform, Block };
+
+/// True when the decoded encoder corpus covers this rank-3 linear geometry
+/// (x [1, rows, reduction], weight [columns, reduction], bias [columns]).
+bool supportsLinearParity(std::uint32_t rows, std::uint32_t reduction,
+                          std::uint32_t columns, LinearBiasMode biasMode);
+
+/// Encodes Apple's own linear task stream. `weights` is the row-major
+/// [columns, reduction] fp16 constant; `bias` is the [columns] fp16 constant
+/// and must be null for LinearBiasMode::None. Block modes append the
+/// captured per-column bias tiles; the others take no section beyond the
+/// packed weights.
+Program encodeLinearParity(std::uint32_t rows, std::uint32_t reduction,
+                           std::uint32_t columns, LinearBiasMode biasMode,
+                           const std::uint8_t *weights,
+                           std::size_t weightBytes, const std::uint8_t *bias,
+                           std::size_t biasBytes);
+
+/// True when the decoded corpus covers the d1024 s375 FFN chain
+/// (matmul → bias add → silu → matmul → bias add) as one program.
+bool supportsFFNChain(std::uint32_t rows, std::uint32_t inner1,
+                      std::uint32_t middle, std::uint32_t inner2,
+                      std::uint32_t columns);
+
+/// Encodes the captured 28-task chain stream. The four constants are the
+/// row-major fp16 blobs the MIL resolves to: w1 [middle, inner1],
+/// b1 [middle], w2 [columns, middle], b2 [columns].
+Program encodeFFNChain(std::uint32_t rows, std::uint32_t inner1,
+                       std::uint32_t middle, std::uint32_t inner2,
+                       std::uint32_t columns, const std::uint8_t *weights1,
+                       const std::uint8_t *bias1, const std::uint8_t *weights2,
+                       const std::uint8_t *bias2);
 /// True when the decoded Apple corpus covers this broadcast as one program.
 bool supportsBroadcast(BinaryOperation operation, BroadcastOperand operand,
                        BroadcastShape shape);

@@ -118,7 +118,23 @@ def derive(path):
         "literal": literal,
         "params": params,
         "constant_size": record["constant_section"]["size"],
+        "scratch": int(record["program_descriptor"]["resource_addresses"][0],
+                       16) - 0x30000000,
     }
+    # Binding order is a property of the captured object: for single-input
+    # (packed) captures the gap between the first two resources names which
+    # surface sits first. Runtime captures bind three surfaces and keep the
+    # output-first order the runtime path already emits.
+    entry["input_first"] = False
+    if storage == "Packed" if False else entry["params"]["w_storage"] == "blob":
+        res = record["program_descriptor"]["resource_addresses"]
+        gap = int(res[1], 16) - int(res[0], 16)
+        x_total = record["tensor_descriptors"][0]["total_bytes"]
+        y_total = record["tensor_descriptors"][1]["total_bytes"]
+        if gap == ((x_total + 0x3FFF) & ~0x3FFF):
+            entry["input_first"] = True
+        elif gap != ((y_total + 0x3FFF) & ~0x3FFF):
+            raise SystemExit(f"{path.name}: unrecognized resource layout")
     const_bin = path.parent / (path.stem + ".const.bin")
     weights_bin = path.parent / (path.stem + ".weights.bin")
     if const_bin.exists() and weights_bin.exists():
@@ -139,6 +155,13 @@ def derive(path):
             raise SystemExit(
                 f"{path.name}: packed size {len(ci)} != "
                 f"{batch}×{pack_rows}×{padded}")
+        if wi == ci and len(ci) == batch * pack_rows * padded:
+            # The head-projection capture stores the weight blob verbatim:
+            # no kernel header, no phase, identity packing.
+            entry["identity"] = True
+            entry["pack_rows"] = pack_rows
+            entry["pack_cols"] = pack_cols
+            return entry
         dest = [0] * len(ci)
         dest[:PACK_OFFSET] = ci[:PACK_OFFSET]
         for r in range(batch * pack_rows):
@@ -222,6 +245,9 @@ def main():
            "    std::size_t constantBytes;",
            "    const std::uint8_t *packHeader;",
            "    std::uint32_t packRows, packCols;",
+           "    std::uint8_t identityPacking;",
+           "    std::uint32_t scratchBytes;",
+           "    std::uint8_t inputFirst;",
            "};", ""]
     header_ids = {}
     for index, header in enumerate(sorted(headers)):
@@ -270,15 +296,18 @@ def main():
         else:
             rules = "nullptr, 0"
         header = entry.get("header")
+        identity = entry.get("identity", False)
         header_ref = header_ids.get(header, "nullptr") if header else "nullptr"
         pack = (f"{entry.get('pack_rows', 0)}, {entry.get('pack_cols', 0)}"
-                if header else "0, 0")
+                if header or identity else "0, 0")
         table.append(
             "    {%d, %d, %d, %d, %d, BatchedWeight::%s, %d, %s, %s, %s, "
-            "std::size(%s), %s, %d, %s, %s},"
+            "std::size(%s), %s, %d, %s, %s, %d, %u, %d},"
             % (rows, red, cols, tx, ty, storage, batch,
                prefix_ref, prefix_count, name, name, rules,
-               entry["constant_size"], header_ref, pack))
+               entry["constant_size"], header_ref, pack,
+               1 if identity else 0, entry.get("scratch", 0),
+               1 if entry.get("input_first") else 0))
         index += 1
     out.append("static constexpr OracleBatchedMatmulTemplate kBatchedTasks[] = {")
     out.extend("    " + row for row in table)

@@ -5,6 +5,7 @@ import contextlib
 import hashlib
 import io
 import json
+import math
 import struct
 import shutil
 import subprocess
@@ -104,7 +105,8 @@ def bound_task_descriptor(task, binding):
 
 
 def channel_binding(oracle):
-    identity = oracle["family"] in MATMUL_FAMILIES or oracle["family"] == "matmul"
+    identity = oracle["family"] in MATMUL_FAMILIES or oracle["family"] in (
+        "matmul", "encoder_linear", "encoder_bmm", "chain")
     return ENVELOPE_CHANNEL_BINDING if identity else PARITY_CHANNEL_BINDING
 
 
@@ -137,6 +139,10 @@ def selected_oracles():
             selected.append(oracle)
         elif family in CONV_FAMILIES and conv_covered(oracle, "h13"):
             selected.append(oracle)
+        elif family == "chain" and parameters.get("probe") == "ffn_matmul":
+            selected.append(oracle)
+        elif family == "encoder_linear" or family == "encoder_bmm":
+            selected.append(oracle)
     return selected
 
 
@@ -154,6 +160,12 @@ def conv_covered(oracle, target):
 
 def encoder(oracle):
     family = oracle["family"]
+    if family == "encoder_linear":
+        return "apple-parity-linear"
+    if family == "encoder_bmm":
+        return "apple-parity-batched-matvec"
+    if family == "chain":
+        return "apple-parity-ffn-chain"
     if family in MATMUL_FAMILIES:
         return "apple-parity-matmul" \
             if oracle["parameters"]["w_storage"] == "runtime" \
@@ -172,7 +184,46 @@ def write_weights(oracle, root):
     description = oracle.get("weights", {})
     if description.get("storage") != "BLOBFILE":
         return
+    shapes = description.get("shapes")
+    if description.get("pattern") == "uint16_le_index_plus_one_wrapping":
+        # One payload spanning every constant: uint16(index + 1), wrapping,
+        # with the campaign's 24-byte record table and data region.
+        data_start = (64 + 4096 * 24 + 63) & ~63
+        payloads = []
+        value = 0
+        for shape in shapes:
+            count = math.prod(shape)
+            payloads.append(struct.pack(
+                f"<{count}H", *[(value + index + 1) & 0xFFFF
+                                for index in range(count)]))
+            value += count
+        blob = bytearray(data_start + sum(len(p) for p in payloads))
+        struct.pack_into("<II", blob, 0, len(shapes), 2)
+        offset = data_start
+        for index, payload in enumerate(payloads):
+            struct.pack_into("<IIQQ", blob, 64 + index * 24, 0xDEADBEEF, 1,
+                             len(payload), offset)
+            blob[offset:offset + len(payload)] = payload
+            offset += len(payload)
+        (root / "weights.bin").write_bytes(bytes(blob))
+        return
     elements = description["payload_bytes"] // 2
+    if description.get("value") == \
+            "fp16 bits 0x3400 + index, one value per constant":
+        # One repeated value per constant: fp16 bits 0x3400 + ordinal.
+        data_start = (64 + 4096 * 24 + 63) & ~63
+        payloads = [struct.pack("<H", 0x3400 + index) * math.prod(shape)
+                    for index, shape in enumerate(shapes)]
+        blob = bytearray(data_start + sum(len(p) for p in payloads))
+        struct.pack_into("<II", blob, 0, len(shapes), 2)
+        offset = data_start
+        for index, payload in enumerate(payloads):
+            struct.pack_into("<IIQQ", blob, 64 + index * 24, 0xDEADBEEF, 1,
+                             len(payload), offset)
+            blob[offset:offset + len(payload)] = payload
+            offset += len(payload)
+        (root / "weights.bin").write_bytes(bytes(blob))
+        return
     if description["value"] == "distinct":
         # The known-weight convolution probes carry one distinct fp16 pattern
         # per element, which is what proves the packing permutation.
@@ -329,7 +380,8 @@ def main():
     # 5 rrmm_matvec) that commit 4849a0e moved to native encoders.
     expected = {"binary_runtime": 46, "binary_constant": 11, "unary": 28,
                 "matmul": 27, "normalization": 108, "reduction": 114,
-                "env_broadcast": 68, "env_matmul": 90, "env_conv": 15}
+                "env_broadcast": 68, "env_matmul": 90, "env_conv": 15,
+                "encoder_linear": 11, "encoder_bmm": 1, "chain": 1}
     for family in ("rrmm_broadcast", "rrmm_matmul", "rrmm_matvec",
                    "conv_probe"):
         if families[family]:

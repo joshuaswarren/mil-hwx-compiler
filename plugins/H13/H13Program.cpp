@@ -513,6 +513,49 @@ struct OracleUnaryTask {
 #include "H13ElementwiseConstants.inc"
 #include "H13EncoderUnaryTemplates.inc"
 #include "H13MatvecTemplates.inc"
+
+/// One decoded Apple rank-3 linear program: the geometry, how the bias rides
+/// (absent/uniform folds to a scalar register, distinct halves ride as
+/// appended per-column bias tiles), the task stream, and for block modes the
+/// verified column-tile layout of the constant section — each tile holds one
+/// raw bias group, `group` columns cut reduction-outer, zero padded.
+struct H13LinearTileGroup {
+    std::uint32_t group;
+    std::uint32_t count;
+    std::uint32_t strideBytes;
+};
+
+struct OracleLinearTemplate {
+    std::uint32_t rows;
+    std::uint32_t reduction;
+    std::uint32_t columns;
+    LinearBiasMode biasMode;
+    const std::uint32_t *words;
+    std::size_t wordCount;
+    std::size_t firstTaskBytes;
+    std::uint32_t taskCount;
+    std::size_t constantOffsetBytes;
+    std::size_t constantBytes;
+    std::uint64_t scratchAllocationBytes;
+    const H13LinearTileGroup *tiles;
+    std::size_t tileGroupCount;
+};
+
+/// One decoded Apple FFN-chain program: the whole five-operation
+/// matmul → bias add → silu → matmul → bias add spell as one 28-task stream
+/// with a two-stage constant section (stage tiles may repeat the 128-byte
+/// kernel header at their head).
+struct OracleFFNChainTemplate {
+    const std::uint32_t *words;
+    std::size_t wordCount;
+    std::size_t firstTaskBytes;
+    std::uint32_t taskCount;
+    std::size_t constantOffsetBytes;
+    std::size_t constantBytes;
+    std::uint64_t scratchAllocationBytes;
+};
+
+#include "H13LinearTemplates.inc"
 #include "H13NormTemplates.inc"
 #include "H13EnvelopeTemplates.inc"
 #include "H13ConvTemplates.inc"
@@ -948,6 +991,36 @@ bool supportsMatmulParity(MatmulShape shape) {
     return matmulTemplate(shape) || matvecTemplate(shape);
 }
 
+/// Apple's interleave itself, shared by the matmul and rank-3 linear
+/// encoders; the matmul path adds the rank-2 geometry gate on top.
+static std::vector<std::uint8_t> packMatvecInterleave(
+    std::uint32_t reduction, std::uint32_t columns, std::uint32_t rows,
+    const std::uint8_t *weights, std::size_t weightBytes) {
+    // The row count (Apple partitions above 128 x rows) gates the group cap.
+    std::uint32_t group = std::min<std::uint32_t>(16, columns / 16);
+    if (rows > 128)
+        group = std::min<std::uint32_t>(group, 32768 / reduction);
+    group = std::max<std::uint32_t>(1, group);
+    const std::uint32_t groups = columns / group;
+    std::vector<std::uint8_t> packed(weightBytes);
+    for (std::uint32_t column = 0; column != columns; ++column) {
+        const std::uint32_t plane = column / group;
+        const std::uint32_t destinationPlane =
+            (plane % 16) * (groups / 16) + plane / 16;
+        std::size_t destination =
+            (static_cast<std::size_t>(destinationPlane) * reduction *
+                 group + column % group) * 2;
+        std::size_t source = static_cast<std::size_t>(column) * reduction * 2;
+        for (std::uint32_t index = 0; index != reduction; ++index) {
+            packed[destination] = weights[source];
+            packed[destination + 1] = weights[source + 1];
+            destination += static_cast<std::size_t>(group) * 2;
+            source += 2;
+        }
+    }
+    return packed;
+}
+
 std::vector<std::uint8_t> packMatvecWeights(MatmulShape shape,
                                             const std::uint8_t *weights,
                                             std::size_t weightBytes) {
@@ -962,34 +1035,8 @@ std::vector<std::uint8_t> packMatvecWeights(MatmulShape shape,
         static_cast<std::size_t>(shape.reduction) * shape.columns * 2)
         throw std::invalid_argument(
             "H13 matvec requires columns * reduction fp16 weights");
-    // Apple interleaves `group` weight rows at halfword granularity, packs
-    // each group of rows as one contiguous reduction-major plane, and orders
-    // the planes by the low four bits of the group index. The group is 16 rows
-    // until the column count falls below 256, and above 128 x rows -- the row
-    // count at which Apple starts partitioning the program into
-    // 1 + K * N / 2^19 tasks -- it also caps at 32768 / reduction halfwords.
-    std::uint32_t group = std::min<std::uint32_t>(16, shape.columns / 16);
-    if (shape.rows > 128)
-        group = std::min<std::uint32_t>(group, 32768 / shape.reduction);
-    group = std::max<std::uint32_t>(1, group);
-    const std::uint32_t groups = shape.columns / group;
-    std::vector<std::uint8_t> packed(weightBytes);
-    for (std::uint32_t column = 0; column != shape.columns; ++column) {
-        const std::uint32_t plane = column / group;
-        const std::uint32_t destinationPlane =
-            (plane % 16) * (groups / 16) + plane / 16;
-        std::size_t destination =
-            (static_cast<std::size_t>(destinationPlane) * shape.reduction *
-                 group + column % group) * 2;
-        std::size_t source = static_cast<std::size_t>(column) * shape.reduction * 2;
-        for (std::uint32_t index = 0; index != shape.reduction; ++index) {
-            packed[destination] = weights[source];
-            packed[destination + 1] = weights[source + 1];
-            destination += static_cast<std::size_t>(group) * 2;
-            source += 2;
-        }
-    }
-    return packed;
+    return packMatvecInterleave(shape.reduction, shape.columns, shape.rows,
+                                weights, weightBytes);
 }
 
 Program encodeMatmulParity(MatmulShape shape, const std::uint8_t *weights,
@@ -1033,6 +1080,195 @@ Program encodeMatmulParity(MatmulShape shape, const std::uint8_t *weights,
     return program;
 }
 
+/// The decoded rank-3 linear program for a geometry and bias mode: the
+/// none/uniform forms pack weights exactly like the matvec table; the block
+/// form appends the captured per-column bias tiles.
+const OracleLinearTemplate *linearTemplate(std::uint32_t rows,
+                                           std::uint32_t reduction,
+                                           std::uint32_t columns,
+                                           LinearBiasMode biasMode) {
+    for (const auto &candidate : kLinearTasks)
+        if (candidate.rows == rows && candidate.reduction == reduction &&
+            candidate.columns == columns &&
+            candidate.biasMode == biasMode)
+            return &candidate;
+    return nullptr;
+}
+
+bool supportsLinearParity(std::uint32_t rows, std::uint32_t reduction,
+                          std::uint32_t columns, LinearBiasMode biasMode) {
+    return linearTemplate(rows, reduction, columns, biasMode) != nullptr;
+}
+
+std::vector<std::uint8_t> packLinearBlockTiles(
+    const OracleLinearTemplate &source, const std::uint8_t *weights,
+    const std::uint8_t *bias) {
+    std::vector<std::uint8_t> packed(source.constantBytes, 0);
+    const auto *half = reinterpret_cast<const std::uint16_t *>(weights);
+    const auto *biasHalf = reinterpret_cast<const std::uint16_t *>(bias);
+    std::size_t at = 0;
+    std::uint32_t column = 0;
+    for (std::size_t index = 0; index != source.tileGroupCount; ++index) {
+        const auto &group = source.tiles[index];
+        for (std::uint32_t tile = 0; tile != group.count; ++tile) {
+            std::memcpy(packed.data() + at, biasHalf + column,
+                        group.group * 2);
+            std::size_t cursor = at + group.group * 2;
+            for (std::uint32_t red = 0; red != source.reduction; ++red)
+                for (std::uint32_t c = 0; c != group.group; ++c) {
+                    std::memcpy(packed.data() + cursor,
+                                half + static_cast<std::size_t>(column + c) *
+                                           source.reduction + red,
+                                2);
+                    cursor += 2;
+                }
+            // The stride's remainder stays zero, exactly as decoded.
+            at += group.strideBytes;
+            column += group.group;
+        }
+    }
+    if (at != packed.size() || column != source.columns)
+        throw std::logic_error("H13 linear tile model misses the section");
+    return packed;
+}
+
+Program encodeLinearParity(std::uint32_t rows, std::uint32_t reduction,
+                           std::uint32_t columns, LinearBiasMode biasMode,
+                           const std::uint8_t *weights,
+                           std::size_t weightBytes, const std::uint8_t *bias,
+                           std::size_t biasBytes) {
+    const auto *source = linearTemplate(rows, reduction, columns, biasMode);
+    if (!source)
+        throw std::invalid_argument(
+            "H13 rank-3 linear geometry is outside the decoded parity "
+            "envelope");
+    if (weightBytes != static_cast<std::size_t>(columns) * reduction * 2)
+        throw std::invalid_argument(
+            "H13 linear requires columns * reduction fp16 weights");
+    Program program;
+    if (biasMode == LinearBiasMode::Block) {
+        if (!bias || biasBytes != columns * 2)
+            throw std::invalid_argument(
+                "H13 block-mode linear requires one fp16 bias per column");
+        program.constants = packLinearBlockTiles(*source, weights, bias);
+    } else {
+        if (bias && biasBytes)
+            throw std::invalid_argument(
+                "H13 folded linear takes no constant bias block");
+        // The m375 planes are sequential 16-column groups cut reduction-
+        // outer — the block-form tile layout minus the bias strips. The
+        // uniform-bias captures fold to a scalar register, so their payload
+        // permutation is invisible and this layout is byte-exact for them.
+        const std::uint32_t group = std::min<std::uint32_t>(16, columns);
+        const auto *half = reinterpret_cast<const std::uint16_t *>(weights);
+        program.constants.assign(weightBytes, 0);
+        std::size_t at = 0;
+        for (std::uint32_t plane = 0; plane != columns / group; ++plane)
+            for (std::uint32_t red = 0; red != reduction; ++red)
+                for (std::uint32_t c = 0; c != group; ++c) {
+                    std::memcpy(program.constants.data() + at,
+                                half + (plane * group + c) *
+                                           static_cast<std::size_t>(reduction) + red,
+                                2);
+                    at += 2;
+                }
+        if (at != weightBytes)
+            throw std::logic_error("H13 linear plane model misses the section");
+    }
+    if (program.constants.size() != source->constantBytes)
+        throw std::logic_error(
+            "H13 packed linear section differs from the decoded size");
+    program.task = taskBytesFor(source->words, source->wordCount);
+    program.inputs = {matvecTensor(5, rows, reduction)};
+    program.output = matvecTensor(4, rows, columns);
+    program.firstTaskBytes = source->firstTaskBytes;
+    program.taskCount = source->taskCount;
+    program.constantOffsetBytes = source->constantOffsetBytes;
+    program.scratchAllocationBytes = source->scratchAllocationBytes;
+    return program;
+}
+
+bool supportsFFNChain(std::uint32_t rows, std::uint32_t inner1,
+                      std::uint32_t middle, std::uint32_t inner2,
+                      std::uint32_t columns) {
+    return rows == 375 && inner1 == 1024 && middle == 4096 &&
+           inner2 == 4096 && columns == 1024;
+}
+
+Program encodeFFNChain(std::uint32_t rows, std::uint32_t inner1,
+                       std::uint32_t middle, std::uint32_t inner2,
+                       std::uint32_t columns, const std::uint8_t *weights1,
+                       const std::uint8_t *bias1, const std::uint8_t *weights2,
+                       const std::uint8_t *bias2) {
+    if (!supportsFFNChain(rows, inner1, middle, inner2, columns))
+        throw std::invalid_argument(
+            "H13 FFN chain geometry is outside the decoded parity envelope");
+    const auto *source = kFFNChainTasks;
+    if (!weights1 || !bias1 || !weights2 || !bias2)
+        throw std::invalid_argument(
+            "H13 FFN chain requires all four constants");
+    // Stage one repeats the decoded 128-byte kernel header at every tile's
+    // head; stage two tiles carry no header. Each tile holds one raw bias
+    // group, then its weight columns cut reduction-outer; the stride's
+    // remainder stays zero.
+    Program program;
+    program.constants.assign(source->constantBytes, 0);
+    const auto *w1 = reinterpret_cast<const std::uint16_t *>(weights1);
+    const auto *b1 = reinterpret_cast<const std::uint16_t *>(bias1);
+    const auto *w2 = reinterpret_cast<const std::uint16_t *>(weights2);
+    const auto *b2 = reinterpret_cast<const std::uint16_t *>(bias2);
+    std::size_t at = 0;
+    std::uint32_t column = 0;
+    for (const auto &group : kFFNChainMM1Tiles) {
+        for (std::uint32_t tile = 0; tile != group.count; ++tile) {
+            std::memcpy(program.constants.data() + at,
+                        kFFNChainKernelHeader, sizeof(kFFNChainKernelHeader));
+            std::size_t cursor = at + sizeof(kFFNChainKernelHeader);
+            std::memcpy(program.constants.data() + cursor,
+                        b1 + column, group.group * 2);
+            cursor += group.group * 2;
+            for (std::uint32_t red = 0; red != inner1; ++red)
+                for (std::uint32_t c = 0; c != group.group; ++c) {
+                    std::memcpy(program.constants.data() + cursor,
+                                w1 + static_cast<std::size_t>(column + c) *
+                                         inner1 + red,
+                                2);
+                    cursor += 2;
+                }
+            at += group.strideBytes;
+            column += group.group;
+        }
+    }
+    column = 0;
+    for (const auto &group : kFFNChainMM2Tiles) {
+        for (std::uint32_t tile = 0; tile != group.count; ++tile) {
+            std::memcpy(program.constants.data() + at,
+                        b2 + column, group.group * 2);
+            std::size_t cursor = at + group.group * 2;
+            for (std::uint32_t red = 0; red != middle; ++red)
+                for (std::uint32_t c = 0; c != group.group; ++c) {
+                    std::memcpy(program.constants.data() + cursor,
+                                w2 + static_cast<std::size_t>(column + c) *
+                                         middle + red,
+                                2);
+                    cursor += 2;
+                }
+            at += group.strideBytes;
+            column += group.group;
+        }
+    }
+    if (at != source->constantBytes || column != columns)
+        throw std::logic_error("H13 FFN chain tile model misses the section");
+    program.task = taskBytesFor(source->words, source->wordCount);
+    program.inputs = {matvecTensor(5, rows, inner1)};
+    program.output = matvecTensor(4, rows, columns);
+    program.firstTaskBytes = source->firstTaskBytes;
+    program.taskCount = source->taskCount;
+    program.constantOffsetBytes = source->constantOffsetBytes;
+    program.scratchAllocationBytes = source->scratchAllocationBytes;
+    return program;
+}
+
 const OracleBatchedMatmulTemplate *batchedTemplate(BatchedMatmulShape shape) {
     for (const auto &candidate : kBatchedTasks)
         if (candidate.rows == shape.rows &&
@@ -1067,13 +1303,17 @@ std::vector<std::uint8_t> packBatchedWeights(BatchedMatmulShape shape,
                                              const std::uint8_t *weights,
                                              std::size_t weightBytes) {
     const auto *source = batchedTemplate(shape);
-    if (!source || source->storage != BatchedWeight::Packed || !source->packHeader)
+    if (!source || source->storage != BatchedWeight::Packed)
         throw std::invalid_argument(
             "H13 batched packing needs a decoded packed template");
     if (weightBytes != static_cast<std::size_t>(source->batch) *
             source->packRows * source->packCols * 2)
         throw std::invalid_argument(
             "H13 batched weight must be the dense B-plane blob");
+    if (source->identityPacking) {
+        // The head-projection capture stores the weight blob verbatim.
+        return std::vector<std::uint8_t>(weights, weights + weightBytes);
+    }
     const std::uint32_t padded = (source->packCols + 31) / 32 * 32;
     std::vector<std::uint8_t> packed(source->constantBytes, 0);
     constexpr std::size_t packHeaderBytes = 128;
@@ -1208,6 +1448,9 @@ Program encodeBatchedMatmul(BatchedMatmulShape shape,
     if (offset != 0)
         throw std::logic_error(
             "H13 batched template link chain does not terminate");
+    program.scratchAllocationBytes = source->scratchBytes;
+    // The packed head-projection object binds its input surface first.
+    program.outputBindingIndex = source->inputFirst ? 1 : 0;
     program.taskCount = static_cast<std::uint32_t>(
         tasksPerBatch * source->batch + (source->prefixWordCount ? 1 : 0));
     program.firstTaskBytes = (source->prefixWordCount
@@ -1229,7 +1472,6 @@ Program encodeBatchedMatmul(BatchedMatmulShape shape,
         nameSecondSource(program.task, program.firstTaskBytes,
                          program.taskCount);
     program.output = batchedTensor(4, shape.batch, shape.rows, shape.columns);
-    program.outputBindingIndex = 0;
     return program;
 }
 
