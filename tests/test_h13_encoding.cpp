@@ -290,8 +290,11 @@ void checkAttentionBatchedEnvelope() {
     using ane::h13::supportsMatmulParity;
     // Encoder attention [1,8,375,128] x [1,8,128,375], tx=0, ty=0, runtime y.
     assert(supportsBatchedMatmul({8, 375, 128, 375, false, false, true}));
-    assert(!supportsBatchedMatmul({8, 375, 1024, 128, false, true, false}));
+    // The 2026-09-16 head-projection capture decodes [8,375,1024] x
+    // [8,128,1024] at ty=1 with identity packing; B=1 stays outside.
+    assert(supportsBatchedMatmul({8, 375, 1024, 128, false, true, false}));
     assert(!supportsBatchedMatmul({1, 375, 1024, 128, false, true, false}));
+    assert(!supportsBatchedMatmul({2, 375, 1024, 128, false, true, false}));
     assert(!supportsMatmulParity({375, 128, 375, false, false, true}));
 }
 

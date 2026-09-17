@@ -1635,6 +1635,105 @@ static H13BatchedParse batchedMatmulParse(ANEGraphOperation *operation,
     return H13BatchedParseYes;
 }
 
+/// True when the constant producer's payload is a BLOBFILE reference, so a
+/// byte-exact load cannot fail with a diagnostic.
+static BOOL blobBackedConstant(ANEGraphValue *value) {
+    if (!value || !constantValue(value)) return NO;
+    ANEGraphArgument *literal = value.producer.attributes[@"val"];
+    if (literal.kind != ANEGraphArgumentKindCall ||
+        literal.callArguments.count != 1) return NO;
+    ANEGraphArgument *payload = literal.callArguments[0].value;
+    return payload.kind == ANEGraphArgumentKindCall &&
+        [payload.calleeName isEqualToString:@"BLOBFILE"];
+}
+
+/// The only operation consuming `value`, or nil when the value has zero or
+/// several consumers.
+static ANEGraphOperation *singleConsumerOf(
+    NSArray<ANEGraphOperation *> *operations, ANEGraphValue *value) {
+    ANEGraphOperation *consumer = nil;
+    for (ANEGraphOperation *operation in operations) {
+        if (!operationUsesValue(operation, value)) continue;
+        if (consumer) return nil;
+        consumer = operation;
+    }
+    return consumer;
+}
+
+/// Matches the captured five-operation FFN chain — matmul → bias add → silu
+/// → matmul → bias add at the d1024 s375 geometry with constant weights and
+/// biases, each intermediate feeding exactly one consumer — and returns the
+/// whole-chain operation to emit in its place, or nil.
+static ANEGraphOperation *ffnChainOperation(
+    NSArray<ANEGraphOperation *> *operations, ANEGraphOperation *first,
+    ANESourceRange range) {
+    if (![first.operationName isEqualToString:@"matmul"]) return nil;
+    ANEGraphValue *x = first.operands[@"x"].value;
+    ANEGraphValue *weight1 = first.operands[@"y"].value;
+    if (!fp16Tensor(x) || x.type.shape.count != 3 ||
+        !boolean(first.arguments[@"transpose_x"], NO) ||
+        !boolean(first.arguments[@"transpose_y"], YES) ||
+        !weight1 || !constantValue(weight1) || weight1.type.shape.count != 2)
+        return nil;
+    const NSUInteger inner = x.type.shape[2].unsignedIntegerValue;
+    const NSUInteger middle = weight1.type.shape[0].unsignedIntegerValue;
+    if (weight1.type.shape[1].unsignedIntegerValue != inner) return nil;
+    ANEGraphValue *product1 = first.results[0];
+    if (!fp16Tensor(product1) || product1.type.shape.count != 3 ||
+        product1.type.shape[2].unsignedIntegerValue != middle) return nil;
+    ANEGraphOperation *add1 = singleConsumerOf(operations, product1);
+    if (!add1 || ![add1.operationName isEqualToString:@"add"] ||
+        add1.operands[@"x"].value != product1) return nil;
+    ANEGraphValue *bias1 = add1.operands[@"y"].value;
+    if (!bias1 || !constantValue(bias1) || bias1.type.shape.count != 1 ||
+        bias1.type.shape[0].unsignedIntegerValue != middle) return nil;
+    ANEGraphValue *sum1 = add1.results[0];
+    ANEGraphOperation *silu = singleConsumerOf(operations, sum1);
+    if (!silu || ![silu.operationName isEqualToString:@"silu"] ||
+        silu.operands[@"x"].value != sum1) return nil;
+    ANEGraphValue *activated = silu.results[0];
+    ANEGraphOperation *second = singleConsumerOf(operations, activated);
+    if (!second || ![second.operationName isEqualToString:@"matmul"] ||
+        second.operands[@"x"].value != activated ||
+        !boolean(second.arguments[@"transpose_x"], NO) ||
+        !boolean(second.arguments[@"transpose_y"], YES)) return nil;
+    ANEGraphValue *weight2 = second.operands[@"y"].value;
+    if (!weight2 || !constantValue(weight2) || weight2.type.shape.count != 2 ||
+        weight2.type.shape[1].unsignedIntegerValue != middle)
+        return nil;
+    const NSUInteger columns =
+        weight2.type.shape[0].unsignedIntegerValue;
+    ANEGraphValue *product2 = second.results[0];
+    if (!fp16Tensor(product2) || product2.type.shape.count != 3 ||
+        product2.type.shape[1].unsignedIntegerValue !=
+            x.type.shape[1].unsignedIntegerValue ||
+        product2.type.shape[2].unsignedIntegerValue != columns) return nil;
+    ANEGraphOperation *add2 = singleConsumerOf(operations, product2);
+    if (!add2 || ![add2.operationName isEqualToString:@"add"] ||
+        add2.operands[@"x"].value != product2) return nil;
+    ANEGraphValue *bias2 = add2.operands[@"y"].value;
+    if (!bias2 || !constantValue(bias2) || bias2.type.shape.count != 1 ||
+        bias2.type.shape[0].unsignedIntegerValue != columns) return nil;
+    if (!ane::h13::supportsFFNChain(
+            static_cast<std::uint32_t>(x.type.shape[1].unsignedIntegerValue),
+            static_cast<std::uint32_t>(inner),
+            static_cast<std::uint32_t>(middle),
+            static_cast<std::uint32_t>(middle),
+            static_cast<std::uint32_t>(columns))) return nil;
+    // The chain owns the final result: a fresh value under the same name,
+    // because the skipped add still defines the original.
+    ANEGraphValue *result = [[ANEGraphValue alloc]
+        initWithName:add2.results[0].name type:add2.results[0].type];
+    return [[ANEGraphOperation alloc] initWithOperationName:@"ffn-chain"
+        results:@[result]
+        arguments:@{@"x": valueArgument(x, range),
+                    @"weight1": valueArgument(weight1, range),
+                    @"bias1": valueArgument(bias1, range),
+                    @"weight2": valueArgument(weight2, range),
+                    @"bias2": valueArgument(bias2, range)}
+        attributes:@{} range:range];
+}
+
 static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                            ANEDiagnosticEngine *diagnostics, BOOL preferNative,
                            NSDictionary<NSString *, NSData *> *synthesizedConstants,
@@ -1949,7 +2048,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             if (!ane::h13::supportsBatchedMatmul(batched))
                 return reject(diagnostics,
                     [NSString stringWithFormat:
-                        @"H13 batched matmul (B=%lu, rows=%lu, reduction=%lu, columns=%lu, tx=%d, ty=%d, %@ y) is outside the decoded batched envelope, which covers B in {2,4,8,16} at the attention geometries (375,128,749), (375,375,128), and (375,128,375) with their captured flag forms",
+                        @"H13 batched matmul (B=%lu, rows=%lu, reduction=%lu, columns=%lu, tx=%d, ty=%d, %@ y) is outside the decoded batched envelope, which covers B in {2,4,8,16} at the attention geometries (375,128,749), (375,375,128), and (375,128,375) with their captured flag forms, plus the B=8 head projection (375,1024,128) at transpose_y with identity packing",
                         (unsigned long)batched.batch, (unsigned long)batched.rows,
                         (unsigned long)batched.reduction,
                         (unsigned long)batched.columns,
@@ -2129,6 +2228,144 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             static_cast<const std::uint8_t *>(paddedWeights.bytes),
             paddedWeights.length, transposeY);
         inputs = @[x];
+    } else if ([name isEqualToString:@"linear"]) {
+        ANEGraphValue *weight = operation.operands[@"weight"].value;
+        ANEGraphValue *bias = operation.operands[@"bias"].value;
+        NSUInteger reduction = 0, rows = 0, columns = 0;
+        if (!fp16Tensor(x) ||
+            !matmulGeometry(x, operation.results[0], NO,
+                            &reduction, &rows, &columns))
+            return reject(diagnostics,
+                @"H13 linear requires positive fp16 x rows and a matching output shape",
+                operation, @"h13.invalid-linear");
+        if (!weight || !constantValue(weight))
+            return reject(diagnostics,
+                @"H13 linear requires a constant weight tensor", operation,
+                @"h13.linear-nonconstant-weight");
+        NSData *weights = resolvedConstants[weight.name];
+        if (!weights) {
+            weights = [ANEBlobResolver loadConstantForOperation:weight.producer
+                expectedBytes:columns * reduction * 2
+                modelRoot:modelRoot diagnostics:diagnostics];
+            if (!weights) return NO;
+            resolvedConstants[weight.name] = weights;
+        }
+        ane::h13::LinearBiasMode biasMode = ane::h13::LinearBiasMode::None;
+        NSData *biasData = nil;
+        if (bias) {
+            biasData = resolvedConstants[bias.name];
+            if (!biasData) {
+                biasData = [ANEBlobResolver
+                    loadConstantForOperation:bias.producer
+                    expectedBytes:columns * 2
+                    modelRoot:modelRoot diagnostics:diagnostics];
+                if (!biasData) return NO;
+                resolvedConstants[bias.name] = biasData;
+            }
+            biasMode = ane::h13::LinearBiasMode::Uniform;
+            const uint16_t *halves =
+                static_cast<const uint16_t *>(biasData.bytes);
+            for (NSUInteger index = 1; index < columns; ++index)
+                if (halves[index] != halves[0]) {
+                    biasMode = ane::h13::LinearBiasMode::Block;
+                    break;
+                }
+        }
+        if (!ane::h13::supportsLinearParity(
+                static_cast<std::uint32_t>(rows),
+                static_cast<std::uint32_t>(reduction),
+                static_cast<std::uint32_t>(columns), biasMode))
+            return reject(diagnostics,
+                [NSString stringWithFormat:
+                    @"H13 rank-3 linear (%lu rows, %lu reduction, %lu columns) with a %@ bias is outside the decoded parity envelope, which covers the captured m375 encoder geometries (k1024 at n128/640/1024/4096 and k4096 at n1024) with absent, uniform, or per-column bias blocks",
+                    (unsigned long)rows, (unsigned long)reduction,
+                    (unsigned long)columns,
+                    biasMode == ane::h13::LinearBiasMode::None ? @"absent"
+                        : biasMode == ane::h13::LinearBiasMode::Uniform
+                        ? @"uniform" : @"per-column"],
+                operation, @"h13.linear-outside-envelope");
+        program = ane::h13::encodeLinearParity(
+            static_cast<std::uint32_t>(rows),
+            static_cast<std::uint32_t>(reduction),
+            static_cast<std::uint32_t>(columns), biasMode,
+            static_cast<const uint8_t *>(weights.bytes), weights.length,
+            biasMode == ane::h13::LinearBiasMode::Block
+                ? static_cast<const uint8_t *>(biasData.bytes) : nullptr,
+            biasMode == ane::h13::LinearBiasMode::Block ? biasData.length : 0);
+        *inputsOut = @[x];
+        *manifestOperationOut = name;
+        return YES;
+    } else if ([name isEqualToString:@"ffn-chain"]) {
+        ANEGraphValue *weight1 = operation.operands[@"weight1"].value;
+        ANEGraphValue *bias1 = operation.operands[@"bias1"].value;
+        ANEGraphValue *weight2 = operation.operands[@"weight2"].value;
+        ANEGraphValue *bias2 = operation.operands[@"bias2"].value;
+        NSUInteger reduction = 0, rows = 0, columns = 0;
+        NSUInteger middle = 0;
+        if (!fp16Tensor(x) || x.type.shape.count != 3 ||
+            !matmulGeometry(x, operation.results[0], NO,
+                            &reduction, &rows, &columns) ||
+            !weight1 || weight1.type.shape.count != 2 ||
+            !(middle = weight1.type.shape[0].unsignedIntegerValue) ||
+            weight1.type.shape[1].unsignedIntegerValue != reduction ||
+            !weight2 || weight2.type.shape.count != 2 ||
+            weight2.type.shape[0].unsignedIntegerValue != columns ||
+            weight2.type.shape[1].unsignedIntegerValue != middle)
+            return reject(diagnostics,
+                @"H13 FFN chain requires rank-3 x [1, rows, reduction], a [middle, reduction] weight1, and a [columns, middle] weight2",
+                operation, @"h13.invalid-ffn-chain");
+        NSData *weights1 = resolvedConstants[weight1.name];
+        if (!weights1) {
+            weights1 = [ANEBlobResolver loadConstantForOperation:weight1.producer
+                expectedBytes:middle * reduction * 2
+                modelRoot:modelRoot diagnostics:diagnostics];
+            if (!weights1) return NO;
+            resolvedConstants[weight1.name] = weights1;
+        }
+        NSData *biasData1 = resolvedConstants[bias1.name];
+        if (!biasData1) {
+            biasData1 = [ANEBlobResolver loadConstantForOperation:bias1.producer
+                expectedBytes:middle * 2 modelRoot:modelRoot diagnostics:diagnostics];
+            if (!biasData1) return NO;
+            resolvedConstants[bias1.name] = biasData1;
+        }
+        NSData *weights2 = resolvedConstants[weight2.name];
+        if (!weights2) {
+            weights2 = [ANEBlobResolver loadConstantForOperation:weight2.producer
+                expectedBytes:middle * columns * 2
+                modelRoot:modelRoot diagnostics:diagnostics];
+            if (!weights2) return NO;
+            resolvedConstants[weight2.name] = weights2;
+        }
+        NSData *biasData2 = resolvedConstants[bias2.name];
+        if (!biasData2) {
+            biasData2 = [ANEBlobResolver loadConstantForOperation:bias2.producer
+                expectedBytes:columns * 2 modelRoot:modelRoot diagnostics:diagnostics];
+            if (!biasData2) return NO;
+            resolvedConstants[bias2.name] = biasData2;
+        }
+        if (!ane::h13::supportsFFNChain(
+                static_cast<std::uint32_t>(rows),
+                static_cast<std::uint32_t>(reduction),
+                static_cast<std::uint32_t>(middle),
+                static_cast<std::uint32_t>(middle),
+                static_cast<std::uint32_t>(columns)))
+            return reject(diagnostics,
+                @"H13 FFN chain is outside the decoded parity envelope, which covers the captured d1024 s375 form only",
+                operation, @"h13.ffn-chain-outside-envelope");
+        program = ane::h13::encodeFFNChain(
+            static_cast<std::uint32_t>(rows),
+            static_cast<std::uint32_t>(reduction),
+            static_cast<std::uint32_t>(middle),
+            static_cast<std::uint32_t>(middle),
+            static_cast<std::uint32_t>(columns),
+            static_cast<const uint8_t *>(weights1.bytes),
+            static_cast<const uint8_t *>(biasData1.bytes),
+            static_cast<const uint8_t *>(weights2.bytes),
+            static_cast<const uint8_t *>(biasData2.bytes));
+        *inputsOut = @[x];
+        *manifestOperationOut = name;
+        return YES;
     } else if ([name isEqualToString:@"less"] ||
                [name isEqualToString:@"floor"] ||
                [name isEqualToString:@"select"] ||
@@ -2512,7 +2749,22 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         [NSMutableDictionary dictionary];
     NSMutableDictionary<NSString *, NSDictionary *> *compositeFolds =
         [NSMutableDictionary dictionary];
+    NSUInteger ffnChainSkip = 0;
     for (ANEGraphOperation *candidate in sourceOperations) {
+        if (ffnChainSkip) {
+            --ffnChainSkip;
+            continue;
+        }
+        if ([candidate.operationName isEqualToString:@"matmul"]) {
+            if (ANEGraphOperation *chain = ffnChainOperation(sourceOperations,
+                                                             candidate,
+                                                             candidate.range)) {
+                [operations addObject:chain];
+                [manifestValues addObject:chain.results[0]];
+                ffnChainSkip = 4;
+                continue;
+            }
+        }
         NSMutableDictionary<NSString *, ANEGraphArgument *> *arguments =
             [candidate.arguments mutableCopy];
         for (NSString *key in candidate.operands) {
@@ -2899,6 +3151,43 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     @"H13 linear requires positive fp16 x rows, constant [N,K] weight, optional constant [N] bias, and a matching output shape",
                     candidate, @"h13.invalid-linear");
 
+            // The decoded encoder corpus covers these rank-3 linears as one
+            // whole-tensor Apple program; pass the operation through instead
+            // of rewriting it into the channel-plane decomposition.
+            if (linear && geometry &&
+                (!bias || blobBackedConstant(bias))) {
+                ane::h13::LinearBiasMode biasMode = ane::h13::LinearBiasMode::None;
+                if (bias) {
+                    biasMode = ane::h13::LinearBiasMode::Uniform;
+                    NSData *biasData = resolvedConstants[bias.name];
+                    if (!biasData) {
+                        biasData = [ANEBlobResolver loadConstantForOperation:
+                            bias.producer expectedBytes:columns * 2
+                            modelRoot:modelRoot diagnostics:diagnostics];
+                        if (!biasData) return NO;
+                        resolvedConstants[bias.name] = biasData;
+                    }
+                    const uint16_t *halves =
+                        static_cast<const uint16_t *>(biasData.bytes);
+                    for (NSUInteger index = 1; index < columns; ++index)
+                        if (halves[index] != halves[0]) {
+                            biasMode = ane::h13::LinearBiasMode::Block;
+                            break;
+                        }
+                }
+                if (ane::h13::supportsLinearParity(
+                        static_cast<std::uint32_t>(rows),
+                        static_cast<std::uint32_t>(reduction),
+                        static_cast<std::uint32_t>(columns), biasMode)) {
+                    [operations addObject:[[ANEGraphOperation alloc]
+                        initWithOperationName:name results:@[result]
+                        arguments:arguments attributes:candidate.attributes
+                        range:candidate.range]];
+                    [manifestValues addObject:result];
+                    continue;
+                }
+            }
+
             // transpose→reshape→linear composite: lower as C contiguous
             // [1,P,D] channel-plane matvecs whose partials accumulate with
             // adds and the expanded bias, byte-equal to the per-plane direct
@@ -3132,7 +3421,16 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 };
             const BOOL runtimeWeight = !linear && weight &&
                 !constantValue(weight) && !synthesizedConstants[weight.name];
-            if (geometry && !runtimeWeight && reduction > 512 &&
+            // A decoded batched geometry must reach the whole-op batched
+            // encoder: its reduction is the batch's inner span, and slicing
+            // it per 512 columns would dissolve the per-batch task groups.
+            ane::h13::BatchedMatmulShape batchedShape{};
+            const BOOL batchedCovered = !linear &&
+                batchedMatmulParse(candidate, &batchedShape) ==
+                    H13BatchedParseYes &&
+                ane::h13::supportsBatchedMatmul(batchedShape);
+            if (geometry && !runtimeWeight && !batchedCovered &&
+                reduction > 512 &&
                 !matmulParityCovered(rows, reduction, columns, transposeX, YES,
                                      NO, !chainSchedule)) {
                 NSUInteger chunks = (reduction - 1) / 512 + 1;
@@ -3290,6 +3588,10 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 inputPhysicalElements = 0, outputSliceElements = 0,
                 outputPhysicalElements = 0, outputChunks = 1;
             BOOL matmul = [operation.operationName isEqualToString:@"matmul"];
+            BOOL linearParity =
+                [operation.operationName isEqualToString:@"linear"];
+            BOOL ffnChain =
+                [operation.operationName isEqualToString:@"ffn-chain"];
             ANEGraphValue *secondOperand = operation.operands[@"y"].value;
             BOOL runtimeWeight = matmul && secondOperand &&
                 !constantValue(secondOperand) &&
@@ -3359,6 +3661,20 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                             inputPhysicalElements = outputPhysicalElements =
                                 elements;
                 }
+            } else if (linearParity || ffnChain) {
+                // Whole-tensor programs: one input slice and one output
+                // slice covering the rank-3 surfaces.
+                NSUInteger xElements = 1;
+                NSArray<NSNumber *> *xShape =
+                    operation.operands[@"x"].value.type.shape;
+                for (NSNumber *dimension in xShape)
+                    xElements *= dimension.unsignedIntegerValue;
+                NSUInteger oElements = 1;
+                NSArray<NSNumber *> *oShape = operation.results[0].type.shape;
+                for (NSNumber *dimension in oShape)
+                    oElements *= dimension.unsignedIntegerValue;
+                inputSliceElements = inputPhysicalElements = xElements;
+                outputSliceElements = outputPhysicalElements = oElements;
             } else if (parity) {
                 inputSliceElements = outputSliceElements =
                     inputPhysicalElements = outputPhysicalElements =
@@ -3437,6 +3753,23 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 if (fp16Tensor(secondOperand) && !runtimeWeight)
                     recordTensor(tensors, secondOperand,
                                  secondOperand.type.shape, @"constant");
+            } else if (linearParity) {
+                if (operation.operands[@"weight"].value)
+                    recordTensor(tensors, operation.operands[@"weight"].value,
+                                 operation.operands[@"weight"].value.type.shape,
+                                 @"constant");
+                if (operation.operands[@"bias"].value)
+                    recordTensor(tensors, operation.operands[@"bias"].value,
+                                 operation.operands[@"bias"].value.type.shape,
+                                 @"constant");
+            } else if (ffnChain) {
+                for (NSString *key in @[@"weight1", @"bias1", @"weight2",
+                                        @"bias2"]) {
+                    ANEGraphValue *constant = operation.operands[key].value;
+                    if (constant)
+                        recordTensor(tensors, constant, constant.type.shape,
+                                     @"constant");
+                }
             }
 
             for (NSUInteger sliceIndex = 0; sliceIndex < sliceCount; ++sliceIndex) {
@@ -3570,6 +3903,10 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     @"encoder": batched
                         ? (runtimeWeight ? @"apple-parity-batched-matmul"
                                          : @"apple-parity-batched-matvec")
+                        : linearParity
+                        ? @"apple-parity-linear"
+                        : ffnChain
+                        ? @"apple-parity-ffn-chain"
                         : tiled
                         ? @"apple-parity-tile"
                         : booleanLowered
