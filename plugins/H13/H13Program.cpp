@@ -1136,7 +1136,8 @@ Program encodeLinearParity(std::uint32_t rows, std::uint32_t reduction,
                            std::uint32_t columns, LinearBiasMode biasMode,
                            const std::uint8_t *weights,
                            std::size_t weightBytes, const std::uint8_t *bias,
-                           std::size_t biasBytes) {
+                           std::size_t biasBytes,
+                           std::uint16_t uniformBiasHalves) {
     const auto *source = linearTemplate(rows, reduction, columns, biasMode);
     if (!source)
         throw std::invalid_argument(
@@ -1200,6 +1201,39 @@ Program encodeLinearParity(std::uint32_t rows, std::uint32_t reduction,
         throw std::logic_error(
             "H13 packed linear section differs from the decoded size");
     program.task = taskBytesFor(source->words, source->wordCount);
+    if (biasMode == LinearBiasMode::Uniform) {
+        // The decoded task templates carry the captured uniform-bias
+        // immediate as 0x00003401 in the NE scalar-register word
+        // (one occurrence per task in the linear; kLinearTask1..kLinearTask5
+        // all stamp the same pattern). Replace with the real bias to
+        // avoid +0.2502441 silently offsetting every output. The
+        // uniform-payload oracles baked 0x3401 in because every half of
+        // their constant section was 0x3400; with no captured byte-
+        // parity reference for a different bias, the gate previously
+        // compared a uniform-bias output against itself.
+        constexpr std::uint8_t needle[2] = {0x01, 0x34};
+        const std::uint8_t replacement[2] = {
+            static_cast<std::uint8_t>(uniformBiasHalves & 0xFF),
+            static_cast<std::uint8_t>(uniformBiasHalves >> 8)};
+        std::size_t replacements = 0;
+        std::size_t scan = 0;
+        while (scan + 1 < program.task.size()) {
+            if (program.task[scan] == needle[0] &&
+                program.task[scan + 1] == needle[1]) {
+                program.task[scan + 0] = replacement[0];
+                program.task[scan + 1] = replacement[1];
+                replacements++;
+                scan += 2;
+            } else {
+                scan++;
+            }
+        }
+        if (replacements == 0)
+            throw std::logic_error(
+                "H13 uniform linear template carries no 0x3401 bias "
+                "immediate; uniformBiasHalves stamping has nothing to "
+                "replace");
+    }
     // The decoded stream binds the input surface at channel 4 and the
     // output at 5 (input-first); the manifest must name the same channels
     // or the strict bundle gate refuses the mismatch.

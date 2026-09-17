@@ -235,12 +235,16 @@ bool supportsLinearParity(std::uint32_t rows, std::uint32_t reduction,
 /// [columns, reduction] fp16 constant; `bias` is the [columns] fp16 constant
 /// and must be null for LinearBiasMode::None. Block modes append the
 /// captured per-column bias tiles; the others take no section beyond the
-/// packed weights.
+/// packed weights. For LinearBiasMode::Uniform the decoded task stream
+/// carries the captured uniform bias as a scalar-register immediate
+/// (originally 0x3401 from the oracle captures); pass `uniformBiasHalves`
+/// to stamp the real value instead — 0x0000 if the model has no bias.
 Program encodeLinearParity(std::uint32_t rows, std::uint32_t reduction,
                            std::uint32_t columns, LinearBiasMode biasMode,
                            const std::uint8_t *weights,
                            std::size_t weightBytes, const std::uint8_t *bias,
-                           std::size_t biasBytes);
+                           std::size_t biasBytes,
+                           std::uint16_t uniformBiasHalves = 0x3401);
 
 /// True when the decoded corpus covers the d1024 s375 FFN chain
 /// (matmul → bias add → silu → matmul → bias add) as one program.
