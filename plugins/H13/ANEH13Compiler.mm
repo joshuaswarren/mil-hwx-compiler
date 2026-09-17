@@ -3797,9 +3797,10 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 } else if (parity || broadcast || normalization || convolution) {
                     outputOffset =
                         [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
-                } else if (!tiled && !booleanLowered) {
-                    // Tile and boolean programs already sized whole-tensor
-                    // spans. The 64-lane split must not clobber them.
+                } else if (!tiled && !booleanLowered && !linearParity && !ffnChain) {
+                    // Tile, boolean, rank-3 linear, and FFN-chain programs
+                    // already sized whole-tensor spans. The 64-lane split
+                    // must not clobber them.
                     inputOffset = sliceIndex * 64;
                     outputOffset = inputOffset +
                         [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
