@@ -117,6 +117,34 @@ broadcasts, all byte-compared against the decoded Apple task streams):
   native already served stays native.
 
 Still outside the qualified set (records kept in `oracles-round1/`, refused
-forms stay refused): rank-3 linear + b8 bmm (m375 weight packing derivation
-pending), FFN chain program, rect conv respells, transpose/slice 1-task
-programs. `make test-h13` PASS, `make test-h13-parity` PASS (861 cases).
+forms stay refused): rank-3 linear + b8 bmm, FFN chain program, rect conv
+respells, transpose/slice 1-task programs. `make test-h13` PASS,
+`make test-h13-parity` PASS (861 cases).
+
+## m375 linear packing — derivation resolved (land the lowerings next)
+
+The `_idx` capture analysis settles the weight layout: the constant section
+is the **existing `packMatvecWeights` interleave unchanged**. Element
+(col, red) of the row-major `[columns, reduction]` weight lands at u16
+position `(destPlane*reduction + red)*group + col%group` with
+`group = min(16, 32768/reduction) = 16` — verified position-by-position for
+every discriminable element of
+`encoder_linear_m375_k1024_n1024_bias0_idx` (the `uint16(index+1)` payload
+is unique only for the first 65536 elements, i.e. columns 0..63; the earlier
+"first diff at byte 0" was a bug in the throwaway comparison script's blob
+offsets, not a different layout). Two facts the lowerings must encode:
+
+1. **Bias.** The uniform round-1 capture folds a uniform bias into scalar
+   register `0xc80c`; the distinct-payload `_idx` capture shows the general
+   form: bias1's section is `packedWeights || biasBlock || scaleBlock`
+   (2 097 152 + 4 096 bytes at n=1024) and the program grows 3 -> 5 tasks —
+   the bias is NOT in the matvec row key, so the rank-3 `linear` lowering
+   needs its own table (or a bias flag) and an
+   `encodeLinearParity(weights, biasData)` that appends the two per-channel
+   blocks after the packed weights, exactly like the broadcast block layout.
+2. **Row fields.** Each `_idx` record carries taskCount (3/9/9/2/3/3 by
+   geometry), firstTaskBytes, constantOffset and scratch — the same fields
+   `kMatvecTasks` rows carry; emit them the way
+   `H13EncoderUnaryTemplates.inc` was emitted, then wire rank-3 `linear`
+   dispatch to the matvec table and grow the parity set
+   (`write_weights` needs the `uint16_le_index_plus_one_wrapping` pattern).
