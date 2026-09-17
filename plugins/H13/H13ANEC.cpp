@@ -157,16 +157,28 @@ std::vector<std::uint8_t> encodeANEC(const Program &program) {
     // Most encoders bind the result on 4 with operands on 5..7; the blob-x
     // boolean twin binds no runtime surface and the capture writes its
     // result through channel 5, so the output may take the first-input
-    // slot there and only there.
+    // slot there and only there. The decoded rank-3 linear and FFN-chain
+    // streams are input-first: their single operand selects channel 4 and
+    // the result channel 5, so the surface table follows each layout's
+    // declared index instead of assuming output-first.
     const auto outputChannel = program.output.index;
     if (outputChannel != 4 && outputChannel != 5)
         throw std::invalid_argument("unsupported ANEC output channel index");
-    if (outputChannel == 5 && !program.inputs.empty())
-        throw std::invalid_argument("ANEC output shares its channel with an input");
+    for (std::size_t i = 0; i != program.inputs.size(); ++i) {
+        const auto index = program.inputs[i].index;
+        if (index < 4 || index > 7)
+            throw std::invalid_argument("unsupported ANEC input channel index");
+        if (index == outputChannel)
+            throw std::invalid_argument("ANEC output shares its channel with an input");
+        for (std::size_t prior = 0; prior < i; ++prior)
+            if (index == program.inputs[prior].index)
+                throw std::invalid_argument(
+                    "ANEC inputs share a surface channel");
+    }
     validateTensor(program.output, outputChannel,
                    "output allocation does not cover its physical span");
     for (std::size_t i = 0; i != program.inputs.size(); ++i)
-        validateTensor(program.inputs[i], static_cast<std::uint32_t>(5 + i),
+        validateTensor(program.inputs[i], program.inputs[i].index,
                        "input allocation does not cover its physical span");
 
     const auto constantsSize = static_cast<std::uint64_t>(program.constants.size());
@@ -184,15 +196,15 @@ std::vector<std::uint8_t> encodeANEC(const Program &program) {
     tiles[outputChannel] = tileCount(program.output.allocationBytes,
                                      "output tile count overflows");
     for (std::size_t i = 0; i != program.inputs.size(); ++i)
-        tiles[5 + i] = tileCount(program.inputs[i].allocationBytes,
-                                 "input tile count overflows");
+        tiles[program.inputs[i].index] = tileCount(program.inputs[i].allocationBytes,
+                                                   "input tile count overflows");
 
     std::array<std::uint64_t, channelCount * tensorFields> layouts{};
     std::copy(program.output.nchw.begin(), program.output.nchw.end(),
               layouts.begin() + outputChannel * tensorFields);
     for (std::size_t i = 0; i != program.inputs.size(); ++i)
         std::copy(program.inputs[i].nchw.begin(), program.inputs[i].nchw.end(),
-                  layouts.begin() + (5 + i) * tensorFields);
+                  layouts.begin() + program.inputs[i].index * tensorFields);
 
     std::vector<std::uint8_t> anec;
     anec.reserve(anecHeaderBytes + static_cast<std::size_t>(contentSize));
