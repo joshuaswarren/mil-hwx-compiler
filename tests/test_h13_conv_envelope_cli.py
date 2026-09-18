@@ -68,10 +68,11 @@ def compile_source(root, name, text, expected_code=None):
 
 with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-conv-envelope-") as directory:
     root = Path(directory)
-    # Two megabytes: the decoded out-projection row packs a [1024, 1024, 1]
-    # weight, and the blob loader checks the declared size per case. The
+    # Four megabytes: the decoded out-projection row packs a [1024, 1024, 1]
+    # weight, the decoded in-projection row packs a [2048, 1024, 1] weight,
+    # and the blob loader checks the declared size per case. The
     # bias blob covers the 1024-entry depthwise bias.
-    (root / "weights.bin").write_bytes(blob(bytes(1024 * 1024 * 2)))
+    (root / "weights.bin").write_bytes(blob(bytes(2048 * 1024 * 2)))
     (root / "bias.bin").write_bytes(blob(bytes(1024 * 2)))
     hit = compile_source(
         root, "k1-c256-s32",
@@ -108,6 +109,17 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-conv-envelope-") as directo
                  [1, 1], 8, [0, 0, 1, 0], "custom", False))
     assert hit["programs"][0]["encoder"] == "apple-parity-conv"
     assert hit["programs"][0]["taskDescriptors"] == 2
+    # The rank-3 in-projection spell lowers through the W-major surface the
+    # encoder's rank-3 tensors bind as: the decoded colgroup-order row, one
+    # linked four-task parity program. The colgroup order past 64 was
+    # decoded with a 32-bit-pair payload remint (the uint16 capture aliases
+    # colgroups 64 apart).
+    hit = compile_source(
+        root, "enc-1d-pw-inproj",
+        conv_mil([1, 1024, 375], [2048, 1024, 1], [1, 2048, 375],
+                 [1], 1, [0, 0], "valid", False))
+    assert hit["programs"][0]["encoder"] == "apple-parity-conv"
+    assert hit["programs"][0]["taskDescriptors"] == 4
     # The two encoder pointwise bias1 forms ([1,256,750,32] and
     # [1,256,375,16]) lower since the distinct-payload round qualified their
     # rows; the parity suite byte-compiles them.
@@ -121,11 +133,7 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-conv-envelope-") as directo
         ("enc-subsample-dw-375",
          conv_mil([1, 256, 750, 32], [256, 1, 3, 3], [1, 256, 375, 16],
                   [2, 2], 256, [1, 1, 1, 1], "custom", True)),
-        # The in-projection spell respells W-major, and the only checked-in
-        # n2048 capture is H-major: no row covers the W-major surface.
-        ("enc-1d-pw",
-         conv_mil([1, 1024, 375], [2048, 1024, 1], [1, 2048, 375],
-                  [1], 1, [0, 0], "valid", False)),
+
         ("k3-st2-square",
          conv_mil([1, 64, 16, 16], [64, 64, 3, 3], [1, 64, 8, 8],
                   [2, 2], 1, [0, 0, 0, 0], "same", False)),

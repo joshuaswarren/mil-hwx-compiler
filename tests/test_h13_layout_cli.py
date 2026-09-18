@@ -12,6 +12,7 @@ middle-swap matmul feeds, and bool transposes under the same perm contract.
 Concat of independent sources is the named ISA hole h13.unsupported-concat.
 """
 import json
+import struct
 import subprocess
 import sys
 import tempfile
@@ -434,11 +435,21 @@ with tempfile.TemporaryDirectory() as temporary:
     # storage axis, so the conv's row-contiguous read is inexpressible as a
     # surface interpretation at any size.
     # The rank-3 tail swap now materializes as the decoded 1-task
-    # apple-parity-transpose program; the conv itself still refuses its
-    # encoder geometry.
-    compile_source(root, "transpose-encoder-conv",
-                   encoder_conv_source(),
-                   expected_code="h13.conv-outside-envelope")
+    # apple-parity-transpose program; the in-projection conv itself lowers
+    # since the colgroup-order row landed (2026-09-17 u32 remint), reading
+    # the materialized transpose output as its input surface.
+    (root / "weights").mkdir()
+    (root / "weights" / "weight.bin").write_bytes(
+        struct.pack("<I4xQQ", 0xDEADBEEF, 2048 * 1024 * 1 * 2, 64)
+        + bytes(40) + bytes(2048 * 1024 * 1 * 2))
+    lowered = compile_source(root, "transpose-encoder-conv",
+                             encoder_conv_source())
+    lowered_manifest = json.loads((lowered / "manifest.json").read_text())
+    assert [(program["operation"], program["encoder"],
+             program["taskDescriptors"])
+            for program in lowered_manifest["programs"]] == [
+        ("transpose", "apple-parity-transpose", 1),
+        ("conv", "apple-parity-conv", 4)]
     # 24 residual add feeders: same fast-axis class read as add's y operand;
     # the transpose materializes and the add lowers through its own encoder.
     residual = compile_source(root, "transpose-encoder-residual-add",
