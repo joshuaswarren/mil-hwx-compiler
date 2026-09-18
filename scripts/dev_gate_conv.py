@@ -64,12 +64,15 @@ def unpack(buf, shape):
     return halves.reshape(n, c, h, w).astype(np.float32)
 
 def run(anec_path, x4):
+    """Send packed x4 and return (raw_dst_bytes, dst_bytes). The anec tile
+    may exceed the packed surface (guard tiles); the manifest strides are
+    authoritative for placement, so packed data sits at offset 0."""
     nn = lib.__ane_init(str(anec_path).encode(), 0)
     assert nn
     try:
         s0, d0 = int(lib.__ane_src_size(nn, 0)), int(lib.__ane_dst_size(nn, 0))
         tile = pack(x4)
-        assert tile.nbytes == s0, f"src tile {tile.nbytes} != anec src {s0}"
+        assert s0 >= tile.nbytes, f"anec src {s0} < packed {tile.nbytes}"
         lib.__ane_send(nn, ctypes.c_char_p(tile.ctypes.data), 0)
         assert lib.ane_exec(nn) == 0
         out = np.zeros(d0, dtype=np.uint8)
@@ -287,22 +290,29 @@ def main():
     summary = {"compiler": COMPILER, "budget": BUDGET, "cases": {}}
     failures = []
     for case in build_cases():
-        rels = []
-        for seed in SEEDS:
-            rng = np.random.default_rng(seed)
-            x = rng.standard_normal(case["x_shape"]).astype(np.float16)
-            x4 = x.reshape(1, 1, *x.shape[-2:]) if x.ndim == 3 else x
-            y4_shape = (1, 1, *case["y_shape"][-2:]) \
-                if len(case["y_shape"]) == 3 else case["y_shape"]
-            raw, d0 = run(case["anec"], x4)
-            expected = row_bytes(y4_shape[3]) * int(np.prod(y4_shape[:3]))
-            assert d0 == expected, \
-                f"{case['name']}: dst {d0} != expected {expected}"
-            y = unpack(raw, y4_shape).reshape(case["y_shape"])
-            ref = case["ref"](x)
-            assert y.shape == ref.shape, \
-                f"{case['name']}: y {y.shape} != ref {ref.shape}"
-            rels.append(float(np.linalg.norm(y - ref) / np.linalg.norm(ref)))
+        try:
+            rels = []
+            for seed in SEEDS:
+                rng = np.random.default_rng(seed)
+                x = rng.standard_normal(case["x_shape"]).astype(np.float16)
+                x4 = x.reshape(1, 1, *x.shape[-2:]) if x.ndim == 3 else x
+                y4_shape = (1, 1, *case["y_shape"][-2:]) \
+                    if len(case["y_shape"]) == 3 else case["y_shape"]
+                raw, d0 = run(case["anec"], x4)
+                expected = row_bytes(y4_shape[3]) * int(np.prod(y4_shape[:3]))
+                assert d0 >= expected, \
+                    f"{case['name']}: dst {d0} < expected {expected}"
+                y = unpack(raw[:expected], y4_shape).reshape(case["y_shape"])
+                ref = case["ref"](x)
+                assert y.shape == ref.shape, \
+                    f"{case['name']}: y {y.shape} != ref {ref.shape}"
+                rels.append(float(np.linalg.norm(y - ref)
+                                  / np.linalg.norm(ref)))
+        except Exception as exc:
+            print(f"{case['name']}: ERROR {exc}")
+            summary["cases"][case["name"]] = {"error": str(exc), "pass": False}
+            failures.append(case["name"])
+            continue
         worst = max(rels)
         ok = worst <= BUDGET
         if not ok:
