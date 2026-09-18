@@ -143,6 +143,9 @@ def selected_oracles():
             selected.append(oracle)
         elif family == "encoder_linear" or family == "encoder_bmm":
             selected.append(oracle)
+        elif family == "encoder_structure" and \
+                parameters.get("probe", "").startswith("transpose"):
+            selected.append(oracle)
     return selected
 
 
@@ -164,6 +167,8 @@ def encoder(oracle):
         return "apple-parity-linear"
     if family == "encoder_bmm":
         return "apple-parity-batched-matvec"
+    if family == "encoder_structure":
+        return "apple-parity-transpose"
     if family == "chain":
         return "apple-parity-ffn-chain"
     if family in MATMUL_FAMILIES:
@@ -381,7 +386,8 @@ def main():
     expected = {"binary_runtime": 46, "binary_constant": 11, "unary": 28,
                 "matmul": 27, "normalization": 108, "reduction": 114,
                 "env_broadcast": 68, "env_matmul": 90, "env_conv": 15,
-                "encoder_linear": 11, "encoder_bmm": 1, "chain": 1}
+                "encoder_linear": 11, "encoder_bmm": 1, "chain": 1,
+                "encoder_structure": 4}
     for family in ("rrmm_broadcast", "rrmm_matmul", "rrmm_matvec",
                    "conv_probe"):
         if families[family]:

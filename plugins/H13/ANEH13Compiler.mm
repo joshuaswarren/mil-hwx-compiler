@@ -495,6 +495,51 @@ static BOOL transposeViewPlan(ANEGraphOperation *operation,
     return YES;
 }
 
+/// Whether the decoded corpus lowers this transpose as one 1-task program:
+/// fp16, perm exactly [0,2,1] over a rank-3 [1, A, B] surface or [0,2,1,3]
+/// over a rank-4 [1, C, H, W] surface, with the Apple-normalized elementwise
+/// triples of both sides covered by a table row.
+static BOOL transposeParityShapes(ANEGraphOperation *operation,
+                                  ANEGraphValue *input, ANEGraphValue *result,
+                                  ane::h13::ElementwiseShape *inputShape,
+                                  ane::h13::ElementwiseShape *outputShape) {
+    if (!input || !result || !fp16Tensor(input) ||
+        input.type.shape.count < 3 || input.type.shape.count > 4 ||
+        result.type.shape.count != input.type.shape.count)
+        return NO;
+    NSArray<NSNumber *> *perm =
+        int32TensorElements(operation.operands[@"perm"].value);
+    if (perm.count != input.type.shape.count) return NO;
+    const NSUInteger rank = input.type.shape.count;
+    const NSUInteger expectedPerm[] = {0, 2, 1, 3};
+    for (NSUInteger index = 0; index < rank; ++index)
+        if (perm[index].unsignedIntegerValue != expectedPerm[index]) return NO;
+    if ([input.type.shape[0] unsignedIntegerValue] != 1) return NO;
+    if (rank == 3) {
+        inputShape->channels = 1;
+        inputShape->height = [input.type.shape[1] unsignedIntegerValue];
+        inputShape->width = [input.type.shape[2] unsignedIntegerValue];
+        outputShape->channels = 1;
+        outputShape->height = inputShape->width;
+        outputShape->width = inputShape->height;
+    } else {
+        inputShape->channels = [input.type.shape[1] unsignedIntegerValue];
+        inputShape->height = [input.type.shape[2] unsignedIntegerValue];
+        inputShape->width = [input.type.shape[3] unsignedIntegerValue];
+        outputShape->channels = inputShape->height;
+        outputShape->height = inputShape->channels;
+        outputShape->width = inputShape->width;
+    }
+    if (!inputShape->channels || !inputShape->height || !inputShape->width)
+        return NO;
+    NSArray<NSNumber *> *expectedShape = rank == 3
+        ? @[@1, @(outputShape->height), @(outputShape->width)]
+        : @[@1, @(outputShape->channels), @(outputShape->height),
+            @(outputShape->width)];
+    if (![result.type.shape isEqualToArray:expectedShape]) return NO;
+    return ane::h13::supportsTransposeParity(*inputShape, *outputShape);
+}
+
 /// A contiguous slice_by_index lowers as one offset view of its storage:
 /// unit strides, at most one sliced dimension, unit dimensions before it,
 /// and end_mask/begin_mask/negative bounds resolved to literal ranges.
@@ -1817,6 +1862,21 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         return YES;
     }
 
+    if ([name isEqualToString:@"transpose"]) {
+        ane::h13::ElementwiseShape transposeIn{}, transposeOut{};
+        if (!transposeParityShapes(operation, x, operation.results[0],
+                                   &transposeIn, &transposeOut))
+            return reject(diagnostics,
+                @"H13 transpose has no decoded 1-task program for this surface pair",
+                operation, @"h13.nonfoldable-transpose");
+        program = ane::h13::encodeTransposeParity(transposeIn, transposeOut);
+        *inputsOut = @[x];
+        *constantInputOut = nil;
+        *constantDataOut = nil;
+        *manifestOperationOut = name;
+        return YES;
+    }
+
     H13NormPlan normalization{};
     if (normParityPlan(operation, &normalization)) {
         program = ane::h13::encodeNormParity(normalization.operation,
@@ -2908,6 +2968,22 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                         candidate, @"h13.nonfoldable-transpose");
             }
             if (!foldable && !compositeFolded) {
+                // A decoded 1-task transpose program materializes the
+                // permuted surface as one whole-op stream.
+                ane::h13::ElementwiseShape transposeIn{}, transposeOut{};
+                if (transposeParityShapes(candidate, x, candidate.results[0],
+                                          &transposeIn, &transposeOut)) {
+                    ANEGraphValue *result = [[ANEGraphValue alloc]
+                        initWithName:candidate.results[0].name
+                        type:candidate.results[0].type];
+                    [operations addObject:[[ANEGraphOperation alloc]
+                        initWithOperationName:name results:@[result]
+                        arguments:arguments attributes:candidate.attributes
+                        range:candidate.range]];
+                    [manifestValues addObject:result];
+                    [loweredValues setObject:result forKey:candidate.results[0]];
+                    continue;
+                }
                 // Exact per-class blocker, so the encoder's transposes each
                 // reject with the reason that actually stops them.
                 NSString *message = nil;
@@ -3627,6 +3703,11 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             BOOL convolution = !parity && !broadcast && !normalization &&
                 convParityPlan(operation, &convolutionPlan);
             BOOL tiled = [operation.operationName isEqualToString:@"tile"];
+            ane::h13::ElementwiseShape transposeIn{}, transposeOut{};
+            BOOL transposeParity =
+                [operation.operationName isEqualToString:@"transpose"] &&
+                transposeParityShapes(operation, operation.operands[@"x"].value,
+                    operation.results[0], &transposeIn, &transposeOut);
             if (tiled) {
                 // The tile program reads its whole input surface and writes
                 // its whole output surface in one program, so both slice
@@ -3663,7 +3744,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                             inputPhysicalElements = outputPhysicalElements =
                                 elements;
                 }
-            } else if (linearParity || ffnChain) {
+            } else if (linearParity || ffnChain || transposeParity) {
                 // Whole-tensor programs: one input slice and one output
                 // slice covering the rank-3 surfaces.
                 NSUInteger xElements = 1;
@@ -3799,7 +3880,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 } else if (parity || broadcast || normalization || convolution) {
                     outputOffset =
                         [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
-                } else if (!tiled && !booleanLowered && !linearParity && !ffnChain) {
+                } else if (!tiled && !booleanLowered && !linearParity && !ffnChain &&
+                       !transposeParity) {
                     // Tile, boolean, rank-3 linear, and FFN-chain programs
                     // already sized whole-tensor spans. The 64-lane split
                     // must not clobber them.
@@ -3910,6 +3992,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                         ? @"apple-parity-linear"
                         : ffnChain
                         ? @"apple-parity-ffn-chain"
+                        : transposeParity
+                        ? @"apple-parity-transpose"
                         : tiled
                         ? @"apple-parity-tile"
                         : booleanLowered

@@ -433,15 +433,19 @@ with tempfile.TemporaryDirectory() as temporary:
     # 24 conv feeders: the rank-3 [0,2,1] permutation moves the fastest
     # storage axis, so the conv's row-contiguous read is inexpressible as a
     # surface interpretation at any size.
+    # The rank-3 tail swap now materializes as the decoded 1-task
+    # apple-parity-transpose program; the conv itself still refuses its
+    # encoder geometry.
     compile_source(root, "transpose-encoder-conv",
                    encoder_conv_source(),
-                   expected_code="h13.nonfoldable-transpose",
-                   expected_message="moves the storage-fastest axis")
-    # 24 residual add feeders: same fast-axis class read as add's y operand.
-    compile_source(root, "transpose-encoder-residual-add",
-                   encoder_residual_add_source(),
-                   expected_code="h13.nonfoldable-transpose",
-                   expected_message="moves the storage-fastest axis")
+                   expected_code="h13.conv-outside-envelope")
+    # 24 residual add feeders: same fast-axis class read as add's y operand;
+    # the transpose materializes and the add lowers through its own encoder.
+    residual = compile_source(root, "transpose-encoder-residual-add",
+                              encoder_residual_add_source())
+    residual_manifest = json.loads((residual / "manifest.json").read_text())
+    assert residual_manifest["programs"][0]["encoder"] == \
+        "apple-parity-transpose"
     # 24 attention bias adds: the rank-4 [0,2,1,3] permutation keeps the
     # fastest axis but has two consumers, so nothing absorbs it.
     compile_source(root, "transpose-encoder-bias-add",
