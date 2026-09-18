@@ -348,13 +348,17 @@ void checkEncoderConvEnvelope() {
     assert(supportsConvParity({1, 1, 1, 1, true, {256, 16, 16}, {256, 16, 16}}));
     assert(supportsConvParity({1, 1, 2, 1, false, {64, 16, 16}, {64, 8, 8}}));
     // The decoded encoder rows: the W-major rank-3 out-projection respell
-    // (one linked two-task program), the H-major in-projection capture, and
-    // the rect depthwise 9x1 key.
+    // (one linked two-task program), the H-major in-projection capture, the
+    // rect depthwise 9x1 key, the W-major bias-bearing depthwise respell
+    // (its own two-task slotted section), and the small bias1 pointwise
+    // pairs whose uniform captures were value-collision degenerate.
     assert(supportsConvParity({1, 1, 1, 1, false, {1024, 1, 375}, {1024, 1, 375}}));
     assert(supportsConvParity({1, 1, 1, 1, false, {1024, 375, 1}, {2048, 375, 1}}));
     assert(supportsConvParity({9, 1, 1, 1024, false, {1024, 1, 375}, {1024, 1, 375}}));
-    assert(!supportsConvParity({1, 1, 1, 1, true, {256, 750, 32}, {256, 750, 32}}));
-    assert(!supportsConvParity({1, 1, 1, 1, true, {256, 375, 16}, {256, 375, 16}}));
+    assert(supportsConvParity({1, 9, 1, 1024, true, {1024, 1, 375}, {1024, 1, 375}}));
+    assert(supportsConvParity({9, 1, 1, 1024, true, {1024, 375, 1}, {1024, 375, 1}}));
+    assert(supportsConvParity({1, 1, 1, 1, true, {256, 750, 32}, {256, 750, 32}}));
+    assert(supportsConvParity({1, 1, 1, 1, true, {256, 375, 16}, {256, 375, 16}}));
     assert(!supportsConvParity({3, 3, 2, 1, true, {1, 3000, 128}, {256, 1500, 64}}));
     assert(!supportsConvParity({3, 3, 2, 256, true, {256, 1500, 64}, {256, 750, 32}}));
     assert(!supportsConvParity({3, 3, 2, 256, true, {256, 750, 32}, {256, 375, 16}}));
