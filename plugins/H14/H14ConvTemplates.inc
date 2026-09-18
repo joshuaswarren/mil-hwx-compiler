@@ -2724,179 +2724,179 @@ static constexpr std::uint32_t kH14ConvText174[] = {
     0x00000000, 0x00000000,
 };
 static constexpr OracleConvTemplate kConvTasks[] = {
-    {1, 1, 1, false, {64, 1, 1}, {64, 1, 1}, kH14ConvText0, std::size(kH14ConvText0), 1, 8192, 0x00000011, 0x00000000, 0x00000000},  // conv_probe_k1_c64_n64_s1_st1_g1_bias0_same
-    {1, 1, 1, false, {64, 8, 8}, {64, 8, 8}, kH14ConvText1, std::size(kH14ConvText1), 1, 8192, 0x00000011, 0x00000002, 0x00000000},  // conv_probe_k1_c64_n64_s8_st1_g1_bias0_same
-    {1, 1, 1, false, {64, 8, 8}, {256, 8, 8}, kH14ConvText2, std::size(kH14ConvText2), 1, 32768, 0x00000011, 0x00000005, 0x00000000},  // env_conv_k1_c64_n256_s8_st1_g1_bias0
-    {1, 1, 1, false, {64, 16, 16}, {64, 16, 16}, kH14ConvText3, std::size(kH14ConvText3), 1, 8192, 0x00000011, 0x00000004, 0x00000000},  // conv_known_k1_c64_n64_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {64, 16, 16}, {128, 16, 16}, kH14ConvText4, std::size(kH14ConvText4), 1, 16384, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k1_c64_n128_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {64, 16, 16}, {256, 16, 16}, kH14ConvText5, std::size(kH14ConvText5), 1, 32768, 0x00000011, 0x0000000a, 0x00000000},  // conv_known_k1_c64_n256_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {64, 16, 16}, {512, 16, 16}, kH14ConvText6, std::size(kH14ConvText6), 1, 65536, 0x00000011, 0x00000013, 0x00000000},  // conv_known_k1_c64_n512_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {64, 16, 16}, {768, 16, 16}, kH14ConvText7, std::size(kH14ConvText7), 1, 98304, 0x00000011, 0x0000001b, 0x00000000},  // conv_known_k1_c64_n768_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {64, 16, 16}, {1024, 16, 16}, kH14ConvText8, std::size(kH14ConvText8), 1, 131072, 0x00000011, 0x00000024, 0x00000000},  // conv_known_k1_c64_n1024_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {64, 32, 32}, {64, 32, 32}, kH14ConvText9, std::size(kH14ConvText9), 1, 8192, 0x00000011, 0x00000007, 0x00000000},  // conv_probe_k1_c64_n64_s32_st1_g1_bias0_same
-    {1, 1, 1, false, {64, 64, 64}, {64, 64, 64}, kH14ConvText10, std::size(kH14ConvText10), 1, 8192, 0x00000011, 0x0000001e, 0x00000000},  // conv_probe_k1_c64_n64_s64_st1_g1_bias0_same
-    {1, 1, 1, false, {128, 16, 16}, {64, 16, 16}, kH14ConvText11, std::size(kH14ConvText11), 1, 16384, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k1_c128_n64_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {128, 16, 16}, {128, 16, 16}, kH14ConvText12, std::size(kH14ConvText12), 1, 32768, 0x00000011, 0x00000008, 0x00000000},  // conv_probe_k1_c128_n128_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {128, 16, 16}, {256, 16, 16}, kH14ConvText13, std::size(kH14ConvText13), 1, 65536, 0x00000011, 0x0000000d, 0x00000000},  // conv_probe_k1_c128_n256_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {128, 16, 16}, {512, 16, 16}, kH14ConvText14, std::size(kH14ConvText14), 1, 131072, 0x00000011, 0x00000017, 0x00000000},  // conv_probe_k1_c128_n512_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {128, 16, 16}, {1024, 16, 16}, kH14ConvText15, std::size(kH14ConvText15), 1, 262144, 0x00000011, 0x0000002a, 0x00000000},  // conv_probe_k1_c128_n1024_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {256, 1, 1}, {256, 1, 1}, kH14ConvText16, std::size(kH14ConvText16), 1, 131072, 0x00000011, 0x00000004, 0x00000000},  // conv_probe_k1_c256_n256_s1_st1_g1_bias0_same
-    {1, 1, 1, false, {256, 8, 8}, {256, 8, 8}, kH14ConvText17, std::size(kH14ConvText17), 1, 131072, 0x00000011, 0x0000000b, 0x00000000},  // conv_probe_k1_c256_n256_s8_st1_g1_bias0_same
-    {1, 1, 1, false, {256, 16, 16}, {64, 16, 16}, kH14ConvText18, std::size(kH14ConvText18), 1, 32768, 0x00000011, 0x0000000a, 0x00000000},  // conv_known_k1_c256_n64_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {256, 16, 16}, {128, 16, 16}, kH14ConvText19, std::size(kH14ConvText19), 1, 65536, 0x00000011, 0x0000000d, 0x00000000},  // conv_probe_k1_c256_n128_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {256, 16, 16}, {256, 16, 16}, kH14ConvText20, std::size(kH14ConvText20), 1, 131072, 0x00000011, 0x00000013, 0x00000000},  // conv_probe_k1_c256_n256_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {256, 16, 16}, {512, 16, 16}, kH14ConvText21, std::size(kH14ConvText21), 1, 262144, 0x00000011, 0x0000001e, 0x00000000},  // conv_probe_k1_c256_n512_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {256, 16, 16}, {1024, 16, 16}, kH14ConvText22, std::size(kH14ConvText22), 1, 524288, 0x00000011, 0x00000035, 0x00000000},  // conv_probe_k1_c256_n1024_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {256, 32, 32}, {256, 32, 32}, kH14ConvText23, std::size(kH14ConvText23), 1, 131072, 0x00000011, 0x00000022, 0x00000000},  // conv_probe_k1_c256_n256_s32_st1_g1_bias0_same
-    {1, 1, 1, false, {256, 64, 64}, {256, 64, 64}, kH14ConvText24, std::size(kH14ConvText24), 1, 131072, 0x00000011, 0x0000007e, 0x00000000},  // conv_probe_k1_c256_n256_s64_st1_g1_bias0_same
-    {1, 1, 1, false, {512, 16, 16}, {64, 16, 16}, kH14ConvText25, std::size(kH14ConvText25), 1, 65536, 0x00000011, 0x00000013, 0x00000000},  // conv_probe_k1_c512_n64_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {512, 16, 16}, {128, 16, 16}, kH14ConvText26, std::size(kH14ConvText26), 1, 131072, 0x00000011, 0x00000017, 0x00000000},  // conv_probe_k1_c512_n128_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {512, 16, 16}, {256, 16, 16}, kH14ConvText27, std::size(kH14ConvText27), 1, 262144, 0x00000011, 0x0000001e, 0x00000000},  // conv_probe_k1_c512_n256_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {512, 16, 16}, {512, 16, 16}, kH14ConvText28, std::size(kH14ConvText28), 1, 524288, 0x00000011, 0x0000002e, 0x00000000},  // conv_probe_k1_c512_n512_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {512, 16, 16}, {1024, 16, 16}, kH14ConvText29, std::size(kH14ConvText29), 1, 1048576, 0x00000011, 0x0000004c, 0x00000000},  // conv_probe_k1_c512_n1024_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {1024, 16, 16}, {64, 16, 16}, kH14ConvText30, std::size(kH14ConvText30), 1, 131072, 0x00000011, 0x00000024, 0x00000000},  // conv_probe_k1_c1024_n64_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {1024, 16, 16}, {128, 16, 16}, kH14ConvText31, std::size(kH14ConvText31), 1, 262144, 0x00000011, 0x0000002a, 0x00000000},  // conv_probe_k1_c1024_n128_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {1024, 16, 16}, {256, 16, 16}, kH14ConvText32, std::size(kH14ConvText32), 1, 524288, 0x00000011, 0x00000035, 0x00000000},  // conv_probe_k1_c1024_n256_s16_st1_g1_bias0_same
-    {1, 1, 1, false, {1024, 16, 16}, {512, 16, 16}, kH14ConvText33, std::size(kH14ConvText33), 1, 1048576, 0x00000011, 0x0000004c, 0x00000000},  // conv_probe_k1_c1024_n512_s16_st1_g1_bias0_same
-    {1, 1, 1, true, {64, 1, 1}, {64, 1, 1}, kH14ConvText34, std::size(kH14ConvText34), 1, 9216, 0x00000011, 0x00000000, 0x00000000},  // conv_probe_k1_c64_n64_s1_st1_g1_bias1_same
-    {1, 1, 1, true, {64, 8, 8}, {64, 8, 8}, kH14ConvText35, std::size(kH14ConvText35), 1, 9216, 0x00000011, 0x00000002, 0x00000000},  // conv_probe_k1_c64_n64_s8_st1_g1_bias1_same
-    {1, 1, 1, true, {64, 16, 16}, {64, 16, 16}, kH14ConvText36, std::size(kH14ConvText36), 1, 9216, 0x00000011, 0x00000004, 0x00000000},  // conv_known_k1_c64_n64_s16_st1_g1_bias1_same
-    {1, 1, 1, true, {64, 16, 16}, {128, 16, 16}, kH14ConvText37, std::size(kH14ConvText37), 1, 17408, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k1_c64_n128_s16_st1_g1_bias1_same
-    {1, 1, 1, true, {64, 16, 16}, {256, 16, 16}, kH14ConvText38, std::size(kH14ConvText38), 1, 33792, 0x00000011, 0x0000000a, 0x00000000},  // conv_known_k1_c64_n256_s16_st1_g1_bias1_same
-    {1, 1, 1, true, {64, 16, 16}, {512, 16, 16}, kH14ConvText39, std::size(kH14ConvText39), 1, 66560, 0x00000011, 0x00000013, 0x00000000},  // conv_known_k1_c64_n512_s16_st1_g1_bias1_same
-    {1, 1, 1, true, {64, 16, 16}, {768, 16, 16}, kH14ConvText40, std::size(kH14ConvText40), 1, 100352, 0x00000011, 0x0000001b, 0x00000000},  // conv_known_k1_c64_n768_s16_st1_g1_bias1_same
-    {1, 1, 1, true, {64, 16, 16}, {1024, 16, 16}, kH14ConvText41, std::size(kH14ConvText41), 1, 133120, 0x00000011, 0x00000024, 0x00000000},  // conv_known_k1_c64_n1024_s16_st1_g1_bias1_same
-    {1, 1, 1, true, {64, 32, 32}, {64, 32, 32}, kH14ConvText42, std::size(kH14ConvText42), 1, 9216, 0x00000011, 0x00000007, 0x00000000},  // conv_probe_k1_c64_n64_s32_st1_g1_bias1_same
-    {1, 1, 1, true, {64, 64, 64}, {64, 64, 64}, kH14ConvText43, std::size(kH14ConvText43), 1, 9216, 0x00000011, 0x0000001e, 0x00000000},  // conv_probe_k1_c64_n64_s64_st1_g1_bias1_same
-    {1, 1, 1, true, {128, 16, 16}, {64, 16, 16}, kH14ConvText44, std::size(kH14ConvText44), 1, 17408, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k1_c128_n64_s16_st1_g1_bias1_same
-    {1, 1, 1, true, {256, 1, 1}, {256, 1, 1}, kH14ConvText45, std::size(kH14ConvText45), 1, 132096, 0x00000011, 0x00000004, 0x00000000},  // conv_probe_k1_c256_n256_s1_st1_g1_bias1_same
-    {1, 1, 1, true, {256, 8, 8}, {256, 8, 8}, kH14ConvText46, std::size(kH14ConvText46), 1, 132096, 0x00000011, 0x0000000b, 0x00000000},  // conv_probe_k1_c256_n256_s8_st1_g1_bias1_same
-    {1, 1, 1, true, {256, 16, 16}, {64, 16, 16}, kH14ConvText47, std::size(kH14ConvText47), 1, 33792, 0x00000011, 0x0000000a, 0x00000000},  // conv_known_k1_c256_n64_s16_st1_g1_bias1_same
-    {1, 1, 1, true, {256, 16, 16}, {256, 16, 16}, kH14ConvText48, std::size(kH14ConvText48), 1, 132096, 0x00000011, 0x00000013, 0x00000000},  // conv_probe_k1_c256_n256_s16_st1_g1_bias1_same
-    {1, 1, 1, true, {256, 32, 32}, {256, 32, 32}, kH14ConvText49, std::size(kH14ConvText49), 1, 132096, 0x00000011, 0x00000022, 0x00000000},  // conv_probe_k1_c256_n256_s32_st1_g1_bias1_same
-    {1, 1, 1, true, {256, 64, 64}, {256, 64, 64}, kH14ConvText50, std::size(kH14ConvText50), 1, 132096, 0x00000011, 0x0000007e, 0x00000000},  // conv_probe_k1_c256_n256_s64_st1_g1_bias1_same
-    {1, 1, 1, true, {768, 1, 1}, {768, 1, 1}, kH14ConvText51, std::size(kH14ConvText51), 1, 1181696, 0x00000011, 0x00000025, 0x00000000},  // env_conv_k1_c768_n768_s1_st1_g1_bias1
-    {1, 1, 4, false, {64, 16, 16}, {64, 16, 16}, kH14ConvText52, std::size(kH14ConvText52), 1, 4096, 0x00000011, 0x00000003, 0x00000000},  // conv_known_k1_c64_n64_s16_st1_g4_bias0_same
-    {1, 1, 4, false, {64, 16, 16}, {128, 16, 16}, kH14ConvText53, std::size(kH14ConvText53), 1, 4096, 0x00000011, 0x00000005, 0x00000000},  // conv_known_k1_c64_n128_s16_st1_g4_bias0_same
-    {1, 1, 4, false, {64, 16, 16}, {256, 16, 16}, kH14ConvText54, std::size(kH14ConvText54), 1, 8192, 0x00000011, 0x00000009, 0x00000000},  // conv_known_k1_c64_n256_s16_st1_g4_bias0_same
-    {1, 1, 4, false, {128, 16, 16}, {64, 16, 16}, kH14ConvText55, std::size(kH14ConvText55), 1, 4096, 0x00000011, 0x00000005, 0x00000000},  // conv_known_k1_c128_n64_s16_st1_g4_bias0_same
-    {1, 1, 4, false, {128, 16, 16}, {128, 16, 16}, kH14ConvText56, std::size(kH14ConvText56), 1, 8192, 0x00000011, 0x00000007, 0x00000000},  // conv_probe_k1_c128_n128_s16_st1_g4_bias0_same
-    {1, 1, 4, false, {256, 16, 16}, {64, 16, 16}, kH14ConvText57, std::size(kH14ConvText57), 1, 8192, 0x00000011, 0x00000009, 0x00000000},  // conv_known_k1_c256_n64_s16_st1_g4_bias0_same
-    {1, 1, 4, false, {256, 16, 16}, {256, 16, 16}, kH14ConvText58, std::size(kH14ConvText58), 1, 32768, 0x00000011, 0x00000010, 0x00000000},  // conv_probe_k1_c256_n256_s16_st1_g4_bias0_same
-    {1, 1, 4, false, {512, 16, 16}, {512, 16, 16}, kH14ConvText59, std::size(kH14ConvText59), 1, 131072, 0x00000011, 0x00000022, 0x00000000},  // conv_probe_k1_c512_n512_s16_st1_g4_bias0_same
-    {1, 1, 4, false, {1024, 16, 16}, {1024, 16, 16}, kH14ConvText60, std::size(kH14ConvText60), 1, 524288, 0x00000011, 0x0000004c, 0x00000000},  // conv_probe_k1_c1024_n1024_s16_st1_g4_bias0_same
-    {1, 1, 4, true, {64, 16, 16}, {64, 16, 16}, kH14ConvText61, std::size(kH14ConvText61), 1, 4096, 0x00000011, 0x00000003, 0x00000000},  // conv_known_k1_c64_n64_s16_st1_g4_bias1_same
-    {1, 1, 4, true, {64, 16, 16}, {128, 16, 16}, kH14ConvText62, std::size(kH14ConvText62), 1, 8192, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k1_c64_n128_s16_st1_g4_bias1_same
-    {1, 1, 4, true, {64, 16, 16}, {256, 16, 16}, kH14ConvText63, std::size(kH14ConvText63), 1, 12288, 0x00000011, 0x00000009, 0x00000000},  // conv_known_k1_c64_n256_s16_st1_g4_bias1_same
-    {1, 1, 4, true, {128, 16, 16}, {64, 16, 16}, kH14ConvText64, std::size(kH14ConvText64), 1, 8192, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k1_c128_n64_s16_st1_g4_bias1_same
-    {1, 1, 4, true, {128, 16, 16}, {128, 16, 16}, kH14ConvText65, std::size(kH14ConvText65), 1, 12288, 0x00000011, 0x00000008, 0x00000000},  // conv_probe_k1_c128_n128_s16_st1_g4_bias1_same
-    {1, 1, 4, true, {256, 16, 16}, {64, 16, 16}, kH14ConvText66, std::size(kH14ConvText66), 1, 12288, 0x00000011, 0x00000009, 0x00000000},  // conv_known_k1_c256_n64_s16_st1_g4_bias1_same
-    {1, 1, 4, true, {256, 16, 16}, {256, 16, 16}, kH14ConvText67, std::size(kH14ConvText67), 1, 36864, 0x00000011, 0x00000010, 0x00000000},  // conv_probe_k1_c256_n256_s16_st1_g4_bias1_same
-    {1, 1, 4, true, {512, 16, 16}, {512, 16, 16}, kH14ConvText68, std::size(kH14ConvText68), 1, 135168, 0x00000011, 0x00000022, 0x00000000},  // conv_probe_k1_c512_n512_s16_st1_g4_bias1_same
-    {1, 1, 4, true, {1024, 16, 16}, {1024, 16, 16}, kH14ConvText69, std::size(kH14ConvText69), 1, 528384, 0x00000011, 0x0000004c, 0x00000000},  // conv_probe_k1_c1024_n1024_s16_st1_g4_bias1_same
-    {1, 1, 64, false, {64, 16, 16}, {64, 16, 16}, kH14ConvText70, std::size(kH14ConvText70), 1, 1024, 0x00000011, 0x00000003, 0x00000000},  // conv_known_k1_c64_n64_s16_st1_g64_bias0_same
-    {1, 1, 64, true, {64, 16, 16}, {64, 16, 16}, kH14ConvText71, std::size(kH14ConvText71), 1, 1024, 0x00000011, 0x00000003, 0x00000000},  // conv_probe_k1_c64_n64_s16_st1_g64_bias1_same
-    {1, 1, 128, false, {128, 16, 16}, {128, 16, 16}, kH14ConvText72, std::size(kH14ConvText72), 1, 1024, 0x00000011, 0x00000007, 0x00000000},  // conv_known_k1_c128_n128_s16_st1_g128_bias0_same
-    {1, 1, 128, true, {128, 16, 16}, {128, 16, 16}, kH14ConvText73, std::size(kH14ConvText73), 1, 1024, 0x00000011, 0x00000007, 0x00000000},  // conv_probe_k1_c128_n128_s16_st1_g128_bias1_same
-    {1, 1, 256, false, {256, 16, 16}, {256, 16, 16}, kH14ConvText74, std::size(kH14ConvText74), 1, 1024, 0x00000011, 0x0000000f, 0x00000000},  // conv_probe_k1_c256_n256_s16_st1_g256_bias0_same
-    {1, 1, 256, true, {256, 16, 16}, {256, 16, 16}, kH14ConvText75, std::size(kH14ConvText75), 1, 1024, 0x00000011, 0x0000000f, 0x00000000},  // conv_probe_k1_c256_n256_s16_st1_g256_bias1_same
-    {1, 1, 512, false, {512, 16, 16}, {512, 16, 16}, kH14ConvText76, std::size(kH14ConvText76), 1, 1024, 0x00000011, 0x0000001e, 0x00000000},  // conv_probe_k1_c512_n512_s16_st1_g512_bias0_same
-    {1, 1, 512, true, {512, 16, 16}, {512, 16, 16}, kH14ConvText77, std::size(kH14ConvText77), 1, 2048, 0x00000011, 0x0000001e, 0x00000000},  // conv_probe_k1_c512_n512_s16_st1_g512_bias1_same
-    {1, 1, 1024, false, {1024, 16, 16}, {1024, 16, 16}, kH14ConvText78, std::size(kH14ConvText78), 1, 2048, 0x00000011, 0x0000003d, 0x00000000},  // conv_probe_k1_c1024_n1024_s16_st1_g1024_bias0_same
-    {1, 1, 1024, true, {1024, 16, 16}, {1024, 16, 16}, kH14ConvText79, std::size(kH14ConvText79), 1, 4096, 0x00000011, 0x0000003d, 0x00000000},  // conv_probe_k1_c1024_n1024_s16_st1_g1024_bias1_same
-    {1, 2, 1, false, {64, 1, 1}, {64, 1, 1}, kH14ConvText80, std::size(kH14ConvText80), 1, 11136, 0x00000011, 0x00000000, 0x00000000},  // conv_probe_k1_c64_n64_s1_st2_g1_bias0_same
-    {1, 2, 1, false, {64, 8, 8}, {64, 4, 4}, kH14ConvText81, std::size(kH14ConvText81), 1, 11136, 0x00000011, 0x00000001, 0x00000000},  // conv_probe_k1_c64_n64_s8_st2_g1_bias0_same
-    {1, 2, 1, false, {64, 16, 16}, {64, 8, 8}, kH14ConvText82, std::size(kH14ConvText82), 1, 11136, 0x00000011, 0x00000003, 0x00000000},  // conv_known_k1_c64_n64_s16_st2_g1_bias0_same
-    {1, 2, 1, false, {64, 16, 16}, {128, 8, 8}, kH14ConvText83, std::size(kH14ConvText83), 1, 21376, 0x00000011, 0x00000004, 0x00000000},  // conv_known_k1_c64_n128_s16_st2_g1_bias0_same
-    {1, 2, 1, false, {64, 32, 32}, {64, 16, 16}, kH14ConvText84, std::size(kH14ConvText84), 1, 11136, 0x00000011, 0x00000006, 0x00000000},  // conv_probe_k1_c64_n64_s32_st2_g1_bias0_same
-    {1, 2, 1, false, {64, 64, 64}, {64, 32, 32}, kH14ConvText85, std::size(kH14ConvText85), 1, 11136, 0x00000011, 0x00000013, 0x00000000},  // conv_probe_k1_c64_n64_s64_st2_g1_bias0_same
-    {1, 2, 1, false, {128, 16, 16}, {64, 8, 8}, kH14ConvText86, std::size(kH14ConvText86), 1, 21376, 0x00000011, 0x00000005, 0x00000000},  // conv_known_k1_c128_n64_s16_st2_g1_bias0_same
-    {1, 2, 1, false, {128, 16, 16}, {128, 8, 8}, kH14ConvText87, std::size(kH14ConvText87), 1, 41856, 0x00000011, 0x00000006, 0x00000000},  // conv_probe_k1_c128_n128_s16_st2_g1_bias0_same
-    {1, 2, 1, false, {256, 16, 16}, {64, 8, 8}, kH14ConvText88, std::size(kH14ConvText88), 1, 41856, 0x00000011, 0x00000009, 0x00000000},  // conv_known_k1_c256_n64_s16_st2_g1_bias0_same
-    {1, 2, 1, false, {256, 16, 16}, {128, 8, 8}, kH14ConvText89, std::size(kH14ConvText89), 1, 82816, 0x00000011, 0x0000000c, 0x00000000},  // conv_probe_k1_c256_n128_s16_st2_g1_bias0_same
-    {1, 2, 1, false, {512, 16, 16}, {64, 8, 8}, kH14ConvText90, std::size(kH14ConvText90), 1, 82816, 0x00000011, 0x00000012, 0x00000000},  // conv_probe_k1_c512_n64_s16_st2_g1_bias0_same
-    {1, 2, 1, false, {512, 16, 16}, {128, 8, 8}, kH14ConvText91, std::size(kH14ConvText91), 1, 164736, 0x00000011, 0x00000016, 0x00000000},  // conv_probe_k1_c512_n128_s16_st2_g1_bias0_same
-    {1, 2, 1, false, {1024, 16, 16}, {64, 8, 8}, kH14ConvText92, std::size(kH14ConvText92), 1, 164736, 0x00000011, 0x00000024, 0x00000000},  // conv_probe_k1_c1024_n64_s16_st2_g1_bias0_same
-    {1, 2, 1, false, {1024, 16, 16}, {128, 8, 8}, kH14ConvText93, std::size(kH14ConvText93), 1, 328576, 0x00000011, 0x0000002a, 0x00000000},  // conv_probe_k1_c1024_n128_s16_st2_g1_bias0_same
-    {1, 2, 1, true, {64, 1, 1}, {64, 1, 1}, kH14ConvText94, std::size(kH14ConvText94), 1, 11136, 0x00000011, 0x00000000, 0x00000000},  // conv_probe_k1_c64_n64_s1_st2_g1_bias1_same
-    {1, 2, 1, true, {64, 8, 8}, {64, 4, 4}, kH14ConvText95, std::size(kH14ConvText95), 1, 11136, 0x00000011, 0x00000001, 0x00000000},  // conv_probe_k1_c64_n64_s8_st2_g1_bias1_same
-    {1, 2, 1, true, {64, 16, 16}, {64, 8, 8}, kH14ConvText96, std::size(kH14ConvText96), 1, 11136, 0x00000011, 0x00000003, 0x00000000},  // conv_known_k1_c64_n64_s16_st2_g1_bias1_same
-    {1, 2, 1, true, {64, 16, 16}, {128, 8, 8}, kH14ConvText97, std::size(kH14ConvText97), 1, 21376, 0x00000011, 0x00000004, 0x00000000},  // conv_known_k1_c64_n128_s16_st2_g1_bias1_same
-    {1, 2, 1, true, {64, 32, 32}, {64, 16, 16}, kH14ConvText98, std::size(kH14ConvText98), 1, 11136, 0x00000011, 0x00000006, 0x00000000},  // conv_probe_k1_c64_n64_s32_st2_g1_bias1_same
-    {1, 2, 1, true, {64, 64, 64}, {64, 32, 32}, kH14ConvText99, std::size(kH14ConvText99), 1, 11136, 0x00000011, 0x00000013, 0x00000000},  // conv_probe_k1_c64_n64_s64_st2_g1_bias1_same
-    {1, 2, 1, true, {128, 16, 16}, {64, 8, 8}, kH14ConvText100, std::size(kH14ConvText100), 1, 21376, 0x00000011, 0x00000005, 0x00000000},  // conv_known_k1_c128_n64_s16_st2_g1_bias1_same
-    {1, 2, 1, true, {256, 16, 16}, {64, 8, 8}, kH14ConvText101, std::size(kH14ConvText101), 1, 41856, 0x00000011, 0x00000009, 0x00000000},  // conv_known_k1_c256_n64_s16_st2_g1_bias1_same
-    {3, 1, 1, false, {64, 1, 1}, {64, 1, 1}, kH14ConvText102, std::size(kH14ConvText102), 1, 73728, 0x00000011, 0x00000002, 0x00000000},  // conv_probe_k3_c64_n64_s1_st1_g1_bias0_same
-    {3, 1, 1, false, {64, 8, 8}, {64, 6, 6}, kH14ConvText103, std::size(kH14ConvText103), 1, 73728, 0x00000011, 0x00000003, 0x00000000},  // conv_probe_k3_c64_n64_s8_st1_g1_bias0_valid
-    {3, 1, 1, false, {64, 8, 8}, {64, 8, 8}, kH14ConvText104, std::size(kH14ConvText104), 1, 73728, 0x00000011, 0x00000004, 0x00000000},  // conv_probe_k3_c64_n64_s8_st1_g1_bias0_same
-    {3, 1, 1, false, {64, 16, 16}, {64, 14, 14}, kH14ConvText105, std::size(kH14ConvText105), 1, 73728, 0x00000011, 0x00000005, 0x00000000},  // conv_probe_k3_c64_n64_s16_st1_g1_bias0_valid
-    {3, 1, 1, false, {64, 16, 16}, {64, 16, 16}, kH14ConvText106, std::size(kH14ConvText106), 1, 73728, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k3_c64_n64_s16_st1_g1_bias0_same
-    {3, 1, 1, false, {64, 16, 16}, {128, 14, 14}, kH14ConvText107, std::size(kH14ConvText107), 1, 147456, 0x00000011, 0x00000009, 0x00000000},  // conv_probe_k3_c64_n128_s16_st1_g1_bias0_valid
-    {3, 1, 1, false, {64, 16, 16}, {128, 16, 16}, kH14ConvText108, std::size(kH14ConvText108), 1, 147456, 0x00000011, 0x0000000a, 0x00000000},  // conv_known_k3_c64_n128_s16_st1_g1_bias0_same
-    {3, 1, 1, false, {64, 16, 16}, {256, 14, 14}, kH14ConvText109, std::size(kH14ConvText109), 1, 294912, 0x00000011, 0x00000011, 0x00000000},  // conv_probe_k3_c64_n256_s16_st1_g1_bias0_valid
-    {3, 1, 1, false, {64, 16, 16}, {256, 16, 16}, kH14ConvText110, std::size(kH14ConvText110), 1, 294912, 0x00000011, 0x00000012, 0x00000000},  // conv_known_k3_c64_n256_s16_st1_g1_bias0_same
-    {3, 1, 1, false, {64, 16, 16}, {512, 14, 14}, kH14ConvText111, std::size(kH14ConvText111), 1, 589824, 0x00000011, 0x00000020, 0x00000000},  // conv_probe_k3_c64_n512_s16_st1_g1_bias0_valid
-    {3, 1, 1, false, {64, 16, 16}, {512, 16, 16}, kH14ConvText112, std::size(kH14ConvText112), 1, 589824, 0x00000011, 0x00000022, 0x00000000},  // conv_known_k3_c64_n512_s16_st1_g1_bias0_same
-    {3, 1, 1, false, {64, 16, 16}, {768, 16, 16}, kH14ConvText113, std::size(kH14ConvText113), 1, 884736, 0x00000011, 0x00000032, 0x00000000},  // conv_known_k3_c64_n768_s16_st1_g1_bias0_same
-    {3, 1, 1, false, {64, 32, 32}, {64, 30, 30}, kH14ConvText114, std::size(kH14ConvText114), 1, 73728, 0x00000011, 0x00000009, 0x00000000},  // conv_probe_k3_c64_n64_s32_st1_g1_bias0_valid
-    {3, 1, 1, false, {64, 32, 32}, {64, 32, 32}, kH14ConvText115, std::size(kH14ConvText115), 1, 73728, 0x00000011, 0x00000009, 0x00000000},  // conv_probe_k3_c64_n64_s32_st1_g1_bias0_same
-    {3, 1, 1, false, {64, 64, 64}, {64, 62, 62}, kH14ConvText116, std::size(kH14ConvText116), 1, 73728, 0x00000011, 0x00000020, 0x00000000},  // conv_probe_k3_c64_n64_s64_st1_g1_bias0_valid
-    {3, 1, 1, false, {64, 64, 64}, {64, 64, 64}, kH14ConvText117, std::size(kH14ConvText117), 1, 73728, 0x00000011, 0x00000020, 0x00000000},  // conv_probe_k3_c64_n64_s64_st1_g1_bias0_same
-    {3, 1, 1, false, {128, 16, 16}, {64, 14, 14}, kH14ConvText118, std::size(kH14ConvText118), 1, 147456, 0x00000011, 0x00000009, 0x00000000},  // conv_probe_k3_c128_n64_s16_st1_g1_bias0_valid
-    {3, 1, 1, false, {128, 16, 16}, {64, 16, 16}, kH14ConvText119, std::size(kH14ConvText119), 1, 147456, 0x00000011, 0x0000000a, 0x00000000},  // conv_known_k3_c128_n64_s16_st1_g1_bias0_same
-    {3, 1, 1, false, {128, 16, 16}, {128, 14, 14}, kH14ConvText120, std::size(kH14ConvText120), 1, 294912, 0x00000011, 0x0000000f, 0x00000000},  // conv_probe_k3_c128_n128_s16_st1_g1_bias0_valid
-    {3, 1, 1, false, {128, 16, 16}, {128, 16, 16}, kH14ConvText121, std::size(kH14ConvText121), 1, 294912, 0x00000011, 0x00000010, 0x00000000},  // conv_probe_k3_c128_n128_s16_st1_g1_bias0_same
-    {3, 1, 1, false, {128, 16, 16}, {256, 14, 14}, kH14ConvText122, std::size(kH14ConvText122), 1, 589824, 0x00000011, 0x0000001b, 0x00000000},  // conv_probe_k3_c128_n256_s16_st1_g1_bias0_valid
-    {3, 1, 1, false, {128, 16, 16}, {256, 16, 16}, kH14ConvText123, std::size(kH14ConvText123), 1, 589824, 0x00000011, 0x0000001c, 0x00000000},  // conv_probe_k3_c128_n256_s16_st1_g1_bias0_same
-    {3, 1, 1, false, {256, 1, 1}, {256, 1, 1}, kH14ConvText124, std::size(kH14ConvText124), 1, 1179648, 0x00000011, 0x00000023, 0x00000000},  // conv_probe_k3_c256_n256_s1_st1_g1_bias0_same
-    {3, 1, 1, false, {256, 8, 8}, {256, 6, 6}, kH14ConvText125, std::size(kH14ConvText125), 1, 1179648, 0x00000011, 0x00000029, 0x00000000},  // conv_probe_k3_c256_n256_s8_st1_g1_bias0_valid
-    {3, 1, 1, false, {256, 8, 8}, {256, 8, 8}, kH14ConvText126, std::size(kH14ConvText126), 1, 1179648, 0x00000011, 0x0000002a, 0x00000000},  // conv_probe_k3_c256_n256_s8_st1_g1_bias0_same
-    {3, 1, 1, false, {256, 16, 16}, {64, 14, 14}, kH14ConvText127, std::size(kH14ConvText127), 1, 294912, 0x00000011, 0x00000012, 0x00000000},  // conv_probe_k3_c256_n64_s16_st1_g1_bias0_valid
-    {3, 1, 1, false, {256, 16, 16}, {64, 16, 16}, kH14ConvText128, std::size(kH14ConvText128), 1, 294912, 0x00000011, 0x00000012, 0x00000000},  // conv_known_k3_c256_n64_s16_st1_g1_bias0_same
-    {3, 1, 1, false, {256, 16, 16}, {128, 14, 14}, kH14ConvText129, std::size(kH14ConvText129), 1, 589824, 0x00000011, 0x0000001c, 0x00000000},  // conv_probe_k3_c256_n128_s16_st1_g1_bias0_valid
-    {3, 1, 1, false, {256, 16, 16}, {128, 16, 16}, kH14ConvText130, std::size(kH14ConvText130), 1, 589824, 0x00000011, 0x0000001c, 0x00000000},  // conv_probe_k3_c256_n128_s16_st1_g1_bias0_same
-    {3, 1, 1, false, {512, 16, 16}, {64, 14, 14}, kH14ConvText131, std::size(kH14ConvText131), 1, 589824, 0x00000011, 0x00000022, 0x00000000},  // conv_probe_k3_c512_n64_s16_st1_g1_bias0_valid
-    {3, 1, 1, false, {512, 16, 16}, {64, 16, 16}, kH14ConvText132, std::size(kH14ConvText132), 1, 589824, 0x00000011, 0x00000022, 0x00000000},  // conv_probe_k3_c512_n64_s16_st1_g1_bias0_same
-    {3, 1, 1, true, {64, 1, 1}, {64, 1, 1}, kH14ConvText133, std::size(kH14ConvText133), 1, 74752, 0x00000011, 0x00000002, 0x00000000},  // conv_probe_k3_c64_n64_s1_st1_g1_bias1_same
-    {3, 1, 1, true, {64, 8, 8}, {64, 6, 6}, kH14ConvText134, std::size(kH14ConvText134), 1, 74752, 0x00000011, 0x00000003, 0x00000000},  // conv_probe_k3_c64_n64_s8_st1_g1_bias1_valid
-    {3, 1, 1, true, {64, 8, 8}, {64, 8, 8}, kH14ConvText135, std::size(kH14ConvText135), 1, 74752, 0x00000011, 0x00000004, 0x00000000},  // conv_probe_k3_c64_n64_s8_st1_g1_bias1_same
-    {3, 1, 1, true, {64, 16, 16}, {64, 14, 14}, kH14ConvText136, std::size(kH14ConvText136), 1, 74752, 0x00000011, 0x00000005, 0x00000000},  // conv_probe_k3_c64_n64_s16_st1_g1_bias1_valid
-    {3, 1, 1, true, {64, 16, 16}, {64, 16, 16}, kH14ConvText137, std::size(kH14ConvText137), 1, 74752, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k3_c64_n64_s16_st1_g1_bias1_same
-    {3, 1, 1, true, {64, 16, 16}, {128, 16, 16}, kH14ConvText138, std::size(kH14ConvText138), 1, 148480, 0x00000011, 0x0000000a, 0x00000000},  // conv_known_k3_c64_n128_s16_st1_g1_bias1_same
-    {3, 1, 1, true, {64, 16, 16}, {256, 16, 16}, kH14ConvText139, std::size(kH14ConvText139), 1, 295936, 0x00000011, 0x00000012, 0x00000000},  // conv_known_k3_c64_n256_s16_st1_g1_bias1_same
-    {3, 1, 1, true, {64, 16, 16}, {512, 16, 16}, kH14ConvText140, std::size(kH14ConvText140), 1, 590848, 0x00000011, 0x00000022, 0x00000000},  // conv_known_k3_c64_n512_s16_st1_g1_bias1_same
-    {3, 1, 1, true, {64, 16, 16}, {768, 16, 16}, kH14ConvText141, std::size(kH14ConvText141), 1, 886784, 0x00000011, 0x00000032, 0x00000000},  // conv_known_k3_c64_n768_s16_st1_g1_bias1_same
-    {3, 1, 1, true, {64, 32, 32}, {64, 30, 30}, kH14ConvText142, std::size(kH14ConvText142), 1, 74752, 0x00000011, 0x00000009, 0x00000000},  // conv_probe_k3_c64_n64_s32_st1_g1_bias1_valid
-    {3, 1, 1, true, {64, 32, 32}, {64, 32, 32}, kH14ConvText143, std::size(kH14ConvText143), 1, 74752, 0x00000011, 0x00000009, 0x00000000},  // conv_probe_k3_c64_n64_s32_st1_g1_bias1_same
-    {3, 1, 1, true, {64, 64, 64}, {64, 62, 62}, kH14ConvText144, std::size(kH14ConvText144), 1, 74752, 0x00000011, 0x00000020, 0x00000000},  // conv_probe_k3_c64_n64_s64_st1_g1_bias1_valid
-    {3, 1, 1, true, {64, 64, 64}, {64, 64, 64}, kH14ConvText145, std::size(kH14ConvText145), 1, 74752, 0x00000011, 0x00000020, 0x00000000},  // conv_probe_k3_c64_n64_s64_st1_g1_bias1_same
-    {3, 1, 1, true, {128, 16, 16}, {64, 16, 16}, kH14ConvText146, std::size(kH14ConvText146), 1, 148480, 0x00000011, 0x0000000a, 0x00000000},  // conv_known_k3_c128_n64_s16_st1_g1_bias1_same
-    {3, 1, 1, true, {256, 1, 1}, {256, 1, 1}, kH14ConvText147, std::size(kH14ConvText147), 1, 1180672, 0x00000011, 0x00000023, 0x00000000},  // conv_probe_k3_c256_n256_s1_st1_g1_bias1_same
-    {3, 1, 1, true, {256, 8, 8}, {256, 6, 6}, kH14ConvText148, std::size(kH14ConvText148), 1, 1180672, 0x00000011, 0x00000029, 0x00000000},  // conv_probe_k3_c256_n256_s8_st1_g1_bias1_valid
-    {3, 1, 1, true, {256, 8, 8}, {256, 8, 8}, kH14ConvText149, std::size(kH14ConvText149), 1, 1180672, 0x00000011, 0x0000002a, 0x00000000},  // conv_probe_k3_c256_n256_s8_st1_g1_bias1_same
-    {3, 1, 1, true, {256, 16, 16}, {64, 16, 16}, kH14ConvText150, std::size(kH14ConvText150), 1, 295936, 0x00000011, 0x00000012, 0x00000000},  // conv_known_k3_c256_n64_s16_st1_g1_bias1_same
-    {3, 1, 4, false, {64, 16, 16}, {64, 16, 16}, kH14ConvText151, std::size(kH14ConvText151), 1, 20480, 0x00000011, 0x00000004, 0x00000000},  // conv_known_k3_c64_n64_s16_st1_g4_bias0_same
-    {3, 1, 4, false, {64, 16, 16}, {128, 16, 16}, kH14ConvText152, std::size(kH14ConvText152), 1, 36864, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k3_c64_n128_s16_st1_g4_bias0_same
-    {3, 1, 4, false, {64, 16, 16}, {256, 16, 16}, kH14ConvText153, std::size(kH14ConvText153), 1, 73728, 0x00000011, 0x0000000b, 0x00000000},  // conv_known_k3_c64_n256_s16_st1_g4_bias0_same
-    {3, 1, 4, false, {128, 16, 16}, {64, 16, 16}, kH14ConvText154, std::size(kH14ConvText154), 1, 36864, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k3_c128_n64_s16_st1_g4_bias0_same
-    {3, 1, 4, false, {128, 16, 16}, {128, 16, 16}, kH14ConvText155, std::size(kH14ConvText155), 1, 73728, 0x00000011, 0x00000009, 0x00000000},  // conv_probe_k3_c128_n128_s16_st1_g4_bias0_same
-    {3, 1, 4, false, {256, 16, 16}, {64, 16, 16}, kH14ConvText156, std::size(kH14ConvText156), 1, 73728, 0x00000011, 0x0000000b, 0x00000000},  // conv_known_k3_c256_n64_s16_st1_g4_bias0_same
-    {3, 1, 4, false, {256, 16, 16}, {256, 16, 16}, kH14ConvText157, std::size(kH14ConvText157), 1, 294912, 0x00000011, 0x00000018, 0x00000000},  // conv_probe_k3_c256_n256_s16_st1_g4_bias0_same
-    {3, 1, 4, true, {64, 16, 16}, {64, 16, 16}, kH14ConvText158, std::size(kH14ConvText158), 1, 20480, 0x00000011, 0x00000004, 0x00000000},  // conv_known_k3_c64_n64_s16_st1_g4_bias1_same
-    {3, 1, 4, true, {64, 16, 16}, {128, 16, 16}, kH14ConvText159, std::size(kH14ConvText159), 1, 40960, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k3_c64_n128_s16_st1_g4_bias1_same
-    {3, 1, 4, true, {64, 16, 16}, {256, 16, 16}, kH14ConvText160, std::size(kH14ConvText160), 1, 77824, 0x00000011, 0x0000000b, 0x00000000},  // conv_known_k3_c64_n256_s16_st1_g4_bias1_same
-    {3, 1, 4, true, {128, 16, 16}, {64, 16, 16}, kH14ConvText161, std::size(kH14ConvText161), 1, 40960, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k3_c128_n64_s16_st1_g4_bias1_same
-    {3, 1, 4, true, {128, 16, 16}, {128, 16, 16}, kH14ConvText162, std::size(kH14ConvText162), 1, 77824, 0x00000011, 0x00000009, 0x00000000},  // conv_probe_k3_c128_n128_s16_st1_g4_bias1_same
-    {3, 1, 4, true, {256, 16, 16}, {64, 16, 16}, kH14ConvText163, std::size(kH14ConvText163), 1, 77824, 0x00000011, 0x0000000b, 0x00000000},  // conv_known_k3_c256_n64_s16_st1_g4_bias1_same
-    {3, 1, 4, true, {256, 16, 16}, {256, 16, 16}, kH14ConvText164, std::size(kH14ConvText164), 1, 299008, 0x00000011, 0x00000018, 0x00000000},  // conv_probe_k3_c256_n256_s16_st1_g4_bias1_same
-    {3, 1, 64, false, {64, 16, 16}, {64, 16, 16}, kH14ConvText165, std::size(kH14ConvText165), 1, 2048, 0x00000011, 0x00000003, 0x00000000},  // conv_known_k3_c64_n64_s16_st1_g64_bias0_same
-    {3, 1, 64, true, {64, 16, 16}, {64, 16, 16}, kH14ConvText166, std::size(kH14ConvText166), 1, 2048, 0x00000011, 0x00000003, 0x00000000},  // conv_probe_k3_c64_n64_s16_st1_g64_bias1_same
-    {3, 1, 128, false, {128, 16, 16}, {128, 16, 16}, kH14ConvText167, std::size(kH14ConvText167), 1, 3072, 0x00000011, 0x00000007, 0x00000000},  // conv_known_k3_c128_n128_s16_st1_g128_bias0_same
-    {3, 1, 128, true, {128, 16, 16}, {128, 16, 16}, kH14ConvText168, std::size(kH14ConvText168), 1, 3072, 0x00000011, 0x00000007, 0x00000000},  // conv_probe_k3_c128_n128_s16_st1_g128_bias1_same
-    {3, 1, 256, false, {256, 16, 16}, {256, 16, 16}, kH14ConvText169, std::size(kH14ConvText169), 1, 5120, 0x00000011, 0x0000000f, 0x00000000},  // conv_probe_k3_c256_n256_s16_st1_g256_bias0_same
-    {3, 1, 256, true, {256, 16, 16}, {256, 16, 16}, kH14ConvText170, std::size(kH14ConvText170), 1, 5120, 0x00000011, 0x0000000f, 0x00000000},  // conv_probe_k3_c256_n256_s16_st1_g256_bias1_same
-    {3, 1, 512, false, {512, 16, 16}, {512, 16, 16}, kH14ConvText171, std::size(kH14ConvText171), 1, 9216, 0x00000011, 0x0000001e, 0x00000000},  // conv_probe_k3_c512_n512_s16_st1_g512_bias0_same
-    {3, 1, 512, true, {512, 16, 16}, {512, 16, 16}, kH14ConvText172, std::size(kH14ConvText172), 1, 10240, 0x00000011, 0x0000001f, 0x00000000},  // conv_probe_k3_c512_n512_s16_st1_g512_bias1_same
-    {3, 1, 1024, false, {1024, 16, 16}, {1024, 16, 16}, kH14ConvText173, std::size(kH14ConvText173), 1, 18432, 0x00000011, 0x0000003d, 0x00000000},  // conv_probe_k3_c1024_n1024_s16_st1_g1024_bias0_same
-    {3, 1, 1024, true, {1024, 16, 16}, {1024, 16, 16}, kH14ConvText174, std::size(kH14ConvText174), 1, 20480, 0x00000011, 0x0000003e, 0x00000000},  // conv_probe_k3_c1024_n1024_s16_st1_g1024_bias1_same
+    {1, 1, 1, 1, false, {64, 1, 1}, {64, 1, 1}, kH14ConvText0, std::size(kH14ConvText0), 1, 8192, 0x00000011, 0x00000000, 0x00000000},  // conv_probe_k1_c64_n64_s1_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {64, 8, 8}, {64, 8, 8}, kH14ConvText1, std::size(kH14ConvText1), 1, 8192, 0x00000011, 0x00000002, 0x00000000},  // conv_probe_k1_c64_n64_s8_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {64, 8, 8}, {256, 8, 8}, kH14ConvText2, std::size(kH14ConvText2), 1, 32768, 0x00000011, 0x00000005, 0x00000000},  // env_conv_k1_c64_n256_s8_st1_g1_bias0
+    {1, 1, 1, 1, false, {64, 16, 16}, {64, 16, 16}, kH14ConvText3, std::size(kH14ConvText3), 1, 8192, 0x00000011, 0x00000004, 0x00000000},  // conv_known_k1_c64_n64_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {64, 16, 16}, {128, 16, 16}, kH14ConvText4, std::size(kH14ConvText4), 1, 16384, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k1_c64_n128_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {64, 16, 16}, {256, 16, 16}, kH14ConvText5, std::size(kH14ConvText5), 1, 32768, 0x00000011, 0x0000000a, 0x00000000},  // conv_known_k1_c64_n256_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {64, 16, 16}, {512, 16, 16}, kH14ConvText6, std::size(kH14ConvText6), 1, 65536, 0x00000011, 0x00000013, 0x00000000},  // conv_known_k1_c64_n512_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {64, 16, 16}, {768, 16, 16}, kH14ConvText7, std::size(kH14ConvText7), 1, 98304, 0x00000011, 0x0000001b, 0x00000000},  // conv_known_k1_c64_n768_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {64, 16, 16}, {1024, 16, 16}, kH14ConvText8, std::size(kH14ConvText8), 1, 131072, 0x00000011, 0x00000024, 0x00000000},  // conv_known_k1_c64_n1024_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {64, 32, 32}, {64, 32, 32}, kH14ConvText9, std::size(kH14ConvText9), 1, 8192, 0x00000011, 0x00000007, 0x00000000},  // conv_probe_k1_c64_n64_s32_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {64, 64, 64}, {64, 64, 64}, kH14ConvText10, std::size(kH14ConvText10), 1, 8192, 0x00000011, 0x0000001e, 0x00000000},  // conv_probe_k1_c64_n64_s64_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {128, 16, 16}, {64, 16, 16}, kH14ConvText11, std::size(kH14ConvText11), 1, 16384, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k1_c128_n64_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {128, 16, 16}, {128, 16, 16}, kH14ConvText12, std::size(kH14ConvText12), 1, 32768, 0x00000011, 0x00000008, 0x00000000},  // conv_probe_k1_c128_n128_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {128, 16, 16}, {256, 16, 16}, kH14ConvText13, std::size(kH14ConvText13), 1, 65536, 0x00000011, 0x0000000d, 0x00000000},  // conv_probe_k1_c128_n256_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {128, 16, 16}, {512, 16, 16}, kH14ConvText14, std::size(kH14ConvText14), 1, 131072, 0x00000011, 0x00000017, 0x00000000},  // conv_probe_k1_c128_n512_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {128, 16, 16}, {1024, 16, 16}, kH14ConvText15, std::size(kH14ConvText15), 1, 262144, 0x00000011, 0x0000002a, 0x00000000},  // conv_probe_k1_c128_n1024_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {256, 1, 1}, {256, 1, 1}, kH14ConvText16, std::size(kH14ConvText16), 1, 131072, 0x00000011, 0x00000004, 0x00000000},  // conv_probe_k1_c256_n256_s1_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {256, 8, 8}, {256, 8, 8}, kH14ConvText17, std::size(kH14ConvText17), 1, 131072, 0x00000011, 0x0000000b, 0x00000000},  // conv_probe_k1_c256_n256_s8_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {256, 16, 16}, {64, 16, 16}, kH14ConvText18, std::size(kH14ConvText18), 1, 32768, 0x00000011, 0x0000000a, 0x00000000},  // conv_known_k1_c256_n64_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {256, 16, 16}, {128, 16, 16}, kH14ConvText19, std::size(kH14ConvText19), 1, 65536, 0x00000011, 0x0000000d, 0x00000000},  // conv_probe_k1_c256_n128_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {256, 16, 16}, {256, 16, 16}, kH14ConvText20, std::size(kH14ConvText20), 1, 131072, 0x00000011, 0x00000013, 0x00000000},  // conv_probe_k1_c256_n256_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {256, 16, 16}, {512, 16, 16}, kH14ConvText21, std::size(kH14ConvText21), 1, 262144, 0x00000011, 0x0000001e, 0x00000000},  // conv_probe_k1_c256_n512_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {256, 16, 16}, {1024, 16, 16}, kH14ConvText22, std::size(kH14ConvText22), 1, 524288, 0x00000011, 0x00000035, 0x00000000},  // conv_probe_k1_c256_n1024_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {256, 32, 32}, {256, 32, 32}, kH14ConvText23, std::size(kH14ConvText23), 1, 131072, 0x00000011, 0x00000022, 0x00000000},  // conv_probe_k1_c256_n256_s32_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {256, 64, 64}, {256, 64, 64}, kH14ConvText24, std::size(kH14ConvText24), 1, 131072, 0x00000011, 0x0000007e, 0x00000000},  // conv_probe_k1_c256_n256_s64_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {512, 16, 16}, {64, 16, 16}, kH14ConvText25, std::size(kH14ConvText25), 1, 65536, 0x00000011, 0x00000013, 0x00000000},  // conv_probe_k1_c512_n64_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {512, 16, 16}, {128, 16, 16}, kH14ConvText26, std::size(kH14ConvText26), 1, 131072, 0x00000011, 0x00000017, 0x00000000},  // conv_probe_k1_c512_n128_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {512, 16, 16}, {256, 16, 16}, kH14ConvText27, std::size(kH14ConvText27), 1, 262144, 0x00000011, 0x0000001e, 0x00000000},  // conv_probe_k1_c512_n256_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {512, 16, 16}, {512, 16, 16}, kH14ConvText28, std::size(kH14ConvText28), 1, 524288, 0x00000011, 0x0000002e, 0x00000000},  // conv_probe_k1_c512_n512_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {512, 16, 16}, {1024, 16, 16}, kH14ConvText29, std::size(kH14ConvText29), 1, 1048576, 0x00000011, 0x0000004c, 0x00000000},  // conv_probe_k1_c512_n1024_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {1024, 16, 16}, {64, 16, 16}, kH14ConvText30, std::size(kH14ConvText30), 1, 131072, 0x00000011, 0x00000024, 0x00000000},  // conv_probe_k1_c1024_n64_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {1024, 16, 16}, {128, 16, 16}, kH14ConvText31, std::size(kH14ConvText31), 1, 262144, 0x00000011, 0x0000002a, 0x00000000},  // conv_probe_k1_c1024_n128_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {1024, 16, 16}, {256, 16, 16}, kH14ConvText32, std::size(kH14ConvText32), 1, 524288, 0x00000011, 0x00000035, 0x00000000},  // conv_probe_k1_c1024_n256_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, false, {1024, 16, 16}, {512, 16, 16}, kH14ConvText33, std::size(kH14ConvText33), 1, 1048576, 0x00000011, 0x0000004c, 0x00000000},  // conv_probe_k1_c1024_n512_s16_st1_g1_bias0_same
+    {1, 1, 1, 1, true, {64, 1, 1}, {64, 1, 1}, kH14ConvText34, std::size(kH14ConvText34), 1, 9216, 0x00000011, 0x00000000, 0x00000000},  // conv_probe_k1_c64_n64_s1_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {64, 8, 8}, {64, 8, 8}, kH14ConvText35, std::size(kH14ConvText35), 1, 9216, 0x00000011, 0x00000002, 0x00000000},  // conv_probe_k1_c64_n64_s8_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {64, 16, 16}, {64, 16, 16}, kH14ConvText36, std::size(kH14ConvText36), 1, 9216, 0x00000011, 0x00000004, 0x00000000},  // conv_known_k1_c64_n64_s16_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {64, 16, 16}, {128, 16, 16}, kH14ConvText37, std::size(kH14ConvText37), 1, 17408, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k1_c64_n128_s16_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {64, 16, 16}, {256, 16, 16}, kH14ConvText38, std::size(kH14ConvText38), 1, 33792, 0x00000011, 0x0000000a, 0x00000000},  // conv_known_k1_c64_n256_s16_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {64, 16, 16}, {512, 16, 16}, kH14ConvText39, std::size(kH14ConvText39), 1, 66560, 0x00000011, 0x00000013, 0x00000000},  // conv_known_k1_c64_n512_s16_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {64, 16, 16}, {768, 16, 16}, kH14ConvText40, std::size(kH14ConvText40), 1, 100352, 0x00000011, 0x0000001b, 0x00000000},  // conv_known_k1_c64_n768_s16_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {64, 16, 16}, {1024, 16, 16}, kH14ConvText41, std::size(kH14ConvText41), 1, 133120, 0x00000011, 0x00000024, 0x00000000},  // conv_known_k1_c64_n1024_s16_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {64, 32, 32}, {64, 32, 32}, kH14ConvText42, std::size(kH14ConvText42), 1, 9216, 0x00000011, 0x00000007, 0x00000000},  // conv_probe_k1_c64_n64_s32_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {64, 64, 64}, {64, 64, 64}, kH14ConvText43, std::size(kH14ConvText43), 1, 9216, 0x00000011, 0x0000001e, 0x00000000},  // conv_probe_k1_c64_n64_s64_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {128, 16, 16}, {64, 16, 16}, kH14ConvText44, std::size(kH14ConvText44), 1, 17408, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k1_c128_n64_s16_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {256, 1, 1}, {256, 1, 1}, kH14ConvText45, std::size(kH14ConvText45), 1, 132096, 0x00000011, 0x00000004, 0x00000000},  // conv_probe_k1_c256_n256_s1_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {256, 8, 8}, {256, 8, 8}, kH14ConvText46, std::size(kH14ConvText46), 1, 132096, 0x00000011, 0x0000000b, 0x00000000},  // conv_probe_k1_c256_n256_s8_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {256, 16, 16}, {64, 16, 16}, kH14ConvText47, std::size(kH14ConvText47), 1, 33792, 0x00000011, 0x0000000a, 0x00000000},  // conv_known_k1_c256_n64_s16_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {256, 16, 16}, {256, 16, 16}, kH14ConvText48, std::size(kH14ConvText48), 1, 132096, 0x00000011, 0x00000013, 0x00000000},  // conv_probe_k1_c256_n256_s16_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {256, 32, 32}, {256, 32, 32}, kH14ConvText49, std::size(kH14ConvText49), 1, 132096, 0x00000011, 0x00000022, 0x00000000},  // conv_probe_k1_c256_n256_s32_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {256, 64, 64}, {256, 64, 64}, kH14ConvText50, std::size(kH14ConvText50), 1, 132096, 0x00000011, 0x0000007e, 0x00000000},  // conv_probe_k1_c256_n256_s64_st1_g1_bias1_same
+    {1, 1, 1, 1, true, {768, 1, 1}, {768, 1, 1}, kH14ConvText51, std::size(kH14ConvText51), 1, 1181696, 0x00000011, 0x00000025, 0x00000000},  // env_conv_k1_c768_n768_s1_st1_g1_bias1
+    {1, 1, 1, 4, false, {64, 16, 16}, {64, 16, 16}, kH14ConvText52, std::size(kH14ConvText52), 1, 4096, 0x00000011, 0x00000003, 0x00000000},  // conv_known_k1_c64_n64_s16_st1_g4_bias0_same
+    {1, 1, 1, 4, false, {64, 16, 16}, {128, 16, 16}, kH14ConvText53, std::size(kH14ConvText53), 1, 4096, 0x00000011, 0x00000005, 0x00000000},  // conv_known_k1_c64_n128_s16_st1_g4_bias0_same
+    {1, 1, 1, 4, false, {64, 16, 16}, {256, 16, 16}, kH14ConvText54, std::size(kH14ConvText54), 1, 8192, 0x00000011, 0x00000009, 0x00000000},  // conv_known_k1_c64_n256_s16_st1_g4_bias0_same
+    {1, 1, 1, 4, false, {128, 16, 16}, {64, 16, 16}, kH14ConvText55, std::size(kH14ConvText55), 1, 4096, 0x00000011, 0x00000005, 0x00000000},  // conv_known_k1_c128_n64_s16_st1_g4_bias0_same
+    {1, 1, 1, 4, false, {128, 16, 16}, {128, 16, 16}, kH14ConvText56, std::size(kH14ConvText56), 1, 8192, 0x00000011, 0x00000007, 0x00000000},  // conv_probe_k1_c128_n128_s16_st1_g4_bias0_same
+    {1, 1, 1, 4, false, {256, 16, 16}, {64, 16, 16}, kH14ConvText57, std::size(kH14ConvText57), 1, 8192, 0x00000011, 0x00000009, 0x00000000},  // conv_known_k1_c256_n64_s16_st1_g4_bias0_same
+    {1, 1, 1, 4, false, {256, 16, 16}, {256, 16, 16}, kH14ConvText58, std::size(kH14ConvText58), 1, 32768, 0x00000011, 0x00000010, 0x00000000},  // conv_probe_k1_c256_n256_s16_st1_g4_bias0_same
+    {1, 1, 1, 4, false, {512, 16, 16}, {512, 16, 16}, kH14ConvText59, std::size(kH14ConvText59), 1, 131072, 0x00000011, 0x00000022, 0x00000000},  // conv_probe_k1_c512_n512_s16_st1_g4_bias0_same
+    {1, 1, 1, 4, false, {1024, 16, 16}, {1024, 16, 16}, kH14ConvText60, std::size(kH14ConvText60), 1, 524288, 0x00000011, 0x0000004c, 0x00000000},  // conv_probe_k1_c1024_n1024_s16_st1_g4_bias0_same
+    {1, 1, 1, 4, true, {64, 16, 16}, {64, 16, 16}, kH14ConvText61, std::size(kH14ConvText61), 1, 4096, 0x00000011, 0x00000003, 0x00000000},  // conv_known_k1_c64_n64_s16_st1_g4_bias1_same
+    {1, 1, 1, 4, true, {64, 16, 16}, {128, 16, 16}, kH14ConvText62, std::size(kH14ConvText62), 1, 8192, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k1_c64_n128_s16_st1_g4_bias1_same
+    {1, 1, 1, 4, true, {64, 16, 16}, {256, 16, 16}, kH14ConvText63, std::size(kH14ConvText63), 1, 12288, 0x00000011, 0x00000009, 0x00000000},  // conv_known_k1_c64_n256_s16_st1_g4_bias1_same
+    {1, 1, 1, 4, true, {128, 16, 16}, {64, 16, 16}, kH14ConvText64, std::size(kH14ConvText64), 1, 8192, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k1_c128_n64_s16_st1_g4_bias1_same
+    {1, 1, 1, 4, true, {128, 16, 16}, {128, 16, 16}, kH14ConvText65, std::size(kH14ConvText65), 1, 12288, 0x00000011, 0x00000008, 0x00000000},  // conv_probe_k1_c128_n128_s16_st1_g4_bias1_same
+    {1, 1, 1, 4, true, {256, 16, 16}, {64, 16, 16}, kH14ConvText66, std::size(kH14ConvText66), 1, 12288, 0x00000011, 0x00000009, 0x00000000},  // conv_known_k1_c256_n64_s16_st1_g4_bias1_same
+    {1, 1, 1, 4, true, {256, 16, 16}, {256, 16, 16}, kH14ConvText67, std::size(kH14ConvText67), 1, 36864, 0x00000011, 0x00000010, 0x00000000},  // conv_probe_k1_c256_n256_s16_st1_g4_bias1_same
+    {1, 1, 1, 4, true, {512, 16, 16}, {512, 16, 16}, kH14ConvText68, std::size(kH14ConvText68), 1, 135168, 0x00000011, 0x00000022, 0x00000000},  // conv_probe_k1_c512_n512_s16_st1_g4_bias1_same
+    {1, 1, 1, 4, true, {1024, 16, 16}, {1024, 16, 16}, kH14ConvText69, std::size(kH14ConvText69), 1, 528384, 0x00000011, 0x0000004c, 0x00000000},  // conv_probe_k1_c1024_n1024_s16_st1_g4_bias1_same
+    {1, 1, 1, 64, false, {64, 16, 16}, {64, 16, 16}, kH14ConvText70, std::size(kH14ConvText70), 1, 1024, 0x00000011, 0x00000003, 0x00000000},  // conv_known_k1_c64_n64_s16_st1_g64_bias0_same
+    {1, 1, 1, 64, true, {64, 16, 16}, {64, 16, 16}, kH14ConvText71, std::size(kH14ConvText71), 1, 1024, 0x00000011, 0x00000003, 0x00000000},  // conv_probe_k1_c64_n64_s16_st1_g64_bias1_same
+    {1, 1, 1, 128, false, {128, 16, 16}, {128, 16, 16}, kH14ConvText72, std::size(kH14ConvText72), 1, 1024, 0x00000011, 0x00000007, 0x00000000},  // conv_known_k1_c128_n128_s16_st1_g128_bias0_same
+    {1, 1, 1, 128, true, {128, 16, 16}, {128, 16, 16}, kH14ConvText73, std::size(kH14ConvText73), 1, 1024, 0x00000011, 0x00000007, 0x00000000},  // conv_probe_k1_c128_n128_s16_st1_g128_bias1_same
+    {1, 1, 1, 256, false, {256, 16, 16}, {256, 16, 16}, kH14ConvText74, std::size(kH14ConvText74), 1, 1024, 0x00000011, 0x0000000f, 0x00000000},  // conv_probe_k1_c256_n256_s16_st1_g256_bias0_same
+    {1, 1, 1, 256, true, {256, 16, 16}, {256, 16, 16}, kH14ConvText75, std::size(kH14ConvText75), 1, 1024, 0x00000011, 0x0000000f, 0x00000000},  // conv_probe_k1_c256_n256_s16_st1_g256_bias1_same
+    {1, 1, 1, 512, false, {512, 16, 16}, {512, 16, 16}, kH14ConvText76, std::size(kH14ConvText76), 1, 1024, 0x00000011, 0x0000001e, 0x00000000},  // conv_probe_k1_c512_n512_s16_st1_g512_bias0_same
+    {1, 1, 1, 512, true, {512, 16, 16}, {512, 16, 16}, kH14ConvText77, std::size(kH14ConvText77), 1, 2048, 0x00000011, 0x0000001e, 0x00000000},  // conv_probe_k1_c512_n512_s16_st1_g512_bias1_same
+    {1, 1, 1, 1024, false, {1024, 16, 16}, {1024, 16, 16}, kH14ConvText78, std::size(kH14ConvText78), 1, 2048, 0x00000011, 0x0000003d, 0x00000000},  // conv_probe_k1_c1024_n1024_s16_st1_g1024_bias0_same
+    {1, 1, 1, 1024, true, {1024, 16, 16}, {1024, 16, 16}, kH14ConvText79, std::size(kH14ConvText79), 1, 4096, 0x00000011, 0x0000003d, 0x00000000},  // conv_probe_k1_c1024_n1024_s16_st1_g1024_bias1_same
+    {1, 1, 2, 1, false, {64, 1, 1}, {64, 1, 1}, kH14ConvText80, std::size(kH14ConvText80), 1, 11136, 0x00000011, 0x00000000, 0x00000000},  // conv_probe_k1_c64_n64_s1_st2_g1_bias0_same
+    {1, 1, 2, 1, false, {64, 8, 8}, {64, 4, 4}, kH14ConvText81, std::size(kH14ConvText81), 1, 11136, 0x00000011, 0x00000001, 0x00000000},  // conv_probe_k1_c64_n64_s8_st2_g1_bias0_same
+    {1, 1, 2, 1, false, {64, 16, 16}, {64, 8, 8}, kH14ConvText82, std::size(kH14ConvText82), 1, 11136, 0x00000011, 0x00000003, 0x00000000},  // conv_known_k1_c64_n64_s16_st2_g1_bias0_same
+    {1, 1, 2, 1, false, {64, 16, 16}, {128, 8, 8}, kH14ConvText83, std::size(kH14ConvText83), 1, 21376, 0x00000011, 0x00000004, 0x00000000},  // conv_known_k1_c64_n128_s16_st2_g1_bias0_same
+    {1, 1, 2, 1, false, {64, 32, 32}, {64, 16, 16}, kH14ConvText84, std::size(kH14ConvText84), 1, 11136, 0x00000011, 0x00000006, 0x00000000},  // conv_probe_k1_c64_n64_s32_st2_g1_bias0_same
+    {1, 1, 2, 1, false, {64, 64, 64}, {64, 32, 32}, kH14ConvText85, std::size(kH14ConvText85), 1, 11136, 0x00000011, 0x00000013, 0x00000000},  // conv_probe_k1_c64_n64_s64_st2_g1_bias0_same
+    {1, 1, 2, 1, false, {128, 16, 16}, {64, 8, 8}, kH14ConvText86, std::size(kH14ConvText86), 1, 21376, 0x00000011, 0x00000005, 0x00000000},  // conv_known_k1_c128_n64_s16_st2_g1_bias0_same
+    {1, 1, 2, 1, false, {128, 16, 16}, {128, 8, 8}, kH14ConvText87, std::size(kH14ConvText87), 1, 41856, 0x00000011, 0x00000006, 0x00000000},  // conv_probe_k1_c128_n128_s16_st2_g1_bias0_same
+    {1, 1, 2, 1, false, {256, 16, 16}, {64, 8, 8}, kH14ConvText88, std::size(kH14ConvText88), 1, 41856, 0x00000011, 0x00000009, 0x00000000},  // conv_known_k1_c256_n64_s16_st2_g1_bias0_same
+    {1, 1, 2, 1, false, {256, 16, 16}, {128, 8, 8}, kH14ConvText89, std::size(kH14ConvText89), 1, 82816, 0x00000011, 0x0000000c, 0x00000000},  // conv_probe_k1_c256_n128_s16_st2_g1_bias0_same
+    {1, 1, 2, 1, false, {512, 16, 16}, {64, 8, 8}, kH14ConvText90, std::size(kH14ConvText90), 1, 82816, 0x00000011, 0x00000012, 0x00000000},  // conv_probe_k1_c512_n64_s16_st2_g1_bias0_same
+    {1, 1, 2, 1, false, {512, 16, 16}, {128, 8, 8}, kH14ConvText91, std::size(kH14ConvText91), 1, 164736, 0x00000011, 0x00000016, 0x00000000},  // conv_probe_k1_c512_n128_s16_st2_g1_bias0_same
+    {1, 1, 2, 1, false, {1024, 16, 16}, {64, 8, 8}, kH14ConvText92, std::size(kH14ConvText92), 1, 164736, 0x00000011, 0x00000024, 0x00000000},  // conv_probe_k1_c1024_n64_s16_st2_g1_bias0_same
+    {1, 1, 2, 1, false, {1024, 16, 16}, {128, 8, 8}, kH14ConvText93, std::size(kH14ConvText93), 1, 328576, 0x00000011, 0x0000002a, 0x00000000},  // conv_probe_k1_c1024_n128_s16_st2_g1_bias0_same
+    {1, 1, 2, 1, true, {64, 1, 1}, {64, 1, 1}, kH14ConvText94, std::size(kH14ConvText94), 1, 11136, 0x00000011, 0x00000000, 0x00000000},  // conv_probe_k1_c64_n64_s1_st2_g1_bias1_same
+    {1, 1, 2, 1, true, {64, 8, 8}, {64, 4, 4}, kH14ConvText95, std::size(kH14ConvText95), 1, 11136, 0x00000011, 0x00000001, 0x00000000},  // conv_probe_k1_c64_n64_s8_st2_g1_bias1_same
+    {1, 1, 2, 1, true, {64, 16, 16}, {64, 8, 8}, kH14ConvText96, std::size(kH14ConvText96), 1, 11136, 0x00000011, 0x00000003, 0x00000000},  // conv_known_k1_c64_n64_s16_st2_g1_bias1_same
+    {1, 1, 2, 1, true, {64, 16, 16}, {128, 8, 8}, kH14ConvText97, std::size(kH14ConvText97), 1, 21376, 0x00000011, 0x00000004, 0x00000000},  // conv_known_k1_c64_n128_s16_st2_g1_bias1_same
+    {1, 1, 2, 1, true, {64, 32, 32}, {64, 16, 16}, kH14ConvText98, std::size(kH14ConvText98), 1, 11136, 0x00000011, 0x00000006, 0x00000000},  // conv_probe_k1_c64_n64_s32_st2_g1_bias1_same
+    {1, 1, 2, 1, true, {64, 64, 64}, {64, 32, 32}, kH14ConvText99, std::size(kH14ConvText99), 1, 11136, 0x00000011, 0x00000013, 0x00000000},  // conv_probe_k1_c64_n64_s64_st2_g1_bias1_same
+    {1, 1, 2, 1, true, {128, 16, 16}, {64, 8, 8}, kH14ConvText100, std::size(kH14ConvText100), 1, 21376, 0x00000011, 0x00000005, 0x00000000},  // conv_known_k1_c128_n64_s16_st2_g1_bias1_same
+    {1, 1, 2, 1, true, {256, 16, 16}, {64, 8, 8}, kH14ConvText101, std::size(kH14ConvText101), 1, 41856, 0x00000011, 0x00000009, 0x00000000},  // conv_known_k1_c256_n64_s16_st2_g1_bias1_same
+    {3, 3, 1, 1, false, {64, 1, 1}, {64, 1, 1}, kH14ConvText102, std::size(kH14ConvText102), 1, 73728, 0x00000011, 0x00000002, 0x00000000},  // conv_probe_k3_c64_n64_s1_st1_g1_bias0_same
+    {3, 3, 1, 1, false, {64, 8, 8}, {64, 6, 6}, kH14ConvText103, std::size(kH14ConvText103), 1, 73728, 0x00000011, 0x00000003, 0x00000000},  // conv_probe_k3_c64_n64_s8_st1_g1_bias0_valid
+    {3, 3, 1, 1, false, {64, 8, 8}, {64, 8, 8}, kH14ConvText104, std::size(kH14ConvText104), 1, 73728, 0x00000011, 0x00000004, 0x00000000},  // conv_probe_k3_c64_n64_s8_st1_g1_bias0_same
+    {3, 3, 1, 1, false, {64, 16, 16}, {64, 14, 14}, kH14ConvText105, std::size(kH14ConvText105), 1, 73728, 0x00000011, 0x00000005, 0x00000000},  // conv_probe_k3_c64_n64_s16_st1_g1_bias0_valid
+    {3, 3, 1, 1, false, {64, 16, 16}, {64, 16, 16}, kH14ConvText106, std::size(kH14ConvText106), 1, 73728, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k3_c64_n64_s16_st1_g1_bias0_same
+    {3, 3, 1, 1, false, {64, 16, 16}, {128, 14, 14}, kH14ConvText107, std::size(kH14ConvText107), 1, 147456, 0x00000011, 0x00000009, 0x00000000},  // conv_probe_k3_c64_n128_s16_st1_g1_bias0_valid
+    {3, 3, 1, 1, false, {64, 16, 16}, {128, 16, 16}, kH14ConvText108, std::size(kH14ConvText108), 1, 147456, 0x00000011, 0x0000000a, 0x00000000},  // conv_known_k3_c64_n128_s16_st1_g1_bias0_same
+    {3, 3, 1, 1, false, {64, 16, 16}, {256, 14, 14}, kH14ConvText109, std::size(kH14ConvText109), 1, 294912, 0x00000011, 0x00000011, 0x00000000},  // conv_probe_k3_c64_n256_s16_st1_g1_bias0_valid
+    {3, 3, 1, 1, false, {64, 16, 16}, {256, 16, 16}, kH14ConvText110, std::size(kH14ConvText110), 1, 294912, 0x00000011, 0x00000012, 0x00000000},  // conv_known_k3_c64_n256_s16_st1_g1_bias0_same
+    {3, 3, 1, 1, false, {64, 16, 16}, {512, 14, 14}, kH14ConvText111, std::size(kH14ConvText111), 1, 589824, 0x00000011, 0x00000020, 0x00000000},  // conv_probe_k3_c64_n512_s16_st1_g1_bias0_valid
+    {3, 3, 1, 1, false, {64, 16, 16}, {512, 16, 16}, kH14ConvText112, std::size(kH14ConvText112), 1, 589824, 0x00000011, 0x00000022, 0x00000000},  // conv_known_k3_c64_n512_s16_st1_g1_bias0_same
+    {3, 3, 1, 1, false, {64, 16, 16}, {768, 16, 16}, kH14ConvText113, std::size(kH14ConvText113), 1, 884736, 0x00000011, 0x00000032, 0x00000000},  // conv_known_k3_c64_n768_s16_st1_g1_bias0_same
+    {3, 3, 1, 1, false, {64, 32, 32}, {64, 30, 30}, kH14ConvText114, std::size(kH14ConvText114), 1, 73728, 0x00000011, 0x00000009, 0x00000000},  // conv_probe_k3_c64_n64_s32_st1_g1_bias0_valid
+    {3, 3, 1, 1, false, {64, 32, 32}, {64, 32, 32}, kH14ConvText115, std::size(kH14ConvText115), 1, 73728, 0x00000011, 0x00000009, 0x00000000},  // conv_probe_k3_c64_n64_s32_st1_g1_bias0_same
+    {3, 3, 1, 1, false, {64, 64, 64}, {64, 62, 62}, kH14ConvText116, std::size(kH14ConvText116), 1, 73728, 0x00000011, 0x00000020, 0x00000000},  // conv_probe_k3_c64_n64_s64_st1_g1_bias0_valid
+    {3, 3, 1, 1, false, {64, 64, 64}, {64, 64, 64}, kH14ConvText117, std::size(kH14ConvText117), 1, 73728, 0x00000011, 0x00000020, 0x00000000},  // conv_probe_k3_c64_n64_s64_st1_g1_bias0_same
+    {3, 3, 1, 1, false, {128, 16, 16}, {64, 14, 14}, kH14ConvText118, std::size(kH14ConvText118), 1, 147456, 0x00000011, 0x00000009, 0x00000000},  // conv_probe_k3_c128_n64_s16_st1_g1_bias0_valid
+    {3, 3, 1, 1, false, {128, 16, 16}, {64, 16, 16}, kH14ConvText119, std::size(kH14ConvText119), 1, 147456, 0x00000011, 0x0000000a, 0x00000000},  // conv_known_k3_c128_n64_s16_st1_g1_bias0_same
+    {3, 3, 1, 1, false, {128, 16, 16}, {128, 14, 14}, kH14ConvText120, std::size(kH14ConvText120), 1, 294912, 0x00000011, 0x0000000f, 0x00000000},  // conv_probe_k3_c128_n128_s16_st1_g1_bias0_valid
+    {3, 3, 1, 1, false, {128, 16, 16}, {128, 16, 16}, kH14ConvText121, std::size(kH14ConvText121), 1, 294912, 0x00000011, 0x00000010, 0x00000000},  // conv_probe_k3_c128_n128_s16_st1_g1_bias0_same
+    {3, 3, 1, 1, false, {128, 16, 16}, {256, 14, 14}, kH14ConvText122, std::size(kH14ConvText122), 1, 589824, 0x00000011, 0x0000001b, 0x00000000},  // conv_probe_k3_c128_n256_s16_st1_g1_bias0_valid
+    {3, 3, 1, 1, false, {128, 16, 16}, {256, 16, 16}, kH14ConvText123, std::size(kH14ConvText123), 1, 589824, 0x00000011, 0x0000001c, 0x00000000},  // conv_probe_k3_c128_n256_s16_st1_g1_bias0_same
+    {3, 3, 1, 1, false, {256, 1, 1}, {256, 1, 1}, kH14ConvText124, std::size(kH14ConvText124), 1, 1179648, 0x00000011, 0x00000023, 0x00000000},  // conv_probe_k3_c256_n256_s1_st1_g1_bias0_same
+    {3, 3, 1, 1, false, {256, 8, 8}, {256, 6, 6}, kH14ConvText125, std::size(kH14ConvText125), 1, 1179648, 0x00000011, 0x00000029, 0x00000000},  // conv_probe_k3_c256_n256_s8_st1_g1_bias0_valid
+    {3, 3, 1, 1, false, {256, 8, 8}, {256, 8, 8}, kH14ConvText126, std::size(kH14ConvText126), 1, 1179648, 0x00000011, 0x0000002a, 0x00000000},  // conv_probe_k3_c256_n256_s8_st1_g1_bias0_same
+    {3, 3, 1, 1, false, {256, 16, 16}, {64, 14, 14}, kH14ConvText127, std::size(kH14ConvText127), 1, 294912, 0x00000011, 0x00000012, 0x00000000},  // conv_probe_k3_c256_n64_s16_st1_g1_bias0_valid
+    {3, 3, 1, 1, false, {256, 16, 16}, {64, 16, 16}, kH14ConvText128, std::size(kH14ConvText128), 1, 294912, 0x00000011, 0x00000012, 0x00000000},  // conv_known_k3_c256_n64_s16_st1_g1_bias0_same
+    {3, 3, 1, 1, false, {256, 16, 16}, {128, 14, 14}, kH14ConvText129, std::size(kH14ConvText129), 1, 589824, 0x00000011, 0x0000001c, 0x00000000},  // conv_probe_k3_c256_n128_s16_st1_g1_bias0_valid
+    {3, 3, 1, 1, false, {256, 16, 16}, {128, 16, 16}, kH14ConvText130, std::size(kH14ConvText130), 1, 589824, 0x00000011, 0x0000001c, 0x00000000},  // conv_probe_k3_c256_n128_s16_st1_g1_bias0_same
+    {3, 3, 1, 1, false, {512, 16, 16}, {64, 14, 14}, kH14ConvText131, std::size(kH14ConvText131), 1, 589824, 0x00000011, 0x00000022, 0x00000000},  // conv_probe_k3_c512_n64_s16_st1_g1_bias0_valid
+    {3, 3, 1, 1, false, {512, 16, 16}, {64, 16, 16}, kH14ConvText132, std::size(kH14ConvText132), 1, 589824, 0x00000011, 0x00000022, 0x00000000},  // conv_probe_k3_c512_n64_s16_st1_g1_bias0_same
+    {3, 3, 1, 1, true, {64, 1, 1}, {64, 1, 1}, kH14ConvText133, std::size(kH14ConvText133), 1, 74752, 0x00000011, 0x00000002, 0x00000000},  // conv_probe_k3_c64_n64_s1_st1_g1_bias1_same
+    {3, 3, 1, 1, true, {64, 8, 8}, {64, 6, 6}, kH14ConvText134, std::size(kH14ConvText134), 1, 74752, 0x00000011, 0x00000003, 0x00000000},  // conv_probe_k3_c64_n64_s8_st1_g1_bias1_valid
+    {3, 3, 1, 1, true, {64, 8, 8}, {64, 8, 8}, kH14ConvText135, std::size(kH14ConvText135), 1, 74752, 0x00000011, 0x00000004, 0x00000000},  // conv_probe_k3_c64_n64_s8_st1_g1_bias1_same
+    {3, 3, 1, 1, true, {64, 16, 16}, {64, 14, 14}, kH14ConvText136, std::size(kH14ConvText136), 1, 74752, 0x00000011, 0x00000005, 0x00000000},  // conv_probe_k3_c64_n64_s16_st1_g1_bias1_valid
+    {3, 3, 1, 1, true, {64, 16, 16}, {64, 16, 16}, kH14ConvText137, std::size(kH14ConvText137), 1, 74752, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k3_c64_n64_s16_st1_g1_bias1_same
+    {3, 3, 1, 1, true, {64, 16, 16}, {128, 16, 16}, kH14ConvText138, std::size(kH14ConvText138), 1, 148480, 0x00000011, 0x0000000a, 0x00000000},  // conv_known_k3_c64_n128_s16_st1_g1_bias1_same
+    {3, 3, 1, 1, true, {64, 16, 16}, {256, 16, 16}, kH14ConvText139, std::size(kH14ConvText139), 1, 295936, 0x00000011, 0x00000012, 0x00000000},  // conv_known_k3_c64_n256_s16_st1_g1_bias1_same
+    {3, 3, 1, 1, true, {64, 16, 16}, {512, 16, 16}, kH14ConvText140, std::size(kH14ConvText140), 1, 590848, 0x00000011, 0x00000022, 0x00000000},  // conv_known_k3_c64_n512_s16_st1_g1_bias1_same
+    {3, 3, 1, 1, true, {64, 16, 16}, {768, 16, 16}, kH14ConvText141, std::size(kH14ConvText141), 1, 886784, 0x00000011, 0x00000032, 0x00000000},  // conv_known_k3_c64_n768_s16_st1_g1_bias1_same
+    {3, 3, 1, 1, true, {64, 32, 32}, {64, 30, 30}, kH14ConvText142, std::size(kH14ConvText142), 1, 74752, 0x00000011, 0x00000009, 0x00000000},  // conv_probe_k3_c64_n64_s32_st1_g1_bias1_valid
+    {3, 3, 1, 1, true, {64, 32, 32}, {64, 32, 32}, kH14ConvText143, std::size(kH14ConvText143), 1, 74752, 0x00000011, 0x00000009, 0x00000000},  // conv_probe_k3_c64_n64_s32_st1_g1_bias1_same
+    {3, 3, 1, 1, true, {64, 64, 64}, {64, 62, 62}, kH14ConvText144, std::size(kH14ConvText144), 1, 74752, 0x00000011, 0x00000020, 0x00000000},  // conv_probe_k3_c64_n64_s64_st1_g1_bias1_valid
+    {3, 3, 1, 1, true, {64, 64, 64}, {64, 64, 64}, kH14ConvText145, std::size(kH14ConvText145), 1, 74752, 0x00000011, 0x00000020, 0x00000000},  // conv_probe_k3_c64_n64_s64_st1_g1_bias1_same
+    {3, 3, 1, 1, true, {128, 16, 16}, {64, 16, 16}, kH14ConvText146, std::size(kH14ConvText146), 1, 148480, 0x00000011, 0x0000000a, 0x00000000},  // conv_known_k3_c128_n64_s16_st1_g1_bias1_same
+    {3, 3, 1, 1, true, {256, 1, 1}, {256, 1, 1}, kH14ConvText147, std::size(kH14ConvText147), 1, 1180672, 0x00000011, 0x00000023, 0x00000000},  // conv_probe_k3_c256_n256_s1_st1_g1_bias1_same
+    {3, 3, 1, 1, true, {256, 8, 8}, {256, 6, 6}, kH14ConvText148, std::size(kH14ConvText148), 1, 1180672, 0x00000011, 0x00000029, 0x00000000},  // conv_probe_k3_c256_n256_s8_st1_g1_bias1_valid
+    {3, 3, 1, 1, true, {256, 8, 8}, {256, 8, 8}, kH14ConvText149, std::size(kH14ConvText149), 1, 1180672, 0x00000011, 0x0000002a, 0x00000000},  // conv_probe_k3_c256_n256_s8_st1_g1_bias1_same
+    {3, 3, 1, 1, true, {256, 16, 16}, {64, 16, 16}, kH14ConvText150, std::size(kH14ConvText150), 1, 295936, 0x00000011, 0x00000012, 0x00000000},  // conv_known_k3_c256_n64_s16_st1_g1_bias1_same
+    {3, 3, 1, 4, false, {64, 16, 16}, {64, 16, 16}, kH14ConvText151, std::size(kH14ConvText151), 1, 20480, 0x00000011, 0x00000004, 0x00000000},  // conv_known_k3_c64_n64_s16_st1_g4_bias0_same
+    {3, 3, 1, 4, false, {64, 16, 16}, {128, 16, 16}, kH14ConvText152, std::size(kH14ConvText152), 1, 36864, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k3_c64_n128_s16_st1_g4_bias0_same
+    {3, 3, 1, 4, false, {64, 16, 16}, {256, 16, 16}, kH14ConvText153, std::size(kH14ConvText153), 1, 73728, 0x00000011, 0x0000000b, 0x00000000},  // conv_known_k3_c64_n256_s16_st1_g4_bias0_same
+    {3, 3, 1, 4, false, {128, 16, 16}, {64, 16, 16}, kH14ConvText154, std::size(kH14ConvText154), 1, 36864, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k3_c128_n64_s16_st1_g4_bias0_same
+    {3, 3, 1, 4, false, {128, 16, 16}, {128, 16, 16}, kH14ConvText155, std::size(kH14ConvText155), 1, 73728, 0x00000011, 0x00000009, 0x00000000},  // conv_probe_k3_c128_n128_s16_st1_g4_bias0_same
+    {3, 3, 1, 4, false, {256, 16, 16}, {64, 16, 16}, kH14ConvText156, std::size(kH14ConvText156), 1, 73728, 0x00000011, 0x0000000b, 0x00000000},  // conv_known_k3_c256_n64_s16_st1_g4_bias0_same
+    {3, 3, 1, 4, false, {256, 16, 16}, {256, 16, 16}, kH14ConvText157, std::size(kH14ConvText157), 1, 294912, 0x00000011, 0x00000018, 0x00000000},  // conv_probe_k3_c256_n256_s16_st1_g4_bias0_same
+    {3, 3, 1, 4, true, {64, 16, 16}, {64, 16, 16}, kH14ConvText158, std::size(kH14ConvText158), 1, 20480, 0x00000011, 0x00000004, 0x00000000},  // conv_known_k3_c64_n64_s16_st1_g4_bias1_same
+    {3, 3, 1, 4, true, {64, 16, 16}, {128, 16, 16}, kH14ConvText159, std::size(kH14ConvText159), 1, 40960, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k3_c64_n128_s16_st1_g4_bias1_same
+    {3, 3, 1, 4, true, {64, 16, 16}, {256, 16, 16}, kH14ConvText160, std::size(kH14ConvText160), 1, 77824, 0x00000011, 0x0000000b, 0x00000000},  // conv_known_k3_c64_n256_s16_st1_g4_bias1_same
+    {3, 3, 1, 4, true, {128, 16, 16}, {64, 16, 16}, kH14ConvText161, std::size(kH14ConvText161), 1, 40960, 0x00000011, 0x00000006, 0x00000000},  // conv_known_k3_c128_n64_s16_st1_g4_bias1_same
+    {3, 3, 1, 4, true, {128, 16, 16}, {128, 16, 16}, kH14ConvText162, std::size(kH14ConvText162), 1, 77824, 0x00000011, 0x00000009, 0x00000000},  // conv_probe_k3_c128_n128_s16_st1_g4_bias1_same
+    {3, 3, 1, 4, true, {256, 16, 16}, {64, 16, 16}, kH14ConvText163, std::size(kH14ConvText163), 1, 77824, 0x00000011, 0x0000000b, 0x00000000},  // conv_known_k3_c256_n64_s16_st1_g4_bias1_same
+    {3, 3, 1, 4, true, {256, 16, 16}, {256, 16, 16}, kH14ConvText164, std::size(kH14ConvText164), 1, 299008, 0x00000011, 0x00000018, 0x00000000},  // conv_probe_k3_c256_n256_s16_st1_g4_bias1_same
+    {3, 3, 1, 64, false, {64, 16, 16}, {64, 16, 16}, kH14ConvText165, std::size(kH14ConvText165), 1, 2048, 0x00000011, 0x00000003, 0x00000000},  // conv_known_k3_c64_n64_s16_st1_g64_bias0_same
+    {3, 3, 1, 64, true, {64, 16, 16}, {64, 16, 16}, kH14ConvText166, std::size(kH14ConvText166), 1, 2048, 0x00000011, 0x00000003, 0x00000000},  // conv_probe_k3_c64_n64_s16_st1_g64_bias1_same
+    {3, 3, 1, 128, false, {128, 16, 16}, {128, 16, 16}, kH14ConvText167, std::size(kH14ConvText167), 1, 3072, 0x00000011, 0x00000007, 0x00000000},  // conv_known_k3_c128_n128_s16_st1_g128_bias0_same
+    {3, 3, 1, 128, true, {128, 16, 16}, {128, 16, 16}, kH14ConvText168, std::size(kH14ConvText168), 1, 3072, 0x00000011, 0x00000007, 0x00000000},  // conv_probe_k3_c128_n128_s16_st1_g128_bias1_same
+    {3, 3, 1, 256, false, {256, 16, 16}, {256, 16, 16}, kH14ConvText169, std::size(kH14ConvText169), 1, 5120, 0x00000011, 0x0000000f, 0x00000000},  // conv_probe_k3_c256_n256_s16_st1_g256_bias0_same
+    {3, 3, 1, 256, true, {256, 16, 16}, {256, 16, 16}, kH14ConvText170, std::size(kH14ConvText170), 1, 5120, 0x00000011, 0x0000000f, 0x00000000},  // conv_probe_k3_c256_n256_s16_st1_g256_bias1_same
+    {3, 3, 1, 512, false, {512, 16, 16}, {512, 16, 16}, kH14ConvText171, std::size(kH14ConvText171), 1, 9216, 0x00000011, 0x0000001e, 0x00000000},  // conv_probe_k3_c512_n512_s16_st1_g512_bias0_same
+    {3, 3, 1, 512, true, {512, 16, 16}, {512, 16, 16}, kH14ConvText172, std::size(kH14ConvText172), 1, 10240, 0x00000011, 0x0000001f, 0x00000000},  // conv_probe_k3_c512_n512_s16_st1_g512_bias1_same
+    {3, 3, 1, 1024, false, {1024, 16, 16}, {1024, 16, 16}, kH14ConvText173, std::size(kH14ConvText173), 1, 18432, 0x00000011, 0x0000003d, 0x00000000},  // conv_probe_k3_c1024_n1024_s16_st1_g1024_bias0_same
+    {3, 3, 1, 1024, true, {1024, 16, 16}, {1024, 16, 16}, kH14ConvText174, std::size(kH14ConvText174), 1, 20480, 0x00000011, 0x0000003e, 0x00000000},  // conv_probe_k3_c1024_n1024_s16_st1_g1024_bias1_same
 };

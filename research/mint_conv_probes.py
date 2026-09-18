@@ -40,6 +40,7 @@ import argparse
 import fnmatch
 import hashlib
 import json
+import math
 from pathlib import Path
 import platform
 import shlex
@@ -421,6 +422,16 @@ def pack_strided(reduction: int, outputs: int, chunks: list[int],
     return bytes(packed)
 
 
+def weight_taps(parameters: dict[str, Any]) -> int:
+    """Total kernel taps, from the recorded weight shape: rectangular
+    kernels carry kh * kw taps, which the square-probe era spelled as
+    ``kernel ** 2``."""
+    weight_shape = parameters.get("weight_shape")
+    if weight_shape and len(weight_shape) == 4:
+        return weight_shape[2] * weight_shape[3]
+    return parameters["kernel"] ** 2
+
+
 def conv_constants(parameters: dict[str, Any], weights: bytes,
                    bias: bytes | None, target: str = "h13",
                    size: int | None = None) -> bytes:
@@ -428,7 +439,7 @@ def conv_constants(parameters: dict[str, Any], weights: bytes,
     inputs = parameters["input_channels"]
     outputs = parameters["output_channels"]
     groups = parameters["groups"]
-    taps = parameters["kernel"] ** 2
+    taps = weight_taps(parameters)
     reduction = (inputs // groups) * taps
     if groups == inputs and groups == outputs:
         section = pack_depthwise(taps, outputs, weights, bias)
@@ -474,12 +485,37 @@ def case_weights(record: dict[str, Any]) -> tuple[bytes, bytes | None]:
     description = record["weights"]
     elements = description["payload_bytes"] // 2
     outputs = parameters["output_channels"]
+    if description.get("value") == \
+            "fp16 bits 0x3400 + index, one value per constant":
+        # The encoder-leftover campaign's weight blob: one uniform fp16
+        # region per constant at VALUE_BASE + ordinal, laid out after a
+        # 24-byte record table with no inline header. The description's
+        # sha256 records the payload the mint generated; the sections these
+        # records decode carry the uniform bytes the compiler actually
+        # consumed, and the constant-section comparison in covered() is
+        # what adjudicates that.
+        flat = b"".join(
+            struct.pack("<H", (0x3400 + index) & 0xFFFF) *
+            math.prod(shape)
+            for index, shape in enumerate(description["shapes"]))
+        if len(flat) != elements * 2:
+            raise ValueError(
+                f"{record['case']} payload regions cover {len(flat)} bytes, "
+                f"the description records {elements * 2}")
+        taps = weight_taps(parameters)
+        weight_elements = outputs * \
+            (parameters["input_channels"] // parameters["groups"]) * taps
+        weights = flat[:weight_elements * 2]
+        bias = flat[weight_elements * 2:
+                    (weight_elements + outputs) * 2] \
+            if parameters["bias"] else None
+        return weights, bias
     payload = known_weights(elements) if description["value"] == "distinct" \
         else om.half_payload(elements)
     resolved = blob_view(payload, elements)
+    taps = weight_taps(parameters)
     weight_elements = outputs * \
-        (parameters["input_channels"] // parameters["groups"]) * \
-        parameters["kernel"] ** 2
+        (parameters["input_channels"] // parameters["groups"]) * taps
     weights = resolved[:weight_elements * 2]
     bias = resolved[:outputs * 2] if parameters["bias"] else None
     return weights, bias
@@ -535,20 +571,35 @@ def h14_task_words(task: dict[str, Any]) -> list[int]:
 
 def stream_words(record: dict[str, Any]) -> list[int]:
     """The words a template carries: one H13 task descriptor, or the whole H14
-    __TEXT/__text stream with its zero-size prefix frame."""
+    __TEXT/__text stream with its zero-size prefix frame. A linked H13 task
+    array rebuilds with its alignment padding, exactly as the matvec emitter
+    assembles one."""
     tasks = record["task_descriptors"]
-    if len(tasks) != 1:
-        raise ValueError(f"{record['case']} emits {len(tasks)} tasks")
     target = record["target"]
     rebuild = h13_task_words if target == "h13" else h14_task_words
-    words = rebuild(tasks[0])
-    rebuilt = struct.pack(f"<{len(words)}I", *words)
-    if decode_task(rebuilt, target) != tasks[0]:
-        raise ValueError(f"{record['case']} task does not round-trip")
     if target == "h13":
-        if int(tasks[0]["header_words"][7], 16):
-            raise ValueError(f"{record['case']} single task links onward")
+        words: list[int] = []
+        for index, task in enumerate(tasks):
+            rebuilt = rebuild(task)
+            if decode_task(struct.pack(f"<{len(rebuilt)}I", *rebuilt),
+                           target) != task:
+                raise ValueError(
+                    f"{record['case']} task {index} does not round-trip")
+            words.extend(rebuilt)
+            next_offset = int(task["header_words"][7], 16)
+            if index + 1 == len(tasks):
+                if next_offset:
+                    raise ValueError(
+                        f"{record['case']} final task links onward")
+                continue
+            if next_offset % 4 or next_offset < len(words) * 4:
+                raise ValueError(
+                    f"{record['case']} task {index} link is invalid")
+            words.extend([0] * (next_offset // 4 - len(words)))
         return words
+    if len(tasks) != 1:
+        raise ValueError(f"{record['case']} emits {len(tasks)} tasks")
+    words = rebuild(tasks[0])
     stream = [0] * (H14_STREAM_PREFIX_BYTES // 4) + words
     declared = record["program_descriptor"]["text_words"]
     if len(stream) != declared:
@@ -627,21 +678,38 @@ def constant_offset(record: dict[str, Any], words: list[int]) -> int:
 def template_key(record: dict[str, Any]) -> tuple:
     """What the compiler knows before it picks a program. The padding follows
     from the kernel, stride and the two surfaces, so `pad_type` never enters
-    the key: a 1x1 convolution spells `same` and `valid` identically."""
+    the key: a 1x1 convolution spells `same` and `valid` identically. Both
+    kernel extents enter the key: a 9x1 and a 1x9 convolution are different
+    programs even where a scalar kernel plus the surface pair would not
+    collide."""
     parameters = record["parameters"]
-    return (parameters["kernel"], parameters["stride"], parameters["groups"],
-            parameters["bias"], tuple(parameters["input_shape"][1:]),
+    weight_shape = parameters["weight_shape"]
+    return (weight_shape[2], weight_shape[3], parameters["stride"],
+            parameters["groups"], parameters["bias"],
+            tuple(parameters["input_shape"][1:]),
             tuple(parameters["output_shape"][1:]))
 
 
-def covered(record: dict[str, Any]) -> bool:
+# Whole-program captures whose Apple task stream links several tasks. Every
+# other decoded convolution stays one task: Apple partitions large
+# convolutions into task arrays the single-task templates cannot carry, and
+# those stay outside the tables until a capture qualifies them by name.
+MULTI_TASK_CASES = frozenset({
+    "encoder_conv_c1024_n1024_k1x1_s1_g1_bias0_valid",
+    "encoder_conv_c1024_n2048_k1x1_s1_g1_bias0_valid",
+})
+
+
+def covered(record: dict[str, Any], allow_multi_task: bool = False) -> bool:
     """Whether the encoders reproduce this oracle's constant section.
 
     The first campaign's convolutions predate the `groups` and `stride`
     parameters, which it never varied, so both default to one.
     """
-    if record.get("error") is not None or \
-            len(record.get("task_descriptors") or []) != 1:
+    if record.get("error") is not None:
+        return False
+    tasks = record.get("task_descriptors") or []
+    if not tasks or (len(tasks) != 1 and not allow_multi_task):
         return False
     parameters = record["parameters"]
     if "input_shape" not in parameters or "weight_shape" not in parameters:
@@ -667,7 +735,8 @@ def conv_records(target: str) -> dict[tuple, dict[str, Any]]:
         if "kernel" not in parameters or "weight_shape" not in parameters:
             continue
         record.setdefault("target", target)
-        if not covered(record):
+        if not covered(record, allow_multi_task=
+                       record["case"] in MULTI_TASK_CASES):
             continue
         key = template_key(record)
         previous = selected.setdefault(key, record)
@@ -719,7 +788,9 @@ def conv_row(record: dict[str, Any], symbol: str, words: list[int]) -> str:
     weights, bias = case_weights(record)
     section = conv_constants(parameters, weights, bias, record["target"],
                              record["constant_section"]["size"])
-    geometry = (f"{parameters['kernel']}, {parameters['stride']}, "
+    weight_shape = parameters["weight_shape"]
+    geometry = (f"{weight_shape[2]}, {weight_shape[3]}, "
+                f"{parameters['stride']}, "
                 f"{parameters['groups']}, "
                 f"{'true' if parameters['bias'] else 'false'}, "
                 f"{{{channels}, {height}, {width}}}, "

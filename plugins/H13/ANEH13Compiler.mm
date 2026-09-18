@@ -1521,11 +1521,16 @@ static BOOL int32Vector(ANEGraphValue *value, NSUInteger count,
         ![literal.calleeValueType isEqualToValueType:value.type] ||
         literal.callArguments.count != 1) return NO;
     ANEGraphArgument *payload = literal.callArguments[0].value;
-    if (payload.kind != ANEGraphArgumentKindList ||
-        payload.elements.count != count) return NO;
-    for (NSUInteger index = 0; index < count; ++index)
-        if (!int32Literal(payload.elements[index], &values[index])) return NO;
-    return YES;
+    if (payload.kind == ANEGraphArgumentKindList) {
+        if (payload.elements.count != count) return NO;
+        for (NSUInteger index = 0; index < count; ++index)
+            if (!int32Literal(payload.elements[index], &values[index])) return NO;
+        return YES;
+    }
+    // The rank-3 conv spell writes one-element vectors as bare scalars:
+    // `tensor<int32, [1]>(1)` carries an int literal, not a list.
+    if (count == 1 && int32Literal(payload, &values[0])) return YES;
+    return NO;
 }
 
 static BOOL int32Scalar(ANEGraphValue *value, long long *result) {
@@ -1557,8 +1562,12 @@ static BOOL convSurface(ANEGraphValue *value, ane::h13::ElementwiseShape *shape)
 /// `[Cout, Cin / groups, kh, kw]` weight, square `strides` and `dilations`
 /// vectors, and either an explicit `pad` with `pad_type="custom"` or the
 /// `same`, `same_lower` and `valid` spellings. The decoded corpus covers
-/// square kernels, unit dilations, `same` and `valid`, and the explicit `pad`
-/// vector only when it is all zeroes, which is what those two spellings emit.
+/// unit dilations, `same` and `valid`, zero explicit padding, rectangular
+/// kernels, and the encoder's rank-3 spell: a `[1, C, T]` input with a
+/// `[Cout, Cin / groups, k]` weight binds as the W-major `[1, C, 1, T]`
+/// surface every decoded rank-3 program records, so the respell inserts the
+/// unit axis before T and moves the kernel extent to W. The H-major respell
+/// has no surface the rank-3 tensor binds as and never matches.
 static BOOL convParityPlan(ANEGraphOperation *operation, H13ConvPlan *plan) {
     if (![operation.operationName isEqualToString:@"conv"]) return NO;
     ANEGraphValue *x = operation.operands[@"x"].value;
@@ -1567,26 +1576,62 @@ static BOOL convParityPlan(ANEGraphOperation *operation, H13ConvPlan *plan) {
     H13ConvPlan candidate{};
     candidate.weight = weight;
     candidate.bias = bias;
-    if (!x || !weight || !fp16Tensor(weight) || weight.type.shape.count != 4 ||
-        !convSurface(x, &candidate.shape.input) ||
-        !convSurface(operation.results[0], &candidate.shape.output)) return NO;
+    if (!x || !weight || !fp16Tensor(weight)) return NO;
+    const BOOL rank3 = x.type.shape.count == 3;
+    if (rank3) {
+        // The respell onto the W-major surface the rank-3 tensor binds as:
+        // [1, C, T] becomes the [1, C, 1, T] surface and the kernel extent
+        // moves to W, so the weight spell [Cout, Cin / groups, k] reads as
+        // kh = 1, kw = k.
+        if (weight.type.shape.count != 3 ||
+            operation.results[0].type.shape.count != 3 ||
+            !fp16Tensor(x) || !fp16Tensor(operation.results[0]) ||
+            x.type.shape[0].unsignedIntegerValue != 1 ||
+            operation.results[0].type.shape[0].unsignedIntegerValue != 1)
+            return NO;
+        candidate.shape.input = {x.type.shape[1].unsignedIntValue, 1,
+                                 x.type.shape[2].unsignedIntValue};
+        candidate.shape.output = {
+            operation.results[0].type.shape[1].unsignedIntValue, 1,
+            operation.results[0].type.shape[2].unsignedIntValue};
+        if (!candidate.shape.input.channels || !candidate.shape.input.width ||
+            !candidate.shape.output.channels ||
+            !candidate.shape.output.width) return NO;
+    } else if (x.type.shape.count == 4) {
+        if (weight.type.shape.count != 4 ||
+            operation.results[0].type.shape.count != 4 ||
+            !convSurface(x, &candidate.shape.input) ||
+            !convSurface(operation.results[0], &candidate.shape.output))
+            return NO;
+    } else return NO;
+    const NSUInteger strideCount = rank3 ? 1 : 2;
+    const NSUInteger padCount = rank3 ? 2 : 4;
     if (operation.arguments.count != (bias ? 8u : 7u)) return NO;
     NSString *padType = nil;
     long long strides[2] = {0, 0}, dilations[2] = {0, 0}, padding[4] = {0, 0, 0, 0};
     long long groups = 1;
     if (!constantString(operation.operands[@"pad_type"].value, &padType) ||
-        !int32Vector(operation.operands[@"strides"].value, 2, strides) ||
-        !int32Vector(operation.operands[@"dilations"].value, 2, dilations) ||
-        !int32Vector(operation.operands[@"pad"].value, 4, padding) ||
+        !int32Vector(operation.operands[@"strides"].value, strideCount, strides) ||
+        !int32Vector(operation.operands[@"dilations"].value, strideCount, dilations) ||
+        !int32Vector(operation.operands[@"pad"].value, padCount, padding) ||
         !int32Scalar(operation.operands[@"groups"].value, &groups)) return NO;
     if (![padType isEqualToString:@"same"] && ![padType isEqualToString:@"valid"])
         return NO;
+    if (rank3) {
+        // One spatial axis: both respelled axes run the same stride and
+        // unit dilation.
+        strides[1] = strides[0];
+        dilations[1] = dilations[0];
+    }
     if (strides[0] != strides[1] || dilations[0] != 1 || dilations[1] != 1 ||
         strides[0] < 1 || groups < 1) return NO;
-    for (NSUInteger index = 0; index < 4; ++index)
+    for (NSUInteger index = 0; index < padCount; ++index)
         if (padding[index]) return NO;
     const std::uint32_t kernel = weight.type.shape[2].unsignedIntValue;
-    if (weight.type.shape[3].unsignedIntValue != kernel || !kernel) return NO;
+    const std::uint32_t kernelWidth = rank3
+        ? kernel
+        : weight.type.shape[3].unsignedIntValue;
+    if (!kernel || !kernelWidth) return NO;
     if (weight.type.shape[0].unsignedIntValue != candidate.shape.output.channels)
         return NO;
     if (!candidate.shape.input.channels ||
@@ -1594,21 +1639,25 @@ static BOOL convParityPlan(ANEGraphOperation *operation, H13ConvPlan *plan) {
         weight.type.shape[1].unsignedIntValue !=
             candidate.shape.input.channels / groups) return NO;
     // The result surface must be what the pad type asks for: `same` covers
-    // ceil(D / stride) and `valid` covers floor((D - kernel) / stride) + 1.
+    // ceil(D / stride) and `valid` covers floor((D - k_axis) / stride) + 1,
+    // each axis against its own kernel extent.
     const std::uint32_t extents[2] = {candidate.shape.input.height,
                                       candidate.shape.input.width};
     const std::uint32_t results[2] = {candidate.shape.output.height,
                                       candidate.shape.output.width};
+    const std::uint32_t kernels[2] = {kernel, kernelWidth};
     for (NSUInteger axis = 0; axis < 2; ++axis) {
         const std::uint32_t stride = static_cast<std::uint32_t>(strides[0]);
         if ([padType isEqualToString:@"same"]) {
             if (results[axis] != (extents[axis] + stride - 1) / stride) return NO;
         } else {
-            if (extents[axis] < kernel ||
-                results[axis] != (extents[axis] - kernel) / stride + 1) return NO;
+            if (extents[axis] < kernels[axis] ||
+                results[axis] != (extents[axis] - kernels[axis]) / stride + 1)
+                return NO;
         }
     }
     candidate.shape.kernel = kernel;
+    candidate.shape.kernelWidth = kernelWidth;
     candidate.shape.stride = static_cast<std::uint32_t>(strides[0]);
     candidate.shape.groups = static_cast<std::uint32_t>(groups);
     candidate.shape.bias = bias != nil;
@@ -1958,7 +2007,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     if (convParityPlan(operation, &convolution)) {
         const std::uint32_t reduction = convolution.shape.input.channels /
             convolution.shape.groups * convolution.shape.kernel *
-            convolution.shape.kernel;
+            convolution.shape.kernelWidth;
         NSData *weights = resolvedConstants[convolution.weight.name];
         if (!weights) {
             weights = [ANEBlobResolver loadConstantForOperation:convolution.weight.producer
@@ -2700,10 +2749,22 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         if ([name isEqualToString:@"conv"])
             return reject(diagnostics,
                 @"H13 conv needs a decoded geometry: an fp16 rank-4 input and "
-                 "result with a batch of one, a constant [Cout, Cin/groups, k, k] "
-                 "weight, unit dilations, zero explicit padding, pad_type 'same' "
-                 "or 'valid', and a kernel, stride, group count and surface pair "
-                 "inside the oracle parity envelope",
+                 "result with a batch of one (or the encoder's rank-3 spell, "
+                 "which lowers only through the W-major surface it binds as), "
+                 "a constant [Cout, Cin/groups, kh, kw] weight, unit dilations, "
+                 "zero explicit padding, pad_type 'same' or 'valid', and a "
+                 "kernel, stride, group count and surface pair inside the "
+                 "oracle parity envelope. The encoder conv leftover refuses on "
+                 "named gaps: rank-3 spellings with no W-major row (the "
+                 "checked-in n2048 capture is H-major, whose surface the "
+                 "rank-3 tensor does not bind as), the bias-bearing rank-3 "
+                 "depthwise (only a no-bias depthwise respell is decoded), "
+                 "pad_type 'custom' and non-zero explicit pads (the padconv "
+                 "respell has no oracle), and surface pairs with no capture - "
+                 "the 2026-09-16 conv oracle campaign compiled uniform weight "
+                 "payloads, so no rect/strided constant-section permutation is "
+                 "readable and those forms stay refused (see "
+                 "receipts/2026-09-17-encoder-conv-lowering)",
                 operation, @"h13.conv-outside-envelope");
         ane::h13::UnaryOperation unaryOperation{};
         if (unaryEncoding(name, &unaryOperation))

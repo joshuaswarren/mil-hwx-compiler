@@ -584,6 +584,7 @@ static BOOL convParityPlan(ANEGraphOperation *operation, H14ConvPlan *plan) {
         }
     }
     candidate.shape.kernel = kernel;
+    candidate.shape.kernelWidth = kernel;
     candidate.shape.stride = static_cast<std::uint32_t>(strides[0]);
     candidate.shape.groups = static_cast<std::uint32_t>(groups);
     candidate.shape.bias = bias != nil;
@@ -853,7 +854,7 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
         } else if (convParityPlan(operation, &convolution)) {
             const std::uint32_t reduction = convolution.shape.input.channels /
                 convolution.shape.groups * convolution.shape.kernel *
-                convolution.shape.kernel;
+                convolution.shape.kernelWidth;
             convWeights = [ANEBlobResolver
                 loadConstantForOperation:convolution.weight.producer
                 expectedBytes:convolution.shape.output.channels * reduction * 2

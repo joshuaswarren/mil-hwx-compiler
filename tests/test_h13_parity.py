@@ -156,9 +156,13 @@ def conv_covered(oracle, target):
     convolution into several tasks, and the strided packing is only derived
     for a groups-1 1x1 kernel below 16 interleaved lanes. Those cases stay
     outside the parity set and the compiler rejects them by name instead.
+    The named encoder captures lower as linked multi-task programs and ride
+    the same opt-in the template emitter uses.
     """
     oracle = dict(oracle, target=target)
-    return mint_conv_probes.covered(oracle)
+    return mint_conv_probes.covered(
+        oracle,
+        allow_multi_task=oracle["case"] in mint_conv_probes.MULTI_TASK_CASES)
 
 
 def encoder(oracle):

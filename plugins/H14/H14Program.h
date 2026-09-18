@@ -64,6 +64,7 @@ struct NormShape {
 /// output surface.
 struct ConvShape {
     std::uint32_t kernel;
+    std::uint32_t kernelWidth;
     std::uint32_t stride;
     std::uint32_t groups;
     bool bias;

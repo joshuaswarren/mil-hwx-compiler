@@ -77,6 +77,7 @@ struct OracleNormTemplate {
 /// is folded in, and the two CHW surfaces.
 struct OracleConvTemplate {
     std::uint32_t kernel;
+    std::uint32_t kernelWidth;
     std::uint32_t stride;
     std::uint32_t groups;
     bool bias;
@@ -593,6 +594,7 @@ namespace {
 const OracleConvTemplate *convTemplate(ConvShape shape) {
     for (const auto &candidate : kConvTasks)
         if (candidate.kernel == shape.kernel &&
+            candidate.kernelWidth == shape.kernelWidth &&
             candidate.stride == shape.stride &&
             candidate.groups == shape.groups && candidate.bias == shape.bias &&
             sameShape(candidate.input, shape.input) &&
@@ -801,7 +803,7 @@ std::vector<std::uint8_t> packConvWeights(ConvShape shape,
                                           std::size_t weightBytes,
                                           const std::uint8_t *bias,
                                           std::size_t biasBytes) {
-    const std::uint32_t taps = shape.kernel * shape.kernel;
+    const std::uint32_t taps = shape.kernel * shape.kernelWidth;
     if (!shape.groups || shape.input.channels % shape.groups ||
         shape.output.channels % shape.groups)
         throw std::invalid_argument(
