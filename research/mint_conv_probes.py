@@ -385,6 +385,41 @@ _SLOT_ORDER = [None, None, 0, None, 2, 1, 4, 3, 6, 5, 8, 7,
                1, 0, 3, 2, 5, 4, 7, 6, None, 8]
 
 
+def pack_padconv_columns(weights: bytes) -> bytes:
+    """Apple's custom-pad depthwise section (k1x1 grouped, asymmetric W pad).
+
+    Three 512-byte chunks of eight 64-byte lanes. Chunks one and two repeat
+    the structural constants — even lanes 0x3c00 (fp16 1.0), odd lanes
+    0x0001 then 0x0100 — and chunk three carries one raw weight halfword per
+    lane in channel order. Verified against
+    encoder_conv_pad_c8_n8_k1x1_s1_g8_bias0_p0010_f4
+    and ..._tiny plus three same-format payload runs
+    (receipts/2026-09-17-encoder-padconv-respell/): ascending payloads
+    (1..8, 2..16) prove the identity lane order and that the structural
+    chunks never carry weight bytes.
+    """
+    outputs = len(weights) // 2
+    if outputs != 8:
+        raise ValueError("the custom-pad depthwise capture is the 8-channel "
+                         "grouped 1x1 padconv")
+    lanes, lane_bytes = 8, 64
+    chunk = lanes * lane_bytes
+    packed = bytearray(chunk * 3)
+    for lane in range(lanes):
+        if lane % 2 == 0:
+            struct.pack_into("<H", packed, lane * lane_bytes, 0x3C00)
+            struct.pack_into("<H", packed, chunk + lane * lane_bytes, 0x3C00)
+        else:
+            struct.pack_into("<H", packed, lane * lane_bytes, 0x0001)
+            struct.pack_into("<H", packed, lane * lane_bytes + 2, 0x0100)
+            struct.pack_into("<H", packed, chunk + lane * lane_bytes, 0x0001)
+            struct.pack_into("<H", packed, chunk + lane * lane_bytes + 2,
+                             0x0100)
+        packed[2 * chunk + lane * lane_bytes:2 * chunk + lane * lane_bytes + 2] \
+            = weights[2 * lane:2 * lane + 2]
+    return bytes(packed)
+
+
 def pack_depthwise(taps: int, outputs: int, weights: bytes,
                    bias: bytes | None) -> bytes:
     """Apple's depthwise section: 16 lanes, each holding `outputs / 16`
@@ -481,7 +516,15 @@ def conv_constants(parameters: dict[str, Any], weights: bytes,
     reduction = (inputs // groups) * taps
     if groups == inputs and groups == outputs:
         weight_shape = parameters.get("weight_shape")
-        if bias is not None and taps > 1 and weight_shape and \
+        if not bias and taps == 1 and weight_shape and \
+                len(weight_shape) == 4 and weight_shape[2] == 1 and \
+                weight_shape[3] == 1 and \
+                parameters.get("pad_type") == "custom" and \
+                any(parameters.get("pad") or ()):
+            # The encoder's W-padded rel-pos padconv: a two-task program that
+            # reads the unpadded input directly.
+            section = pack_padconv_columns(weights)
+        elif bias is not None and taps > 1 and weight_shape and \
                 len(weight_shape) == 4 and weight_shape[2] == 1 and \
                 weight_shape[3] == taps:
             # The W-major depthwise respell (unit height kernel) records a
@@ -769,6 +812,8 @@ MULTI_TASK_CASES = frozenset({
     "encoder_conv_c1024_n1024_k1x1_s1_g1_bias0_valid",
     "encoder_conv_c1024_n2048_k1x1_s1_g1_bias0_valid",
     "encoder_conv_idx_c1024_n1024_k1x9_s1_g1024_bias1_same_wmaj",
+    "encoder_conv_pad_c8_n8_k1x1_s1_g8_bias0_p0010_f4",
+    "encoder_conv_pad_c8_n8_k1x1_s1_g8_bias0_p0010_tiny",
 })
 
 
