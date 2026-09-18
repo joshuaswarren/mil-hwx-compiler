@@ -157,7 +157,8 @@ def test_intermediate_physical_buffer_composition():
         "name": "h", "dtype": "float16", "shape": [512],
         "logicalBytes": 1024, "allocationBytes": 32768, "index": 5,
         "nchw": [1, 512, 1, 1, 64, 64],
-        "slice": {"tensor": "h", "elementOffset": 0, "elementCount": 512},
+        "slice": {"tensor": "h", "elementOffset": 0, "elementCount": 512,
+                  "physicalElements": 512},
     }
     regions = []
     for chunk in range(8):
