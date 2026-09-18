@@ -347,6 +347,43 @@ def pack_dense(reduction: int, outputs: int, chunks: list[int],
     return bytes(packed)
 
 
+def pack_dense_colgroups(reduction: int, outputs: int,
+                         weights: bytes) -> bytes:
+    """The captured F1 in-projection section (k1x1 g1 valid, 2048 outputs,
+    1024 reduction, bias-free).
+
+    16 regions x 8 slots; slot (g, j) is a 16-lane plane over `reduction`
+    consecutive rows holding colgroup
+
+        G(g, j) = 8 * (4 * (3 - g // 4) + ((g // 2) % 2) + 2 * (j % 2))
+                  + 4 * (g % 2) + j // 2
+
+    The order beyond colgroup 64 is invisible to any uint16 payload (e ->
+    e + 64*1024 is value-invariant); it was decoded from the 32-bit-pair
+    remint (receipts/2026-09-17-encoder-conv-lowering/oracles-u32) and is
+    byte-exact against both that capture and the round-2 uint16 capture.
+    """
+    if (reduction, outputs) != (1024, 2048):
+        raise ValueError("the colgroup-order dense capture is the F1 "
+                         "in-projection geometry (1024 -> 2048)")
+    regions, slots, lanes = 16, 8, 16
+    packed = bytearray(regions * slots * reduction * lanes * 2)
+    view = memoryview(packed).cast("H")
+    for region in range(regions):
+        for slot in range(slots):
+            block = 4 * (3 - region // 4) + ((region // 2) % 2) \
+                + 2 * (slot % 2)
+            colgroup = 8 * block + 4 * (region % 2) + slot // 2
+            base = region * slots * reduction * lanes + \
+                slot * reduction * lanes
+            for lane in range(lanes):
+                source = (16 * colgroup + lane) * reduction
+                cursor = base + lane
+                view[cursor:cursor + reduction * lanes:lanes] = memoryview(
+                    weights[source * 2:(source + reduction) * 2]).cast("H")
+    return bytes(packed)
+
+
 def pack_depthwise_slots(taps: int, outputs: int, weights: bytes,
                          bias: bytes | None) -> bytes:
     """The captured W-major depthwise section (k1x9 same, bias present).
@@ -504,9 +541,17 @@ def conv_constants(parameters: dict[str, Any], weights: bytes,
                              [lanes] * (outputs // lanes // 16),
                              weights, bias, True)
     else:
-        section = pack_dense(reduction, outputs,
-                             lane_chunks(outputs, lane_cap(parameters["spatial"])),
-                             weights, bias, False)
+        chunks = lane_chunks(outputs, lane_cap(max(
+            parameters["spatial"],
+            parameters.get("spatial_width", parameters["spatial"]))))
+        if bias is None and (outputs, reduction) == (2048, 1024) \
+                and chunks == [16] * 8:
+            # The decoded F1 in-projection colgroup order; consecutive order
+            # never reproduced past colgroup 64 (see pack_dense_colgroups).
+            section = pack_dense_colgroups(reduction, outputs, weights)
+        else:
+            section = pack_dense(reduction, outputs, chunks, weights, bias,
+                                 False)
     if size is not None and len(section) != size:
         raise ValueError(f"packed section is {len(section)} bytes, "
                          f"the oracle records {size}")
@@ -769,6 +814,7 @@ MULTI_TASK_CASES = frozenset({
     "encoder_conv_c1024_n1024_k1x1_s1_g1_bias0_valid",
     "encoder_conv_c1024_n2048_k1x1_s1_g1_bias0_valid",
     "encoder_conv_idx_c1024_n1024_k1x9_s1_g1024_bias1_same_wmaj",
+    "encoder_conv_idx_c1024_n2048_k1x1_s1_g1_bias0_valid_wmaj",
 })
 
 
