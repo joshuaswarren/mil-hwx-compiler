@@ -99,6 +99,15 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-conv-envelope-") as directo
                  [1], 1024, [4, 4], "custom", True))
     assert hit["programs"][0]["encoder"] == "apple-parity-conv"
     assert hit["programs"][0]["taskDescriptors"] == 2
+    # The W-padded rel-pos padconv lowers through its own decoded two-task
+    # capture: the rank-4 custom spelling reads the 749-wide input directly
+    # and writes the 750-wide output, the zero column inside the stream.
+    hit = compile_source(
+        root, "enc-padconv",
+        conv_mil([1, 8, 375, 749], [8, 1, 1, 1], [1, 8, 375, 750],
+                 [1, 1], 8, [0, 0, 1, 0], "custom", False))
+    assert hit["programs"][0]["encoder"] == "apple-parity-conv"
+    assert hit["programs"][0]["taskDescriptors"] == 2
     # The two encoder pointwise bias1 forms ([1,256,750,32] and
     # [1,256,375,16]) lower since the distinct-payload round qualified their
     # rows; the parity suite byte-compiles them.
@@ -112,9 +121,6 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-conv-envelope-") as directo
         ("enc-subsample-dw-375",
          conv_mil([1, 256, 750, 32], [256, 1, 3, 3], [1, 256, 375, 16],
                   [2, 2], 256, [1, 1, 1, 1], "custom", True)),
-        ("enc-padconv",
-         conv_mil([1, 8, 375, 749], [8, 1, 1, 1], [1, 8, 375, 750],
-                  [1, 1], 8, [0, 0, 1, 0], "custom", False)),
         # The in-projection spell respells W-major, and the only checked-in
         # n2048 capture is H-major: no row covers the W-major surface.
         ("enc-1d-pw",

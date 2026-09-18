@@ -2168,6 +2168,49 @@ std::vector<std::uint8_t> packConvStrided(std::uint32_t reduction,
 
 } // namespace
 
+/// Apple's custom-pad depthwise section (k1x1 grouped, asymmetric W pad):
+/// three 512-byte chunks of eight 64-byte lanes. Chunks one and two repeat
+/// the structural constants — even lanes 0x3c00 (fp16 1.0), odd lanes
+/// 0x0001 then 0x0100 — and chunk three carries one raw weight halfword per
+/// lane in channel order. Verified against
+/// encoder_conv_pad_c8_n8_k1x1_s1_g8_bias0_p0010_f4 and ..._tiny plus three
+/// same-format payload runs
+/// (receipts/2026-09-17-encoder-padconv-respell/): ascending payloads
+/// (1..8, 2..16) prove the identity lane order and that the structural
+/// chunks never carry weight bytes.
+std::vector<std::uint8_t> packConvPadconvColumns(
+    const std::uint8_t *weights, std::size_t weightBytes) {
+    constexpr std::uint32_t lanes = 8;
+    constexpr std::size_t laneBytes = 64;
+    constexpr std::size_t chunk = lanes * laneBytes;
+    if (!weights || weightBytes != lanes * 2)
+        throw std::invalid_argument(
+            "H13 custom-pad depthwise section is decoded only for the "
+            "8-channel grouped 1x1 padconv");
+    std::vector<std::uint8_t> packed(chunk * 3, 0);
+    for (std::uint32_t lane = 0; lane != lanes; ++lane) {
+        const std::size_t base = lane * laneBytes;
+        if (lane % 2 == 0) {
+            packed[base] = 0x00;
+            packed[base + 1] = 0x3c;
+            packed[chunk + base] = 0x00;
+            packed[chunk + base + 1] = 0x3c;
+        } else {
+            packed[base] = 0x01;
+            packed[base + 1] = 0x00;
+            packed[base + 2] = 0x00;
+            packed[base + 3] = 0x01;
+            packed[chunk + base] = 0x01;
+            packed[chunk + base + 1] = 0x00;
+            packed[chunk + base + 2] = 0x00;
+            packed[chunk + base + 3] = 0x01;
+        }
+        const std::uint8_t *weight = weights + lane * 2;
+        std::memcpy(packed.data() + 2 * chunk + base, weight, 2);
+    }
+    return packed;
+}
+
 bool supportsConvParity(ConvShape shape) { return convTemplate(shape); }
 
 /// The captured W-major depthwise section (k1x9 `same`, bias present): 64
@@ -2241,6 +2284,12 @@ std::vector<std::uint8_t> packConvWeights(ConvShape shape,
             return packConvDepthwiseSlots(shape.kernelWidth,
                                           shape.output.channels, weights,
                                           bias);
+        if (!bias && shape.kernel == 1 && shape.kernelWidth == 1 &&
+            shape.input.width != shape.output.width)
+            // The W-padded padconv form: a width-changing k1x1 grouped
+            // depthwise is exactly the asymmetric custom-pad respell, and
+            // its captured section is the three-chunk columns layout.
+            return packConvPadconvColumns(weights, weightBytes);
         return packConvDepthwise(taps, shape.output.channels, weights, bias);
     }
     const auto chunks = laneChunks(shape.output.channels, laneCap(shape.input));

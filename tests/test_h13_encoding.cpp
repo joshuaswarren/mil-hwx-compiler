@@ -362,7 +362,11 @@ void checkEncoderConvEnvelope() {
     assert(!supportsConvParity({3, 3, 2, 1, true, {1, 3000, 128}, {256, 1500, 64}}));
     assert(!supportsConvParity({3, 3, 2, 256, true, {256, 1500, 64}, {256, 750, 32}}));
     assert(!supportsConvParity({3, 3, 2, 256, true, {256, 750, 32}, {256, 375, 16}}));
-    assert(!supportsConvParity({1, 1, 1, 8, false, {8, 375, 749}, {8, 375, 750}}));
+    // The W-padded rel-pos padconv lowers through its own two-task capture.
+    assert(supportsConvParity({1, 1, 1, 8, false, {8, 375, 749}, {8, 375, 750}}));
+    assert(supportsConvParity({1, 1, 1, 8, false, {8, 8, 7}, {8, 8, 8}}));
+    // An asymmetric padconv surface pair with no capture stays refused.
+    assert(!supportsConvParity({1, 1, 1, 8, false, {8, 100, 49}, {8, 100, 50}}));
     // The W-major k1x1 row does not cover the transposed surfaces, and the
     // rect key does not survive a kernel-extent flip or a bias.
     assert(!supportsConvParity({1, 1, 1, 1, false, {1024, 375, 1}, {1024, 375, 1}}));

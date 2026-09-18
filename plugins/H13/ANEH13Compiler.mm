@@ -1562,12 +1562,16 @@ static BOOL convSurface(ANEGraphValue *value, ane::h13::ElementwiseShape *shape)
 /// `[Cout, Cin / groups, kh, kw]` weight, square `strides` and `dilations`
 /// vectors, and either an explicit `pad` with `pad_type="custom"` or the
 /// `same`, `same_lower` and `valid` spellings. The decoded corpus covers
-/// unit dilations, `same` and `valid`, zero explicit padding, rectangular
-/// kernels, and the encoder's rank-3 spell: a `[1, C, T]` input with a
+/// unit dilations, `same` and `valid` with zero explicit padding,
+/// rectangular kernels, the encoder's rank-4 custom-pad padconv (a declared
+/// asymmetric pad lowers when a template row covers the surface pair), and
+/// the encoder's rank-3 spell: a `[1, C, T]` input with a
 /// `[Cout, Cin / groups, k]` weight binds as the W-major `[1, C, 1, T]`
 /// surface every decoded rank-3 program records, so the respell inserts the
-/// unit axis before T and moves the kernel extent to W. The H-major respell
-/// has no surface the rank-3 tensor binds as and never matches.
+/// unit axis before T and moves the kernel extent to W; the rank-3 custom
+/// spelling still lowers only where its pads equal a `same`/`valid` spell.
+/// The H-major respell has no surface the rank-3 tensor binds as and never
+/// matches.
 static BOOL convParityPlan(ANEGraphOperation *operation, H13ConvPlan *plan) {
     if (![operation.operationName isEqualToString:@"conv"]) return NO;
     ANEGraphValue *x = operation.operands[@"x"].value;
@@ -1623,24 +1627,37 @@ static BOOL convParityPlan(ANEGraphOperation *operation, H13ConvPlan *plan) {
         : weight.type.shape[3].unsignedIntValue;
     if (!kernel || !kernelWidth) return NO;
     BOOL normalizedCustom = NO;
+    BOOL declaredPads = NO;
     if (![padType isEqualToString:@"same"] && ![padType isEqualToString:@"valid"]) {
-        // Apple's own tool refuses the custom spelling, so the decoded
-        // corpus carries only the same/valid respells. Accept the encoder's
-        // rank-3 custom spelling when its pads are exactly what one of
-        // those two spells: zeros for `valid`, or the symmetric
-        // (kernel - 1) / 2 of a unit-stride odd kernel for `same`.
-        if (!rank3 || strides[0] != 1 || kernelExtent % 2 == 0) {
-            return NO;
-        }
-        const long long half = (kernelExtent - 1) / 2;
-        if (padding[0] == 0 && padding[1] == 0) {
-            padType = @"valid";
-        } else if (padding[0] == half && padding[1] == half) {
-            padType = @"same";
+        if (rank3) {
+            // The rank-3 conv spelling refuses on Apple's own tool, so the
+            // decoder carries only the same/valid respells. Accept the
+            // encoder's rank-3 custom spelling when its pads are exactly
+            // what one of those two spells: zeros for `valid`, or the
+            // symmetric (kernel - 1) / 2 of a unit-stride odd kernel for
+            // `same`.
+            if (strides[0] != 1 || kernelExtent % 2 == 0) {
+                return NO;
+            }
+            const long long half = (kernelExtent - 1) / 2;
+            if (padding[0] == 0 && padding[1] == 0) {
+                padType = @"valid";
+            } else if (padding[0] == half && padding[1] == half) {
+                padType = @"same";
+            } else {
+                return NO;
+            }
+            normalizedCustom = YES;
         } else {
-            return NO;
+            // Rank 4 carries a decoded custom-pad form: the encoder's
+            // W-padded rel-pos padconv (pad [0, 0, 1, 0], k1x1 grouped) is
+            // captured as a two-task program that reads the unpadded input
+            // directly
+            // (encoder_conv_pad_c8_n8_k1x1_s1_g8_bias0_p0010_f4). The
+            // declared pads only have to reproduce the declared output;
+            // the template key pins the exact surfaces.
+            declaredPads = YES;
         }
-        normalizedCustom = YES;
     }
     if (rank3) {
         // One spatial axis: both respelled axes run the same stride and
@@ -1650,7 +1667,7 @@ static BOOL convParityPlan(ANEGraphOperation *operation, H13ConvPlan *plan) {
     }
     if (strides[0] != strides[1] || dilations[0] != 1 || dilations[1] != 1 ||
         strides[0] < 1 || groups < 1) return NO;
-    if (!normalizedCustom)
+    if (!normalizedCustom && !declaredPads)
         for (NSUInteger index = 0; index < padCount; ++index)
             if (padding[index]) return NO;
     if (weight.type.shape[0].unsignedIntValue != candidate.shape.output.channels)
@@ -1660,8 +1677,10 @@ static BOOL convParityPlan(ANEGraphOperation *operation, H13ConvPlan *plan) {
         weight.type.shape[1].unsignedIntValue !=
             candidate.shape.input.channels / groups) return NO;
     // The result surface must be what the pad type asks for: `same` covers
-    // ceil(D / stride) and `valid` covers floor((D - k_axis) / stride) + 1,
-    // each axis against its own kernel extent.
+    // ceil(D / stride), `valid` covers floor((D - k_axis) / stride) + 1,
+    // and a declared custom pad covers
+    // floor((D + pad_lo + pad_hi - k_axis) / stride) + 1, each axis against
+    // its own kernel extent.
     const std::uint32_t extents[2] = {candidate.shape.input.height,
                                       candidate.shape.input.width};
     const std::uint32_t results[2] = {candidate.shape.output.height,
@@ -1671,6 +1690,17 @@ static BOOL convParityPlan(ANEGraphOperation *operation, H13ConvPlan *plan) {
         const std::uint32_t stride = static_cast<std::uint32_t>(strides[0]);
         if ([padType isEqualToString:@"same"]) {
             if (results[axis] != (extents[axis] + stride - 1) / stride) return NO;
+        } else if (declaredPads) {
+            const std::uint32_t low = static_cast<std::uint32_t>(
+                axis == 0 ? padding[0] : padding[2]);
+            const std::uint32_t high = static_cast<std::uint32_t>(
+                axis == 0 ? padding[1] : padding[3]);
+            if (low > extents[axis] || high > extents[axis])
+                return NO;
+            const std::uint32_t padded = extents[axis] + low + high;
+            if (padded < kernels[axis] ||
+                results[axis] != (padded - kernels[axis]) / stride + 1)
+                return NO;
         } else {
             if (extents[axis] < kernels[axis] ||
                 results[axis] != (extents[axis] - kernels[axis]) / stride + 1)
@@ -2775,19 +2805,20 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                  "result with a batch of one (or the encoder's rank-3 spell, "
                  "which lowers only through the W-major surface it binds as), "
                  "a constant [Cout, Cin/groups, kh, kw] weight, unit dilations, "
-                 "zero explicit padding, pad_type 'same' or 'valid', and a "
-                 "kernel, stride, group count and surface pair inside the "
-                 "oracle parity envelope. The encoder conv leftover refuses on "
-                 "named gaps: rank-3 spellings with no W-major row (the "
-                 "checked-in n2048 capture is H-major, whose surface the "
-                 "rank-3 tensor does not bind as), the bias-bearing rank-3 "
-                 "depthwise (only a no-bias depthwise respell is decoded), "
-                 "pad_type 'custom' and non-zero explicit pads (the padconv "
-                 "respell has no oracle), and surface pairs with no capture - "
-                 "the 2026-09-16 conv oracle campaign compiled uniform weight "
-                 "payloads, so no rect/strided constant-section permutation is "
-                 "readable and those forms stay refused (see "
-                 "receipts/2026-09-17-encoder-conv-lowering)",
+                 "and a kernel, stride, group count and surface pair inside "
+                 "the oracle parity envelope. Padding lowers as decoded: "
+                 "pad_type 'same' or 'valid' with zero pads, the rank-3 "
+                 "custom spell whose pads equal one of those two, and the "
+                 "rank-4 custom spell whose declared pads reproduce the "
+                 "declared output where a template row covers the surface "
+                 "pair (the W-padded rel-pos padconv k1x1 g8, pad [0,0,1,0], "
+                 "lowers as its own two-task capture). Refused on named gaps: "
+                 "rank-3 spellings with no W-major row (the checked-in n2048 "
+                 "capture is H-major, whose surface the rank-3 tensor does "
+                 "not bind as), custom pads with no covering row, and the "
+                 "stride-2 multi-tap forms whose sections carry transformed "
+                 "halfwords (see receipts/2026-09-17-encoder-padconv-respell "
+                 "and receipts/2026-09-17-encoder-conv-lowering)",
                 operation, @"h13.conv-outside-envelope");
         ane::h13::UnaryOperation unaryOperation{};
         if (unaryEncoding(name, &unaryOperation))
