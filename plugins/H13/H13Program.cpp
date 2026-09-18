@@ -2081,6 +2081,52 @@ std::vector<std::uint8_t> packConvDense(std::uint32_t reduction,
     return packed;
 }
 
+/// Apple's F1 in-projection dense section (k1x1 g1 valid, 2048 outputs over
+/// 1024 reduction, bias-free): 16 regions x 8 slots, slot (region, slotIdx)
+/// a 16-lane plane over `reduction` consecutive rows holding colgroup
+///
+///     G = 8 * (4 * (3 - region / 4) + ((region / 2) % 2) + 2 * (slot % 2))
+///         + 4 * (region % 2) + slot / 2
+///
+/// Colgroups 64 apart are invisible to any uint16 payload (e -> e + 64*1024
+/// preserves every stored halfword); this order was decoded from the
+/// 32-bit-pair remint and is byte-exact against both that capture and the
+/// round-2 uint16 capture (receipts/2026-09-17-encoder-conv-lowering).
+std::vector<std::uint8_t> packConvDenseColgroups(std::uint32_t reduction,
+                                                 std::uint32_t outputs,
+                                                 const std::uint8_t *weights) {
+    if (reduction != 1024 || outputs != 2048)
+        throw std::invalid_argument(
+            "H13 colgroup-order dense section is decoded only for the F1 "
+            "in-projection geometry (1024 -> 2048)");
+    constexpr std::uint32_t regions = 16, slots = 8, lanes = 16;
+    std::vector<std::uint8_t> packed(
+        static_cast<std::size_t>(regions) * slots * reduction * lanes * 2);
+    for (std::uint32_t region = 0; region != regions; ++region) {
+        for (std::uint32_t slot = 0; slot != slots; ++slot) {
+            const std::uint32_t block =
+                4 * (3 - region / 4) + ((region / 2) % 2) + 2 * (slot % 2);
+            const std::uint32_t colgroup =
+                8 * block + 4 * (region % 2) + slot / 2;
+            const std::size_t base =
+                (static_cast<std::size_t>(region) * slots * reduction +
+                 slot * reduction) * lanes * 2;
+            for (std::uint32_t lane = 0; lane != lanes; ++lane) {
+                const std::uint8_t *source = weights +
+                    static_cast<std::size_t>(16 * colgroup + lane) *
+                        reduction * 2;
+                std::size_t cursor = base + lane * 2;
+                for (std::uint32_t row = 0; row != reduction; ++row) {
+                    putHalfword(packed, cursor, source);
+                    cursor += lanes * 2;
+                    source += 2;
+                }
+            }
+        }
+    }
+    return packed;
+}
+
 /// Apple's depthwise section: 16 lanes, each holding `outputs / 16` channels
 /// back to back with no padding between them and the lane padded to 64 bytes.
 /// A bias precedes each channel's taps.
@@ -2309,6 +2355,10 @@ std::vector<std::uint8_t> packConvWeights(ConvShape shape,
                                  shape.output.channels / lanes / 16, lanes),
                              weights, bias, true);
     }
+    if (!bias && shape.stride == 1 && taps == 1 && reduction == 1024 &&
+        shape.output.channels == 2048)
+        return packConvDenseColgroups(reduction, shape.output.channels,
+                                      weights);
     return packConvDense(reduction, chunks, weights, bias, false);
 }
 
