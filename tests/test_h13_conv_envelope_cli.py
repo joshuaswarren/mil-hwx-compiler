@@ -69,9 +69,10 @@ def compile_source(root, name, text, expected_code=None):
 with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-conv-envelope-") as directory:
     root = Path(directory)
     # Two megabytes: the decoded out-projection row packs a [1024, 1024, 1]
-    # weight, and the blob loader checks the declared size per case.
+    # weight, and the blob loader checks the declared size per case. The
+    # bias blob covers the 1024-entry depthwise bias.
     (root / "weights.bin").write_bytes(blob(bytes(1024 * 1024 * 2)))
-    (root / "bias.bin").write_bytes(blob(bytes(256 * 2)))
+    (root / "bias.bin").write_bytes(blob(bytes(1024 * 2)))
     hit = compile_source(
         root, "k1-c256-s32",
         conv_mil([1, 256, 32, 32], [256, 256, 1, 1], [1, 256, 32, 32],
@@ -88,13 +89,20 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-conv-envelope-") as directo
                  [1], 1, [0, 0], "valid", False))
     assert hit["programs"][0]["encoder"] == "apple-parity-conv"
     assert hit["programs"][0]["taskDescriptors"] == 2
+    # The bias-bearing rank-3 depthwise lowers through the custom-to-same
+    # normalization (pad [4, 4] is exactly the same pad of a unit-stride
+    # odd kernel): one linked two-task parity program with the slotted
+    # 64-lane section.
+    hit = compile_source(
+        root, "enc-1d-dw-bias",
+        conv_mil([1, 1024, 375], [1024, 1, 9], [1, 1024, 375],
+                 [1], 1024, [4, 4], "custom", True))
+    assert hit["programs"][0]["encoder"] == "apple-parity-conv"
+    assert hit["programs"][0]["taskDescriptors"] == 2
+    # The two encoder pointwise bias1 forms ([1,256,750,32] and
+    # [1,256,375,16]) lower since the distinct-payload round qualified their
+    # rows; the parity suite byte-compiles them.
     for name, mil in (
-        ("enc-1x1-750",
-         conv_mil([1, 256, 750, 32], [256, 256, 1, 1], [1, 256, 750, 32],
-                  [1, 1], 1, [0, 0, 0, 0], "valid", True)),
-        ("enc-1x1-375",
-         conv_mil([1, 256, 375, 16], [256, 256, 1, 1], [1, 256, 375, 16],
-                  [1, 1], 1, [0, 0, 0, 0], "valid", True)),
         ("enc-subsample",
          conv_mil([1, 1, 3000, 128], [256, 1, 3, 3], [1, 256, 1500, 64],
                   [2, 2], 1, [1, 1, 1, 1], "custom", True)),
@@ -112,11 +120,6 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-conv-envelope-") as directo
         ("enc-1d-pw",
          conv_mil([1, 1024, 375], [2048, 1024, 1], [1, 2048, 375],
                   [1], 1, [0, 0], "valid", False)),
-        # The bias-bearing rank-3 depthwise: only a no-bias depthwise
-        # respell is decoded, and the custom pad spells no row either.
-        ("enc-1d-dw",
-         conv_mil([1, 1024, 375], [1024, 1, 9], [1, 1024, 375],
-                  [1], 1024, [4, 4], "custom", True)),
         ("k3-st2-square",
          conv_mil([1, 64, 16, 16], [64, 64, 3, 3], [1, 64, 8, 8],
                   [2, 2], 1, [0, 0, 0, 0], "same", False)),

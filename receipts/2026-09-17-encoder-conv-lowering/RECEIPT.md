@@ -1,119 +1,91 @@
-# Encoder conv leftover: covered lowerings land, the rest refuse by name (2026-09-17)
+# Encoder conv leftover round 2: distinct-payload remint, depthwise and
+# pointwise forms lower (2026-09-17)
 
-Branch `agent/slice-lastdim-lowering` (own worktree off f5cd370). Host-only:
-no ANE execution, no jwm1/jw16 contact, no pin change, no performance-parity
-claim.
+Continuation of `receipts/2026-09-17-encoder-conv-lowering/RECEIPT.md` (same
+worktree, `agent/slice-lastdim-lowering`). Host-only: the only remote contact
+was the oracle compile on `macstudio` over BatchMode SSH, same binary as
+round 1 (`/tmp/h13-oracle/bin/ane-compile-hwx`, sha256 `3d13fc85c2a6baa0…`,
+52,336 B — byte-identical to the receipted round-1 tool). No jwm1/jw16, no
+ANE execution, no pin change.
 
-## What the leftover is
+## What changed since round 1
 
-The Parakeet encoder MIL
-(`mlx-omarchy/receipts/2026-09-14-encoder-leftover/model-fp16-allpeels.mil`)
-carries **101 convs in 9 distinct forms** (re-census this session, lines
-resolved per op). This was the last whole family still refusing H13 with
-`h13.conv-outside-envelope` after transpose (bfa4aed) and slice (f5cd370).
+`receipts/2026-09-17-encoder-conv-lowering/mint_encoder_conv_idx.py` re-minted
+12 cases on the round-1 tool with the **per-element distinct payload**
+(`uint16(index+1)` wrapping, `pattern: uint16_le_index_plus_one_wrapping`,
+one running payload across both blob regions) — the permutation evidence the
+uniform captures could not carry. Main's guard was applied quantitatively
+before any derivation: every capture's section must contain at least half the
+expected distinct values; **all 12 passed** (e.g. the k1x9 depthwise section
+holds 10,241 distinct halfwords = 9,216 taps + 1,024 biases + wrap, the dense
+n2048 section 65,536 per window × 32 windows).
 
-## The decisive oracle fact
+## Covered vs refused (the nine forms, after round 2)
 
-The 12 checked-in conv captures
-(`receipts/2026-09-16-compiler-leftover/oracles-round1/encoder_conv_*.json`,
-all rank-4 same/valid respells) were minted with the `weight_blob` payload:
-**one uniform fp16 halfword per constant region** (`0x3400` + ordinal). The
-section histograms prove every weight element compiled to the same bits
-(e.g. the 2 MB k1x1 section is 1,048,576 copies of `0x3400`), so **no
-constant-section permutation is readable from any of them**. What each
-record still qualifies: Apple's exact task stream (linked task arrays,
-kernel/stride/DMA geometry) and the section's shape (size, zero structure,
-bias placement) against the packing formulas the distinct-payload probe
-corpus already qualified (`conv_probe_*` / `conv_known_*`, bit-plane
-payloads).
+| # | encoder form (spelled) | n | verdict |
+|---|---|---:|---|
+| F3 | r3 out-proj k1x1 valid g1 nobias `[1,1024,375]` | 24 | **LOWERED** (round 1): W-major respell, 2-task program |
+| F2 | r3 depthwise k9 g1024 **bias1** custom `[4,4]` | 24 | **LOWERED** (round 2): custom→same normalization (pad [4,4] is exactly the same pad of a unit-stride odd 9-tap kernel), W-major k1x9 respell `[1,1024,1,375]`, one linked 2-task slotted program |
+| F7 | r4 pointwise k1x1 valid bias1 `[1,256,750,32]` | 1 | **LOWERED** (round 2): `pack_dense` with the bias row reproduces the distinct-payload section byte-exactly — round 1's 131,072 B uniform section was Apple constant-dedup on colliding values, not a missing bias row |
+| F9 | r4 pointwise k1x1 valid bias1 `[1,256,375,16]` | 1 | **LOWERED** (round 2), same formula |
+| F1 | r3 in-proj k1x1 valid g1 nobias `[1,1024,375]→[1,2048,375]` | 24 | **refused — payload-width aliasing bound**: the capture shows 16-lane planes with 256-row segments (rowblock order fully decoded, bias-free) but the column-supergroup order aliases mod 64: a 16-bit payload cannot distinguish colgroups 64 apart (`e → e + 64·1024` preserves every stored halfword), so no capture of this geometry can qualify the packer for columns ≥ 128. Row 1's `k9x1`-class section (20480 B) also reproduced under `pack_depthwise` + bias — the H-major row landed as a decoded row with no encoder consumer. |
+| F4 | r4 padconv k1x1 g8 pad `[0,0,1,0]` custom | 24 | **refused — no pad rewrite**: the W-padded `[1,8,375,750]` surface section now reproduces (`pack_dense` grouped) and the row landed, but the encoder's 749-wide input needs an explicit pad column at W=0, which no decoded surface interpretation expresses; needs a pad-op emission or planner rewrite |
+| F5 | r4 stem k3 s2 g1 bias1 custom=`same` | 1 | **refused — strided multi-tap transform**: the distinct-payload section carries 1,139 halfwords outside the weight/bias value ranges (negation/rescale-class transforms inside Apple's stride-2 macro), not a permutation; not decoded |
+| F6 | r4 stem-dw k3 s2 g256 bias1 custom=`same` | 1 | refused — same strided transform |
+| F8 | r4 stem-dw k3 s2 g256 `[1,256,750,32]→[1,256,375,16]` | 1 | refused — same strided transform (this surface pair now captured) |
 
-## Covered vs refused (the nine forms)
+**Covered: 50 of 101 instances** (F3 24, F2 24, F7 1, F9 1). Refused: 51,
+every refusal carrying a named, evidence-backed gap.
 
-| # | encoder form (spelled) | n | respelled geometry | oracle record | verdict |
-|---|---|---:|---|---|---|
-| F3 | r3 `[1,1024,375]→[1,1024,375]` k1 valid g1 nobias (out-proj) | 24 | W-major `[1,1024,1,375]` | `encoder_conv_c1024_n1024_k1x1_s1_g1_bias0_valid` (2 tasks) | **LOWERED** |
-| F1 | r3 `[1,1024,375]→[1,2048,375]` k1 valid g1 nobias (in-proj) | 24 | W-major `[1,1024,1,375]→[1,2048,1,375]` | none survives — the checked-in n2048 capture is **H-major** `[1,1024,375,1]` (6 tasks), whose input surface the rank-3 tensor does not bind as | **refused** (`h13.conv-outside-envelope`, named) |
-| F2 | r3 `[1,1024,375]` k9 g1024 **bias** custom `[4,4]` (depthwise) | 24 | W-major k1x9 | only `k9x1` bias0 decoded; the `k1x9` capture's section (40,960 B = 9,216 weights + 2,048 zero bytes) has unmodeled structure; bias1 never minted | **refused** |
-| F4 | r4 `[1,8,375,749]→[1,8,375,750]` k1x1 s1 g8 pad `[0,0,1,0]` custom (rel-pos padconv) | 24 | pad-then-valid respell `[1,8,375,750]` | no record at that surface (the round-2 capture was overwritten by the round-3 `[1,8,8,8]` control under the same case name) | **refused** |
-| F5 | r4 `[1,1,3000,128]→[1,256,1500,64]` k3 s2 g1 bias1 custom=`same` (stem) | 1 | same | `encoder_conv_c1_n256_k3x3_s2_g1_bias1_same` decoded, but its 6,144 B section does not reproduce (`pack_strided` is k1-only; multi-tap stride-2 layout unmodeled) | **refused** |
-| F6 | r4 `[1,256,1500,64]→[1,256,750,32]` k3 s2 g256 bias1 custom=`same` (stem dw) | 1 | same | `encoder_conv_c256_n256_k3x3_s2_g256_bias1_same` decoded, section 7,168 B unmodeled | **refused** |
-| F7 | r4 `[1,256,750,32]` k1x1 s1 g1 bias1 valid (pointwise) | 1 | — | `encoder_conv_c256_n256_k1x1_s1_g1_bias1_valid` decoded, but its section is 65,536 halves = **weights only**; the 256-half bias is absent and its placement is unresolved | **refused** |
-| F8 | r4 `[1,256,750,32]→[1,256,375,16]` k3 s2 g256 bias1 custom (stem dw) | 1 | same | no record at this surface pair (round-2 case deduped by name before submission) | **refused** |
-| F9 | r4 `[1,256,375,16]` k1x1 s1 g1 bias1 valid | 1 | — | no record (same dedupe) | **refused** |
+## Table and code deltas
 
-**Covered: 24 of 101 instances (F3).** Refused: 77 instances across 8 forms,
-every refusal carrying its named gap.
+- `research/oracles/h13/`: +6 round-2 records (k1x9-bias1 W-major, k9x1-bias1
+  H-major, pw375, pw750, pad-surface g8, tiny-g8) on top of round 1's three.
+- `research/mint_conv_probes.py`: `case_weights` parses the
+  `uint16_le_index_plus_one_wrapping` pattern; `pack_depthwise_slots` — the
+  decoded 64-lane × 22-halfword slot layout (`b b t0 . t2 t1 t4 t3 t6 t5 t8
+  t7 t1 t0 t3 t2 t5 t4 t7 t6 . t8` per slot, slot s ↔ channel
+  `16·(s mod 64) + s div 64`) — dispatched for W-major depthwise-with-bias;
+  `MULTI_TASK_CASES` gains the k1x9 record.
+- `plugins/H13`: `packConvDepthwiseSlots` (C++ mirror of the slot formula);
+  `packConvWeights` dispatches W-major depthwise-with-bias to it;
+  `convParityPlan` normalizes the rank-3 custom spelling to `valid` (zero
+  pads) or `same` (symmetric `(k-1)/2`, unit stride, odd kernel) — the only
+  custom form any oracle qualifies; the conv reject message updates.
+- `tests`: encoding asserts extended (new rows supported, rect-flip and
+  strided forms refused); conv envelope CLI gains the F2 positive case (2
+  task descriptors) and drops it from the refusal set.
 
-## What landed
+## Verification (this host + the macstudio oracle compile)
 
-- `research/oracles/h13/`: +3 records — F3 (above), F1's H-major capture
-  `encoder_conv_c1024_n2048_k1x1_s1_g1_bias0_valid` (6-task row, rank-4
-  geometry — no encoder consumer but a decoded row), and the rect key
-  `encoder_conv_c1024_n1024_k9x1_s1_g1024_bias0_same` (1-task 9x1 row — the
-  "rect keys not in table" item; the encoder's bias-bearing depthwise still
-  refuses on the bias flag).
-- `research/mint_conv_probes.py`:
-  - `case_weights` parses the `weight_blob` payload ("fp16 bits 0x3400 +
-    index, one value per constant" = per-constant uniform regions, no inline
-    blob header). The description's sha256 records what the mint generated;
-    the constant-section comparison in `covered()` adjudicates what actually
-    compiled — fail-closed either way.
-  - `weight_taps` + rect-aware `conv_constants`/`template_key`/`conv_row`:
-    keys are now `(kh, kw, stride, groups, bias, in, out)`.
-  - `covered(record, allow_multi_task=False)` + `MULTI_TASK_CASES`: only the
-    two named encoder captures may carry linked task arrays; every other
-    multi-task conv capture (the k3 stride-2 corpus) stays outside the
-    tables. `stream_words` rebuilds linked streams with their alignment
-    padding (matvec-emitter semantics).
-- `plugins/H13`: `ConvShape`/`OracleConvTemplate` gain `kernelWidth`;
-  `convParityPlan` accepts rectangular kernels (per-axis extent checks
-  against the axis's own kernel extent) and the encoder's rank-3 spell
-  (rank-2 `[p0,p1]` pad, rank-1 stride/dilation vectors — including their
-  bare-scalar `tensor<int32,[1]>(1)` spelling — respelled onto the W-major
-  surface the rank-3 tensor binds as). `packConvWeights` and the lowering
-  site use `kh·kw` taps. The conv reject message names the encoder gaps.
-- `plugins/H14`: same `kernelWidth` plumbing so the regenerated
-  `H14ConvTemplates.inc` row format parses (H14 gate stays square-only).
-- `tests/test_h13_encoding.cpp`: conv envelope asserts moved to the
-  `(kh, kw, …)` contract; the three new rows assert supported, the rect
-  flip (`1x9` on the 9x1 surface) and the bias-bearing depthwise assert
-  refused.
-- `tests/test_h13_conv_envelope_cli.py`: F3's rank-3 spell compiles as one
-  `apple-parity-conv` program with 2 task descriptors; F6/F8 refusals added
-  to the existing nine-form refusal set.
-- `tests/test_h13_parity.py`: `conv_covered` passes the same multi-task
-  opt-in, so the three new records join the parity set (a first run with the
-  gate unpatched silently selected only the 1-task record — the suite's
-  family assert is self-derived and would not have caught it).
-- `Makefile`: `test-h13` now runs `mint_conv_probes.py --check` so the
-  committed conv tables cannot drift from the oracle set.
+- F2 word-exactness: the rank-3 custom-padded depthwise+bias spell compiled
+  against the capture's exact blob; `parity.assert_tasks` +
+  `parity.assert_constants` pass — byte-identical to
+  `encoder_conv_idx_c1024_n1024_k1x9_s1_g1024_bias1_same_wmaj`.
+- `make test-h13` PASS (full battery incl. `mint_conv_probes --check`).
+- `make test-h13-parity`: the round-2 records run as parity cases (anec +
+  hwx, byte-compared); suite total 882 → **888 cases / 1776 artifacts**,
+  293 convolution.
 
-## Verification (this host, no device)
+## Bounds discovered (for the record)
 
-- F3 word-exactness: the rank-3 encoder spell compiled with the oracle's
-  exact payload; `parity.assert_tasks` + `parity.assert_constants` pass —
-  task stream and constant section byte-identical to
-  `encoder_conv_c1024_n1024_k1x1_s1_g1_bias0_valid`.
-- `make test-h13` PASS (full battery, this worktree).
-- `make test-h13-parity`: the three new records run as parity cases (anec +
-  hwx, byte-compared against the decoded streams); suite total 879 → **882
-  cases / 1764 artifacts**.
+1. **16-bit payload aliasing**: a uint16 payload cannot qualify dense
+   colgroup order beyond 64 columns (`e → e + 64·1024` is value-invariant).
+   Dense geometries above 64 output columns need either the consecutive
+   order to be the true one (as at n=256, where pack_dense matched
+   exactly and no other order could have) or device measurement, as for the
+   linear plane permutation.
+2. **Strided multi-tap sections are transforms, not permutations**: the
+   k3-stride-2 sections embed computed halfwords — a micro-architecture
+   decode, not a packing read-off.
+3. Apple constant-dedup: the uniform captures' sections can be SMALLER than
+   the true layout when payload values collide; section-shape arguments on
+   uniform captures are unsound (round 1's F7 "missing bias" was this).
 
-## What the next mint round needs (all host work on the oracle Mac)
+## What remains for a round 3
 
-1. Re-mint F1 W-major (`(1,1024,1,375)→(1,2048,1,375)` k1x1 valid), F2 bias1
-   W-major k1x9, F4's `[1,8,375,750]` padconv surface, F7's bias1 pointwise,
-   F8/F9's `[1,256,375,16]` pair — with **per-element distinct payloads**
-   (the `uint16_le_index_plus_one_wrapping` pattern) so the packings
-   qualify.
-2. Derive the multi-tap stride-2 section layout (F5/F6) and F7's bias
-   placement from those captures; the k1x9 depthwise section's 2 KB zero
-   structure likewise.
-
-## Commit pins
-
-| item | value |
-| --- | --- |
-| base | mil-hwx-compiler `f5cd370` (`agent/slice-lastdim-lowering`) |
-| oracle records | `receipts/2026-09-16-compiler-leftover/oracles-round1` (unchanged) |
-| compiler source | this worktree at the commit carrying this receipt |
+- F1 (24): decide the colgroup order by device measurement (jw16-class
+  gate), or find a payload scheme that breaks the 64-column aliasing.
+- F4 (24): a pad-op emission (or planner rewrite) feeding the qualified
+  padconv row.
+- F5/F6/F8 (3): decode the stride-2 transform semantics.

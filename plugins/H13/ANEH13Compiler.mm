@@ -1596,7 +1596,9 @@ static BOOL convParityPlan(ANEGraphOperation *operation, H13ConvPlan *plan) {
             operation.results[0].type.shape[2].unsignedIntValue};
         if (!candidate.shape.input.channels || !candidate.shape.input.width ||
             !candidate.shape.output.channels ||
-            !candidate.shape.output.width) return NO;
+            !candidate.shape.output.width) {
+        return NO;
+    }
     } else if (x.type.shape.count == 4) {
         if (weight.type.shape.count != 4 ||
             operation.results[0].type.shape.count != 4 ||
@@ -1615,8 +1617,31 @@ static BOOL convParityPlan(ANEGraphOperation *operation, H13ConvPlan *plan) {
         !int32Vector(operation.operands[@"dilations"].value, strideCount, dilations) ||
         !int32Vector(operation.operands[@"pad"].value, padCount, padding) ||
         !int32Scalar(operation.operands[@"groups"].value, &groups)) return NO;
-    if (![padType isEqualToString:@"same"] && ![padType isEqualToString:@"valid"])
-        return NO;
+    const std::uint32_t kernelExtent = weight.type.shape[2].unsignedIntValue;
+    const std::uint32_t kernel = rank3 ? 1 : kernelExtent;
+    const std::uint32_t kernelWidth = rank3 ? kernelExtent
+        : weight.type.shape[3].unsignedIntValue;
+    if (!kernel || !kernelWidth) return NO;
+    BOOL normalizedCustom = NO;
+    if (![padType isEqualToString:@"same"] && ![padType isEqualToString:@"valid"]) {
+        // Apple's own tool refuses the custom spelling, so the decoded
+        // corpus carries only the same/valid respells. Accept the encoder's
+        // rank-3 custom spelling when its pads are exactly what one of
+        // those two spells: zeros for `valid`, or the symmetric
+        // (kernel - 1) / 2 of a unit-stride odd kernel for `same`.
+        if (!rank3 || strides[0] != 1 || kernelExtent % 2 == 0) {
+            return NO;
+        }
+        const long long half = (kernelExtent - 1) / 2;
+        if (padding[0] == 0 && padding[1] == 0) {
+            padType = @"valid";
+        } else if (padding[0] == half && padding[1] == half) {
+            padType = @"same";
+        } else {
+            return NO;
+        }
+        normalizedCustom = YES;
+    }
     if (rank3) {
         // One spatial axis: both respelled axes run the same stride and
         // unit dilation.
@@ -1625,13 +1650,9 @@ static BOOL convParityPlan(ANEGraphOperation *operation, H13ConvPlan *plan) {
     }
     if (strides[0] != strides[1] || dilations[0] != 1 || dilations[1] != 1 ||
         strides[0] < 1 || groups < 1) return NO;
-    for (NSUInteger index = 0; index < padCount; ++index)
-        if (padding[index]) return NO;
-    const std::uint32_t kernel = weight.type.shape[2].unsignedIntValue;
-    const std::uint32_t kernelWidth = rank3
-        ? kernel
-        : weight.type.shape[3].unsignedIntValue;
-    if (!kernel || !kernelWidth) return NO;
+    if (!normalizedCustom)
+        for (NSUInteger index = 0; index < padCount; ++index)
+            if (padding[index]) return NO;
     if (weight.type.shape[0].unsignedIntValue != candidate.shape.output.channels)
         return NO;
     if (!candidate.shape.input.channels ||
@@ -1664,7 +1685,9 @@ static BOOL convParityPlan(ANEGraphOperation *operation, H13ConvPlan *plan) {
     if (bias && (!fp16Tensor(bias) || bias.type.shape.count != 1 ||
                  bias.type.shape[0].unsignedIntValue !=
                      candidate.shape.output.channels)) return NO;
-    if (!ane::h13::supportsConvParity(candidate.shape)) return NO;
+    if (!ane::h13::supportsConvParity(candidate.shape)) {
+        return NO;
+    }
     *plan = candidate;
     return YES;
 }

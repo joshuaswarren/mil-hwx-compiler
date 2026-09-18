@@ -347,6 +347,44 @@ def pack_dense(reduction: int, outputs: int, chunks: list[int],
     return bytes(packed)
 
 
+def pack_depthwise_slots(taps: int, outputs: int, weights: bytes,
+                         bias: bytes | None) -> bytes:
+    """The captured W-major depthwise section (k1x9 same, bias present).
+
+    64 lanes x `outputs / 64` slots; slot s carries channel
+    ``16 * (s % 64) + s // 64`` as 22 halfwords: the bias twice, then the
+    nine taps in the decoded two-pass lane pairing with two structural
+    zeros — ``b b t0 . t2 t1 t4 t3 t6 t5 t8 t7 t1 t0 t3 t2 t5 t4 t7 t6 . t8``.
+    Verified against encoder_conv_idx_c1024_n1024_k1x9_s1_g1024_bias1_same_wmaj.
+    """
+    if taps != 9 or bias is None:
+        raise ValueError("the slotted depthwise capture is k1x9 with a bias")
+    lanes = 64
+    slots = outputs // lanes
+    slot_halves = len(_SLOT_ORDER)
+    if slots * lanes != outputs:
+        raise ValueError("the slotted depthwise capture packs 64-lane groups")
+    packed = bytearray(slots * lanes * slot_halves * 2)
+    halfs = memoryview(packed).cast("H")
+    for s in range(lanes * slots):
+        column = 16 * (s % lanes) + s // lanes
+        bias_word = struct.unpack_from("<H", bias, column * 2)[0]
+        base = s * slot_halves
+        halfs[base] = bias_word
+        halfs[base + 1] = bias_word
+        for offset, k in enumerate(_SLOT_ORDER):
+            if k is not None:
+                halfs[base + offset] = struct.unpack_from(
+                    "<H", weights, (column * taps + k) * 2)[0]
+    return bytes(packed)
+
+
+# The decoded slot template: None marks a structural zero, numbers name the
+# channel's tap index within the 9-tap kernel.
+_SLOT_ORDER = [None, None, 0, None, 2, 1, 4, 3, 6, 5, 8, 7,
+               1, 0, 3, 2, 5, 4, 7, 6, None, 8]
+
+
 def pack_depthwise(taps: int, outputs: int, weights: bytes,
                    bias: bytes | None) -> bytes:
     """Apple's depthwise section: 16 lanes, each holding `outputs / 16`
@@ -442,7 +480,16 @@ def conv_constants(parameters: dict[str, Any], weights: bytes,
     taps = weight_taps(parameters)
     reduction = (inputs // groups) * taps
     if groups == inputs and groups == outputs:
-        section = pack_depthwise(taps, outputs, weights, bias)
+        weight_shape = parameters.get("weight_shape")
+        if bias is not None and taps > 1 and weight_shape and \
+                len(weight_shape) == 4 and weight_shape[2] == 1 and \
+                weight_shape[3] == taps:
+            # The W-major depthwise respell (unit height kernel) records a
+            # 64-lane slotted section with a duplicated bias; the square and
+            # H-major captures keep the classic per-channel lane form.
+            section = pack_depthwise_slots(taps, outputs, weights, bias)
+        else:
+            section = pack_depthwise(taps, outputs, weights, bias)
     elif parameters["stride"] > 1:
         chunks = lane_chunks(outputs, lane_cap(parameters["spatial"]))
         if groups != 1 or taps != 1 or max(chunks) > 8:
@@ -479,6 +526,20 @@ def blob_view(payload: bytes, elements: int) -> bytes:
     return om.blob(payload)[:elements * 2]
 
 
+def _split_payload(parameters: dict[str, Any],
+                   flat: bytes) -> tuple[bytes, bytes | None]:
+    """Region 0 is the weight, region 1 the bias when the case carries one."""
+    outputs = parameters["output_channels"]
+    taps = weight_taps(parameters)
+    weight_elements = outputs * \
+        (parameters["input_channels"] // parameters["groups"]) * taps
+    weights = flat[:weight_elements * 2]
+    bias = flat[weight_elements * 2:
+                (weight_elements + outputs) * 2] \
+        if parameters["bias"] else None
+    return weights, bias
+
+
 def case_weights(record: dict[str, Any]) -> tuple[bytes, bytes | None]:
     """The weight and bias bytes the recorded case compiled against."""
     parameters = record["parameters"]
@@ -502,14 +563,24 @@ def case_weights(record: dict[str, Any]) -> tuple[bytes, bytes | None]:
             raise ValueError(
                 f"{record['case']} payload regions cover {len(flat)} bytes, "
                 f"the description records {elements * 2}")
-        taps = weight_taps(parameters)
-        weight_elements = outputs * \
-            (parameters["input_channels"] // parameters["groups"]) * taps
-        weights = flat[:weight_elements * 2]
-        bias = flat[weight_elements * 2:
-                    (weight_elements + outputs) * 2] \
-            if parameters["bias"] else None
-        return weights, bias
+        return _split_payload(parameters, flat)
+    if description.get("pattern") == "uint16_le_index_plus_one_wrapping":
+        # The round-4 remint: one distinct uint16(index + 1) running payload
+        # spanning every constant region, no inline header — the packing
+        # permutation is fully visible in the recorded section.
+        flat = bytearray()
+        value = 0
+        for shape in description["shapes"]:
+            count = math.prod(shape)
+            flat += struct.pack(
+                f"<{count}H", *[(value + index + 1) & 0xFFFF
+                                for index in range(count)])
+            value += count
+        if len(flat) != elements * 2:
+            raise ValueError(
+                f"{record['case']} payload regions cover {len(flat)} bytes, "
+                f"the description records {elements * 2}")
+        return _split_payload(parameters, bytes(flat))
     payload = known_weights(elements) if description["value"] == "distinct" \
         else om.half_payload(elements)
     resolved = blob_view(payload, elements)
@@ -697,6 +768,7 @@ def template_key(record: dict[str, Any]) -> tuple:
 MULTI_TASK_CASES = frozenset({
     "encoder_conv_c1024_n1024_k1x1_s1_g1_bias0_valid",
     "encoder_conv_c1024_n2048_k1x1_s1_g1_bias0_valid",
+    "encoder_conv_idx_c1024_n1024_k1x9_s1_g1024_bias1_same_wmaj",
 })
 
 

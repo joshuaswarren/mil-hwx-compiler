@@ -2170,6 +2170,52 @@ std::vector<std::uint8_t> packConvStrided(std::uint32_t reduction,
 
 bool supportsConvParity(ConvShape shape) { return convTemplate(shape); }
 
+/// The captured W-major depthwise section (k1x9 `same`, bias present): 64
+/// lanes x `outputs / 64` slots, slot `s` carrying channel
+/// `16 * (s % 64) + s / 64` as 22 halfwords — the bias twice, then the nine
+/// taps in the decoded two-pass lane pairing with two structural zeros.
+/// Verified against
+/// encoder_conv_idx_c1024_n1024_k1x9_s1_g1024_bias1_same_wmaj.
+std::vector<std::uint8_t> packConvDepthwiseSlots(std::uint32_t taps,
+                                                 std::uint32_t outputs,
+                                                 const std::uint8_t *weights,
+                                                 const std::uint8_t *bias) {
+    constexpr std::uint32_t lanes = 64;
+    constexpr std::size_t slotHalves = 22;
+    static const int order[slotHalves] = {-1, -1, 0, -1, 2, 1, 4, 3, 6, 5, 8, 7,
+                                          1, 0, 3, 2, 5, 4, 7, 6, -1, 8};
+    if (taps != 9)
+        throw std::invalid_argument(
+            "H13 slotted depthwise section is decoded only for the 9-tap "
+            "kernel");
+    const std::uint32_t slots = outputs / lanes;
+    if (slots * lanes != outputs)
+        throw std::invalid_argument(
+            "H13 slotted depthwise section packs 64-lane channel groups");
+    std::vector<std::uint8_t> packed(slots * lanes * slotHalves * 2);
+    auto *halfs = reinterpret_cast<std::uint16_t *>(packed.data());
+    for (std::uint32_t slot = 0; slot < slots * lanes; ++slot) {
+        const std::uint32_t column =
+            16 * (slot % lanes) + slot / lanes;
+        const auto biasWord = static_cast<std::uint16_t>(
+            bias[2 * column] | (bias[2 * column + 1] << 8));
+        const std::size_t base = slot * slotHalves;
+        halfs[base] = biasWord;
+        halfs[base + 1] = biasWord;
+        for (std::size_t offset = 0; offset < slotHalves; ++offset) {
+            const int tap = order[offset];
+            if (tap < 0) continue;
+            std::uint16_t word = 0;
+            std::memcpy(&word,
+                        weights + (static_cast<std::size_t>(column) * taps +
+                                   tap) * 2,
+                        2);
+            halfs[base + offset] = word;
+        }
+    }
+    return packed;
+}
+
 std::vector<std::uint8_t> packConvWeights(ConvShape shape,
                                           const std::uint8_t *weights,
                                           std::size_t weightBytes,
@@ -2190,8 +2236,13 @@ std::vector<std::uint8_t> packConvWeights(ConvShape shape,
         throw std::invalid_argument(
             "H13 convolution bias must hold one fp16 value per output channel");
     if (shape.groups == shape.input.channels &&
-        shape.groups == shape.output.channels)
+        shape.groups == shape.output.channels) {
+        if (bias && shape.kernel == 1 && shape.kernelWidth > 1)
+            return packConvDepthwiseSlots(shape.kernelWidth,
+                                          shape.output.channels, weights,
+                                          bias);
         return packConvDepthwise(taps, shape.output.channels, weights, bias);
+    }
     const auto chunks = laneChunks(shape.output.channels, laneCap(shape.input));
     if (shape.stride > 1) {
         if (shape.groups != 1 || taps != 1 ||
