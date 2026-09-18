@@ -17,11 +17,14 @@ W pad is LEFT).
 
 Run on jw16 under /tmp/m1-gpu.lock.
 """
-import ctypes, subprocess, sys, hashlib, struct, json
+import ctypes, os, subprocess, sys, hashlib, struct, json
 from pathlib import Path
 import numpy as np
 
-COMPILER = "/home/joshuawarren/src/mil-hwx-compiler-504a1e4/build/mil-hwxc"
+# The baseline gate ran the 504a1e4 build; a fix branch points MHWC at its
+# own build so the same script re-gates the changed compiler in place.
+COMPILER = os.environ.get("MHWC",
+                          "/home/joshuawarren/src/mil-hwx-compiler-504a1e4/build/mil-hwxc")
 LIB = "/var/tmp/jw16-oproj-place/libane-strict-fill.so"
 ENV = {"LD_LIBRARY_PATH": "/home/joshuawarren/.local/mil-hwx-gnustep/lib",
        "PATH": "/usr/bin:/bin", "HOME": "/home/joshuawarren"}
