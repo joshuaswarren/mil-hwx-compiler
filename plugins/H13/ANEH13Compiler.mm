@@ -540,6 +540,57 @@ static BOOL transposeParityShapes(ANEGraphOperation *operation,
     return ane::h13::supportsTransposeParity(*inputShape, *outputShape);
 }
 
+/// Whether the decoded corpus lowers this slice_by_index as one 1-task
+/// program: a rank-4 [1, C, H, W] fp16 input whose only sliced axis is the
+/// last one, from element 0, with every earlier axis full, unit strides, and
+/// the Apple-normalized elementwise triples of both sides covered by a table
+/// row — the rel-pos windowing spell.
+static BOOL sliceParityShapes(ANEGraphOperation *operation,
+                              ANEGraphValue *input, ANEGraphValue *result,
+                              ane::h13::ElementwiseShape *inputShape,
+                              ane::h13::ElementwiseShape *outputShape) {
+    if (!input || !result || !fp16Tensor(input) ||
+        input.type.shape.count != 4 ||
+        result.type.shape.count != 4 ||
+        [input.type.shape[0] unsignedIntegerValue] != 1 ||
+        [result.type.shape[0] unsignedIntegerValue] != 1)
+        return NO;
+    NSArray<NSNumber *> *begin =
+        int32TensorElements(operation.operands[@"begin"].value);
+    NSArray<NSNumber *> *end =
+        int32TensorElements(operation.operands[@"end"].value);
+    if (!begin || !end || begin.count != 4 || end.count != 4)
+        return NO;
+    for (NSString *key in @[@"stride", @"mask", @"squeeze_mask"])
+        if (operation.operands[key].value) return NO;
+    NSArray<NSNumber *> *endMask =
+        boolTensorElements(operation.operands[@"end_mask"].value);
+    NSArray<NSNumber *> *beginMask =
+        boolTensorElements(operation.operands[@"begin_mask"].value);
+    if (beginMask) return NO;
+    for (NSUInteger index = 0; index < 4; ++index) {
+        const long long extent = input.type.shape[index].longLongValue;
+        long long lower = begin[index].longLongValue;
+        long long upper = endMask && endMask[index].boolValue
+            ? extent : end[index].longLongValue;
+        if (lower < 0) lower += extent;
+        if (upper < 0) upper += extent;
+        if (lower != 0) return NO;
+        if (upper == extent) continue;
+        if (index != 3) return NO;
+    }
+    inputShape->channels = [input.type.shape[1] unsignedIntegerValue];
+    inputShape->height = [input.type.shape[2] unsignedIntegerValue];
+    inputShape->width = [input.type.shape[3] unsignedIntegerValue];
+    outputShape->channels = [result.type.shape[1] unsignedIntegerValue];
+    outputShape->height = [result.type.shape[2] unsignedIntegerValue];
+    outputShape->width = [result.type.shape[3] unsignedIntegerValue];
+    if (outputShape->channels != inputShape->channels ||
+        outputShape->height != inputShape->height)
+        return NO;
+    return ane::h13::supportsSliceParity(*inputShape, *outputShape);
+}
+
 /// A contiguous slice_by_index lowers as one offset view of its storage:
 /// unit strides, at most one sliced dimension, unit dimensions before it,
 /// and end_mask/begin_mask/negative bounds resolved to literal ranges.
@@ -1877,6 +1928,21 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         return YES;
     }
 
+    if ([name isEqualToString:@"slice_by_index"]) {
+        ane::h13::ElementwiseShape sliceIn{}, sliceOut{};
+        if (!sliceParityShapes(operation, x, operation.results[0],
+                               &sliceIn, &sliceOut))
+            return reject(diagnostics,
+                @"H13 slice_by_index has no decoded 1-task program for this surface pair",
+                operation, @"h13.noncontiguous-slice");
+        program = ane::h13::encodeSliceParity(sliceIn, sliceOut);
+        *inputsOut = @[x];
+        *constantInputOut = nil;
+        *constantDataOut = nil;
+        *manifestOperationOut = name;
+        return YES;
+    }
+
     H13NormPlan normalization{};
     if (normParityPlan(operation, &normalization)) {
         program = ane::h13::encodeNormParity(normalization.operation,
@@ -3013,6 +3079,24 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             continue;
         }
         if ([name isEqualToString:@"slice_by_index"]) {
+            // A decoded 1-task slice program materializes the narrowed
+            // surface as one whole-op stream; constant storage stays on the
+            // view path, whose refusals name the exact blocker.
+            ane::h13::ElementwiseShape sliceIn{}, sliceOut{};
+            if (!constantBackedView(candidate.operands[@"x"].value) &&
+                sliceParityShapes(candidate, x, candidate.results[0],
+                                  &sliceIn, &sliceOut)) {
+                ANEGraphValue *result = [[ANEGraphValue alloc]
+                    initWithName:candidate.results[0].name
+                    type:candidate.results[0].type];
+                [operations addObject:[[ANEGraphOperation alloc]
+                    initWithOperationName:name results:@[result]
+                    arguments:arguments attributes:candidate.attributes
+                    range:candidate.range]];
+                [manifestValues addObject:result];
+                [loweredValues setObject:result forKey:candidate.results[0]];
+                continue;
+            }
             H13SliceViewPlan plan{};
             if (!sliceByIndexViewPlan(candidate, diagnostics, &plan)) return NO;
             if (constantBackedView(candidate.operands[@"x"].value))
@@ -3708,6 +3792,11 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 [operation.operationName isEqualToString:@"transpose"] &&
                 transposeParityShapes(operation, operation.operands[@"x"].value,
                     operation.results[0], &transposeIn, &transposeOut);
+            ane::h13::ElementwiseShape sliceIn{}, sliceOut{};
+            BOOL sliceParity =
+                [operation.operationName isEqualToString:@"slice_by_index"] &&
+                sliceParityShapes(operation, operation.operands[@"x"].value,
+                    operation.results[0], &sliceIn, &sliceOut);
             if (tiled) {
                 // The tile program reads its whole input surface and writes
                 // its whole output surface in one program, so both slice
@@ -3744,7 +3833,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                             inputPhysicalElements = outputPhysicalElements =
                                 elements;
                 }
-            } else if (linearParity || ffnChain || transposeParity) {
+            } else if (linearParity || ffnChain || transposeParity ||
+                       sliceParity) {
                 // Whole-tensor programs: one input slice and one output
                 // slice covering the rank-3 surfaces.
                 NSUInteger xElements = 1;
@@ -3880,11 +3970,11 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 } else if (parity || broadcast || normalization || convolution) {
                     outputOffset =
                         [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
-                } else if (!tiled && !booleanLowered && !linearParity && !ffnChain &&
-                       !transposeParity) {
-                    // Tile, boolean, rank-3 linear, and FFN-chain programs
-                    // already sized whole-tensor spans. The 64-lane split
-                    // must not clobber them.
+                } else if (!tiled && !booleanLowered && !linearParity &&
+                       !ffnChain && !transposeParity && !sliceParity) {
+                    // Tile, boolean, rank-3 linear, FFN-chain, and slice
+                    // programs already sized whole-tensor spans. The 64-lane
+                    // split must not clobber them.
                     inputOffset = sliceIndex * 64;
                     outputOffset = inputOffset +
                         [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
@@ -3994,6 +4084,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                         ? @"apple-parity-ffn-chain"
                         : transposeParity
                         ? @"apple-parity-transpose"
+                        : sliceParity
+                        ? @"apple-parity-slice"
                         : tiled
                         ? @"apple-parity-tile"
                         : booleanLowered
