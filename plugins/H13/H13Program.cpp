@@ -555,6 +555,24 @@ struct OracleFFNChainTemplate {
     std::uint64_t scratchAllocationBytes;
 };
 
+/// One decoded Apple transpose program: a whole-surface permutation carried
+/// as one strided copy task. The shapes are the Apple-normalized elementwise
+/// triples of the MIL input and result; the surfaces are plain
+/// `elementwiseTensor` layouts whose rows differ per side.
+struct OracleTransposeTemplate {
+    ElementwiseShape input;
+    ElementwiseShape output;
+    const std::uint32_t *words;
+    std::size_t wordCount;
+    std::size_t firstTaskBytes;
+    std::uint32_t taskCount;
+    std::size_t constantOffsetBytes;
+    std::size_t constantBytes;
+    std::uint64_t scratchAllocationBytes;
+};
+
+#include "H13TransposeTemplates.inc"
+
 #include "H13LinearTemplates.inc"
 #include "H13NormTemplates.inc"
 #include "H13EnvelopeTemplates.inc"
@@ -635,6 +653,16 @@ const OracleNormTemplate *normTemplate(NormOperation operation,
             candidate.keepDims == shape.keepDims &&
             sameShape(candidate.input, shape.input) &&
             sameShape(candidate.output, shape.output)) return &candidate;
+    return nullptr;
+}
+
+/// The decoded 1-task transpose program for this surface pair; the encoder
+/// spell swaps one non-unit pair and keeps every other axis in place.
+const OracleTransposeTemplate *transposeTemplate(ElementwiseShape input,
+                                                 ElementwiseShape output) {
+    for (const auto &candidate : kTransposeTasks)
+        if (sameShape(candidate.input, input) &&
+            sameShape(candidate.output, output)) return &candidate;
     return nullptr;
 }
 
@@ -963,6 +991,28 @@ Program encodeElementwise(UnaryOperation operation, ElementwiseShape shape) {
     program.taskCount = encoder->taskCount;
     program.constantOffsetBytes = encoder->constantOffsetBytes;
     program.scratchAllocationBytes = encoder->scratchAllocationBytes;
+    return program;
+}
+
+bool supportsTransposeParity(ElementwiseShape input, ElementwiseShape output) {
+    return transposeTemplate(input, output) != nullptr;
+}
+
+Program encodeTransposeParity(ElementwiseShape input, ElementwiseShape output) {
+    const auto *source = transposeTemplate(input, output);
+    if (!source)
+        throw std::invalid_argument(
+            "H13 transpose is outside the decoded parity envelope");
+    Program program;
+    program.taskSurfaceChannels = {5, 4, 6, 7};
+    program.task = taskBytesFor(source->words, source->wordCount);
+    program.constants = std::vector<std::uint8_t>(source->constantBytes, 0);
+    program.inputs = {elementwiseTensor(5, input)};
+    program.output = elementwiseTensor(4, output);
+    program.firstTaskBytes = source->firstTaskBytes;
+    program.taskCount = source->taskCount;
+    program.constantOffsetBytes = source->constantOffsetBytes;
+    program.scratchAllocationBytes = source->scratchAllocationBytes;
     return program;
 }
 

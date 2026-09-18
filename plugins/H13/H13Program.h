@@ -143,6 +143,14 @@ Program encodeElementwiseConstant(BinaryOperation operation,
                                   const std::uint8_t *constant,
                                   std::size_t constantBytes);
 Program encodeElementwise(UnaryOperation operation, ElementwiseShape shape);
+
+/// True when the decoded Apple corpus covers this transpose as one 1-task
+/// program: the elementwise triples are the Apple-normalized NCHW surfaces of
+/// the MIL input and result (rank 3 [1, A, B] -> (1, A, B), rank 4
+/// [1, C, H, W] -> (C, H, W)).
+bool supportsTransposeParity(ElementwiseShape input, ElementwiseShape output);
+Program encodeTransposeParity(ElementwiseShape input, ElementwiseShape output);
+
 // Weights are row-major little-endian fp16; transposeY selects [512,K] instead of [K,512].
 Program encodeMatvec(std::uint32_t reduction,
                      const std::uint8_t *weights,
