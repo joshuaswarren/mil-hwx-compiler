@@ -151,6 +151,13 @@ Program encodeElementwise(UnaryOperation operation, ElementwiseShape shape);
 bool supportsTransposeParity(ElementwiseShape input, ElementwiseShape output);
 Program encodeTransposeParity(ElementwiseShape input, ElementwiseShape output);
 
+/// True when the decoded Apple corpus covers this slice_by_index as one
+/// 1-task program: the elementwise triples are the Apple-normalized NCHW
+/// surfaces of the MIL input and result (rank 4 [1, C, H, W] -> (C, H, W)),
+/// with only the last axis narrowed from element 0.
+bool supportsSliceParity(ElementwiseShape input, ElementwiseShape output);
+Program encodeSliceParity(ElementwiseShape input, ElementwiseShape output);
+
 // Weights are row-major little-endian fp16; transposeY selects [512,K] instead of [K,512].
 Program encodeMatvec(std::uint32_t reduction,
                      const std::uint8_t *weights,

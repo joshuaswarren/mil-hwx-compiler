@@ -600,15 +600,18 @@ with tempfile.TemporaryDirectory() as temporary:
                                 consumer="relu"),
                    expected_code="h13.noncontiguous-slice",
                    expected_message="8 chunks of 280875 elements spaced 281250 apart")
-    compile_source(root, "slice-encoder-bias",
+    # The encoder's real bias slice now materializes as the decoded 1-task
+    # apple-parity-slice program; the view rejection no longer applies.
+    bias_parity = compile_source(root, "slice-encoder-bias",
                    slice_source(shape=(1, 8, 375, 749),
                                 begin=(0, 0, 0, 0),
                                 end=(1, 8, 375, 375),
                                 end_mask=(True, True, True, False),
                                 result_shape=(1, 8, 375, 375),
-                                consumer="relu"),
-                   expected_code="h13.noncontiguous-slice",
-                   expected_message="3000 chunks of 375 elements spaced 749 apart")
+                                consumer="relu"))
+    bias_parity_manifest = json.loads((bias_parity / "manifest.json").read_text())
+    assert bias_parity_manifest["programs"][0]["encoder"] == \
+        "apple-parity-slice"
     compile_source(root, "slice-strided",
                    slice_source(stride=(1, 1, 1, 2)),
                    expected_code="h13.noncontiguous-slice")

@@ -571,7 +571,24 @@ struct OracleTransposeTemplate {
     std::uint64_t scratchAllocationBytes;
 };
 
+/// One decoded Apple slice_by_index program: a whole-surface strided
+/// row-copy carried as one task. The shapes are the Apple-normalized
+/// elementwise triples of the MIL input and result; the surfaces are plain
+/// `elementwiseTensor` layouts whose rows differ per side.
+struct OracleSliceTemplate {
+    ElementwiseShape input;
+    ElementwiseShape output;
+    const std::uint32_t *words;
+    std::size_t wordCount;
+    std::size_t firstTaskBytes;
+    std::uint32_t taskCount;
+    std::size_t constantOffsetBytes;
+    std::size_t constantBytes;
+    std::uint64_t scratchAllocationBytes;
+};
+
 #include "H13TransposeTemplates.inc"
+#include "H13SliceTemplates.inc"
 
 #include "H13LinearTemplates.inc"
 #include "H13NormTemplates.inc"
@@ -661,6 +678,16 @@ const OracleNormTemplate *normTemplate(NormOperation operation,
 const OracleTransposeTemplate *transposeTemplate(ElementwiseShape input,
                                                  ElementwiseShape output) {
     for (const auto &candidate : kTransposeTasks)
+        if (sameShape(candidate.input, input) &&
+            sameShape(candidate.output, output)) return &candidate;
+    return nullptr;
+}
+
+/// The decoded 1-task slice_by_index program for this surface pair; the
+/// encoder spell narrows only the last axis, from element 0.
+const OracleSliceTemplate *sliceTemplate(ElementwiseShape input,
+                                         ElementwiseShape output) {
+    for (const auto &candidate : kSliceTasks)
         if (sameShape(candidate.input, input) &&
             sameShape(candidate.output, output)) return &candidate;
     return nullptr;
@@ -1003,6 +1030,28 @@ Program encodeTransposeParity(ElementwiseShape input, ElementwiseShape output) {
     if (!source)
         throw std::invalid_argument(
             "H13 transpose is outside the decoded parity envelope");
+    Program program;
+    program.taskSurfaceChannels = {5, 4, 6, 7};
+    program.task = taskBytesFor(source->words, source->wordCount);
+    program.constants = std::vector<std::uint8_t>(source->constantBytes, 0);
+    program.inputs = {elementwiseTensor(5, input)};
+    program.output = elementwiseTensor(4, output);
+    program.firstTaskBytes = source->firstTaskBytes;
+    program.taskCount = source->taskCount;
+    program.constantOffsetBytes = source->constantOffsetBytes;
+    program.scratchAllocationBytes = source->scratchAllocationBytes;
+    return program;
+}
+
+bool supportsSliceParity(ElementwiseShape input, ElementwiseShape output) {
+    return sliceTemplate(input, output) != nullptr;
+}
+
+Program encodeSliceParity(ElementwiseShape input, ElementwiseShape output) {
+    const auto *source = sliceTemplate(input, output);
+    if (!source)
+        throw std::invalid_argument(
+            "H13 slice_by_index is outside the decoded parity envelope");
     Program program;
     program.taskSurfaceChannels = {5, 4, 6, 7};
     program.task = taskBytesFor(source->words, source->wordCount);
