@@ -384,6 +384,65 @@ def pack_dense_colgroups(reduction: int, outputs: int,
     return bytes(packed)
 
 
+def writeout_inverse(slot: int) -> int:
+    """The F3 engine write-out inverse: the ref run whose weights packer run
+    ``slot`` must carry.
+
+    The device emits the 1024 output planes in 64 runs of 16 under a fixed
+    run permutation R: dev run k displays ref run
+
+        R(k) = ((k >> 1) & 7) | (k & 0x10) | ((((~k) >> 5) & 1) << 3)
+               | ((k & 1) << 5)
+
+    (t6001-test-host measurement, receipts/2026-09-18-encoder-conv-device-gate/
+    f3-writeout-permutation.json). Exact numerics under the bijection mean
+    the engine computes output run k from the weights packed at run slot
+    R(k), so dev run k shows ref run k exactly when slot R(k) holds ref run
+    k: slot p carries ref run
+
+        g(p) = ((p >> 5) & 1) | ((p & 1) << 1) | (((p >> 1) & 1) << 2)
+               | (((p >> 2) & 1) << 3) | (((p >> 4) & 1) << 4)
+               | ((1 - ((p >> 3) & 1)) << 5)
+
+    with within-run plane order preserved. The same engine class is what
+    the m375 k1024 n1024 linear lowering already compensates (67dfcf1).
+    """
+    return (((slot >> 5) & 1)
+            | ((slot & 1) << 1)
+            | (((slot >> 1) & 1) << 2)
+            | (((slot >> 2) & 1) << 3)
+            | (((slot >> 4) & 1) << 4)
+            | ((1 - ((slot >> 3) & 1)) << 5))
+
+
+def pack_dense_writeout_inverse(reduction: int, outputs: int,
+                                chunks: list[int], weights: bytes) -> bytes:
+    """The F3 out-projection dense section (k1x1 g1 valid, 1024 outputs over
+    1024 reduction, bias-free, [1, 1024, 1, 375] surfaces) with the engine
+    write-out inverse decoded in: :func:`pack_dense` over weights whose
+    16-channel runs sit at the slots the engine's write-out will read, so
+    the device's planes land in manifest order.
+
+    The record's captured section carries a uniform per-constant payload,
+    so its bytes are invariant under the run placement and byte parity
+    against the capture keeps holding; device execution is the oracle.
+    """
+    if (reduction, outputs) != (1024, 1024):
+        raise ValueError("the write-out inverse is decoded only for the F3 "
+                         "out-projection geometry (1024 -> 1024)")
+    runs = outputs // 16
+    run_halves = chunks[0] * reduction
+    permuted = bytearray(len(weights))
+    source = memoryview(weights).cast("H")
+    view = memoryview(permuted).cast("H")
+    for slot in range(runs):
+        run = writeout_inverse(slot)
+        view[slot * run_halves:(slot + 1) * run_halves] = \
+            source[run * run_halves:(run + 1) * run_halves]
+    return pack_dense(reduction, outputs, chunks, bytes(permuted), None,
+                      False)
+
+
 def pack_depthwise_slots(taps: int, outputs: int, weights: bytes,
                          bias: bytes | None) -> bytes:
     """The captured W-major depthwise section (k1x9 same, bias present).
@@ -592,6 +651,15 @@ def conv_constants(parameters: dict[str, Any], weights: bytes,
             # The decoded F1 in-projection colgroup order; consecutive order
             # never reproduced past colgroup 64 (see pack_dense_colgroups).
             section = pack_dense_colgroups(reduction, outputs, weights)
+        elif bias is None and (outputs, reduction) == (1024, 1024) \
+                and chunks == [16] * 4 \
+                and parameters.get("spatial_width") == 375:
+            # The decoded F3 out-projection write-out inverse; the engine
+            # readout permutation is measured only for this geometry (the
+            # H14 16x16 probes with the same channel counts keep identity
+            # order). See pack_dense_writeout_inverse.
+            section = pack_dense_writeout_inverse(reduction, outputs, chunks,
+                                                  weights)
         else:
             section = pack_dense(reduction, outputs, chunks, weights, bias,
                                  False)

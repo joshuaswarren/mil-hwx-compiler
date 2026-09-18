@@ -2305,6 +2305,56 @@ std::vector<std::uint8_t> packConvDepthwiseSlots(std::uint32_t taps,
     return packed;
 }
 
+/// The F3 out-projection dense section (k1x1 g1 valid, 1024 outputs over
+/// 1024 reduction, bias-free, [1, 1024, 1, 375] surfaces) with the engine
+/// write-out inverse decoded in. The device emits the 1024 output planes
+/// in 64 runs of 16 under a fixed run permutation R: dev run k displays
+/// ref run
+///
+///     R(k) = ((k >> 1) & 7) | (k & 0x10) | ((((~k) >> 5) & 1) << 3)
+///            | ((k & 1) << 5)
+///
+/// (t6001-test-host measurement, receipts/2026-09-18-encoder-conv-device-gate/
+/// f3-writeout-permutation.json). Exact numerics under the bijection mean
+/// the engine computes output run k from the weights packed at run slot
+/// R(k), so dev run k shows ref run k exactly when slot R(k) holds ref
+/// run k: slot p carries ref run
+///
+///     g(p) = ((p >> 5) & 1) | ((p & 1) << 1) | (((p >> 1) & 1) << 2)
+///            | (((p >> 2) & 1) << 3) | (((p >> 4) & 1) << 4)
+///            | ((1 - ((p >> 3) & 1)) << 5)
+///
+/// with within-run plane order preserved. The same engine class is what
+/// the m375 k1024 n1024 linear lowering already compensates (67dfcf1).
+/// The record's captured section carries a uniform per-constant payload,
+/// so its bytes are invariant under the run placement and byte parity
+/// against the capture keeps holding; this is gated to the one measured
+/// geometry, and device execution is the oracle.
+std::vector<std::uint8_t> packConvDenseWriteoutInverse(
+        std::uint32_t reduction, std::uint32_t outputs,
+        const std::vector<std::uint32_t> &chunks,
+        const std::uint8_t *weights) {
+    if (reduction != 1024 || outputs != 1024)
+        throw std::invalid_argument(
+            "H13 write-out inverse is decoded only for the F3 out-projection "
+            "geometry (1024 -> 1024)");
+    std::vector<std::uint8_t> permuted(
+        static_cast<std::size_t>(outputs) * reduction * 2);
+    const std::size_t runBytes =
+        static_cast<std::size_t>(16) * reduction * 2;
+    for (std::uint32_t slot = 0; slot != outputs / 16; ++slot) {
+        const std::uint32_t run =
+            ((slot >> 5) & 1) | ((slot & 1) << 1) |
+            (((slot >> 1) & 1) << 2) | (((slot >> 2) & 1) << 3) |
+            (((slot >> 4) & 1) << 4) | ((1u - ((slot >> 3) & 1u)) << 5);
+        std::memcpy(permuted.data() + static_cast<std::size_t>(slot) *
+                                        runBytes,
+                    weights + static_cast<std::size_t>(run) * runBytes,
+                    runBytes);
+    }
+    return packConvDense(reduction, chunks, permuted.data(), nullptr, false);
+}
+
 std::vector<std::uint8_t> packConvWeights(ConvShape shape,
                                           const std::uint8_t *weights,
                                           std::size_t weightBytes,
@@ -2359,6 +2409,12 @@ std::vector<std::uint8_t> packConvWeights(ConvShape shape,
         shape.output.channels == 2048)
         return packConvDenseColgroups(reduction, shape.output.channels,
                                       weights);
+    if (!bias && shape.stride == 1 && taps == 1 && reduction == 1024 &&
+        shape.output.channels == 1024 && chunks.size() == 4 &&
+        shape.input.height == 1 && shape.input.width == 375)
+        return packConvDenseWriteoutInverse(reduction,
+                                            shape.output.channels, chunks,
+                                            weights);
     return packConvDense(reduction, chunks, weights, bias, false);
 }
 

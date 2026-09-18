@@ -17,11 +17,14 @@ W pad is LEFT).
 
 Run on t6001-test-host under /tmp/m1-gpu.lock.
 """
-import ctypes, subprocess, sys, hashlib, struct, json
+import ctypes, os, subprocess, sys, hashlib, struct, json
 from pathlib import Path
 import numpy as np
 
-COMPILER = "$HOME/src/mil-hwx-compiler-504a1e4/build/mil-hwxc"
+# The baseline gate ran the 504a1e4 build; a fix branch points MHWC at its
+# own build so the same script re-gates the changed compiler in place.
+COMPILER = os.environ.get("MHWC",
+                          "$HOME/src/mil-hwx-compiler-504a1e4/build/mil-hwxc")
 LIB = "/var/tmp/t6001-test-host-oproj-place/libane-strict-fill.so"
 ENV = {"LD_LIBRARY_PATH": "$HOME/.local/mil-hwx-gnustep/lib",
        "PATH": "/usr/bin:/bin", "HOME": "$HOME"}
