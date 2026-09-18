@@ -68,7 +68,9 @@ def compile_source(root, name, text, expected_code=None):
 
 with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-conv-envelope-") as directory:
     root = Path(directory)
-    (root / "weights.bin").write_bytes(blob(bytes(256 * 256 * 2)))
+    # Two megabytes: the decoded out-projection row packs a [1024, 1024, 1]
+    # weight, and the blob loader checks the declared size per case.
+    (root / "weights.bin").write_bytes(blob(bytes(1024 * 1024 * 2)))
     (root / "bias.bin").write_bytes(blob(bytes(256 * 2)))
     hit = compile_source(
         root, "k1-c256-s32",
@@ -78,6 +80,14 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-conv-envelope-") as directo
     assert hit["programs"][0]["operation"] == "conv"
     assert hit["programs"][0]["encoder"] == "apple-parity-conv"
     assert hit["programs"][0]["taskDescriptors"] == 1
+    # The rank-3 out-projection spell lowers through the W-major surface the
+    # encoder's rank-3 tensors bind as: one linked two-task parity program.
+    hit = compile_source(
+        root, "enc-1d-pw-outproj",
+        conv_mil([1, 1024, 375], [1024, 1024, 1], [1, 1024, 375],
+                 [1], 1, [0, 0], "valid", False))
+    assert hit["programs"][0]["encoder"] == "apple-parity-conv"
+    assert hit["programs"][0]["taskDescriptors"] == 2
     for name, mil in (
         ("enc-1x1-750",
          conv_mil([1, 256, 750, 32], [256, 256, 1, 1], [1, 256, 750, 32],
@@ -88,12 +98,22 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-conv-envelope-") as directo
         ("enc-subsample",
          conv_mil([1, 1, 3000, 128], [256, 1, 3, 3], [1, 256, 1500, 64],
                   [2, 2], 1, [1, 1, 1, 1], "custom", True)),
+        ("enc-subsample-dw",
+         conv_mil([1, 256, 1500, 64], [256, 1, 3, 3], [1, 256, 750, 32],
+                  [2, 2], 256, [1, 1, 1, 1], "custom", True)),
+        ("enc-subsample-dw-375",
+         conv_mil([1, 256, 750, 32], [256, 1, 3, 3], [1, 256, 375, 16],
+                  [2, 2], 256, [1, 1, 1, 1], "custom", True)),
         ("enc-padconv",
          conv_mil([1, 8, 375, 749], [8, 1, 1, 1], [1, 8, 375, 750],
                   [1, 1], 8, [0, 0, 1, 0], "custom", False)),
+        # The in-projection spell respells W-major, and the only checked-in
+        # n2048 capture is H-major: no row covers the W-major surface.
         ("enc-1d-pw",
          conv_mil([1, 1024, 375], [2048, 1024, 1], [1, 2048, 375],
                   [1], 1, [0, 0], "valid", False)),
+        # The bias-bearing rank-3 depthwise: only a no-bias depthwise
+        # respell is decoded, and the custom pad spells no row either.
         ("enc-1d-dw",
          conv_mil([1, 1024, 375], [1024, 1, 9], [1, 1024, 375],
                   [1], 1024, [4, 4], "custom", True)),
