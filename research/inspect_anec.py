@@ -111,6 +111,10 @@ def validate_task_headers(program, tasks, tiles):
                             program.get('constantBytes', 0) > 0,
                             f'H13 task[{index}] selects noncanonical channel 1')
                     continue
+                # The canonical broadcast channel-1 source is the folded
+                # constant read through the 0x17800 destination words.
+                destination = registers.get(0x17800, H13_DMA_DISABLED)
+                destination_channel = (words[8] >> 12) & 0x1f
                 if program.get('encoder') == PARITY_BOOLEAN and \
                         program.get('constantBytes', 0) > 0:
                     # The boolean encoder reads its folded constant/blob

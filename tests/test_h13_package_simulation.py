@@ -76,7 +76,10 @@ def binary_op(op: str, a: float, b: float) -> float:
     if op == 'add':
         return add_fp16(a, b)
     if op == 'mul':
-        return fp16(float(a) * float(b))
+        product = fp16(float(a) * float(b))
+        # The measured H13 datapath produces unsigned zero products (the
+        # reference models the same rule; see test_h13_mul_zero_sign).
+        return 0.0 if product == 0.0 else product
     if op == 'maximum':
         # match IEEE-ish via fp16 path used in reference
         return fp16(max(float(a), float(b))) if not (math.isnan(float(a)) or math.isnan(float(b))) else float('nan')
