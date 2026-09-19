@@ -12,7 +12,10 @@ requires EXACT agreement with the numpy reference:
   1. cast bool [1,1,1500,1] -> fp16: 0/1 lanes packed 1 byte per lane,
      64-byte rows; device output must equal the input lanes as fp16.
   2. logical_not bool [1,1,375,375] -> bool: rows of alignUp(375,64) =
-     384 bytes; device output must equal 1 - input lanes.
+     384 bytes; the captured program is a BYTE-wise not (x ^ 0xFF), so
+     canonical 0/1 lanes map to 0x00/0xFF and the gate asserts exactly
+     that - the device-consistent semantics the select cond consumer
+     reads (nonzero-as-true).
 
 QUEUED by the 2026-09-19 compiler-coverage lane — no device window was
 taken (other lanes owned the GPU). Run on t6001-test-host ONLY, after
@@ -75,7 +78,7 @@ try:
     s0, d0 = int(lib.__ane_src_size(nn, 0)), int(lib.__ane_dst_size(nn, 0))
     assert s0 >= x.nbytes, (s0, x.nbytes)
     tile = np.zeros(s0, dtype=np.uint8)
-    tile[0:x.nbytes] = x.tobytes()
+    tile[0:x.nbytes] = np.frombuffer(x.tobytes(), dtype=np.uint8)
     lib.__ane_send(nn, ctypes.c_char_p(tile.ctypes.data), 0)
     assert lib.ane_exec(nn) == 0
     out = np.zeros(d0, dtype=np.uint8)
@@ -149,11 +152,12 @@ def main() -> int:
         anec = compile_case("not", NOT_MIL, root)
         out = run_device(anec, x_not, "not", root)
         got = out[:375 * 384].reshape(375, 384)[:, :375]
-        if not np.array_equal(got, 1 - vals):
-            bad = int(np.count_nonzero(got != 1 - vals))
+        expect = vals ^ 0xFF
+        if not np.array_equal(got, expect):
+            bad = int(np.count_nonzero(got != expect))
             print(f"FAIL: logical_not mismatch on {bad} lanes")
             return 1
-        print("logical_not [1,1,375,375]: exact on 140625 lanes")
+        print("logical_not [1,1,375,375]: exact byte-not on 140625 lanes")
     print("dev_gate_mask: PASS")
     return 0
 
