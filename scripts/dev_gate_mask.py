@@ -14,10 +14,12 @@ requires EXACT agreement with the numpy reference:
   2. logical_not bool [1,1,375,375] -> bool: rows of alignUp(375,64) =
      384 bytes; device output must equal 1 - input lanes.
 
-MUST run on m1-test-host (ANE host) under `flock -w 120 /tmp/m1-gpu.lock`, with
-the compiler binary and libane paths below. QUEUED by the 2026-09-19
-compiler-coverage lane — no device window was taken (other lanes owned
-the GPU); this file is the explicit later device check.
+QUEUED by the 2026-09-19 compiler-coverage lane — no device window was
+taken (other lanes owned the GPU). Run on t6001-test-host ONLY, after
+GpuDispatchParity's explicit release and NOT on m1-test-host while it is in
+recovery; ParakeetDecoderParity is queued after this gate. Requires
+`flock -w 120 /tmp/m1-gpu.lock` and the compiler binary and libane paths
+below (adjust LIBANE to the t6001-test-host strict-fill copy before running).
 
 Exits 0 on PASS, 1 on FAIL.
 """
