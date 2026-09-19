@@ -76,11 +76,22 @@
     "tail_after_128_nonzero_bytes": 0
   },
   "error": null,
-  "family": "encoder_decompose",
+  "family": "reduction",
   "hwx_bytes": 49152,
-  "hwx_sha256": "c32aa816991de9784342a9e1d08258ea4a0b227b4e615592613e577a4f932add",
+  "hwx_sha256": "830bbaa8d9fb0f458ce765b253e25ac449971fcf40241548cfed744a99d156d6",
   "mil": "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n  func main<ios18>(tensor<fp16, [1, 1, 375, 375]> x) {\n        tensor<int32, [1]> axes = const()[name = string(\"axes\"), val = tensor<int32, [1]>([2])];\n\n        tensor<fp16, [1, 1, 1, 375]> y = reduce_max(axes = axes, keep_dims = bool(true), x = x)[name = string(\"y\")];\n\n  } -> (y);\n}\n",
-  "parameters": {},
+  "parameters": {
+    "axes": [
+      2
+    ],
+    "operation": "reduce_max",
+    "shape": [
+      1,
+      1,
+      375,
+      375
+    ]
+  },
   "program_count": 1,
   "program_descriptor": {
     "code": 538,
