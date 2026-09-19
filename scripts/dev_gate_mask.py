@@ -159,6 +159,8 @@ def not_diag(root: Path) -> int:
         sys.stderr.write(f"prototype {n}: restype={rt} argtypes={at}\n")
     diag = root / "diag"
     diag.mkdir(exist_ok=True)
+    persistent = root  # the TemporaryDirectory parent keeps nothing; dump
+    # durable copies into WORKDIR below before returning.
     (diag / "m.mil").write_text(NOT_DIAG_MIL)
     r = subprocess.run(
         [str(COMPILER), "--mil", str(diag / "m.mil"), "--model-root", str(diag),
@@ -168,8 +170,9 @@ def not_diag(root: Path) -> int:
         print(f"FAIL: diag compile: {r.stderr.strip()}")
         return 1
     anec = diag / "out/program-0.anec"
-    # preserve the emitted ANEC next to this receipt for offline diffing
-    (root / "logical-not-diag.anec").write_bytes(anec.read_bytes())
+    durable = WORKDIR / "diag-durable"
+    durable.mkdir(exist_ok=True)
+    (durable / "logical-not-diag.anec").write_bytes(anec.read_bytes())
     x = np.zeros((375, 384), dtype=np.uint8)
     x[0, 0] = 0x01
     x[0, 1] = 0x01
@@ -189,7 +192,7 @@ def not_diag(root: Path) -> int:
     print("ane_exec:", rc)
     out = np.zeros(d0, dtype=np.uint8)
     lib.__ane_read(nn, ctypes.c_char_p(out.ctypes.data), 0)
-    (diag / "dst-dump.bin").write_bytes(out.tobytes())
+    (durable / "dst-dump.bin").write_bytes(out.tobytes())
     nz = np.nonzero(out)[0]
     print("nonzero dst bytes:", len(nz), "first 20 offsets:", nz[:20].tolist())
     # set-lane home offsets for reference: 0x00, 0x01 (row 0), 100*384+5
