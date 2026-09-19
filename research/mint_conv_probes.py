@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import hashlib
+import base64
 import json
 import math
 from pathlib import Path
@@ -536,6 +537,64 @@ def pack_depthwise(taps: int, outputs: int, weights: bytes,
     return bytes(packed)
 
 
+_STRIDED_S2_STRUCTURAL = json.loads(
+    (Path(__file__).resolve().parent / "strided_s2_structural.json").read_text())
+
+
+def _structural(kind: str) -> bytearray:
+    return bytearray(base64.b64decode(
+        _STRIDED_S2_STRUCTURAL[kind]["structural"]))
+
+
+def pack_strided_multitap_s2(weights: bytes, bias: bytes | None) -> bytes:
+    """The stem subsampling conv [1,1,3000,128]->[1,256,1500,64]
+    (k3x3 s2 g1 same + bias): a measured byte map, not a derived family.
+
+    Nine tap planes at fixed bases [36, 172, 70, 244, 316, 278, 104, 208,
+    138]; every plane strides the section in 16-channel bands of 384 bytes,
+    values every 2 bytes with one pad byte after each group of eight. The
+    bias rides the same band grid from byte 0 at plain 2-byte stride.
+    Derived from the 2026-09-19 differential index remints
+    (encoder_conv_idx{,b}_c1_n256_k3x3_s2_g1_bias1_same): every one of the
+    2560 elements lands at exactly one byte offset in both views.
+    """
+    bases = (36, 172, 70, 244, 316, 278, 104, 208, 138)
+    packed = _structural("dense")
+    for tap in range(9):
+        for oc in range(256):
+            pos = bases[tap] + 384 * (oc // 16) + 2 * (oc % 16) + (oc % 16) // 8
+            source = (oc * 9 + tap) * 2
+            packed[pos:pos + 2] = weights[source:source + 2]
+    if bias is not None:
+        for oc in range(256):
+            pos = 384 * (oc // 16) + 2 * (oc % 16)
+            packed[pos:pos + 2] = bias[oc * 2:oc * 2 + 2]
+    return bytes(packed)
+
+
+def pack_strided_depthwise_s2(weights: bytes, bias: bytes | None) -> bytes:
+    """The stem depthwise conv [1,256,1500,64]->[1,256,750,32]
+    (k3x3 s2 g256 same + bias): measured byte map.
+
+    Nine tap planes at bases [6, 15, 8, 20, 25, 22, 10, 17, 12]; planes
+    stride in 16-channel bands of 27 bytes, channels every 448 bytes. The
+    bias uses the same grid from byte 0. Derived from the differential
+    index remints (encoder_conv_idx{,b}_c256_n256_k3x3_s2_g256_bias1_same).
+    """
+    bases = (6, 15, 8, 20, 25, 22, 10, 17, 12)
+    packed = _structural("depthwise")
+    for tap in range(9):
+        for oc in range(256):
+            pos = bases[tap] + 27 * (oc // 16) + 448 * (oc % 16)
+            source = (oc * 9 + tap) * 2
+            packed[pos:pos + 2] = weights[source:source + 2]
+    if bias is not None:
+        for oc in range(256):
+            pos = 27 * (oc // 16) + 448 * (oc % 16)
+            packed[pos:pos + 2] = bias[oc * 2:oc * 2 + 2]
+    return bytes(packed)
+
+
 def pack_strided(reduction: int, outputs: int, chunks: list[int],
                  weights: bytes, bias: bytes | None, target: str) -> bytes:
     """Apple's stride-2 section, which skips zero weights.
@@ -612,7 +671,12 @@ def conv_constants(parameters: dict[str, Any], weights: bytes,
     reduction = (inputs // groups) * taps
     if groups == inputs and groups == outputs:
         weight_shape = parameters.get("weight_shape")
-        if not bias and taps == 1 and weight_shape and \
+        if parameters.get("stride") == 2 and taps == 9 and outputs == 256 and \
+                weight_shape == [256, 1, 3, 3] and bias is not None and \
+                parameters.get("input_shape") == [1, 256, 1500, 64]:
+            # The stem depthwise subsampler; measured map (see the packer).
+            section = pack_strided_depthwise_s2(weights, bias)
+        elif not bias and taps == 1 and weight_shape and \
                 len(weight_shape) == 4 and weight_shape[2] == 1 and \
                 weight_shape[3] == 1 and \
                 parameters.get("pad_type") == "custom" and \
@@ -631,7 +695,11 @@ def conv_constants(parameters: dict[str, Any], weights: bytes,
             section = pack_depthwise(taps, outputs, weights, bias)
     elif parameters["stride"] > 1:
         chunks = lane_chunks(outputs, lane_cap(parameters["spatial"]))
-        if groups != 1 or taps != 1 or max(chunks) > 8:
+        if taps == 9 and groups == 1 and outputs == 256 and bias is not None \
+                and parameters.get("input_shape") == [1, 1, 3000, 128]:
+            # The stem in-projection subsampler; measured map (see packer).
+            return pack_strided_multitap_s2(weights, bias)
+        elif groups != 1 or taps != 1 or max(chunks) > 8:
             raise ValueError(
                 "no derived strided packing for grouped, multi-tap, or "
                 "16-lane convolutions")

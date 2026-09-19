@@ -362,8 +362,11 @@ void checkEncoderConvEnvelope() {
     assert(supportsConvParity({9, 1, 1, 1024, true, {1024, 375, 1}, {1024, 375, 1}}));
     assert(supportsConvParity({1, 1, 1, 1, true, {256, 750, 32}, {256, 750, 32}}));
     assert(supportsConvParity({1, 1, 1, 1, true, {256, 375, 16}, {256, 375, 16}}));
-    assert(!supportsConvParity({3, 3, 2, 1, true, {1, 3000, 128}, {256, 1500, 64}}));
-    assert(!supportsConvParity({3, 3, 2, 256, true, {256, 1500, 64}, {256, 750, 32}}));
+    // The 2026-09-19 measured stride-2 subsampling rows (differential
+    // index remints): the encoder's g1 in-projection and g256 depthwise
+    // stages lower; the third stage and other stride-2 shapes stay refused.
+    assert(supportsConvParity({3, 3, 2, 1, true, {1, 3000, 128}, {256, 1500, 64}}));
+    assert(supportsConvParity({3, 3, 2, 256, true, {256, 1500, 64}, {256, 750, 32}}));
     assert(!supportsConvParity({3, 3, 2, 256, true, {256, 750, 32}, {256, 375, 16}}));
     // The W-padded rel-pos padconv lowers through its own two-task capture.
     assert(supportsConvParity({1, 1, 1, 8, false, {8, 375, 749}, {8, 375, 750}}));

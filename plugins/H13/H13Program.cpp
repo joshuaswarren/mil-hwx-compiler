@@ -510,6 +510,7 @@ struct OracleUnaryTask {
     std::uint64_t scratchAllocationBytes;
 };
 
+#include "H13StridedS2Sections.inc"
 #include "H13ElementwiseTemplates.inc"
 #include "H13ElementwiseConstants.inc"
 #include "H13EncoderUnaryTemplates.inc"
@@ -2372,6 +2373,63 @@ std::vector<std::uint8_t> packConvDenseWriteoutInverse(
     return packConvDense(reduction, chunks, permuted.data(), nullptr, false);
 }
 
+/// The stem subsampling sections (2026-09-19): measured byte maps from
+/// the differential index remints
+/// (encoder_conv_idx{,b}_c{1,256}_n256_k3x3_s2_g{1,256}_bias1_same). Each
+/// section is a structural template (identical across two independent
+/// payload bases, hence payload-independent) plus every weight/bias
+/// halfword at its uniquely-mapped offset. The templates live in the
+/// generated H13StridedS2Sections.inc; the maps below place the payload.
+std::vector<std::uint8_t> packConvStridedMultitapS2(
+    const std::uint8_t *weights, const std::uint8_t *bias) {
+    static constexpr std::uint32_t kTapBases[9] = {
+        36, 172, 70, 244, 316, 278, 104, 208, 138};
+    std::vector<std::uint8_t> packed(kStridedS2DenseStructural,
+                                     kStridedS2DenseStructural +
+                                         kStridedS2DenseStructuralSize);
+    for (std::uint32_t tap = 0; tap != 9; ++tap) {
+        for (std::uint32_t oc = 0; oc != 256; ++oc) {
+            const std::size_t pos = kTapBases[tap] +
+                384 * (oc / 16) + 2 * (oc % 16) + (oc % 16) / 8;
+            const std::size_t source =
+                (static_cast<std::size_t>(oc) * 9 + tap) * 2;
+            packed[pos] = weights[source];
+            packed[pos + 1] = weights[source + 1];
+        }
+    }
+    for (std::uint32_t oc = 0; oc != 256; ++oc) {
+        const std::size_t pos = 384 * (oc / 16) + 2 * (oc % 16);
+        packed[pos] = bias[oc * 2];
+        packed[pos + 1] = bias[oc * 2 + 1];
+    }
+    return packed;
+}
+
+std::vector<std::uint8_t> packConvStridedDepthwiseS2(
+    const std::uint8_t *weights, const std::uint8_t *bias) {
+    static constexpr std::uint32_t kTapBases[9] = {
+        6, 15, 8, 20, 25, 22, 10, 17, 12};
+    std::vector<std::uint8_t> packed(kStridedS2DepthwiseStructural,
+                                     kStridedS2DepthwiseStructural +
+                                         kStridedS2DepthwiseStructuralSize);
+    for (std::uint32_t tap = 0; tap != 9; ++tap) {
+        for (std::uint32_t oc = 0; oc != 256; ++oc) {
+            const std::size_t pos = kTapBases[tap] +
+                27 * (oc / 16) + 448 * (oc % 16);
+            const std::size_t source =
+                (static_cast<std::size_t>(oc) * 9 + tap) * 2;
+            packed[pos] = weights[source];
+            packed[pos + 1] = weights[source + 1];
+        }
+    }
+    for (std::uint32_t oc = 0; oc != 256; ++oc) {
+        const std::size_t pos = 27 * (oc / 16) + 448 * (oc % 16);
+        packed[pos] = bias[oc * 2];
+        packed[pos + 1] = bias[oc * 2 + 1];
+    }
+    return packed;
+}
+
 std::vector<std::uint8_t> packConvWeights(ConvShape shape,
                                           const std::uint8_t *weights,
                                           std::size_t weightBytes,
@@ -2391,6 +2449,18 @@ std::vector<std::uint8_t> packConvWeights(ConvShape shape,
         (bias && biasBytes != static_cast<std::size_t>(shape.output.channels) * 2))
         throw std::invalid_argument(
             "H13 convolution bias must hold one fp16 value per output channel");
+    if (shape.stride == 2 && shape.groups == 1 && shape.kernel == 3 &&
+        shape.kernelWidth == 3 && shape.output.channels == 256 && bias &&
+        shape.input.channels == 1 && shape.input.height == 3000 &&
+        shape.input.width == 128 && shape.output.height == 1500 &&
+        shape.output.width == 64)
+        return packConvStridedMultitapS2(weights, bias);
+    if (shape.stride == 2 && shape.groups == 256 &&
+        shape.input.channels == 256 && shape.output.channels == 256 &&
+        shape.kernel == 3 && shape.kernelWidth == 3 && bias &&
+        shape.input.height == 1500 && shape.input.width == 64 &&
+        shape.output.height == 750 && shape.output.width == 32)
+        return packConvStridedDepthwiseS2(weights, bias);
     if (shape.groups == shape.input.channels &&
         shape.groups == shape.output.channels) {
         if (bias && shape.kernel == 1 && shape.kernelWidth > 1)

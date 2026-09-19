@@ -120,16 +120,26 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-conv-envelope-") as directo
                  [1], 1, [0, 0], "valid", False))
     assert hit["programs"][0]["encoder"] == "apple-parity-conv"
     assert hit["programs"][0]["taskDescriptors"] == 4
-    # The two encoder pointwise bias1 forms ([1,256,750,32] and
-    # [1,256,375,16]) lower since the distinct-payload round qualified their
-    # rows; the parity suite byte-compiles them.
+    # The two encoder subsampling forms ([1,1,3000,128] g1 and
+    # [1,256,1500,64] g256) lower through the 2026-09-19 measured
+    # stride-2 rows: the differential index remints located every weight
+    # and bias byte exactly, so the sections are structural template plus
+    # placed payload. The parity suite byte-compiles them.
+    hit = compile_source(
+        root, "enc-subsample",
+        conv_mil([1, 1, 3000, 128], [256, 1, 3, 3], [1, 256, 1500, 64],
+                 [2, 2], 1, [1, 1, 1, 1], "custom", True))
+    assert hit["programs"][0]["encoder"] == "apple-parity-conv"
+    assert hit["programs"][0]["taskDescriptors"] == 1
+    hit = compile_source(
+        root, "enc-subsample-dw",
+        conv_mil([1, 256, 1500, 64], [256, 1, 3, 3], [1, 256, 750, 32],
+                 [2, 2], 256, [1, 1, 1, 1], "custom", True))
+    assert hit["programs"][0]["encoder"] == "apple-parity-conv"
+    assert hit["programs"][0]["taskDescriptors"] == 1
+    # Still refused: a third subsampling stage (the measured depthwise row
+    # pins the 1500->750 geometry) and any other stride-2 shape.
     for name, mil in (
-        ("enc-subsample",
-         conv_mil([1, 1, 3000, 128], [256, 1, 3, 3], [1, 256, 1500, 64],
-                  [2, 2], 1, [1, 1, 1, 1], "custom", True)),
-        ("enc-subsample-dw",
-         conv_mil([1, 256, 1500, 64], [256, 1, 3, 3], [1, 256, 750, 32],
-                  [2, 2], 256, [1, 1, 1, 1], "custom", True)),
         ("enc-subsample-dw-375",
          conv_mil([1, 256, 750, 32], [256, 1, 3, 3], [1, 256, 375, 16],
                   [2, 2], 256, [1, 1, 1, 1], "custom", True)),
