@@ -55,11 +55,17 @@ def derive(path):
         raise SystemExit(f"{path.name}: const.bin size mismatch")
     if constants is None:
         constants = bytes(record["constant_section"]["size"])
+    input_shape = None
+    for descriptor in record.get("tensor_descriptors") or []:
+        if descriptor.get("binding") == 1:
+            input_shape = list(descriptor["shape"])
+            break
     return {
         "words": flat,
         "sizes": [len(task) for task in tasks],
         "constants": constants,
         "params": record["parameters"],
+        "input_shape": input_shape,
         "mil": record["mil"],
     }
 
@@ -133,7 +139,15 @@ def main():
         data = ", ".join(f"0x{b:02x}" for b in entry["constants"])
         out.append(f"static const uint8_t {cname}[] = {{{data}}};")
         params = entry["params"]
-        shape = list(params.get("shape") or params.get("x_shape") or [1])
+        # Prefer the decoded input binding: the mask-oracle records carry
+        # no parameters.shape, but every decoded record binds its bool x
+        # as tensor_descriptors[0].
+        shape = None
+        descriptors = entry.get("input_shape") or []
+        if descriptors:
+            shape = list(descriptors)
+        if not shape:
+            shape = list(params.get("shape") or params.get("x_shape") or [1])
         while len(shape) < 3:
             shape = [1] + shape
         while len(shape) > 3:
