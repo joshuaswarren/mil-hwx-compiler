@@ -1803,6 +1803,23 @@ Program encodeBooleanOp(H13BooleanShape shape,
         // 375-wide DMA row 384 is the 1-byte cond; row 768 is fp16.
         program.taskSurfaceChannels = {7, 4, 5, 6};
         break;
+    case H13BooleanKind::CastBoolToFp16:
+        // The 2026-09-19 mask-oracle captures run one task each: the bool
+        // input rides channel 4 (1 byte per lane) and the fp16 result
+        // channel 5, so the canonical remap binds x on slot 5 and the
+        // result on slot 4. Both captured surfaces keep the 64-byte row
+        // pitch (W=1: alignUp(1,64) bool and alignUp(2,64) fp16 agree).
+        program.inputs = {booleanTensor(5, shape, true)};
+        program.output = booleanTensor(4, shape, false);
+        program.taskSurfaceChannels = {5, 4, 6, 7};
+        break;
+    case H13BooleanKind::LogicalNot:
+        // Same single-task capture shape, bool in and bool out (element
+        // code 3 on both bindings of every logical_not record).
+        program.inputs = {booleanTensor(5, shape, true)};
+        program.output = booleanTensor(4, shape, true);
+        program.taskSurfaceChannels = {5, 4, 6, 7};
+        break;
     }
     if (stagesThroughScratch) {
         // The scratch is an arena, not one surface: the 375-wide select

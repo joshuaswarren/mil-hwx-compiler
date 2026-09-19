@@ -207,7 +207,14 @@ std::vector<std::uint8_t> packBatchedWeights(BatchedMatmulShape shape,
 /// (blob x for floor, the scalar-2.0 divisor for floor_div). The element
 /// dtype follows the family: less emits a bool result and select reads a
 /// bool cond — 1-byte surfaces — while every operand stays fp16.
-enum class H13BooleanKind : std::uint8_t { Less, Floor, Select, FloorDiv };
+enum class H13BooleanKind : std::uint8_t {
+    Less,
+    Floor,
+    Select,
+    FloorDiv,
+    CastBoolToFp16,
+    LogicalNot,
+};
 
 struct H13BooleanShape {
     H13BooleanKind kind = H13BooleanKind::Floor;

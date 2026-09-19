@@ -30,6 +30,8 @@ SELECTOR_REMAP = {
     "floor": {5: 4, 4: 5, 6: 6, 7: 7},
     "floor_div": {5: 4, 4: 5, 6: 6, 7: 7},
     "select": {7: 4, 4: 5, 5: 6, 6: 7},
+    "cast": {5: 4, 4: 5, 6: 6, 7: 7},
+    "logical_not": {5: 4, 4: 5, 6: 6, 7: 7},
 }
 
 
@@ -54,6 +56,10 @@ def family(stem):
         return "floor_div"
     if stem.startswith("floor"):
         return "floor"
+    if stem.startswith("cast_b_to_f16"):
+        return "cast"
+    if stem.startswith("logical_not"):
+        return "logical_not"
     return "select"
 
 
@@ -224,8 +230,8 @@ with tempfile.TemporaryDirectory() as temporary:
         if record.get("error") or not record.get("task_descriptors"):
             continue
         stem = capture.stem
-        if "comp" in stem or "cast" in stem:
-            continue  # composition and cast composites are not this envelope
+        if "comp" in stem or stem.startswith("less_bool_cast"):
+            continue  # composition and the old cast composites are not this envelope
         if stem.startswith("floor_b") or stem.startswith("select_ninf"):
             continue  # const-input twins: pending index-valued re-mints
         mil = record["mil"]
@@ -256,9 +262,16 @@ with tempfile.TemporaryDirectory() as temporary:
                 assert_select_64_polarity(anec)
             validate(root, package)
 
-        if family(stem) == "less":
+        if family(stem) in ("less", "logical_not"):
             assert manifest["logicalResults"][0]["dtype"] == "bool"
             assert manifest["physicalOutputs"][0]["dtype"] == "bool"
+            validate(root, package)
+        if family(stem) == "cast":
+            # The captured cast surface is a bool input: one byte per lane,
+            # the same 64-byte row pitch the select cond rides on.
+            inputs = booleanProgram["inputs"]
+            assert len(inputs) == 1 and inputs[0]["dtype"] == "bool", stem
+            assert manifest["logicalResults"][0]["dtype"] in ("fp16", "float16"), stem
             validate(root, package)
         const_bin = capture.parent / (capture.stem + ".const.bin")
         if const_bin.exists():
@@ -271,7 +284,7 @@ with tempfile.TemporaryDirectory() as temporary:
                           0x1000 + consts_off + consts_size]
             assert emitted == const_bin.read_bytes(), stem
         verified += 1
-    assert verified >= 8, f"expected the implementable captures, got {verified}"
+    assert verified >= 16, f"expected the implementable captures, got {verified}"
 
     # Constant-operand twins verify byte-exact against their captures:
     # floor over a blob x (head-patched input lane) and the scalar-2.0

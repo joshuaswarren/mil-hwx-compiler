@@ -2599,7 +2599,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     } else if ([name isEqualToString:@"less"] ||
                [name isEqualToString:@"floor"] ||
                [name isEqualToString:@"select"] ||
-               [name isEqualToString:@"floor_div"]) {
+               [name isEqualToString:@"floor_div"] ||
+               [name isEqualToString:@"cast"] ||
+               [name isEqualToString:@"logical_not"]) {
         // The boolean registry ops lower through their decoded templates:
         // fixed task streams keyed by (family, CHW surface, const-operand
         // twin). less emits a bool result and select reads a bool cond —
@@ -2609,6 +2611,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         if ([name isEqualToString:@"less"]) shape.kind = ane::h13::H13BooleanKind::Less;
         else if ([name isEqualToString:@"floor"]) shape.kind = ane::h13::H13BooleanKind::Floor;
         else if ([name isEqualToString:@"select"]) shape.kind = ane::h13::H13BooleanKind::Select;
+        else if ([name isEqualToString:@"cast"]) shape.kind = ane::h13::H13BooleanKind::CastBoolToFp16;
+        else if ([name isEqualToString:@"logical_not"]) shape.kind = ane::h13::H13BooleanKind::LogicalNot;
         else shape.kind = ane::h13::H13BooleanKind::FloorDiv;
         NSMutableArray<ANEGraphValue *> *operands = [NSMutableArray array];
         if (shape.kind == ane::h13::H13BooleanKind::Select) {
@@ -2659,6 +2663,36 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             !(operation.results[0].type.kind == ANEValueTypeKindTensor &&
               operation.results[0].type.elementType == ANEElementTypeBool))
             goto boolean_reject;
+        if (shape.kind == ane::h13::H13BooleanKind::CastBoolToFp16 ||
+            shape.kind == ane::h13::H13BooleanKind::LogicalNot) {
+            // The 2026-09-19 mask-oracle round decoded exactly two cast
+            // directions: bool x to fp16, and logical_not over bool.
+            // Apple's own tool refuses every other encoder cast — fp32 to
+            // fp16, int32 to fp16, fp16 to int32, bool to int32, int32 to
+            // bool, fp16 to fp32 — at every encoder spelling, plus int32
+            // less, logical_and and reduce_min, so those directions have
+            // no device form and stay GPU/frontend-owned.
+            ANEGraphValue *x = operation.operands[@"x"].value;
+            BOOL xIsBool = x &&
+                x.type.kind == ANEValueTypeKindTensor &&
+                x.type.elementType == ANEElementTypeBool;
+            BOOL resultIsFp16 =
+                operation.results[0].type.kind == ANEValueTypeKindTensor &&
+                operation.results[0].type.elementType == ANEElementTypeFP16;
+            BOOL resultIsBool =
+                operation.results[0].type.kind == ANEValueTypeKindTensor &&
+                operation.results[0].type.elementType == ANEElementTypeBool;
+            BOOL dtypeOK = shape.kind == ane::h13::H13BooleanKind::CastBoolToFp16
+                ? (xIsBool && resultIsFp16) : (xIsBool && resultIsBool);
+            if (!dtypeOK)
+                return reject(diagnostics,
+                    @"H13 lowers only the decoded cast directions — bool x to fp16, and bool logical_not; Apple's own tool refuses every other encoder cast (fp32/fp16, int32/fp16, fp16/int32, bool/int32, int32/bool), int32 less, logical_and and reduce_min, so they have no device form",
+                    operation, @"h13.cast-needs-decoded-encoder");
+            if (constantValue(x))
+                return reject(diagnostics,
+                    @"H13 cast and logical_not lower the runtime-x captures only; a constant operand has no decoded twin",
+                    operation, @"h13.cast-needs-decoded-encoder");
+        }
         if (shape.kind == ane::h13::H13BooleanKind::Select) {
             ANEGraphValue *cond = operation.operands[@"cond"].value;
             if (!cond || cond.type.kind != ANEValueTypeKindTensor ||
@@ -2684,7 +2718,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         boolean_reject:
             return reject(diagnostics,
                 [NSString stringWithFormat:
-                    @"H13 %@ is outside the decoded boolean envelope: the captured geometries are less at CHW (375,1,1)/(750,1,1)/(1500,1,1)/(64,1,1) with a bool result, floor at (1,1,1)/(64,1,1)/(512,1,1) runtime or blob x, select at (64,1,1)/(8,375,375) with runtime a and a bool cond, and floor_div at (1,1,1)/(64,1,1) with runtime y or the scalar 2.0 — fp16-result less and fp16-cond select are rejected by Apple's own tool, so no device form exists for them",
+                    @"H13 %@ is outside the decoded boolean envelope: the captured geometries are less at CHW (375,1,1)/(750,1,1)/(1500,1,1)/(64,1,1) with a bool result, floor at (1,1,1)/(64,1,1)/(512,1,1) runtime or blob x, select at (64,1,1)/(8,375,375) with runtime a and a bool cond, floor_div at (1,1,1)/(64,1,1) with runtime y or the scalar 2.0, bool-to-fp16 cast at [1,1,width,1] widths (64,375,750,1500,2048), and logical_not at [1,1,h,w] (64,64)/(749,375)/(375,375) — fp16-result less and fp16-cond select are rejected by Apple's own tool, so no device form exists for them",
                     name],
                 operation, @"h13.boolean-outside-envelope");
         }
@@ -3881,7 +3915,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             BOOL booleanLowered = [booleanOp isEqualToString:@"less"] ||
                 [booleanOp isEqualToString:@"floor"] ||
                 [booleanOp isEqualToString:@"select"] ||
-                [booleanOp isEqualToString:@"floor_div"];
+                [booleanOp isEqualToString:@"floor_div"] ||
+                [booleanOp isEqualToString:@"cast"] ||
+                [booleanOp isEqualToString:@"logical_not"];
             BOOL matvecParity = !batched && matmul &&
                 matmulParityShape(operation.operands[@"x"].value, operation.results[0],
                     boolean(operation.arguments[@"transpose_x"], YES),

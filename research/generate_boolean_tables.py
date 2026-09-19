@@ -92,6 +92,10 @@ def main():
             kind, const_input = "Select", True
         elif stem.startswith("select"):
             kind, const_input = "Select", False
+        elif stem.startswith("cast_b_to_f16"):
+            kind, const_input = "CastBoolToFp16", False
+        elif stem.startswith("logical_not"):
+            kind, const_input = "LogicalNot", False
         else:
             raise SystemExit(f"{stem}: unclassified capture")
         entry["kind"] = kind
@@ -139,7 +143,9 @@ def main():
         channels, height, width = shape
         kind = {"Less": "H13BooleanKind::Less", "Floor": "H13BooleanKind::Floor",
                 "Select": "H13BooleanKind::Select",
-                "FloorDiv": "H13BooleanKind::FloorDiv"}[entry["kind"]]
+                "FloorDiv": "H13BooleanKind::FloorDiv",
+                "CastBoolToFp16": "H13BooleanKind::CastBoolToFp16",
+                "LogicalNot": "H13BooleanKind::LogicalNot"}[entry["kind"]]
         table.append(
             "    {%s, %s, %d, %d, %d, %s, std::size(%s), %s, std::size(%s), %s, std::size(%s)},"
             % (kind, "true" if entry["constInput"] else "false",

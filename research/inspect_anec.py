@@ -324,6 +324,7 @@ def validate_program(directory, program, tensors):
                           'softmax', 'layer_norm', 'reduce_sum', 'reduce_max',
                           'reduce_mean', 'conv',
                           'less', 'floor', 'select', 'floor_div',
+                          'cast', 'logical_not',
                           'tile'),
             'unsupported operation')
     inputs, outputs = program.get('inputs'), program.get('outputs')
