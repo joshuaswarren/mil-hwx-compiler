@@ -122,7 +122,88 @@ def run_device(anec: Path, x: np.ndarray, tag: str, root: Path) -> np.ndarray:
     return np.load(ypath)
 
 
+NOT_DIAG_MIL = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<bool, [1, 1, 375, 375]> x) {
+    tensor<bool, [1, 1, 375, 375]> y = logical_not(x = x)[name = string("y")];
+  } -> (y);
+}
+"""
+
+
+def not_diag(root: Path) -> int:
+    """2026-09-19 finding: ane_exec returns 0 but the logical_not dst reads
+    all zeros for any input, while the cast program is device-exact through
+    the identical send/exec/read path. Emission is verified correct offline
+    (surface tables, selector slots, DMA extents all consistent with the
+    working cast). This diagnostic stages three set lanes, runs once, and
+    dumps the full dst allocation plus the set-lane offsets so the next
+    device window can distinguish engine-write vs read-path placement.
+    """
+    import ctypes
+    import struct as _struct
+    lib = ctypes.CDLL(LIBANE)
+    for n, rt, at in (
+        ("__ane_init", ctypes.c_void_p, [ctypes.c_char_p, ctypes.c_int]),
+        ("__ane_free", None, [ctypes.c_void_p]),
+        ("ane_exec", ctypes.c_int, [ctypes.c_void_p]),
+        ("__ane_src_size", ctypes.c_uint64, [ctypes.c_void_p, ctypes.c_uint32]),
+        ("__ane_dst_size", ctypes.c_uint64, [ctypes.c_void_p, ctypes.c_uint32]),
+        ("__ane_send", None, [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32]),
+        ("__ane_read", None, [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32]),
+    ):
+        f = getattr(lib, n)
+        f.restype = rt
+        f.argtypes = at
+        sys.stderr.write(f"prototype {n}: restype={rt} argtypes={at}\n")
+    diag = root / "diag"
+    diag.mkdir(exist_ok=True)
+    (diag / "m.mil").write_text(NOT_DIAG_MIL)
+    r = subprocess.run(
+        [str(COMPILER), "--mil", str(diag / "m.mil"), "--model-root", str(diag),
+         "--output", str(diag / "out"), "--target", "H13", "--format", "anec"],
+        capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"FAIL: diag compile: {r.stderr.strip()}")
+        return 1
+    anec = diag / "out/program-0.anec"
+    # preserve the emitted ANEC next to this receipt for offline diffing
+    (root / "logical-not-diag.anec").write_bytes(anec.read_bytes())
+    x = np.zeros((375, 384), dtype=np.uint8)
+    x[0, 0] = 0x01
+    x[0, 1] = 0x01
+    x[100, 5] = 0x01
+    np.save(diag / "x.npy", x)
+    nn = lib.__ane_init(str(anec).encode(), 0)
+    if not nn:
+        print("FAIL: __ane_init returned null")
+        return 1
+    s0 = int(lib.__ane_src_size(nn, 0))
+    d0 = int(lib.__ane_dst_size(nn, 0))
+    print(f"src {s0} dst {d0} (logical 144000)")
+    tile = np.zeros(s0, dtype=np.uint8)
+    tile[0:x.nbytes] = np.frombuffer(x.tobytes(), dtype=np.uint8)
+    lib.__ane_send(nn, ctypes.c_char_p(tile.ctypes.data), 0)
+    rc = lib.ane_exec(nn)
+    print("ane_exec:", rc)
+    out = np.zeros(d0, dtype=np.uint8)
+    lib.__ane_read(nn, ctypes.c_char_p(out.ctypes.data), 0)
+    (diag / "dst-dump.bin").write_bytes(out.tobytes())
+    nz = np.nonzero(out)[0]
+    print("nonzero dst bytes:", len(nz), "first 20 offsets:", nz[:20].tolist())
+    # set-lane home offsets for reference: 0x00, 0x01 (row 0), 100*384+5
+    print("set-lane home offsets: [0, 1, 38405]")
+    lib.__ane_free(nn)
+    return 0 if len(nz) else 2  # 2 = the documented all-zero finding
+
+
 def main() -> int:
+    if "--diag" in sys.argv:
+        sys.argv.remove("--diag")
+        WORKDIR.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=str(WORKDIR)) as td:
+            return not_diag(Path(td))
     if not COMPILER.exists():
         print(f"FAIL: compiler not found at {COMPILER}")
         return 1
