@@ -367,7 +367,7 @@ void checkEncoderConvEnvelope() {
     // stages lower; the third stage and other stride-2 shapes stay refused.
     assert(supportsConvParity({3, 3, 2, 1, true, {1, 3000, 128}, {256, 1500, 64}}));
     assert(supportsConvParity({3, 3, 2, 256, true, {256, 1500, 64}, {256, 750, 32}}));
-    assert(!supportsConvParity({3, 3, 2, 256, true, {256, 750, 32}, {256, 375, 16}}));
+    assert(supportsConvParity({3, 3, 2, 256, true, {256, 750, 32}, {256, 375, 16}}));
     // The W-padded rel-pos padconv lowers through its own two-task capture.
     assert(supportsConvParity({1, 1, 1, 8, false, {8, 375, 749}, {8, 375, 750}}));
     assert(supportsConvParity({1, 1, 1, 8, false, {8, 8, 7}, {8, 8, 8}}));

@@ -672,9 +672,11 @@ def conv_constants(parameters: dict[str, Any], weights: bytes,
     if groups == inputs and groups == outputs:
         weight_shape = parameters.get("weight_shape")
         if parameters.get("stride") == 2 and taps == 9 and outputs == 256 and \
-                weight_shape == [256, 1, 3, 3] and bias is not None and \
-                parameters.get("input_shape") == [1, 256, 1500, 64]:
-            # The stem depthwise subsampler; measured map (see the packer).
+                weight_shape == [256, 1, 3, 3] and bias is not None:
+            # The stem depthwise subsamplers (1500->64 and 750->32 capture
+            # the identical section layout); measured map (see the packer).
+            # Geometry coverage stays template-keyed: only captured
+            # shapes reach the encoder.
             section = pack_strided_depthwise_s2(weights, bias)
         elif not bias and taps == 1 and weight_shape and \
                 len(weight_shape) == 4 and weight_shape[2] == 1 and \

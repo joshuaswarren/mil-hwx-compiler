@@ -137,13 +137,16 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-conv-envelope-") as directo
                  [2, 2], 256, [1, 1, 1, 1], "custom", True))
     assert hit["programs"][0]["encoder"] == "apple-parity-conv"
     assert hit["programs"][0]["taskDescriptors"] == 1
-    # Still refused: a third subsampling stage (the measured depthwise row
-    # pins the 1500->750 geometry) and any other stride-2 shape.
+    # The encoder's third subsampling stage shares the measured depthwise
+    # section layout (verified against its own differential remints).
+    hit = compile_source(
+        root, "enc-subsample-dw-375",
+        conv_mil([1, 256, 750, 32], [256, 1, 3, 3], [1, 256, 375, 16],
+                 [2, 2], 256, [1, 1, 1, 1], "custom", True))
+    assert hit["programs"][0]["encoder"] == "apple-parity-conv"
+    assert hit["programs"][0]["taskDescriptors"] == 1
+    # Still refused: any other stride-2 shape (no measured map).
     for name, mil in (
-        ("enc-subsample-dw-375",
-         conv_mil([1, 256, 750, 32], [256, 1, 3, 3], [1, 256, 375, 16],
-                  [2, 2], 256, [1, 1, 1, 1], "custom", True)),
-
         ("k3-st2-square",
          conv_mil([1, 64, 16, 16], [64, 64, 3, 3], [1, 64, 8, 8],
                   [2, 2], 1, [0, 0, 0, 0], "same", False)),

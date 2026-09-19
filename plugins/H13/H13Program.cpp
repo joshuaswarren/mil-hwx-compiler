@@ -2457,9 +2457,9 @@ std::vector<std::uint8_t> packConvWeights(ConvShape shape,
         return packConvStridedMultitapS2(weights, bias);
     if (shape.stride == 2 && shape.groups == 256 &&
         shape.input.channels == 256 && shape.output.channels == 256 &&
-        shape.kernel == 3 && shape.kernelWidth == 3 && bias &&
-        shape.input.height == 1500 && shape.input.width == 64 &&
-        shape.output.height == 750 && shape.output.width == 32)
+        shape.kernel == 3 && shape.kernelWidth == 3 && bias)
+        // Both captured depthwise stages (1500->64 and 750->32) share the
+        // identical section layout; geometry coverage stays template-keyed.
         return packConvStridedDepthwiseS2(weights, bias);
     if (shape.groups == shape.input.channels &&
         shape.groups == shape.output.channels) {

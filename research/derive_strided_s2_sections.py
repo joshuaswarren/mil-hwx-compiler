@@ -29,12 +29,13 @@ ROOT = Path(__file__).resolve().parents[1]
 MASK = 0x4B1D
 
 CASES = {
-    "dense": ("encoder_conv_idx_c1_n256_k3x3_s2_g1_bias1_same",
-              "encoder_conv_idxb_c1_n256_k3x3_s2_g1_bias1_same",
+    "dense": ("encoder_conv_idx_c1_n256_k3x3_s2_g1_bias1_same_x3000x128",
+              "encoder_conv_idxb_c1_n256_k3x3_s2_g1_bias1_same_x3000x128",
               6144),
-    "depthwise": ("encoder_conv_idx_c256_n256_k3x3_s2_g256_bias1_same",
-                  "encoder_conv_idxb_c256_n256_k3x3_s2_g256_bias1_same",
+    "depthwise": ("encoder_conv_idx_c256_n256_k3x3_s2_g256_bias1_same_x1500x64",
+                  "encoder_conv_idxb_c256_n256_k3x3_s2_g256_bias1_same_x1500x64",
                   7168),
+
 }
 
 ELEMENTS = 2304 + 256  # weight [256,1,3,3] then bias [256]
@@ -44,6 +45,8 @@ def derive(pair: tuple[str, str, int], tag: str) -> dict:
     stem_a, stem_b, size = pair
     da = (ROOT / "research/oracles/h13" / f"{stem_a}.const.bin").read_bytes()
     db = (ROOT / "research/oracles/h13" / f"{stem_b}.const.bin").read_bytes()
+    if size is None:
+        size = len(da)
     if len(da) != size or len(db) != size:
         raise SystemExit(f"{tag}: retained sections are {len(da)}/{len(db)} "
                          f"bytes, the records decode {size}")
@@ -86,6 +89,21 @@ def derive(pair: tuple[str, str, int], tag: str) -> dict:
 
 def main() -> int:
     result = {tag: derive(pair, tag) for tag, pair in CASES.items()}
+    # The encoder's third subsampling stage (750->375 g256) shares the
+    # depthwise packing: identical structural bytes, identical payload
+    # window pattern (verified against its own differential remints
+    # encoder_conv_idx{,b}_c256_n256_k3x3_s2_g256_bias1_same_x750x32).
+    stem = "c256_n256_k3x3_s2_g256_bias1_same_x750x32"
+    da = (ROOT / "research/oracles/h13" /
+          f"encoder_conv_idx_{stem}.const.bin").read_bytes()
+    db = (ROOT / "research/oracles/h13" /
+          f"encoder_conv_idxb_{stem}.const.bin").read_bytes()
+    depthwise = base64.b64decode(result["depthwise"]["structural"])
+    for i in range(len(da)):
+        if da[i] != db[i]:
+            continue  # payload window: the packer overwrites it
+        assert da[i] == depthwise[i], f"stage-3 structural differs at {i}"
+    print("depthwise375: structural template identical to depthwise - same packer")
     out_json = ROOT / "research/strided_s2_structural.json"
     out_json.write_text(json.dumps({
         "mask": MASK,
