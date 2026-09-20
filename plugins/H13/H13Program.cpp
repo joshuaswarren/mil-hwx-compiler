@@ -1922,6 +1922,13 @@ bool supportsBroadcast(BinaryOperation operation, BroadcastOperand operand,
     return broadcastTemplate(operation, operand, shape);
 }
 
+std::uint16_t broadcastScalarBits(BinaryOperation operation,
+                                  BroadcastShape shape) {
+    const auto *source = broadcastTemplate(operation, BroadcastOperand::Scalar,
+                                           shape);
+    return source ? source->scalarBits : 0;
+}
+
 Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
                         BroadcastShape shape, const std::uint8_t *constant,
                         std::size_t constantBytes, std::uint16_t scalarBits) {

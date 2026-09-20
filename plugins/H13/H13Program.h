@@ -286,6 +286,12 @@ Program encodeFFNChain(std::uint32_t rows, std::uint32_t inner1,
 /// True when the decoded Apple corpus covers this broadcast as one program.
 bool supportsBroadcast(BinaryOperation operation, BroadcastOperand operand,
                        BroadcastShape shape);
+/// The fp16 scalar operand baked into the decoded row for this broadcast,
+/// or 0 when no row covers it. A Scalar-operand plan must match these
+/// bits; a row for a different scalar value must fall back to the caller
+/// (the 64-lane fold) instead of failing the whole compile.
+std::uint16_t broadcastScalarBits(BinaryOperation operation,
+                                  BroadcastShape shape);
 /// Encodes Apple's broadcast task stream. `constant` holds one fp16 value per
 /// channel for `BroadcastOperand::Constant` and is null otherwise;
 /// `scalarBits` carries the inline fp16 operand for `BroadcastOperand::Scalar`.

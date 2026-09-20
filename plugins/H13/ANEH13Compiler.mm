@@ -1406,6 +1406,16 @@ static BOOL broadcastPlan(ANEGraphOperation *operation,
     if (!sameBatchedShape(broadcast, candidate.result)) return NO;
     if (!ane::h13::supportsBroadcast(candidate.operation, candidate.operand,
                                      candidate.shape)) return NO;
+    if (candidate.operand == ane::h13::BroadcastOperand::Scalar) {
+        // A decoded row bakes ONE scalar value into its task words. If the
+        // program requests a different value, this row cannot serve it:
+        // fall back to the caller (the 64-lane fold compiles valid math
+        // for any value) instead of claiming the row and failing encode.
+        if (ane::h13::broadcastScalarBits(candidate.operation,
+                                          candidate.shape) !=
+            candidate.scalarBits)
+            return NO;
+    }
     *plan = candidate;
     *constantOut = constant;
     return YES;

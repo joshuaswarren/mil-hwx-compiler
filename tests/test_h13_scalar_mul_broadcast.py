@@ -129,9 +129,15 @@ def test_compiled_task_bytes_match_apple_capture(tmp_path) -> None:
         "channel binding)")
 
 
-def test_wrong_scalar_value_is_rejected(tmp_path) -> None:
-    """Fail-closed: requesting 0.5 (0x3800) against the bd-scale row
-    [1,8,375,375] must not silently compile a wrong-value program."""
+def test_matching_row_absent_scalar_falls_back_to_chunk_fold(tmp_path) -> None:
+    """FAILING-FIRST compatibility regression: a VALID scalar mul whose
+    value has no decoded row at this shape (0.5 at [1,8,375,375]; the
+    decoded row there is 0x1p-4) must still COMPILE through the old
+    64-lane fold with correct mul semantics - not error out.
+
+    Before the scalar-aware planner fix, broadcastPlan claims the row on
+    shape alone and encodeBroadcast refuses the bits, so the whole
+    compile fails (valid input rejected)."""
     mil = MIL.replace("0x1p-4", "0x1p-1")
     (tmp_path / "half.mil").write_text(mil)
     result = subprocess.run(
@@ -140,10 +146,14 @@ def test_wrong_scalar_value_is_rejected(tmp_path) -> None:
          "--target", "H13", "--format", "anec",
          "--output", str(tmp_path / "out-half")],
         capture_output=True, text=True, timeout=600, check=False)
-    assert result.returncode != 0, (
-        "0.5 scalar at the bd-scale shape compiled — the row must reject "
-        "a scalar whose bits differ from the captured 0x1p-4")
-    assert "scalar broadcast" in (result.stdout + result.stderr)
+    assert result.returncode == 0, (
+        "valid 0.5 scalar mul at a shape whose decoded row carries 0x1p-4 "
+        "must fall back to the chunk fold, not fail: "
+        + result.stdout + result.stderr)
+    manifest = json.loads((tmp_path / "out-half" / "manifest.json").read_text())
+    assert manifest["programs"], "fallback produced no programs"
+    for program in manifest["programs"]:
+        assert program["operation"] == "mul", program
 
 
 def test_semantic_reference_fp16_scale(tmp_path) -> None:
