@@ -10,6 +10,9 @@ are test data, never claimed hardware identities.
 """
 
 import hashlib
+import json
+import unittest
+import json
 import os
 import shutil
 import struct
@@ -54,7 +57,14 @@ class Fixture:
     artifacts and compiler binary, and a complete reviewed file. The checkout
     branch is deliberately not 'omarchy': branch text must not gate."""
 
-    def __init__(self, work):
+    def __init__(self, work, cpus=8, engine_base=ENGINE_BASE,
+                 engine_size=ENGINE_SIZE, platform_name="26bc04000.ane",
+                 module_parameters=""):
+        self.cpus = cpus
+        self.engine_base = engine_base
+        self.engine_size = engine_size
+        self.platform_name = platform_name
+        self.module_parameters = module_parameters
         self.work = work
         self.root = work / "root"
         self.checkout = work / "omarchy-ane"
@@ -73,16 +83,20 @@ class Fixture:
         (soc / "#address-cells").write_bytes(struct.pack(">I", 2))
         (soc / "#size-cells").write_bytes(struct.pack(">I", 1))
         (self.root / "proc/cpuinfo").write_text(
-            "".join(f"processor\t: {core}\n" for core in range(8)))
+            "".join(f"processor\t: {core}\n" for core in range(self.cpus)))
         (node / "compatible").write_bytes(
             COMPATIBLE.encode() + b"\0" + b"apple,ane\0")
         (node / "status").write_bytes(b"okay\0")
-        (node / "reg").write_bytes(REG)
+        (node / "reg").write_bytes(
+            struct.pack(">Q", self.engine_base)
+            + struct.pack(">I", self.engine_size))
 
         module = self.root / "sys/module/ane/parameters"
         module.mkdir(parents=True, exist_ok=True)
+        if self.module_parameters:
+            (module / "map_mode").write_text(self.module_parameters + "\n")
         (self.root / "sys/module/ane/srcversion").write_text(SRCVERSION + "\n")
-        platform = self.root / "sys/bus/platform/devices/26bc04000.ane"
+        platform = self.root / f"sys/bus/platform/devices/{self.platform_name}"
         platform.mkdir(parents=True, exist_ok=True)
         drivers = self.root / "sys/bus/platform/drivers/ane"
         drivers.mkdir(parents=True, exist_ok=True)
@@ -106,7 +120,8 @@ class Fixture:
         (dylib / "libane_python.so").write_bytes(LIB_BYTES)
         (self.checkout / "libane/libane.a").write_bytes(ARCHIVE_BYTES)
         subprocess.run(["git", "-C", str(self.checkout), "-c", "user.name=fixture",
-                        "-c", "user.email=fixture@invalid", "commit",
+                        "-c", "user.email=fixture@invalid",
+                        "-c", "core.hooksPath=/dev/null", "commit",
                         "--allow-empty", "-q", "-m", "fixture"], check=True)
 
         self.compiler.write_bytes(COMPILER_BYTES)
@@ -122,6 +137,11 @@ class Fixture:
             f"libane-python-sha256={sha(LIB_BYTES)}\n"
             f"libane-archive-sha256={sha(ARCHIVE_BYTES)}\n"
             f"compiler-commit={head}\n"
+            f"cpus={self.cpus}\n"
+            f"platform-device={self.platform_name}\n"
+            f"dt-engine-reg-address={hex(self.engine_base)}\n"
+            f"dt-engine-reg-size={hex(self.engine_size)}\n"
+            f"module-parameters={'map_mode=' + self.module_parameters if self.module_parameters else 'none'}\n"
             f"compiler-sha256={sha(COMPILER_BYTES)}\n")
 
     def node(self):
@@ -282,3 +302,79 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+class T6001Fixture(Fixture):
+    """The t6001-test-host profile: ten CPUs, the T6001 engine window with two address
+    cells and three size cells, and the qualified live map_mode=3 module."""
+
+    def __init__(self, work):
+        super().__init__(work, cpus=10, engine_base=0x285C04000,
+                         engine_size=0x24000,
+                         platform_name="285c04000.ane",
+                         module_parameters="3")
+
+
+class T6001ParameterizedPass(unittest.TestCase):
+    def test_t6001_identity_passes_t6001_host(self):
+        with tempfile.TemporaryDirectory() as work:
+            fixture = T6001Fixture(Path(work))
+            result = fixture.run()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("H13 preflight: PASS", result.stdout)
+
+    def test_t8101_identity_refused_on_t6001_host(self):
+        with tempfile.TemporaryDirectory() as work:
+            fixture = T6001Fixture(Path(work))
+            wrong = Path(work) / "wrong.env"
+            wrong.write_text(fixture.reviewed.read_text()
+                             .replace("cpus=10", "cpus=8")
+                             .replace("285c04000.ane", "26bc04000.ane")
+                             .replace("0x285c04000", "0x26bc04000")
+                             .replace("module-parameters=map_mode=3",
+                                      "module-parameters=none"))
+            result = fixture.run(
+                ANE_REVIEWED_IDENTITIES=str(wrong))
+            self.assertEqual(result.returncode, 2, result.stdout)
+            self.assertIn("PREFLIGHT FAIL", result.stderr)
+
+    def test_t8103_identity_refused_on_t8103_host_when_t6001_expected(self):
+        with tempfile.TemporaryDirectory() as work:
+            fixture = Fixture(Path(work))
+            wrong = Path(work) / "wrong.env"
+            wrong.write_text(fixture.reviewed.read_text()
+                             .replace("cpus=8", "cpus=10")
+                             .replace("26bc04000.ane", "285c04000.ane"))
+            result = fixture.run(ANE_REVIEWED_IDENTITIES=str(wrong))
+            self.assertEqual(result.returncode, 2, result.stdout)
+
+
+class SnapshotAttestation(unittest.TestCase):
+    def snapshot_pass_and_tamper(self, tamper):
+        with tempfile.TemporaryDirectory() as work:
+            fixture = Fixture(Path(work))
+            snapshot = fixture.compiler.parent / "SNAPSHOT.json"
+            head = subprocess.run(
+                ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+                capture_output=True, text=True, check=True).stdout.strip()
+            snapshot.write_text(json.dumps({
+                "source_commit": head,
+                "compiler": {"path": "attested",
+                             "sha256": sha(COMPILER_BYTES)}}))
+            fixture.extra_env["ANE_COMPILER_BIN"] = str(fixture.compiler)
+            result = fixture.run()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("compiler-snapshot", result.stdout)
+            if tamper:
+                data = json.loads(snapshot.read_text())
+                data["source_commit"] = "0" * 40
+                snapshot.write_text(json.dumps(data))
+                result = fixture.run()
+                self.assertEqual(result.returncode, 2, result.stdout)
+                self.assertIn("compiler commit (snapshot)", result.stderr)
+
+    def test_snapshot_attestation_passes(self):
+        self.snapshot_pass_and_tamper(False)
+
+    def test_tampered_snapshot_refused(self):
+        self.snapshot_pass_and_tamper(True)

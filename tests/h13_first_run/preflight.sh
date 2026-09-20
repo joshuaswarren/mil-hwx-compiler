@@ -70,9 +70,10 @@ else
     reviewed=/dev/null
     fail "no reviewed identity file; set ANE_REVIEWED_IDENTITIES to the reviewed key=value file; refusing an unreviewed host"
 fi
-for key in firmware dt-compatible module-srcversion module-ko module-ko-sha256 \
+for key in firmware cpus platform-device dt-engine-reg-address dt-engine-reg-size \
+           dt-compatible module-srcversion module-ko module-ko-sha256 module-parameters \
            libane-python-sha256 libane-archive-sha256 compiler-commit compiler-sha256; do
-    [[ -n $(sed -n "s/^$key=//p" "$reviewed" 2>/dev/null | head -1) ]] || \
+    grep -q "^$key=" "$reviewed" 2>/dev/null || \
         fail "reviewed identities omit $key; the review must pin it before submission"
 done
 require() { sed -n "s/^$1=//p" "$reviewed" 2>/dev/null | head -1; }
@@ -81,6 +82,11 @@ check() { # observed reviewed label; a mismatch refuses the host
         fail "$3: observed '$1' does not match reviewed '$2'"
 }
 r_firmware=$(require firmware)
+r_cpus=$(require cpus)
+r_platform=$(require platform-device)
+r_reg_addr=$(require dt-engine-reg-address)
+r_reg_size=$(require dt-engine-reg-size)
+r_modparams=$(require module-parameters)
 r_dt=$(require dt-compatible)
 r_srcver=$(require module-srcversion)
 r_ko=$(require module-ko)
@@ -101,7 +107,7 @@ identity kernel "$(uname -r) $(uname -m)"
 cpus=$(online)
 cpus=${cpus:-0}
 identity cpus "$cpus online"
-[[ $cpus == 8 ]] || fail "host has $cpus online CPUs, not 8; a degraded or overridden device tree loses cores - refuse to qualify"
+[[ $cpus == "$r_cpus" ]] || fail "host has $cpus online CPUs, not the reviewed $r_cpus; a degraded or overridden device tree loses cores - refuse to qualify"
 
 # 2. Device-tree node. Compatible (first entry), status and the complete
 # engine reg (address 0x26bc04000 plus 0x24000 window, per the parent's cell
@@ -120,10 +126,10 @@ if [[ -d $node ]]; then
     check "$compatible" "$r_dt" "dt-compatible"
     [[ $dtstatus == okay ]] || fail "device-tree status is '$dtstatus', not 'okay'"
     if [[ $acells =~ ^[1-4]$ && $scells =~ ^[1-4]$ ]]; then
-        printf -v regexpect '%0*x%0*x' $((acells * 8)) 0x26bc04000 \
-            $((scells * 8)) 0x24000
+        printf -v regexpect '%0*x%0*x' $((acells * 8)) "$r_reg_addr" \
+            $((scells * 8)) "$r_reg_size"
         [[ $reg == "$regexpect" ]] || \
-            fail "ANE reg is ${reg:-missing}, not the t8103 task-manager window 0x26bc04000+0x24000"
+            fail "ANE reg is ${reg:-missing}, not the reviewed engine window $r_reg_addr+$r_reg_size"
     else
         fail "cannot decode reg cell counts ($acells/$scells); refusing an unreadable tree"
     fi
@@ -135,7 +141,7 @@ fi
 # The platform device is the OF device of the validated node (OF names it
 # <unit-address>.<nodename>) and must be bound to the ane driver.
 moddir=$root/sys/module/ane
-platform=$root/sys/bus/platform/devices/26bc04000.ane
+platform=$root/sys/bus/platform/devices/$r_platform
 if [[ -d $moddir ]]; then
     srcversion=$(cat "$moddir/srcversion" 2>/dev/null)
     parameters=
@@ -144,8 +150,10 @@ if [[ -d $moddir ]]; then
         parameters+="$(basename "$parameter")=$(cat "$parameter" 2>/dev/null) "
     done
     identity module-srcversion "$srcversion"
-    identity module-parameters "${parameters:-none}"
-    [[ -z $parameters ]] || fail "module parameters are outside the reviewed parameter-free driver configuration: $parameters"
+    observed="${parameters%"${parameters##*[! ]}"}"
+    observed=${observed:-none}
+    identity module-parameters "$observed"
+    [[ $observed == "$r_modparams" ]] || fail "module parameters are outside the reviewed configuration ($r_modparams): $observed"
     check "$srcversion" "$r_srcver" "module-srcversion"
     kodigest=$(digest "$r_ko")
     identity module-ko "$r_ko"
@@ -155,17 +163,17 @@ else
     fail "ane module is not loaded; submission requires the reviewed module bytes loaded in an explicitly owned window"
 fi
 if [[ -d $platform ]]; then
-    identity platform-device "26bc04000.ane"
+    identity platform-device "$r_platform"
     driver=$(basename "$(readlink -f "$platform/driver" 2>/dev/null)")
     identity platform-driver "$driver"
-    [[ $driver == ane ]] || fail "platform device 26bc04000.ane is bound to '${driver:-none}', not the ane driver"
+    [[ $driver == ane ]] || fail "platform device $r_platform is bound to '${driver:-none}', not the ane driver"
     control=$(cat "$platform/power/control" 2>/dev/null)
     identity runtime-pm "$control"
     # Autosuspend invalidates DART TLBs about a second later, including the
     # dart0 apple-dart owns, and resets the SoC.
     [[ $control == on ]] || fail "runtime PM is '$control', not 'on'; refusing"
 else
-    fail "no platform device at sys/bus/platform/devices/26bc04000.ane; the reviewed DT node bound nothing"
+    fail "no platform device at sys/bus/platform/devices/$r_platform; the reviewed DT node bound nothing"
 fi
 
 # 4. Device node. The runner opens device index 0, so attesting anything but
@@ -208,14 +216,34 @@ fi
 # device result names the reviewed source and bytes that produced it.
 identity compiler-repo "$repo"
 identity compiler-bin "$compiler"
-identity compiler-commit "$(git -C "$repo" rev-parse --short HEAD) on \
-$(git -C "$repo" rev-parse --abbrev-ref HEAD)"
-identity compiler-dirty "$(git -C "$repo" status --porcelain | wc -l) modified path(s)"
+compiler_dir=$(cd "$(dirname "$compiler")" && pwd)
 comdigest=$(digest "$compiler")
 identity compiler-sha256 "${comdigest:-missing $compiler}"
 check "$comdigest" "$r_binary" "compiler binary sha256"
-comcommit=$(git -C "$repo" rev-parse HEAD 2>/dev/null)
-check "$comcommit" "$r_commit" "compiler commit"
+snapshot=$compiler_dir/SNAPSHOT.json
+if [[ -f $snapshot ]]; then
+    # Immutable snapshot attestation: the bundle carries the source commit
+    # and the binary digest together; both must match the review. No git
+    # directory is required and none may be faked.
+    attested=$(python3 - "$snapshot" <<'PY'
+import json, sys
+snapshot = json.load(open(sys.argv[1]))
+print(snapshot["source_commit"])
+print(snapshot["compiler"]["sha256"])
+PY
+)
+    comcommit=$(sed -n 1p <<<"$attested")
+    attestedbin=$(sed -n 2p <<<"$attested")
+    identity compiler-snapshot "$snapshot"
+    check "$comcommit" "$r_commit" "compiler commit (snapshot)"
+    check "$attestedbin" "$r_binary" "snapshot binary sha256"
+else
+    identity compiler-commit "$(git -C "$repo" rev-parse --short HEAD 2>/dev/null) on \
+$(git -C "$repo" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+    identity compiler-dirty "$(git -C "$repo" status --porcelain 2>/dev/null | wc -l) modified path(s)"
+    comcommit=$(git -C "$repo" rev-parse HEAD 2>/dev/null)
+    check "$comcommit" "$r_commit" "compiler commit"
+fi
 
 if [[ $status -eq 0 ]]; then
     echo "H13 preflight: PASS (no device access performed)"
