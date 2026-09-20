@@ -1949,17 +1949,42 @@ Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
     } else {
         program.constants.assign(source->constantBytes, 0);
     }
-    // The runtime-runtime captures bind src1 on channel 5, src2 on 4 and
-    // write the result on 6; the scalar and per-channel-constant captures
-    // bind x on 5 and write on 4. The declarations must name the channels
-    // the replayed stream actually addresses (the adapter and the runner
-    // both consume them literally).
-    if (operand == BroadcastOperand::Runtime) {
-        program.inputs = {elementwiseTensor(4, shape.y),
-                          elementwiseTensor(5, shape.x)};
+    // Captured selector conventions (research/oracles/h13 env_bcast_* and
+    // rrmm_bcast_*): the runtime-runtime rows address x on channel 4, y on
+    // 5 and the result on 6; the scalar rows address x on 4 and the result
+    const std::uint32_t selectors = source->words[8];
+    const std::uint32_t xNamed = selectors & 31;
+    const std::uint32_t yNamed = (selectors >> 6) & 31;
+    const std::uint32_t outNamed = (selectors >> 12) & 31;
+    if (operand == BroadcastOperand::Runtime &&
+        !(xNamed >= 4 && yNamed >= 4 && outNamed >= 4)) {
+        // The y-broadcasting runtime rows read the narrow operand through
+        // the engine's L2 path (their captured src2 selector names no
+        // surface channel), which bundle schema 4 cannot stage. The mint
+        // materializes the narrow operand to the full shape instead and
+        // submits the same-shape form.
+        throw std::invalid_argument(
+            "H13 runtime broadcast with an unstaged narrow operand: "
+            "materialize the operand to the full shape and resubmit as "
+            "the same-shape form (Apple's own L2 staging is not "
+            "representable in bundle schema 4)");
+    }
+    if (operand == BroadcastOperand::Runtime &&
+        xNamed >= 4 && yNamed >= 4 && outNamed >= 4) {
+        // Runtime captures that name all three surfaces (the same-shape
+        // attention-add rows: x=4, y=5, result=6) replay under the
+        // identity binding, and the declarations name those channels so
+        // the manifest matches the stream the adapter and runner verify.
+        program.taskSurfaceChannels = {4, 5, 6, 7};
+        program.inputs = {elementwiseTensor(4, shape.x),
+                          elementwiseTensor(5, shape.y)};
         if (!sameShape(shape.x, shape.y)) program.outputBindingIndex = 1;
         program.output = elementwiseTensor(6, broadcastOutput(operand, shape));
     } else {
+        // Positional rows (y-broadcasting runtimes, scalars,
+        // per-channel-constants): x rides the parity-mapped src channel
+        // and the result fills positionally on 4.
+        program.taskSurfaceChannels = {5, 4, 6, 7};
         program.inputs = {elementwiseTensor(5, shape.x)};
         program.output = elementwiseTensor(4, broadcastOutput(operand, shape));
     }
