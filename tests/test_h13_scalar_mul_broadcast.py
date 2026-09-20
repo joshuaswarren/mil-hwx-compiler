@@ -212,6 +212,25 @@ def test_ln_affine_encoder_geometry_is_decoded(tmp_path) -> None:
     assert len(manifest["programs"]) == 1
 
 
+
+
+
+def test_ln_rank4_axes1_encoder_compiles(tmp_path) -> None:
+    """Failing-first: rank-4 alternative axes=[1] (channel axis on
+    reshape [375,1024,1,1]). normSurface canonicalizes the
+    [375,1024,1,1] geometry - one of the certified parity families."""
+    mil = ROOT / "scripts" / "ln_probe_rank4_axes1.ml"
+    result = subprocess.run(
+        [str(COMPILER), "--mil", str(mil), "--model-root", str(tmp_path),
+         "--target", "H13", "--format", "anec",
+         "--output", str(tmp_path / "out")],
+        capture_output=True, text=True, timeout=600, check=False)
+    assert result.returncode == 0, (
+        "rank-4 axes=1 LN refused: " + result.stdout + result.stderr)
+    manifest = json.loads((tmp_path / "out" / "manifest.json").read_text())
+    assert len(manifest["programs"]) == 1
+
+
 def test_ln_oracle_covered_shape_lowers_to_decoded_program(tmp_path) -> None:
     """Anchor: the oracle-covered [1,1024,1,1] non-affine layer_norm
     axes=[-1] epsilon=2^-17 IS inside the decoded envelope and must
