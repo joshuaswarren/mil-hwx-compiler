@@ -49,9 +49,19 @@ BCAST_ADD = """program(1.3)
 
 
 
+ENV_BCAST = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 64, 8, 8]> x, tensor<fp16, [1, 64, 1, 1]> y) {
+    tensor<fp16, [1, 64, 8, 8]> z = add(x = x, y = y)[name = string("z")];
+  } -> (z);
+}
+"""
+
 COMPILE_CASES = [
     ("same-shape add", SAME_ADD),
     ("broadcasting add", BCAST_ADD),
+    ("env broadcasting add", ENV_BCAST),
 ]
 
 REFUSE_CASES = []

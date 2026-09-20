@@ -121,16 +121,12 @@ def channel_binding(oracle):
     return ENVELOPE_CHANNEL_BINDING if identity else PARITY_CHANNEL_BINDING
 
 
-# The y-broadcasting runtime rows read their narrow operand through the
-# engine's L2 path (src2 selector names no surface channel), which bundle
-# schema 4 cannot stage; the compiler refuses them with
-# h13.runtime-broadcast-needs-materialized-operand and the mint
-# materializes the operand instead (covered by the broadcast binding CLI).
-# The rrmm_broadcast L2-staged rows compile and deliver end-to-end: their
-# two-task streams read the narrow operand into L2 (task0), then read the
-# full operand and write the result (task1) -- the declared roles match
-# the whole linked stream, proven per task by
-# test_h13_role_consistency_cli.py.
+# The L2-staged y-broadcast runtime rows (env and rrmm) compile and
+# deliver end-to-end: their two-task streams read the narrow operand
+# through the engine's L2 broadcast path (task0), then read the full
+# operand and write the result (task1). The declared roles match the
+# whole linked emitted stream for all 52 rows, proven per task by
+# test_h13_role_consistency_cli.py and the emitted-stream batch proof.
 L2_STAGED_BROADCAST = set()
 
 
@@ -142,18 +138,6 @@ def selected_oracles():
             continue
         if oracle["case"] in NATIVE_SELECTION_CASES:
             continue
-        if oracle["family"] in BROADCAST_FAMILIES and \
-                oracle["family"] != "rrmm_broadcast" and \
-                "runtime" in oracle["case"]:
-            task = oracle["task_descriptors"][0]
-            words = [int(w, 16) if isinstance(w, str) else w
-                     for w in task["header_words"]]
-            selectors = words[8]
-            fully_named = all(((selectors >> shift) & 31) >= 4
-                              for shift in (0, 6, 12))
-            if not fully_named:
-                L2_STAGED_BROADCAST.add(oracle["case"])
-                continue
         parameters = oracle.get("parameters", {})
         operation = parameters.get("operation")
         family = oracle.get("family")
@@ -424,14 +408,13 @@ def main():
     families = collections.Counter(oracle["family"] for oracle in oracles)
     # Counts exclude the 73 NATIVE_SELECTION_CASES (4 binary_runtime,
     # 1 binary_constant, 34 env_broadcast, 20 env_matmul, 9 matmul,
-    # 5 rrmm_matvec) that commit 4849a0e moved to native encoders, and
-    # the 40 L2-staged y-broadcast env_broadcast runtime rows that
-    # bundle schema 4 cannot represent (the compiler refuses them with
-    # h13.runtime-broadcast-needs-materialized-operand; the mint
-    # materializes the narrow operand instead).
+    # 5 rrmm_matvec) that commit 4849a0e moved to native encoders. The
+    # L2-staged y-broadcast runtime rows (40 env_broadcast + 12
+    # rrmm_broadcast) were reinstated after the whole-stream role proof
+    # showed their two-task streams deliver every operand.
     expected = {"binary_runtime": 46, "binary_constant": 11, "unary": 28,
                 "matmul": 27, "normalization": 108, "reduction": 116,
-                "env_broadcast": 28, "env_matmul": 90, "env_conv": 15,
+                "env_broadcast": 68, "env_matmul": 90, "env_conv": 15,
                 "encoder_linear": 11, "encoder_bmm": 1, "chain": 1,
                 "encoder_structure": 5}
     for family in ("rrmm_broadcast", "rrmm_matmul", "rrmm_matvec",
