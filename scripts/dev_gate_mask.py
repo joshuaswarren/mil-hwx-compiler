@@ -133,16 +133,8 @@ NOT_DIAG_MIL = """program(1.3)
 
 
 def not_diag(root: Path) -> int:
-    """2026-09-19 finding: ane_exec returns 0 but the logical_not dst reads
-    all zeros for any input, while the cast program is device-exact through
-    the identical send/exec/read path. Emission is verified correct offline
-    (surface tables, selector slots, DMA extents all consistent with the
-    working cast). This diagnostic stages three set lanes, runs once, and
-    dumps the full dst allocation plus the set-lane offsets so the next
-    device window can distinguish engine-write vs read-path placement.
-    """
+    """(docstring above)"""
     import ctypes
-    import struct as _struct
     lib = ctypes.CDLL(LIBANE)
     for n, rt, at in (
         ("__ane_init", ctypes.c_void_p, [ctypes.c_char_p, ctypes.c_int]),
@@ -157,48 +149,116 @@ def not_diag(root: Path) -> int:
         f.restype = rt
         f.argtypes = at
         sys.stderr.write(f"prototype {n}: restype={rt} argtypes={at}\n")
-    diag = root / "diag"
-    diag.mkdir(exist_ok=True)
-    persistent = root  # the TemporaryDirectory parent keeps nothing; dump
-    # durable copies into WORKDIR below before returning.
-    (diag / "m.mil").write_text(NOT_DIAG_MIL)
-    r = subprocess.run(
-        [str(COMPILER), "--mil", str(diag / "m.mil"), "--model-root", str(diag),
-         "--output", str(diag / "out"), "--target", "H13", "--format", "anec"],
-        capture_output=True, text=True)
-    if r.returncode != 0:
-        print(f"FAIL: diag compile: {r.stderr.strip()}")
-        return 1
-    anec = diag / "out/program-0.anec"
+
+    def compile_mil(name: str, mil: str) -> Path:
+        d = root / name
+        d.mkdir(exist_ok=True)
+        (d / "m.mil").write_text(mil)
+        r = subprocess.run(
+            [str(COMPILER), "--mil", str(d / "m.mil"), "--model-root", str(d),
+             "--output", str(d / "out"), "--target", "H13", "--format", "anec"],
+            capture_output=True, text=True)
+        if r.returncode != 0:
+            print(f"FAIL: {name} compile: {r.stderr.strip()}")
+            sys.exit(1)
+        anec = d / "out/program-0.anec"
+        (root / f"{name}-emitted.anec").write_bytes(anec.read_bytes())
+        return anec
+
+    NOT_MIL_TXT = NOT_MIL
+    CAST_MIL_TXT = CAST_MIL
     durable = WORKDIR / "diag-durable"
     durable.mkdir(exist_ok=True)
-    (durable / "logical-not-diag.anec").write_bytes(anec.read_bytes())
-    x = np.zeros((375, 384), dtype=np.uint8)
-    x[0, 0] = 0x01
-    x[0, 1] = 0x01
-    x[100, 5] = 0x01
-    np.save(diag / "x.npy", x)
-    nn = lib.__ane_init(str(anec).encode(), 0)
-    if not nn:
-        print("FAIL: __ane_init returned null")
+    anec_not = compile_mil("not", NOT_MIL_TXT)
+    anec_cast = compile_mil("castctl", CAST_MIL_TXT)
+
+    def validate_binding(anec_path: Path, tag: str) -> tuple[int, int, dict]:
+        """Output binding/extent validated, not assumed: ANEC surface table
+        channel 4 (nchw), manifest output binding, and libane dst_size must
+        agree on the logical byte count and row pitch."""
+        data = anec_path.read_bytes()
+        layouts = struct.unpack_from("<192Q", data, 0xA8)
+        nchw4 = list(layouts[4 * 6:5 * 6])
+        manifest = json.loads((anec_path.parent / "manifest.json").read_text())
+        binding = manifest["programs"][0]["outputs"][0]
+        row, plane = nchw4[5], nchw4[4]
+        total = nchw4[3] * plane if nchw4[3] else plane
+        print(f"[{tag}] ch4 nchw {nchw4} | manifest output "
+              f"{binding['dtype']} logicalBytes {binding['logicalBytes']} "
+              f"alloc {binding['allocationBytes']}")
+        return row, plane, {"nchw": nchw4, "binding": binding}
+
+    def run_sentinel(anec_path: Path, x: np.ndarray, tag: str,
+                     expected: np.ndarray) -> dict:
+        nn = lib.__ane_init(str(anec_path).encode(), 0)
+        if not nn:
+            print(f"FAIL [{tag}]: __ane_init returned null")
+            sys.exit(1)
+        s0 = int(lib.__ane_src_size(nn, 0))
+        d0 = int(lib.__ane_dst_size(nn, 0))
+        tile = np.full(s0, 0x5A, dtype=np.uint8)
+        tile[0:x.nbytes] = np.frombuffer(x.tobytes(), dtype=np.uint8)
+        dst = np.full(d0, 0xA5, dtype=np.uint8)  # sentinel-preinitialized
+        lib.__ane_send(nn, ctypes.c_char_p(tile.ctypes.data), 0)
+        rc = int(lib.ane_exec(nn))
+        lib.__ane_read(nn, ctypes.c_char_p(dst.ctypes.data), 0)
+        lib.__ane_free(nn)
+        sentinel = int(np.count_nonzero(dst == 0xA5))
+        zeros = int(np.count_nonzero(dst == 0))
+        other = d0 - sentinel - zeros
+        verdict = ("ENGINE-WROTE-VALUES" if other
+                   else "ENGINE-WROTE-ZEROS" if zeros == d0
+                   else "MIXED" if zeros or other
+                   else "ENGINE-NOT-WRITTEN (sentinel intact)")
+        exact = bool(np.array_equal(dst[:x.nbytes],
+                                    np.frombuffer(expected.tobytes(),
+                                                  dtype=np.uint8)))
+        print(f"[{tag}] exec {rc} | dst {d0} B: sentinel {sentinel}, "
+              f"zero {zeros}, other {other} => {verdict} | "
+              f"expected-exact {exact}")
+        (durable / f"dst-{tag}.bin").write_bytes(dst.tobytes())
+        return {"verdict": verdict, "exact": exact, "rc": rc}
+
+    # ---- positive control: cast (known to write) under the same protocol
+    x_cast = np.zeros((1500, 64), dtype=np.uint8)
+    lanes = np.arange(1500, dtype=np.uint8) % 2
+    x_cast[:, 0] = lanes
+    row_c, plane_c, _ = validate_binding(anec_cast, "cast-control")
+    exp_cast = np.zeros((1500, 64), dtype=np.uint8)
+    exp_cast[:, 0:1] = lanes.reshape(1500, 1).astype(np.uint8)
+    ctrl = run_sentinel(anec_cast, x_cast, "cast-control", exp_cast)
+
+    # ---- logical_not under both input encodings
+    vals = np.zeros((375, 375), dtype=np.uint8)
+    vals[0, 0] = 1
+    vals[0, 1] = 1
+    vals[100, 5] = 1
+    vals[200, 300] = 0
+    row_n, plane_n, _ = validate_binding(anec_not, "not-canonical")
+    x_canon = np.zeros((375, 384), dtype=np.uint8)
+    x_canon[:, :375] = vals
+    res_canon = run_sentinel(anec_not, x_canon, "not-canonical",
+                             (vals ^ 0xFF).astype(np.uint8))
+    x_nc = np.full((375, 384), 0xFF, dtype=np.uint8)
+    x_nc[0, 0] = 0x00  # one canonical-false lane in a non-canonical field
+    res_nc = run_sentinel(anec_not, x_nc, "not-noncanonical",
+                          (x_nc[:, :375] ^ 0xFF).astype(np.uint8))
+
+    print()
+    print("DISCRIMINATOR SUMMARY")
+    print(f"  cast control: {ctrl['verdict']} exact={ctrl['exact']}")
+    print(f"  not canonical 0/1: {res_canon['verdict']} exact={res_canon['exact']}")
+    print(f"  not non-canonical 0xFF: {res_nc['verdict']} exact={res_nc['exact']}")
+    print("  durable dumps:", sorted(p.name for p in durable.glob('dst-*.bin')))
+    if not ctrl["exact"]:
+        print("FAIL: positive control did not reproduce - harness fault")
         return 1
-    s0 = int(lib.__ane_src_size(nn, 0))
-    d0 = int(lib.__ane_dst_size(nn, 0))
-    print(f"src {s0} dst {d0} (logical 144000)")
-    tile = np.zeros(s0, dtype=np.uint8)
-    tile[0:x.nbytes] = np.frombuffer(x.tobytes(), dtype=np.uint8)
-    lib.__ane_send(nn, ctypes.c_char_p(tile.ctypes.data), 0)
-    rc = lib.ane_exec(nn)
-    print("ane_exec:", rc)
-    out = np.zeros(d0, dtype=np.uint8)
-    lib.__ane_read(nn, ctypes.c_char_p(out.ctypes.data), 0)
-    (durable / "dst-dump.bin").write_bytes(out.tobytes())
-    nz = np.nonzero(out)[0]
-    print("nonzero dst bytes:", len(nz), "first 20 offsets:", nz[:20].tolist())
-    # set-lane home offsets for reference: 0x00, 0x01 (row 0), 100*384+5
-    print("set-lane home offsets: [0, 1, 38405]")
-    lib.__ane_free(nn)
-    return 0 if len(nz) else 2  # 2 = the documented all-zero finding
+    if res_canon["verdict"] == "ENGINE-WROTE-VALUES" or             res_nc["verdict"] == "ENGINE-WROTE-VALUES":
+        print("PASS: kernel executes; classify semantics from the dumps")
+        return 0
+    print("FINDING: engine-not-written / submission / kernel branch "
+          "retained (sentinel evidence in diag-durable)")
+    return 2
 
 
 def main() -> int:

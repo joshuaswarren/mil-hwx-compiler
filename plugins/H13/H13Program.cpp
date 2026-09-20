@@ -1949,14 +1949,20 @@ Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
     } else {
         program.constants.assign(source->constantBytes, 0);
     }
-    program.inputs = {elementwiseTensor(5, shape.x)};
+    // The runtime-runtime captures bind src1 on channel 5, src2 on 4 and
+    // write the result on 6; the scalar and per-channel-constant captures
+    // bind x on 5 and write on 4. The declarations must name the channels
+    // the replayed stream actually addresses (the adapter and the runner
+    // both consume them literally).
     if (operand == BroadcastOperand::Runtime) {
-        program.inputs.push_back(elementwiseTensor(6, shape.y));
-        // Identical operands keep declaration order; any broadcast puts the
-        // output surface between the two operands.
+        program.inputs = {elementwiseTensor(4, shape.y),
+                          elementwiseTensor(5, shape.x)};
         if (!sameShape(shape.x, shape.y)) program.outputBindingIndex = 1;
+        program.output = elementwiseTensor(6, broadcastOutput(operand, shape));
+    } else {
+        program.inputs = {elementwiseTensor(5, shape.x)};
+        program.output = elementwiseTensor(4, broadcastOutput(operand, shape));
     }
-    program.output = elementwiseTensor(4, broadcastOutput(operand, shape));
     program.firstTaskBytes = source->firstTaskBytes;
     program.taskCount = source->taskCount;
     program.constantOffsetBytes = source->constantOffsetBytes;

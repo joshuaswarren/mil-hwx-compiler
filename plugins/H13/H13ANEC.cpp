@@ -162,7 +162,12 @@ std::vector<std::uint8_t> encodeANEC(const Program &program) {
     // the result channel 5, so the surface table follows each layout's
     // declared index instead of assuming output-first.
     const auto outputChannel = program.output.index;
-    if (outputChannel != 4 && outputChannel != 5)
+    // Channel 6 is the runtime-runtime broadcast result: Apple's own rr
+    // captures write the result through selector slot 12 = 6 with every
+    // surface allocated full-width (verified against
+    // env_bcast_{add,mul}_*_runtime_* and the ac-head package), and the
+    // bundle adapter plus runner bind by the manifest channel list.
+    if (outputChannel != 4 && outputChannel != 5 && outputChannel != 6)
         throw std::invalid_argument("unsupported ANEC output channel index");
     for (std::size_t i = 0; i != program.inputs.size(); ++i) {
         const auto index = program.inputs[i].index;
