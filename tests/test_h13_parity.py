@@ -40,6 +40,10 @@ DEFAULT_ENCODER = "h13-oracle-parity"
 # native emission is exercised by the CLI, encoding, and simulation tests.
 # The set is exact: a case leaving it (or joining it) changes the family
 # counts this suite asserts, so any further selection drift stays visible.
+# NARROW MEANING (Main-labeled, 2026-09-20): a PASS here is byte-parity of
+# the emitted task streams against Apple's decoded oracles. It is NOT a
+# numeric-correctness claim for any device run; correctness on hardware is
+# the device gates' scope (differential drivers, per-intermediate evidence).
 NATIVE_SELECTION_CASES = frozenset({
     "binary_add_1x64x1x1", "binary_maximum_1x64x1x1", "binary_minimum_1x64x1x1",
     "binary_mul_1x64x1x1", "binary_mul_c64_constant_scalar",

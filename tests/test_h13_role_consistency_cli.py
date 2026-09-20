@@ -14,6 +14,15 @@ Cross-program channel equality is NOT a contract (runtime_worker.cpp
 load_programs gives each program its own handle/chans; execute_program
 copies through the manifest tensor names).
 
+SCOPE (Main-labeled, 2026-09-20): this is a BINDING-ROLE ladder, not an
+arithmetic-correctness ladder -- it compares no numeric output. It proves
+deliverability only: what the runtime must stage is what the decoded
+stream reads/writes. Numeric correctness rests on the parity suite's
+896-case BYTE comparison against Apple's oracles (byte-parity is a narrow
+claim: the task streams match Apple's, not that any device run agrees
+with a reference), and on device gates. The arithmetic rungs here lock
+the binding contract per op; they do not certify arithmetic results.
+
 This regression walks a representative family matrix and fails on the
 first program whose declarations disagree with the decoded stream roles.
 """
