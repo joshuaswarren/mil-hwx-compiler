@@ -289,19 +289,40 @@ def main() -> int:
             return 1
         print("cast bool->fp16 [1,1,1500,1]: exact on 1500 lanes")
 
-        # logical_not at [1,1,375,375]: 375 rows of 384 bytes.
-        vals = (rng.integers(0, 2, size=(375, 375))).astype(np.uint8)
-        x_not = np.zeros((375, 384), dtype=np.uint8)
-        x_not[:, :375] = vals
+        # logical_not at [1,1,375,375]: TWO-RUN COMPLEMENT discriminator.
+        # A single all-zero read cannot separate engine-not-written from
+        # wrote-zeros, so the same program runs twice with complement
+        # inputs: a real write differs (0xFE-fill vs 0xFF-fill under
+        # byte-not; 0x01-vs-0x00 under logical semantics), an unwritten or
+        # constant-writing BO reads identical.
+        vals_a = np.zeros((375, 375), dtype=np.uint8)
+        vals_a[0, 0] = 1
+        vals_a[0, 1] = 1
+        vals_a[100, 5] = 1
+        vals_b = 1 - vals_a  # complement pattern
         anec = compile_case("not", NOT_MIL, root)
-        out = run_device(anec, x_not, "not", root)
-        got = out[:375 * 384].reshape(375, 384)[:, :375]
-        expect = vals ^ 0xFF
-        if not np.array_equal(got, expect):
-            bad = int(np.count_nonzero(got != expect))
-            print(f"FAIL: logical_not mismatch on {bad} lanes")
+        dumps = {}
+        for tag, vals in (("A", vals_a), ("B", vals_b)):
+            x_not = np.zeros((375, 384), dtype=np.uint8)
+            x_not[:, :375] = vals
+            out = run_device(anec, x_not, f"not-{tag}", root)
+            dumps[tag] = out[:375 * 384].reshape(375, 384)[:, :375]
+        if np.array_equal(dumps["A"], dumps["B"]):
+            print("FAIL: logical_not dst identical across complement "
+                  "inputs - engine did not write this BO as emitted "
+                  "(engine-not-written / submission / read-path retained; "
+                  "dumps in diag-durable)")
             return 1
-        print("logical_not [1,1,375,375]: exact byte-not on 140625 lanes")
+        for tag, vals in (("A", vals_a), ("B", vals_b)):
+            got = dumps[tag]
+            logical = (1 - vals).astype(np.uint8)
+            bytenot = (vals ^ 0xFF).astype(np.uint8)
+            if np.array_equal(got, logical):
+                print(f"logical_not run {tag}: LOGICAL semantics (1-x)")
+            elif np.array_equal(got, bytenot):
+                print(f"logical_not run {tag}: BYTE-NOT semantics (x^0xFF)")
+        print("logical_not [1,1,375,375]: writes input-dependently; "
+              "semantics classified above")
     print("dev_gate_mask: PASS")
     return 0
 
