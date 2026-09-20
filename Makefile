@@ -258,6 +258,7 @@ test-h13: $(BUILD)/test_h13_encoding $(BUILD)/test_h13_anec $(BUILD)/mil-hwxc
 	python3 tests/test_h13_silu_envelope_cli.py $(BUILD)/mil-hwxc
 	python3 tests/test_h13_norm_envelope_cli.py $(BUILD)/mil-hwxc
 	python3 tests/test_h13_ln_epsilon_cli.py $(BUILD)/mil-hwxc
+	python3 tests/test_h13_ln_affine_peel_cli.py $(BUILD)/mil-hwxc
 	python3 tests/test_h13_conv_envelope_cli.py $(BUILD)/mil-hwxc
 	python3 tests/test_h13_select_envelope_cli.py $(BUILD)/mil-hwxc
 	python3 tests/test_h13_chain_envelope_cli.py $(BUILD)/mil-hwxc

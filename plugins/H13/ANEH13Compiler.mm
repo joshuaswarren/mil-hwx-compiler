@@ -2967,6 +2967,199 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     return YES;
 }
 
+/// `tensor<fp16, dims>(payload)` — the typed wrapper const spellings carry
+/// their payload in.
+static MILExpressionSyntax *PeelTensorCall(NSArray<NSNumber *> *dimensions,
+                                           MILExpressionSyntax *payload) {
+    MILTypeSyntax *elementType = [[MILTypeSyntax alloc] initWithName:@"fp16"
+        typeArguments:@[] dimensions:@[]];
+    MILTypeSyntax *type = [[MILTypeSyntax alloc] initWithName:@"tensor"
+        typeArguments:@[elementType] dimensions:dimensions];
+    return [[MILExpressionSyntax alloc]
+        initWithKind:MILExpressionKindCall atom:nil calleeType:type
+        calleeName:nil
+        arguments:@[[[MILArgumentSyntax alloc] initWithName:nil
+            value:payload]]
+        elements:@[] range:payload.range];
+}
+
+static MILExpressionSyntax *PeelIdentifier(NSString *name,
+                                           ANESourceRange range) {
+    return [[MILExpressionSyntax alloc]
+        initWithKind:MILExpressionKindIdentifier atom:name calleeType:nil
+        calleeName:nil arguments:@[] elements:@[] range:range];
+}
+
+static MILArgumentSyntax *PeelNamedValue(NSString *name,
+                                         MILExpressionSyntax *value) {
+    return [[MILArgumentSyntax alloc] initWithName:name value:value];
+}
+
+static NSDictionary<NSString *, MILOperationSyntax *> *PeelConstants(
+    NSArray<MILOperationSyntax *> *operations) {
+    NSMutableDictionary<NSString *, MILOperationSyntax *> *constants =
+        [NSMutableDictionary dictionary];
+    for (MILOperationSyntax *operation in operations) {
+        if ([operation.operationName isEqualToString:@"const"] &&
+            operation.results.count == 1)
+            constants[operation.results[0].name] = operation;
+    }
+    return constants;
+}
+
+/// The affine layer_norm peel for the constants the decoded corpus serves:
+/// gamma and beta named fp16 tensor constants of one common reduced extent.
+/// The statement becomes three operations the lowering serves as decoded
+/// Apple programs — the non-affine layer_norm row, then a per-channel
+/// constant mul (gamma), then a per-channel constant add (beta) — with the
+/// add publishing the original result name. Rank-1 [C] constants respell to
+/// the [1, 1, C] form the broadcast rows decode. Nothing here claims Apple
+/// emits this composition: Apple's own tool refuses the affine form at this
+/// geometry (capture triage 2026-09-20). Each peel program is individually
+/// byte-exact against its decoded row, and the manifest keeps the three
+/// programs distinct. A stage outside its decoded envelope refuses by name.
+static NSArray<MILOperationSyntax *> *PeelAffineLayerNorm(
+    MILOperationSyntax *operation,
+    NSDictionary<NSString *, MILOperationSyntax *> *constants,
+    NSUInteger *peelCount) {
+    if (operation.results.count != 1) return nil;
+    MILArgumentSyntax *gammaArgument = nil;
+    MILArgumentSyntax *betaArgument = nil;
+    for (MILArgumentSyntax *argument in operation.arguments) {
+        if ([argument.name isEqualToString:@"gamma"]) gammaArgument = argument;
+        if ([argument.name isEqualToString:@"beta"]) betaArgument = argument;
+    }
+    if (!gammaArgument.value || !betaArgument.value ||
+        gammaArgument.value.kind != MILExpressionKindIdentifier ||
+        betaArgument.value.kind != MILExpressionKindIdentifier) return nil;
+    MILOperationSyntax *gammaConst = constants[gammaArgument.value.atom];
+    MILOperationSyntax *betaConst = constants[betaArgument.value.atom];
+    if (!gammaConst || !betaConst ||
+        gammaConst.results.count != 1 || betaConst.results.count != 1 ||
+        ![gammaConst.results[0].type.name isEqualToString:@"tensor"] ||
+        ![betaConst.results[0].type.name isEqualToString:@"tensor"] ||
+        gammaConst.results[0].type.typeArguments.count != 1 ||
+        betaConst.results[0].type.typeArguments.count != 1 ||
+        ![gammaConst.results[0].type.typeArguments[0].name
+            isEqualToString:@"fp16"] ||
+        ![betaConst.results[0].type.typeArguments[0].name
+            isEqualToString:@"fp16"] ||
+        ![gammaConst.results[0].type.dimensions
+            isEqualToArray:betaConst.results[0].type.dimensions]) return nil;
+    MILArgumentSyntax *gammaValue = nil;
+    MILArgumentSyntax *betaValue = nil;
+    for (MILArgumentSyntax *attribute in gammaConst.attributes)
+        if ([attribute.name isEqualToString:@"val"]) gammaValue = attribute;
+    for (MILArgumentSyntax *attribute in betaConst.attributes)
+        if ([attribute.name isEqualToString:@"val"]) betaValue = attribute;
+    if (!gammaValue.value || !betaValue.value ||
+        gammaValue.value.kind != MILExpressionKindCall ||
+        betaValue.value.kind != MILExpressionKindCall) return nil;
+    NSArray<NSNumber *> *extent = gammaConst.results[0].type.dimensions;
+    BOOL respell = extent.count == 1;
+    if (!respell && !(extent.count == 3 &&
+                      extent[0].integerValue == 1 &&
+                      extent[1].integerValue == 1)) return nil;
+    ANESourceRange range = operation.range;
+    NSString *base = [NSString stringWithFormat:@"%@.h13peel%lu",
+        operation.results[0].name, (unsigned long)(*peelCount)++];
+    NSMutableArray<MILOperationSyntax *> *group = [NSMutableArray array];
+    NSString *gammaName = gammaArgument.value.atom;
+    NSString *betaName = betaArgument.value.atom;
+    if (respell) {
+        MILTypeSyntax *elementType = [[MILTypeSyntax alloc] initWithName:@"fp16"
+            typeArguments:@[] dimensions:@[]];
+        MILTypeSyntax *type = [[MILTypeSyntax alloc] initWithName:@"tensor"
+            typeArguments:@[elementType]
+            dimensions:@[@1, @1, extent[0]]];
+        for (MILArgumentSyntax *value in @[gammaValue, betaValue]) {
+            NSString *name = [NSString stringWithFormat:@"%@.%@", base,
+                value == gammaValue ? @"gamma" : @"beta"];
+            [group addObject:[[MILOperationSyntax alloc]
+                initWithResults:@[[[MILResultSyntax alloc] initWithType:type
+                    name:name]]
+                operationName:@"const"
+                arguments:@[]
+                attributes:@[PeelNamedValue(@"name",
+                    [[MILExpressionSyntax alloc]
+                        initWithKind:MILExpressionKindString atom:name
+                        calleeType:nil calleeName:nil arguments:@[]
+                        elements:@[] range:range]),
+                    PeelNamedValue(@"val", PeelTensorCall(@[@1, @1, extent[0]],
+                        value.value.arguments[0].value))]
+                range:range]];
+            if (value == gammaValue) gammaName = name;
+            else betaName = name;
+        }
+    }
+    MILResultSyntax *result = operation.results[0];
+    NSMutableArray<MILArgumentSyntax *> *normArguments = [NSMutableArray array];
+    for (MILArgumentSyntax *argument in operation.arguments)
+        if (![argument.name isEqualToString:@"gamma"] &&
+            ![argument.name isEqualToString:@"beta"])
+            [normArguments addObject:argument];
+    [group addObject:[[MILOperationSyntax alloc]
+        initWithResults:@[[[MILResultSyntax alloc] initWithType:result.type
+            name:[base stringByAppendingString:@".norm"]]]
+        operationName:@"layer_norm"
+        arguments:normArguments attributes:operation.attributes range:range]];
+    [group addObject:[[MILOperationSyntax alloc]
+        initWithResults:@[[[MILResultSyntax alloc] initWithType:result.type
+            name:[base stringByAppendingString:@".scaled"]]]
+        operationName:@"mul"
+        arguments:@[PeelNamedValue(@"x", PeelIdentifier(
+                        [base stringByAppendingString:@".norm"], range)),
+                    PeelNamedValue(@"y", PeelIdentifier(gammaName, range))]
+        attributes:@[] range:range]];
+    [group addObject:[[MILOperationSyntax alloc]
+        initWithResults:@[result]
+        operationName:@"add"
+        arguments:@[PeelNamedValue(@"x", PeelIdentifier(
+                        [base stringByAppendingString:@".scaled"], range)),
+                    PeelNamedValue(@"y", PeelIdentifier(betaName, range))]
+        attributes:@[] range:range]];
+    return group;
+}
+
+/// Splices every peelable affine layer_norm, preserving order (a peel
+/// consumes its producer's output; its add publishes the original name).
+static MILProgramSyntax *PeelAffineLayerNormsInProgram(
+    MILProgramSyntax *program) {
+    if (!program) return nil;
+    NSMutableArray<MILFunctionSyntax *> *functions = nil;
+    for (NSUInteger index = 0; index < program.functions.count; ++index) {
+        MILFunctionSyntax *function = program.functions[index];
+        NSDictionary<NSString *, MILOperationSyntax *> *constants =
+            PeelConstants(function.operations);
+        NSMutableArray<MILOperationSyntax *> *expanded = nil;
+        NSUInteger peelCount = 0;
+        for (NSUInteger position = 0; position < function.operations.count;
+             ++position) {
+            NSArray<MILOperationSyntax *> *group = PeelAffineLayerNorm(
+                function.operations[position], constants, &peelCount);
+            if (!group) {
+                if (expanded) [expanded addObject:function.operations[position]];
+                continue;
+            }
+            if (!expanded)
+                expanded = [function.operations
+                    subarrayWithRange:NSMakeRange(0, position)].mutableCopy;
+            [expanded addObjectsFromArray:group];
+        }
+        if (!expanded) continue;
+        if (!functions)
+            functions = [program.functions
+                subarrayWithRange:NSMakeRange(0, index)].mutableCopy;
+        [functions addObject:[[MILFunctionSyntax alloc]
+            initWithName:function.name opset:function.opset
+            parameters:function.parameters operations:expanded
+            returnNames:function.returnNames range:function.range]];
+    }
+    if (!functions) return program;
+    return [[MILProgramSyntax alloc] initWithVersion:program.version
+        attributes:program.attributes functions:functions range:program.range];
+}
+
 @implementation ANEH13Compiler
 + (BOOL)compileMILData:(NSData *)milData
              modelRoot:(NSURL *)modelRoot
@@ -2996,6 +3189,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     MILParser *parser = [[MILParser alloc] initWithTokens:tokens
         diagnostics:diagnostics];
     MILProgramSyntax *syntax = parser.parseProgram;
+    syntax = PeelAffineLayerNormsInProgram(syntax);
     ANEGraphModule *module = syntax
         ? [MILGraphImporter importProgram:syntax diagnostics:diagnostics] : nil;
     if (!module || diagnostics.errorCount ||

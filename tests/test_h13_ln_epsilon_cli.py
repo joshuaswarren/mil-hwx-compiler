@@ -72,21 +72,28 @@ def mil_const_epsilon(payload):
 """ % val
 
 
-def mil_affine():
-    gamma = ", ".join(["fp16(0x1p+0)"] * 1024)
-    beta = ", ".join(["fp16(0x0p+0)"] * 1024)
+def mil_affine(gamma=True, beta=True):
+    gamma_elements = ", ".join(["fp16(0x1p+0)"] * 1024)
+    beta_elements = ", ".join(["fp16(0x0p+0)"] * 1024)
+    gamma_line = ("    tensor<fp16, [1024]> gamma = const()"
+        '[name = string("gamma"), val = tensor<fp16, [1024]>([%s])];'
+        % gamma_elements) if gamma else ""
+    beta_line = ("    tensor<fp16, [1024]> beta = const()"
+        '[name = string("beta"), val = tensor<fp16, [1024]>([%s])];'
+        % beta_elements) if beta else ""
+    gamma_operand = ", gamma = gamma" if gamma else ""
+    beta_operand = ", beta = beta" if beta else ""
     return """program(1.3)
 [buildInfo = dict<string, string>({})]
 {
   func main<ios18>(tensor<fp16, [1, 375, 1024]> x) {
     tensor<int32, [1]> axes = const()[name = string("axes"), val = tensor<int32, [1]>(-1)];
-    tensor<fp16, [1024]> gamma = const()[name = string("gamma"), val = tensor<fp16, [1024]>([%s])];
-    tensor<fp16, [1024]> beta = const()[name = string("beta"), val = tensor<fp16, [1024]>([%s])];
+%s%s
     tensor<fp16, []> epsilon_bits = const()[name = string("epsilon_bits"), val = tensor<fp16, []>(fp16(0x1.5p-17))];
-    tensor<fp16, [1, 375, 1024]> y = layer_norm(x = x, axes = axes, epsilon = epsilon_bits, gamma = gamma, beta = beta)[name = string("y")];
+    tensor<fp16, [1, 375, 1024]> y = layer_norm(x = x, axes = axes, epsilon = epsilon_bits%s%s)[name = string("y")];
   } -> (y);
 }
-""" % (gamma, beta)
+""" % (gamma_line, beta_line, gamma_operand, beta_operand)
 
 
 def epsilon_blob():
@@ -189,8 +196,12 @@ with tempfile.TemporaryDirectory(prefix="h13-ln-epsilon-") as directory:
                             shape="1, 376, 1024"),
                 "anec", expected_code="h13.norm-outside-envelope")
 
-    # Fail-closed: the affine form stays refused (no decoded affine row).
-    run_compile(root, "affine-exact-epsilon", mil_affine(),
+    # Fail-closed: the peel gate needs BOTH constants — gamma without beta
+    # stays on the affine refusal path (full peel coverage in
+    # tests/test_h13_ln_affine_peel_cli.py).
+    run_compile(root, "gamma-only", mil_affine(gamma=True, beta=False),
+                "anec", expected_code="h13.norm-outside-envelope")
+    run_compile(root, "beta-only", mil_affine(gamma=False, beta=True),
                 "anec", expected_code="h13.norm-outside-envelope")
 
 print("h13 ln epsilon cli: PASS")
