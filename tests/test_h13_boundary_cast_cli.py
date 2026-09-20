@@ -150,3 +150,19 @@ with tempfile.TemporaryDirectory(prefix="h13-boundary-cast-") as directory:
     assert refusal.returncode == 65, refusal.stdout + refusal.stderr
 
 print("h13 boundary cast cli: PASS")
+
+# Pre-declared comparison classes: LN/reduce statistics outputs carry the
+# fp16-envelope class through every downstream elementwise op; elementwise
+# chains outside a statistics stage stay exact. (Main-directed: the LN
+# numeric envelope is declared, never retrofitted onto a failed exact run.)
+envelope_source = BOUNDARY.replace(
+    "tensor<int32, [375]> encoder_mask = cast(dtype = dtype_i32, x = mask)[name = string(\"encoder_mask\")];\n    ",
+    "").replace("  } -> (encoder_hidden, encoder_mask);", "  } -> (encoder_hidden);")
+with tempfile.TemporaryDirectory() as directory:
+    root = Path(directory)
+    out, manifest = run_compile(root, "envelope-classes", envelope_source, b"")
+    tensors = manifest["tensors"]
+    assert tensors["normalized"].get("comparison") == "fp16-envelope", tensors["normalized"]
+    assert tensors["scaled"].get("comparison") == "fp16-envelope", tensors["scaled"]
+    assert tensors["encoder_hidden"].get("comparison") == "fp16-envelope"
+print("h13 envelope comparison classes: PASS")
