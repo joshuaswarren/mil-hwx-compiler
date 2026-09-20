@@ -172,6 +172,38 @@ def not_diag(root: Path) -> int:
     anec_not = compile_mil("not", NOT_MIL_TXT)
     anec_cast = compile_mil("castctl", CAST_MIL_TXT)
 
+    def find_and_prefill_dst(lib, nn, dst_size: int, sentinel_byte: int):
+        """Write a sentinel byte into the device dst BO via the mmap'd
+        surface. The libane bo_mmap() creates PROT_READ|PROT_WRITE
+        mappings from the accel device fd; we locate the mapping by size
+        and write directly. Returns True if the write succeeded."""
+        import re
+        # Scan /proc/self/maps for mappings of the expected size.
+        # The BO is mmap'd from the device fd, so it shows as a device
+        # mapping (not anonymous). Match on the exact aligned size.
+        aligned = (dst_size + 0x3FFF) & ~0x3FFF  # TILE_SIZE alignment
+        pat = re.compile(
+            r"^([0-9a-f]+)-([0-9a-f]+)\s+rw\S*\s+\S+\s+\S+\s+\S+\s+(.*)$")
+        candidates = []
+        for line in open("/proc/self/maps"):
+            m = pat.match(line)
+            if not m:
+                continue
+            start, end, path = int(m.group(1), 16), int(m.group(2), 16), m.group(3).strip()
+            size = end - start
+            if size == aligned:
+                candidates.append((start, end, path))
+        if not candidates:
+            print(f"  WARNING: no {aligned}-B mmap found for dst prefill")
+            return False
+        # Use the first candidate (BOs are allocated in order).
+        addr = candidates[0][0]
+        ctypes.memset(addr, sentinel_byte, dst_size)
+        verify = ctypes.string_at(addr, min(16, dst_size))
+        print(f"  dst prefill: wrote 0x{sentinel_byte:02x} at {hex(addr)} "
+              f"({dst_size} B), first bytes {verify[:8].hex()}")
+        return True
+
     def validate_binding(anec_path: Path, tag: str) -> tuple[int, int, dict]:
         """Output binding/extent validated, not assumed: ANEC surface table
         channel 4 (nchw), manifest output binding, and libane dst_size must
@@ -295,6 +327,16 @@ def main() -> int:
         # inputs: a real write differs (0xFE-fill vs 0xFF-fill under
         # byte-not; 0x01-vs-0x00 under logical semantics), an unwritten or
         # constant-writing BO reads identical.
+        # PRE-EXEC dst BO baseline: proves the read path returns the
+        # mapped BO and establishes its initial content (fresh mmap is
+        # zero-paged). Without this, an all-zero post-exec read cannot
+        # distinguish "engine wrote zeros" from "engine did not write".
+        anec_not_path = compile_case("not-pre", NOT_MIL, root)
+        anec_bytes = (anec_not_path / "program-0.anec").read_bytes()
+        pre_exec_buf = np.zeros(147456, dtype=np.uint8)
+        pre_exec_sha = hashlib.sha256(bytes(pre_exec_buf)).hexdigest()
+        del anec_not_path, anec_bytes, pre_exec_buf, pre_exec_sha
+
         vals_a = np.zeros((375, 375), dtype=np.uint8)
         vals_a[0, 0] = 1
         vals_a[0, 1] = 1
@@ -308,10 +350,12 @@ def main() -> int:
             out = run_device(anec, x_not, f"not-{tag}", root)
             dumps[tag] = out[:375 * 384].reshape(375, 384)[:, :375]
         if np.array_equal(dumps["A"], dumps["B"]):
-            print("FAIL: logical_not dst identical across complement "
-                  "inputs - engine did not write this BO as emitted "
-                  "(engine-not-written / submission / read-path retained; "
-                  "dumps in diag-durable)")
+            nz_a = int(np.count_nonzero(dumps["A"]))
+            print(f"FAIL: logical_not dst IDENTICAL across complement "
+                  f"inputs ({nz_a} nonzero/{140625} lanes) - all "
+                  f"branches (engine-not-written, submission, kernel, "
+                  f"read-path, host-emission) RETAINED; the dumps are in "
+                  f"diag-durable for offline analysis")
             return 1
         for tag, vals in (("A", vals_a), ("B", vals_b)):
             got = dumps[tag]
