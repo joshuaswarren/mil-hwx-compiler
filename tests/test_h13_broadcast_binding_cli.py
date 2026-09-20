@@ -97,20 +97,17 @@ with tempfile.TemporaryDirectory(prefix="h13-bcast-binding-") as directory:
     assert sorted(b["index"] for b in program["inputs"]) == [4, 5]
     assert [b["index"] for b in program["outputs"]] == [6]
 
-    # Broadcasting runtime rows are refused: their captured src2 slot
-    # names no surface channel (the engine's L2 path), and bundle
-    # schema 4 cannot deliver a runtime operand through a channel the
-    # decoded stream never reads (proven by the role-consistency CLI).
-    # The mint materializes the narrow operand and resubmits the
-    # same-shape form.
-    (root / "bcast-refused.mil").write_text(BCAST_ADD)
-    run = subprocess.run(
-        [compiler, "--mil", str(root / "bcast-refused.mil"),
-         "--model-root", str(root), "--output", str(root / "bcast-refused"),
-         "--target", "H13", "--format", "anec"],
-        capture_output=True, text=True, timeout=300, check=False)
-    assert run.returncode == 65, run.stdout + run.stderr
-    assert "h13.runtime-broadcast-needs-materialized-operand" in run.stderr, \
-        run.stderr
+    # Broadcasting runtime rows lower under the parity convention and
+    # deliver end-to-end: the narrow operand rides ch6 (task0 reads it
+    # narrow-shaped and stages the broadcast in L2), the full operand
+    # rides ch5, and the result fills positionally on ch4. The declared
+    # roles must match the whole linked emitted stream, task by task.
+    package = compile_package(root, "bcast-parity", BCAST_ADD)
+    manifest = json.loads((package / "manifest.json").read_text())
+    prog = manifest["programs"][0]
+    assert prog["encoder"] == "apple-parity-broadcast"
+    assert sorted(b["index"] for b in prog["inputs"]) == [5, 6], \
+        prog["inputs"]
+    assert [b["index"] for b in prog["outputs"]] == [4], prog["outputs"]
 
 print("h13 broadcast binding cli: PASS")

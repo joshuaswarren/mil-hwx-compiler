@@ -725,15 +725,15 @@ def check_broadcast_packages():
     """Per-channel and spatial broadcasts package as one program, and their
     arithmetic on the packaged surfaces matches h13_reference."""
     failures = []
-    # Constant narrow operands ride the ANEC constant section and
-    # package; runtime narrow operands are refused
-    # (h13.runtime-broadcast-needs-materialized-operand, proven
-    # undeliverable by test_h13_role_consistency_cli.py) and are
-    # covered by the refusal tests, not here.
     cases = [
         ('add', (1, 64, 8, 8), (1, 64, 1, 1), True),
         ('mul', (1, 64, 8, 8), (1, 64, 1, 1), True),
         ('add', (1, 768, 8, 8), (1, 768, 1, 1), True),
+        ('add', (1, 64, 8, 8), (1, 64, 1, 1), False),
+        ('mul', (1, 64, 8, 8), (1, 1, 8, 8), False),
+        ('add', (1, 64, 16, 16), (1, 1, 1, 1), False),
+        ('add', (2, 64, 8, 8), (1, 64, 1, 1), False),
+        ('mul', (8, 64, 8, 8), (1, 64, 1, 1), False),
     ]
     for operation, x_shape, y_shape, constant in cases:
         with tempfile.TemporaryDirectory() as directory:

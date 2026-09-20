@@ -1954,23 +1954,6 @@ Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
     const std::uint32_t yNamed = (selectors >> 6) & 31;
     const std::uint32_t outNamed = (selectors >> 12) & 31;
     if (operand == BroadcastOperand::Runtime &&
-        !(xNamed >= 4 && yNamed >= 4 && outNamed >= 4)) {
-        // A runtime operand whose captured source slot names no surface
-        // channel is undeliverable through bundle schema 4: the runtime
-        // worker stages every input by its manifest channel into that
-        // channel's BO, and the decoded task stream never reads the
-        // channel the full-shape operand is declared on (proven by
-        // test_h13_role_consistency_cli.py: declared inputs [5, 6] vs
-        // decoded sources [6], destinations []). The mint materializes
-        // the narrow operand to the full shape and submits the
-        // same-shape form instead.
-        throw std::invalid_argument(
-            "h13.runtime-broadcast-needs-materialized-operand: the "
-            "captured stream reads the narrow operand through the "
-            "engine's L2 path; materialize it to the full shape and "
-            "resubmit as the same-shape form");
-    }
-    if (operand == BroadcastOperand::Runtime &&
         xNamed >= 4 && yNamed >= 4 && outNamed >= 4) {
         // Runtime captures that name all three surfaces (the same-shape
         // attention-add rows: x=4, y=5, result=6) replay under the
@@ -1982,9 +1965,14 @@ Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
         if (!sameShape(shape.x, shape.y)) program.outputBindingIndex = 1;
         program.output = elementwiseTensor(6, broadcastOutput(operand, shape));
     } else {
-        // The parity convention (original per-family behavior the parity
-        // suite byte-verifies): x rides the parity-mapped src channel,
-        // runtime broadcasts bind y on 6, and the result fills on 4.
+        // The parity convention (the original per-family behavior the
+        // parity suite byte-verifies, deliverable end-to-end): the
+        // narrow operand rides ch6 through the engine's L2 broadcast
+        // (task0 stages it), the full operand rides ch5, and the
+        // result fills positionally on ch4. test_h13_role_consistency_
+        // cli.py proves the declared roles against the whole linked
+        // emitted stream, task by task.
+        program.taskSurfaceChannels = {5, 4, 6, 7};
         program.inputs = {elementwiseTensor(5, shape.x)};
         if (operand == BroadcastOperand::Runtime) {
             program.inputs.push_back(elementwiseTensor(6, shape.y));
