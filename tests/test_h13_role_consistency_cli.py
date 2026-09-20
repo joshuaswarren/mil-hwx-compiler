@@ -79,6 +79,53 @@ ENV_BCAST = """program(1.3)
 }
 """
 
+# The three Apple-refused encoder forms decompose exactly on their value
+# domains onto primitives that both Apple's tool decoded and this compiler
+# lowers. Preconditions (range-proven, receipt 2026-09-20):
+# - int32 less = fp16 less: lengths/arange are non-negative integers <= 375,
+#   exactly representable in fp16 (<= 2048), so the comparison result is
+#   identical in both domains.
+# - logical_and(a, b) = less(0.5, mul(cast a, cast b)): bools are {0,1};
+#   cast and mul are exact on {0,1}; the 0.5 threshold separates exactly.
+# - reduce_min over a {0,1} mask = 1 - max(1 - x): the complement rides
+#   mul(-1.0)+add(1.0) (integer fp16, exact on {0,1}), reduce_max fp16 is
+#   decoded, and the outer 1-m is sub with the CONSTANT ON Y -- the exact
+#   sub_scalar_1 spelling Apple decoded. No const-on-x sub is needed;
+#   every intermediate is an exact integer fp16 value.
+# Geometry note: cast rides its decoded [1,1,width,1] band, less rides the
+# decoded CHW (375,1,1) band; the reshape between them is a view (no data
+# movement, no numeric content).
+DECOMP_LOGICAL_AND = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<bool, [1, 1, 375, 1]> a, tensor<bool, [1, 1, 375, 1]> b) {
+    tensor<fp16, [1, 1, 375, 1]> fa = cast(dtype = string("fp16"), x = a)[name = string("fa")];
+    tensor<fp16, [1, 1, 375, 1]> fb = cast(dtype = string("fp16"), x = b)[name = string("fb")];
+    tensor<int32, [3]> shp = const()[name = string("shp"), val = tensor<int32, [3]>([375, 1, 1])];
+    tensor<fp16, [375, 1, 1]> far = reshape(shape = shp, x = fa)[name = string("far")];
+    tensor<fp16, [375, 1, 1]> fbr = reshape(shape = shp, x = fb)[name = string("fbr")];
+    tensor<fp16, [375, 1, 1]> p = mul(x = far, y = fbr)[name = string("p")];
+    tensor<fp16, [375, 1, 1]> half = const()[name = string("half"), val = tensor<fp16, [375, 1, 1]>([fp16(0.5), fp16(0.5), fp16(0.5)])];
+    tensor<bool, [375, 1, 1]> y = less(x = p, y = half)[name = string("y")];
+  } -> (y);
+}
+"""
+
+DECOMP_REDUCE_MIN = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 1, 375, 375]> x) {
+    fp16 neg = const()[name = string("neg"), val = fp16(-1.0)];
+    fp16 one = const()[name = string("one"), val = fp16(1.0)];
+    tensor<fp16, [1, 1, 375, 375]> nx = mul(x = x, y = neg)[name = string("nx")];
+    tensor<fp16, [1, 1, 375, 375]> cx = add(x = nx, y = one)[name = string("cx")];
+    tensor<int32, [1]> axes = const()[name = string("axes"), val = tensor<int32, [1]>([2])];
+    tensor<fp16, [1, 1, 1, 375]> m = reduce_max(axes = axes, keep_dims = bool(true), x = cx)[name = string("m")];
+    tensor<fp16, [1, 1, 1, 375]> y = sub(x = one, y = m)[name = string("y")];
+  } -> (y);
+}
+"""
+
 COMPILE_CASES = [
     ("same-shape add", SAME_ADD),
     ("broadcasting add", BCAST_ADD),
@@ -86,6 +133,18 @@ COMPILE_CASES = [
 ] + [
     (f"runtime {op} [1,64,1,1]", _binary_runtime(op))
     for op in ("add", "mul", "maximum", "minimum", "sub")
+] + [
+    ("decomposed logical_and", DECOMP_LOGICAL_AND),
+]
+
+# The reduce_min chain is blocked at exactly one row: sub with the
+# CONSTANT ON X (h13.nonfoldable-binary). Apple DECODED that form
+# (research/oracles/h13/sub_scalar_1_1x1x1x375.json -- the byte-source
+# exists), so landing it is queued emitted-template work, not a search.
+# The test asserts the refusal contract until the row lands.
+BLOCKED_CASES = [
+    ("decomposed reduce_min", DECOMP_REDUCE_MIN,
+     "h13.nonfoldable-binary"),
 ]
 
 REFUSE_CASES = []
@@ -215,7 +274,7 @@ def run():
                         f"{label} [{prog['encoder']}]: declared outputs "
                         f"{declared_out} != decoded surface destinations "
                         f"{dst_ch} (l2_writes={l2w})")
-        for label, mil, code in REFUSE_CASES:
+        for label, mil, code in REFUSE_CASES + BLOCKED_CASES:
             run, _ = compile_package(root, label.replace(" ", "-"), mil)
             if run.returncode == 0:
                 failures.append(f"{label}: compiled but must be refused ({code})")
@@ -230,7 +289,8 @@ def run():
         sys.exit(1)
     print("h13 role consistency cli: PASS "
           f"({len(COMPILE_CASES)} compiled cases declarations==decoded roles, "
-          f"{len(REFUSE_CASES)} refused cases carry the documented contract)")
+          f"{len(REFUSE_CASES)} refused cases carry the documented contract, "
+          f"{len(BLOCKED_CASES)} blocked case pinned to its queued row)")
 
 
 if __name__ == "__main__":
