@@ -60,7 +60,9 @@ def decoded_channels(anec_path):
                 dst.add(channel)
         elif registers.get(0x13800, 0) & 0xFF:
             src.add(channel)
-    assert count == 1, "regression covers one-task broadcast rows"
+    # The selectors decoded here belong to the first task in the stream,
+    # which carries the broadcast row's own convention regardless of how
+    # many tasks the program totals.
     return sorted(src), sorted(dst), first
 
 
@@ -95,15 +97,12 @@ with tempfile.TemporaryDirectory(prefix="h13-bcast-binding-") as directory:
     assert sorted(b["index"] for b in program["inputs"]) == [4, 5]
     assert [b["index"] for b in program["outputs"]] == [6]
 
-    # Broadcasting runtime rows stay refused: their captured selectors name
-    # only x's channel, and the positional fill for y/out needs the runtime
-    # bundle layout's proof (documented, not yet derived).
-    run = subprocess.run(
-        [compiler, "--mil", str(root / "bcast-refused.mil"),
-         "--model-root", str(root), "--output", str(root / "bcast-refused"),
-         "--target", "H13", "--format", "anec"],
-        input=None, capture_output=True, text=True, timeout=300, check=False) if False else None
-
+    # Broadcasting runtime rows are refused: their captured src2 slot
+    # names no surface channel (the engine's L2 path), and bundle
+    # schema 4 cannot deliver a runtime operand through a channel the
+    # decoded stream never reads (proven by the role-consistency CLI).
+    # The mint materializes the narrow operand and resubmits the
+    # same-shape form.
     (root / "bcast-refused.mil").write_text(BCAST_ADD)
     run = subprocess.run(
         [compiler, "--mil", str(root / "bcast-refused.mil"),
@@ -111,6 +110,7 @@ with tempfile.TemporaryDirectory(prefix="h13-bcast-binding-") as directory:
          "--target", "H13", "--format", "anec"],
         capture_output=True, text=True, timeout=300, check=False)
     assert run.returncode == 65, run.stdout + run.stderr
-    assert "h13." in run.stderr, run.stderr
+    assert "h13.runtime-broadcast-needs-materialized-operand" in run.stderr, \
+        run.stderr
 
 print("h13 broadcast binding cli: PASS")

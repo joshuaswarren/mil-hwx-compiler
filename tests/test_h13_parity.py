@@ -126,6 +126,10 @@ def channel_binding(oracle):
 # schema 4 cannot stage; the compiler refuses them with
 # h13.runtime-broadcast-needs-materialized-operand and the mint
 # materializes the operand instead (covered by the broadcast binding CLI).
+# Evidence: test_h13_role_consistency_cli.py decodes the emitted stream
+# and shows the manifest declares a channel the tasks never read (the
+# full-shape operand) while the narrow operand has no deliverable
+# channel -- byte-exact stream, undeliverable bindings.
 L2_STAGED_BROADCAST = set()
 
 
@@ -138,7 +142,6 @@ def selected_oracles():
         if oracle["case"] in NATIVE_SELECTION_CASES:
             continue
         if oracle["family"] in BROADCAST_FAMILIES and \
-                oracle["family"] != "rrmm_broadcast" and \
                 "runtime" in oracle["case"]:
             task = oracle["task_descriptors"][0]
             words = [int(w, 16) if isinstance(w, str) else w
@@ -420,8 +423,9 @@ def main():
     # Counts exclude the 73 NATIVE_SELECTION_CASES (4 binary_runtime,
     # 1 binary_constant, 34 env_broadcast, 20 env_matmul, 9 matmul,
     # 5 rrmm_matvec) that commit 4849a0e moved to native encoders, and
-    # the 40 L2-staged y-broadcast runtime rows that bundle schema 4
-    # cannot represent (the compiler refuses them with
+    # the 52 L2-staged y-broadcast runtime rows (40 env_broadcast +
+    # 12 rrmm_broadcast) that bundle schema 4 cannot represent (the
+    # compiler refuses them with
     # h13.runtime-broadcast-needs-materialized-operand; the mint
     # materializes the narrow operand instead).
     expected = {"binary_runtime": 46, "binary_constant": 11, "unary": 28,

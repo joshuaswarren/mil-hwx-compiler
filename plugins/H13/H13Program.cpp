@@ -1949,25 +1949,26 @@ Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
     } else {
         program.constants.assign(source->constantBytes, 0);
     }
-    // Captured selector conventions (research/oracles/h13 env_bcast_* and
-    // rrmm_bcast_*): the runtime-runtime rows address x on channel 4, y on
-    // 5 and the result on 6; the scalar rows address x on 4 and the result
     const std::uint32_t selectors = source->words[8];
     const std::uint32_t xNamed = selectors & 31;
     const std::uint32_t yNamed = (selectors >> 6) & 31;
     const std::uint32_t outNamed = (selectors >> 12) & 31;
     if (operand == BroadcastOperand::Runtime &&
         !(xNamed >= 4 && yNamed >= 4 && outNamed >= 4)) {
-        // The y-broadcasting runtime rows read the narrow operand through
-        // the engine's L2 path (their captured src2 selector names no
-        // surface channel), which bundle schema 4 cannot stage. The mint
-        // materializes the narrow operand to the full shape instead and
-        // submits the same-shape form.
+        // A runtime operand whose captured source slot names no surface
+        // channel is undeliverable through bundle schema 4: the runtime
+        // worker stages every input by its manifest channel into that
+        // channel's BO, and the decoded task stream never reads the
+        // channel the full-shape operand is declared on (proven by
+        // test_h13_role_consistency_cli.py: declared inputs [5, 6] vs
+        // decoded sources [6], destinations []). The mint materializes
+        // the narrow operand to the full shape and submits the
+        // same-shape form instead.
         throw std::invalid_argument(
-            "H13 runtime broadcast with an unstaged narrow operand: "
-            "materialize the operand to the full shape and resubmit as "
-            "the same-shape form (Apple's own L2 staging is not "
-            "representable in bundle schema 4)");
+            "h13.runtime-broadcast-needs-materialized-operand: the "
+            "captured stream reads the narrow operand through the "
+            "engine's L2 path; materialize it to the full shape and "
+            "resubmit as the same-shape form");
     }
     if (operand == BroadcastOperand::Runtime &&
         xNamed >= 4 && yNamed >= 4 && outNamed >= 4) {
@@ -1981,11 +1982,15 @@ Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
         if (!sameShape(shape.x, shape.y)) program.outputBindingIndex = 1;
         program.output = elementwiseTensor(6, broadcastOutput(operand, shape));
     } else {
-        // Positional rows (y-broadcasting runtimes, scalars,
-        // per-channel-constants): x rides the parity-mapped src channel
-        // and the result fills positionally on 4.
-        program.taskSurfaceChannels = {5, 4, 6, 7};
+        // The parity convention (original per-family behavior the parity
+        // suite byte-verifies): x rides the parity-mapped src channel,
+        // runtime broadcasts bind y on 6, and the result fills on 4.
         program.inputs = {elementwiseTensor(5, shape.x)};
+        if (operand == BroadcastOperand::Runtime) {
+            program.inputs.push_back(elementwiseTensor(6, shape.y));
+            if (!sameShape(shape.x, shape.y))
+                program.outputBindingIndex = 1;
+        }
         program.output = elementwiseTensor(4, broadcastOutput(operand, shape));
     }
     program.firstTaskBytes = source->firstTaskBytes;
