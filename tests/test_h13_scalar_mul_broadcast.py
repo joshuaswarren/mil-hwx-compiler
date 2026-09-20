@@ -192,19 +192,37 @@ def test_semantic_reference_fp16_scale(tmp_path) -> None:
         expected.astype(np.float32).tobytes())
 
 
+encoder_mil = ROOT / "scripts" / "ln_probe_encoder.ml"
+oracle_mil = ROOT / "scripts" / "ln_probe_oracle.ml"
+
 def test_ln_affine_encoder_geometry_is_decoded(tmp_path) -> None:
     """FAILING-FIRST: layer_norm [1,375,1024] axes=[-1] affine gamma/beta
     (the encoder's real 120-call family) must lower as one decoded
     program. Currently h13.norm-outside-envelope: the norm envelope has
     no [1,375,1024]-class row and rejects affine forms entirely."""
-    probe = ROOT / "scripts" / "ln_probe.mil"
     result = subprocess.run(
-        [str(COMPILER), "--mil", str(probe), "--model-root", str(tmp_path),
+        [str(COMPILER), "--mil", str(encoder_mil), "--model-root", str(tmp_path),
          "--target", "H13", "--format", "anec",
          "--output", str(tmp_path / "out")],
         capture_output=True, text=True, timeout=600, check=False)
     assert result.returncode == 0, (
         "encoder-affine layer_norm [1,375,1024] not decoded: "
+        + result.stdout + result.stderr)
+    manifest = json.loads((tmp_path / "out" / "manifest.json").read_text())
+    assert len(manifest["programs"]) == 1
+
+
+def test_ln_oracle_covered_shape_lowers_to_decoded_program(tmp_path) -> None:
+    """Anchor: the oracle-covered [1,1024,1,1] non-affine layer_norm
+    axes=[-1] epsilon=2^-17 IS inside the decoded envelope and must
+    lower to a single decoded program at c15c9a4."""
+    result = subprocess.run(
+        [str(COMPILER), "--mil", str(oracle_mil),
+         "--model-root", str(tmp_path), "--target", "H13",
+         "--format", "anec", "--output", str(tmp_path / "out")],
+        capture_output=True, text=True, timeout=600, check=False)
+    assert result.returncode == 0, (
+        "oracle-covered [1,1024,1,1] LN refused: "
         + result.stdout + result.stderr)
     manifest = json.loads((tmp_path / "out" / "manifest.json").read_text())
     assert len(manifest["programs"]) == 1
