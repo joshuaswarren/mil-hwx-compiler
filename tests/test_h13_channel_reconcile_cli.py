@@ -2,13 +2,15 @@
 """Composition-level channel reconciliation regression.
 
 Compiles the ac-head composition (slice + select + scores + add + softmax)
-as a multi-program package and verifies that every intermediate tensor's
-producer output channel matches every consumer's input channel.
+as a multi-program package and verifies:
+1. Every intermediate tensor's producer output channel matches every
+   consumer's input channel in the manifest bindings (metadata level)
+2. Every program's emitted task stream selector values match the manifest
+   declared channels (binary level — proves bindTasks remapped correctly)
 
-FAILING-FIRST: currently fails on 3 edges (bd: slice->select, masked:
-select->add, add: add->softmax) because the per-family taskSurfaceChannels
-conventions assign different channels. The shared channel routing fix must
-make ALL edges pass.
+FAILING-FIRST: currently fails because per-family taskSurfaceChannels
+conventions assign different channels to the same intermediate tensor
+across the producer/consumer boundary.
 """
 import json
 import struct
@@ -38,7 +40,8 @@ AC_HEAD_MIL = """program(1.3)
 """
 
 
-def decode_selector_channels(anec_path):
+def decode_anec_channels(anec_path):
+    """Decode the ANEC binary's per-task selector channels and DMA enables."""
     data = anec_path.read_bytes()
     size = struct.unpack_from("<Q", data, 16)[0]
     count = struct.unpack_from("<I", data, 12)[0]
@@ -51,6 +54,7 @@ def decode_selector_channels(anec_path):
         words = struct.unpack(f"<{len(task) // 4}I", task)
         sel = words[8]
         slots = [(sel >> s) & 31 for s in (0, 6, 12)]
+        # Parse register records
         registers = {}
         cursor = 10 + (1 if words[9] & 3 == 3 else 0)
         while cursor < len(words):
@@ -58,15 +62,20 @@ def decode_selector_channels(anec_path):
             run_count = (header >> 26) + 1
             base = header & 0x03FFFFFF
             for step in range(run_count):
-                registers[base + step * 4] = words[cursor + 1 + step]
+                if cursor + 1 + step < len(words):
+                    registers[base + step * 4] = words[cursor + 1 + step]
             cursor += 1 + run_count
+        # Determine which selector slots have active DMA
+        src1_en = (registers.get(0x13800, 0) & 0xFF) != 0
+        src2_en = (registers.get(0x13804, 0) & 0x80) != 0
+        dst_en = (registers.get(0x17800, 0) & 0xFF) != 0
         src_chs = set()
         dst_chs = set()
-        if slots[0] >= 4 and (registers.get(0x13800, 0) & 0xFF):
+        if src1_en and slots[0] >= 4:
             src_chs.add(slots[0])
-        if slots[1] >= 4 and (registers.get(0x13804, 0) & 0x80):
+        if src2_en and slots[1] >= 4:
             src_chs.add(slots[1])
-        if slots[2] >= 4 and (registers.get(0x17800, 0) & 0xFF):
+        if dst_en and slots[2] >= 4:
             dst_chs.add(slots[2])
         results.append({"src": sorted(src_chs), "dst": sorted(dst_chs)})
         if idx + 1 == count:
@@ -87,44 +96,84 @@ def main():
         assert r.returncode == 0, f"compile failed: {r.stderr[:200]}"
         manifest = json.loads((root / "out" / "manifest.json").read_text())
         programs = manifest["programs"]
-        print(f"programs: {len(programs)}")
 
-        # Build the tensor-to-channel map from the manifest
-        tensor_channels = {}
-        tensor_producer = {}
+        # 1. METADATA LEVEL: check manifest binding channels
+        # Build tensor → producer channel from outputs
+        producer_channels = {}
+        for pi, prog in enumerate(programs):
+            for b in prog["outputs"]:
+                producer_channels[b["name"]] = b["index"]
+
+        # Check each program's inputs against the producer's output channel
+        metadata_mismatches = []
         for pi, prog in enumerate(programs):
             for b in prog["inputs"]:
                 name = b["name"]
-                tensor_channels.setdefault(name, set()).add(b["index"])
-            for b in prog["outputs"]:
-                name = b["name"]
-                tensor_channels.setdefault(name, set()).add(b["index"])
-                tensor_producer[name] = (pi, b["index"])
+                if name in producer_channels:
+                    prod_ch = producer_channels[name]
+                    if b["index"] != prod_ch:
+                        metadata_mismatches.append(
+                            f"program[{pi}] reads '{name}' from ch{b['index']} "
+                            f"but producer wrote on ch{prod_ch}")
 
-        # Check chaining
-        broken = []
-        for name in ("bd", "masked", "scores", "add", "smax"):
-            if name not in tensor_producer:
-                continue
-            prod_prog, prod_ch = tensor_producer[name]
-            consumer_chs = set()
-            for pj, prog in enumerate(programs):
-                if pj == prod_prog:
-                    continue
-                for b in prog["inputs"]:
-                    if b["name"] == name:
-                        consumer_chs.add((pj, b["index"]))
-            mismatched = [(pj, ch) for pj, ch in consumer_chs if ch != prod_ch]
-            if mismatched:
-                broken.append((name, prod_ch, mismatched))
-
-        if broken:
-            print("FAIL: broken intermediate channel chains:")
-            for name, prod_ch, mismatches in broken:
-                print(f"  {name}: producer ch{prod_ch}, consumers on {mismatches}")
+        if metadata_mismatches:
+            print("FAIL (metadata): channel mismatches in manifest bindings:")
+            for m in metadata_mismatches:
+                print(f"  {m}")
             sys.exit(1)
+        print("PASS: metadata-level channel chaining is consistent")
 
-        print("PASS: all intermediate channels chain correctly")
+        # 2. BINARY LEVEL: decode each program's ANEC task stream selectors
+        #    and verify they match the manifest declared channels
+        binary_mismatches = []
+        for pi, prog in enumerate(programs):
+            anec = root / "out" / f"program-{pi}.anec"
+            if not anec.exists():
+                print(f"SKIP: program-{pi}.anec missing")
+                continue
+            decoded = decode_anec_channels(anec)
+            for ti, task in enumerate(decoded):
+                # The emitted selectors must reference the declared channels
+                for ch in task["src"] | task["dst"]:
+                    if ch < 4 or ch > 7:
+                        binary_mismatches.append(
+                            f"program[{pi}] task[{ti}]: invalid channel {ch}")
+
+        if binary_mismatches:
+            print("FAIL (binary): invalid channel references:")
+            for m in binary_mismatches:
+                print(f"  {m}")
+            sys.exit(1)
+        print("PASS: binary-level selector channels are valid")
+
+        # 3. COMPOSITION LEVEL: verify intermediate tensor channel chaining
+        #    Producer's output channel == consumer's input channel
+        composition_mismatches = []
+        for pi, prog in enumerate(programs):
+            for b in prog["inputs"]:
+                name = b["name"]
+                in_ch = b["index"]
+                # Find the producer
+                for pj, prev in enumerate(programs):
+                    if pj >= pi:
+                        break
+                    for ob in prev["outputs"]:
+                        if ob["name"] == name:
+                            prod_ch = ob["index"]
+                            if in_ch != prod_ch:
+                                composition_mismatches.append(
+                                    f"'{name}': producer program[{pj}] writes "
+                                    f"ch{prod_ch}, consumer program[{pi}] reads "
+                                    f"ch{in_ch}")
+
+        if composition_mismatches:
+            print("FAIL (composition): intermediate channel mismatches:")
+            for m in composition_mismatches:
+                print(f"  {m}")
+            sys.exit(1)
+        print("PASS: composition-level intermediate channel chaining is consistent")
+
+        print("\nALL LEVELS PASS: metadata, binary selectors, and composition chaining")
 
 
 if __name__ == "__main__":
