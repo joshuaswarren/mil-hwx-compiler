@@ -190,3 +190,21 @@ def test_semantic_reference_fp16_scale(tmp_path) -> None:
         assert some_lossy
     (tmp_path / "semantic_reference_f32.npy").write_bytes(
         expected.astype(np.float32).tobytes())
+
+
+def test_ln_affine_encoder_geometry_is_decoded(tmp_path) -> None:
+    """FAILING-FIRST: layer_norm [1,375,1024] axes=[-1] affine gamma/beta
+    (the encoder's real 120-call family) must lower as one decoded
+    program. Currently h13.norm-outside-envelope: the norm envelope has
+    no [1,375,1024]-class row and rejects affine forms entirely."""
+    probe = ROOT / "scripts" / "ln_probe.mil"
+    result = subprocess.run(
+        [str(COMPILER), "--mil", str(probe), "--model-root", str(tmp_path),
+         "--target", "H13", "--format", "anec",
+         "--output", str(tmp_path / "out")],
+        capture_output=True, text=True, timeout=600, check=False)
+    assert result.returncode == 0, (
+        "encoder-affine layer_norm [1,375,1024] not decoded: "
+        + result.stdout + result.stderr)
+    manifest = json.loads((tmp_path / "out" / "manifest.json").read_text())
+    assert len(manifest["programs"]) == 1
