@@ -49,6 +49,18 @@ BCAST_ADD = """program(1.3)
 
 
 
+_BINARY_HEADER = "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n"
+
+
+def _binary_runtime(op):
+    return (_BINARY_HEADER +
+            "  func main<ios18>(tensor<fp16, [1, 64, 1, 1]> x, "
+            "tensor<fp16, [1, 64, 1, 1]> y) {\n"
+            f"    tensor<fp16, [1, 64, 1, 1]> z = {op}(x = x, y = y)"
+            "[name = string(\"z\")];\n"
+            "  } -> (z);\n}\n")
+
+
 ENV_BCAST = """program(1.3)
 [buildInfo = dict<string, string>({})]
 {
@@ -62,6 +74,9 @@ COMPILE_CASES = [
     ("same-shape add", SAME_ADD),
     ("broadcasting add", BCAST_ADD),
     ("env broadcasting add", ENV_BCAST),
+] + [
+    (f"runtime {op} [1,64,1,1]", _binary_runtime(op))
+    for op in ("add", "mul", "maximum", "minimum", "sub")
 ]
 
 REFUSE_CASES = []
