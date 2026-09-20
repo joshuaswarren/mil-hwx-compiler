@@ -65,16 +65,27 @@ def build(out: Path, runner_dump: Path | None) -> None:
         arm_dir = out / f"arm-{arm['relpos']}-{arm['a_fill'].replace('.', '_')}"
         arm_dir.mkdir(parents=True, exist_ok=True)
         use = relpos_prescaled if arm["relpos"] == "prescaled" else relpos_raw
-        np.save(arm_dir / "q.npy", q)
-        np.save(arm_dir / "k.npy", k)
-        np.save(arm_dir / "cond.npy", cond)
-        np.save(arm_dir / "relpos.npy", use)
+        fill = np.frombuffer(
+            np.full(HEAD * SEQ * SEQ, arm["fill_bits"],
+                    dtype=np.uint16).tobytes(),
+            dtype="<f2").reshape(1, HEAD, SEQ, SEQ).copy()
+        tensors = {"q": q, "k": k, "cond": cond, "relpos": use,
+                   "a_fill": fill}
+        for tname, arr in tensors.items():
+            # ac_head_differential.py loader contract: raw little-endian
+            # bytes per input plus a json sidecar carrying dtype + shape.
+            (arm_dir / f"{tname}.bin").write_bytes(
+                np.ascontiguousarray(arr).tobytes())
+            (arm_dir / f"{tname}.json").write_text(json.dumps(
+                {"dtype": ("bool" if arr.dtype == np.bool_
+                           else ("float16" if arr.dtype == np.float16
+                                 else str(arr.dtype))),
+                 "shape": list(arr.shape)}))
         fill = np.full((1, HEAD, SEQ, SEQ), np.uint16(arm["fill_bits"]),
                        dtype=np.uint16).view(np.float16) if False else \
             np.frombuffer(np.full(HEAD * SEQ * SEQ, arm["fill_bits"],
                                   dtype=np.uint16).tobytes(),
                           dtype="<f2").reshape(1, HEAD, SEQ, SEQ).copy()
-        np.save(arm_dir / "a_fill.npy", fill)
         manifest["arms"].append({"dir": arm_dir.name,
                                  "relpos": arm["relpos"],
                                  "a_fill_bits": hex(arm["fill_bits"]),
