@@ -1,4 +1,4 @@
-# Apple capture request: mul-by-0x1p-4 at [1,8,375,375] (bd scale)
+# Apple capture: mul-by-0x1p-4 at [1,8,375,375] (bd scale) — CAPTURED & LANDED
 
 Lane: EncoderCompilerCoverage (compiler research branch).
 Purpose: single-program ANE lowering for the encoder AC-head bd scale.
@@ -48,7 +48,7 @@ research/oracles/h13/env_bcast_mul_1x768x16x16_scalar.json.
    encodeBroadcast/supportsBroadcast scalar-bits handling so a row
    carries its OWN decoded scalar value (current hard rejection of
    scalarBits != 0x3800 stays for rows whose constant section encodes
-   0.5; the new row's constant section must be checked against 0x1400
+   0.5; the new row's constant section must be checked against 0x2C00
    semantics during decode).
 4. Re-run: tests/test_h13_scalar_mul_broadcast.py (both tests GREEN),
    then the bounded slice of tests/test_h13_parity.py for the
@@ -64,3 +64,23 @@ ULP) is root-caused to this missing scale; the runner-side pre-scaled
 arm (window 2026-09-20T142049Z) already proved the composed chain
 reaches median 1 ULP vs CPU reference once the scale is applied. The
 in-graph row is the permanent fix so the runner never pre-processes.
+
+
+## OUTCOME (2026-09-20, fulfilled)
+
+Capture executed on studio-host (CPU-only ane-compile-hwx; otool-verified:
+links Foundation/ANECompiler/libc++/libSystem/CoreFoundation, no device
+framework, no ANE execution):
+- model.hwx 49,152 B, ANECCompile=0, sha256 e60db231cf5d8a852ea8b9bc2
+  4dc979b66deb5154e82ab99307eb3ec05033f7a; task_count 1 (504-byte task);
+  constant section 16,384 B all-zero; scalar 0x1p-4 (fp16 bits 0x2C00)
+  baked into task word 109 high half.
+- Decoded row landed as kEnvelopeTask258 + kBroadcastTasks row
+  {mul, Scalar, [1,8,375,375]} with per-row scalarBits 0x2C00;
+  OracleBroadcastTemplate carries scalarBits and encodeBroadcast's
+  guard compares the requested scalar against the row (fail-closed);
+  broadcastPlan no longer lets the native tensor-shape probe swallow
+  Scalar operands before the decoded table is consulted.
+- tests/test_h13_scalar_mul_broadcast.py: 4/4 GREEN (one-program,
+  task-byte match under the parity binding, wrong-scalar rejection,
+  semantic reference). env_broadcast parity slice 8/8 GREEN.

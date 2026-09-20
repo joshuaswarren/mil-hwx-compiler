@@ -33806,127 +33806,150 @@ static constexpr OracleMatmulTemplate kMatmulEnvelopeTasks[] = {
     {512, 8192, 4096, false, true, false, kEnvelopeTask143, std::size(kEnvelopeTask143), 504, 65, 50560, 67108864, 8388608},  // env_mm_r2rb_m512_k8192_n4096_tx0_ty1
     {512, 8192, 8192, false, true, false, kEnvelopeTask144, std::size(kEnvelopeTask144), 504, 129, 100480, 134217728, 8388608},  // env_mm_r2rb_m512_k8192_n8192_tx0_ty1
 };
+static constexpr std::uint32_t kEnvelopeTask258[] = {
+    0x02000000, 0x00000087, 0x0000042a, 0x00000000, 0x00fff86a, 0x00000000, 0x30009800, 0x00000000,
+    0x00025024, 0x00000000, 0x4401f800, 0x00000000, 0x00000000, 0x00000080, 0x00000080, 0x00000080,
+    0x00000080, 0x00000080, 0x00000080, 0x00000080, 0x00000080, 0x00000080, 0x00000080, 0x00000080,
+    0x00000080, 0x00000080, 0x00000080, 0x00000080, 0x00000080, 0x2c01f8c8, 0x00000080, 0x00000080,
+    0x00000080, 0x00000080, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000040, 0x00000040,
+    0x00000040, 0x00000040, 0x3c000000, 0x01770177, 0x00000001, 0x00000022, 0x00000008, 0x00000008,
+    0x01770177, 0x00000001, 0x5000a021, 0x00002041, 0x00010001, 0x00000177, 0x00000045, 0x00000000,
+    0x00000021, 0x00000000, 0x00000000, 0x6c013800, 0x00033881, 0x00008880, 0x00000000, 0x00000300,
+    0x00046500, 0x00232800, 0x00232800, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
+    0x00000000, 0x00000000, 0x01002031, 0x00000000, 0x00000100, 0x00000000, 0x00000000, 0x00000000,
+    0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
+    0x44004800, 0x00000000, 0x00500172, 0x00000000, 0x00000040, 0x00000210, 0x00000200, 0x00000200,
+    0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00500172, 0x00030570, 0x00000040,
+    0x00000210, 0x00000200, 0x00000200, 0x0c008800, 0x00000000, 0x2c000000, 0x3c000000, 0x3f800000,
+    0x1000c800, 0x00000080, 0x00100000, 0x00000000, 0x00000000, 0x00000000, 0x18017800, 0x000000c1,
+    0x00000000, 0x00000300, 0x00046500, 0x00232800, 0x00232800, 0x01302031,
+};
+
+// Apple capture (ane-compile-hwx, studio-host.local, 2026-09-20): mul by
+// fp16 scalar 0x1p-4 (bits 0x2C00, the encoder bd scale) at [1,8,375,375].
+// Single-task whole-tensor program; the scalar rides word 109 high half.
 static constexpr OracleBroadcastTemplate kBroadcastTasks[] = {
-    {0, BroadcastOperand::Constant, {1, 1, 1024, 375}, {1, 1, 1024, 1}, kEnvelopeTask145, std::size(kEnvelopeTask145), 504, 2, 1024, 4096, 0},  // env_bcast_add_1x1024x375_blob_1x1024x1
-    {0, BroadcastOperand::Constant, {1, 1024, 8, 8}, {1, 1024, 1, 1}, kEnvelopeTask146, std::size(kEnvelopeTask146), 504, 2, 1024, 4096, 0},  // rrmm_bcast_add_1x1024x8x8_blob_1x1024x1x1
-    {0, BroadcastOperand::Constant, {1, 256, 32, 32}, {1, 256, 1, 1}, kEnvelopeTask147, std::size(kEnvelopeTask147), 504, 2, 1024, 1024, 0},  // rrmm_bcast_add_1x256x32x32_blob_1x256x1x1
-    {0, BroadcastOperand::Constant, {1, 256, 8, 8}, {1, 256, 1, 1}, kEnvelopeTask148, std::size(kEnvelopeTask148), 504, 2, 1024, 1024, 0},  // rrmm_bcast_add_1x256x8x8_blob_1x256x1x1
-    {0, BroadcastOperand::Constant, {1, 3072, 8, 8}, {1, 3072, 1, 1}, kEnvelopeTask149, std::size(kEnvelopeTask149), 504, 2, 1024, 12288, 0},  // rrmm_bcast_add_1x3072x8x8_blob_1x3072x1x1
-    {0, BroadcastOperand::Constant, {1, 1, 375, 1024}, {1, 1, 1, 1024}, kEnvelopeTask150, std::size(kEnvelopeTask150), 504, 2, 1024, 2048, 0},  // env_bcast_add_1x375x1024_blob_1x1x1024
-    {0, BroadcastOperand::Constant, {1, 1, 375, 4096}, {1, 1, 1, 4096}, kEnvelopeTask151, std::size(kEnvelopeTask151), 504, 2, 1024, 8192, 0},  // env_bcast_add_1x375x4096_blob_1x1x4096
-    {0, BroadcastOperand::Constant, {1, 64, 16, 16}, {1, 64, 1, 1}, kEnvelopeTask152, std::size(kEnvelopeTask152), 504, 2, 1024, 256, 0},  // env_bcast_add_1x64x16x16_blob_1x64x1x1
-    {0, BroadcastOperand::Constant, {1, 64, 8, 8}, {1, 64, 1, 1}, kEnvelopeTask153, std::size(kEnvelopeTask153), 504, 2, 1024, 256, 0},  // env_bcast_add_1x64x8x8_blob_1x64x1x1
-    {0, BroadcastOperand::Constant, {1, 768, 16, 16}, {1, 768, 1, 1}, kEnvelopeTask154, std::size(kEnvelopeTask154), 504, 2, 1024, 3072, 0},  // env_bcast_add_1x768x16x16_blob_1x768x1x1
-    {0, BroadcastOperand::Constant, {1, 768, 8, 8}, {1, 768, 1, 1}, kEnvelopeTask155, std::size(kEnvelopeTask155), 504, 2, 1024, 3072, 0},  // env_bcast_add_1x768x8x8_blob_1x768x1x1
-    {0, BroadcastOperand::Runtime, {1, 1024, 8, 8}, {1, 1024, 1, 1}, kEnvelopeTask156, std::size(kEnvelopeTask156), 504, 2, 1024, 16384, 0},  // rrmm_bcast_add_1x1024x8x8_runtime_1x1024x1x1
-    {0, BroadcastOperand::Runtime, {1, 16384, 1, 1}, {1, 16384, 1, 1}, kEnvelopeTask157, std::size(kEnvelopeTask157), 504, 1, 512, 16384, 0},  // env_bcast_add_1x16384x1x1_runtime_1x16384x1x1
-    {0, BroadcastOperand::Runtime, {1, 200, 1, 1}, {1, 200, 1, 1}, kEnvelopeTask158, std::size(kEnvelopeTask158), 504, 1, 512, 16384, 0},  // env_bcast_add_1x200x1x1_runtime_1x200x1x1
-    {0, BroadcastOperand::Runtime, {1, 256, 16, 16}, {1, 1, 16, 16}, kEnvelopeTask159, std::size(kEnvelopeTask159), 504, 2, 1024, 16384, 0},  // rrmm_bcast_add_1x256x16x16_runtime_1x1x16x16
-    {0, BroadcastOperand::Runtime, {1, 256, 32, 32}, {1, 256, 1, 1}, kEnvelopeTask160, std::size(kEnvelopeTask160), 504, 2, 1024, 16384, 0},  // rrmm_bcast_add_1x256x32x32_runtime_1x256x1x1
-    {0, BroadcastOperand::Runtime, {1, 256, 8, 8}, {1, 256, 1, 1}, kEnvelopeTask161, std::size(kEnvelopeTask161), 504, 2, 1024, 16384, 0},  // rrmm_bcast_add_1x256x8x8_runtime_1x256x1x1
-    {0, BroadcastOperand::Runtime, {1, 300, 1, 1}, {1, 300, 1, 1}, kEnvelopeTask162, std::size(kEnvelopeTask162), 504, 1, 512, 16384, 0},  // env_bcast_add_1x300x1x1_runtime_1x300x1x1
-    {0, BroadcastOperand::Runtime, {1, 3072, 1, 1}, {1, 3072, 1, 1}, kEnvelopeTask163, std::size(kEnvelopeTask163), 504, 1, 512, 16384, 0},  // env_bcast_add_1x3072x1x1_runtime_1x3072x1x1
-    {0, BroadcastOperand::Runtime, {1, 3072, 8, 8}, {1, 3072, 1, 1}, kEnvelopeTask164, std::size(kEnvelopeTask164), 504, 2, 1024, 16384, 0},  // rrmm_bcast_add_1x3072x8x8_runtime_1x3072x1x1
-    {0, BroadcastOperand::Runtime, {1, 64, 16, 16}, {1, 1, 1, 1}, kEnvelopeTask165, std::size(kEnvelopeTask165), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x64x16x16_runtime_1x1x1x1
-    {0, BroadcastOperand::Runtime, {1, 64, 16, 16}, {1, 1, 16, 16}, kEnvelopeTask166, std::size(kEnvelopeTask166), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x64x16x16_runtime_1x1x16x16
-    {0, BroadcastOperand::Runtime, {1, 64, 16, 16}, {1, 64, 1, 1}, kEnvelopeTask167, std::size(kEnvelopeTask167), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x64x16x16_runtime_1x64x1x1
-    {0, BroadcastOperand::Runtime, {1, 64, 8, 8}, {1, 1, 1, 1}, kEnvelopeTask168, std::size(kEnvelopeTask168), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x64x8x8_runtime_1x1x1x1
-    {0, BroadcastOperand::Runtime, {1, 64, 8, 8}, {1, 1, 8, 8}, kEnvelopeTask169, std::size(kEnvelopeTask169), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x64x8x8_runtime_1x1x8x8
-    {0, BroadcastOperand::Runtime, {1, 64, 8, 8}, {1, 64, 1, 1}, kEnvelopeTask170, std::size(kEnvelopeTask170), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x64x8x8_runtime_1x64x1x1
-    {0, BroadcastOperand::Runtime, {1, 768, 1, 1}, {1, 768, 1, 1}, kEnvelopeTask171, std::size(kEnvelopeTask171), 504, 1, 512, 16384, 0},  // env_bcast_add_1x768x1x1_runtime_1x768x1x1
-    {0, BroadcastOperand::Runtime, {1, 768, 16, 16}, {1, 1, 1, 1}, kEnvelopeTask172, std::size(kEnvelopeTask172), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x768x16x16_runtime_1x1x1x1
-    {0, BroadcastOperand::Runtime, {1, 768, 16, 16}, {1, 1, 16, 16}, kEnvelopeTask173, std::size(kEnvelopeTask173), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x768x16x16_runtime_1x1x16x16
-    {0, BroadcastOperand::Runtime, {1, 768, 16, 16}, {1, 768, 1, 1}, kEnvelopeTask174, std::size(kEnvelopeTask174), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x768x16x16_runtime_1x768x1x1
-    {0, BroadcastOperand::Runtime, {1, 768, 8, 8}, {1, 1, 1, 1}, kEnvelopeTask175, std::size(kEnvelopeTask175), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x768x8x8_runtime_1x1x1x1
-    {0, BroadcastOperand::Runtime, {1, 768, 8, 8}, {1, 1, 8, 8}, kEnvelopeTask176, std::size(kEnvelopeTask176), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x768x8x8_runtime_1x1x8x8
-    {0, BroadcastOperand::Runtime, {1, 768, 8, 8}, {1, 768, 1, 1}, kEnvelopeTask177, std::size(kEnvelopeTask177), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x768x8x8_runtime_1x768x1x1
-    {0, BroadcastOperand::Runtime, {1, 8, 375, 375}, {1, 8, 375, 375}, kEnvelopeTask178, std::size(kEnvelopeTask178), 504, 1, 512, 16384, 0},  // env_bcast_add_1x8x375x375_runtime_1x8x375x375
-    {0, BroadcastOperand::Runtime, {1, 8192, 1, 1}, {1, 8192, 1, 1}, kEnvelopeTask179, std::size(kEnvelopeTask179), 504, 1, 512, 16384, 0},  // env_bcast_add_1x8192x1x1_runtime_1x8192x1x1
-    {0, BroadcastOperand::Runtime, {1, 96, 1, 1}, {1, 96, 1, 1}, kEnvelopeTask180, std::size(kEnvelopeTask180), 504, 1, 512, 16384, 0},  // env_bcast_add_1x96x1x1_runtime_1x96x1x1
-    {0, BroadcastOperand::Runtime, {1, 96, 16, 16}, {1, 1, 1, 1}, kEnvelopeTask181, std::size(kEnvelopeTask181), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x96x16x16_runtime_1x1x1x1
-    {0, BroadcastOperand::Runtime, {1, 96, 16, 16}, {1, 1, 16, 16}, kEnvelopeTask182, std::size(kEnvelopeTask182), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x96x16x16_runtime_1x1x16x16
-    {0, BroadcastOperand::Runtime, {1, 96, 16, 16}, {1, 96, 1, 1}, kEnvelopeTask183, std::size(kEnvelopeTask183), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x96x16x16_runtime_1x96x1x1
-    {0, BroadcastOperand::Runtime, {1, 96, 8, 8}, {1, 1, 1, 1}, kEnvelopeTask184, std::size(kEnvelopeTask184), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x96x8x8_runtime_1x1x1x1
-    {0, BroadcastOperand::Runtime, {1, 96, 8, 8}, {1, 1, 8, 8}, kEnvelopeTask185, std::size(kEnvelopeTask185), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x96x8x8_runtime_1x1x8x8
-    {0, BroadcastOperand::Runtime, {1, 96, 8, 8}, {1, 96, 1, 1}, kEnvelopeTask186, std::size(kEnvelopeTask186), 504, 2, 1024, 16384, 0},  // env_bcast_add_1x96x8x8_runtime_1x96x1x1
-    {0, BroadcastOperand::Runtime, {2, 1024, 1, 1}, {2, 1024, 1, 1}, kEnvelopeTask187, std::size(kEnvelopeTask187), 504, 1, 512, 16384, 0},  // env_bcast_add_2x1024x1x1_runtime_2x1024x1x1
-    {0, BroadcastOperand::Runtime, {2, 512, 1, 1}, {2, 512, 1, 1}, kEnvelopeTask188, std::size(kEnvelopeTask188), 504, 1, 512, 16384, 0},  // env_bcast_add_2x512x1x1_runtime_2x512x1x1
-    {0, BroadcastOperand::Runtime, {2, 64, 1, 1}, {2, 64, 1, 1}, kEnvelopeTask189, std::size(kEnvelopeTask189), 504, 1, 512, 16384, 0},  // env_bcast_add_2x64x1x1_runtime_2x64x1x1
-    {0, BroadcastOperand::Runtime, {2, 64, 8, 8}, {1, 64, 1, 1}, kEnvelopeTask190, std::size(kEnvelopeTask190), 504, 2, 1024, 16384, 0},  // env_bcast_add_2x64x8x8_runtime_1x64x1x1
-    {0, BroadcastOperand::Runtime, {2, 64, 8, 8}, {2, 64, 8, 8}, kEnvelopeTask191, std::size(kEnvelopeTask191), 504, 1, 512, 16384, 0},  // env_bcast_add_2x64x8x8_runtime_2x64x8x8
-    {0, BroadcastOperand::Runtime, {4, 256, 8, 8}, {1, 256, 1, 1}, kEnvelopeTask192, std::size(kEnvelopeTask192), 504, 2, 1024, 16384, 0},  // rrmm_bcast_add_4x256x8x8_runtime_1x256x1x1
-    {0, BroadcastOperand::Runtime, {8, 1024, 1, 1}, {8, 1024, 1, 1}, kEnvelopeTask193, std::size(kEnvelopeTask193), 504, 1, 512, 16384, 0},  // env_bcast_add_8x1024x1x1_runtime_8x1024x1x1
-    {0, BroadcastOperand::Runtime, {8, 512, 1, 1}, {8, 512, 1, 1}, kEnvelopeTask194, std::size(kEnvelopeTask194), 504, 1, 512, 16384, 0},  // env_bcast_add_8x512x1x1_runtime_8x512x1x1
-    {0, BroadcastOperand::Runtime, {8, 64, 1, 1}, {8, 64, 1, 1}, kEnvelopeTask195, std::size(kEnvelopeTask195), 504, 1, 512, 16384, 0},  // env_bcast_add_8x64x1x1_runtime_8x64x1x1
-    {0, BroadcastOperand::Runtime, {8, 64, 8, 8}, {1, 64, 1, 1}, kEnvelopeTask196, std::size(kEnvelopeTask196), 504, 2, 1024, 16384, 0},  // env_bcast_add_8x64x8x8_runtime_1x64x1x1
-    {0, BroadcastOperand::Runtime, {8, 64, 8, 8}, {8, 64, 8, 8}, kEnvelopeTask197, std::size(kEnvelopeTask197), 504, 1, 512, 16384, 0},  // env_bcast_add_8x64x8x8_runtime_8x64x8x8
-    {0, BroadcastOperand::Scalar, {1, 64, 16, 16}, {0, 0, 0, 0}, kEnvelopeTask198, std::size(kEnvelopeTask198), 504, 1, 512, 16384, 0},  // env_bcast_add_1x64x16x16_scalar
-    {0, BroadcastOperand::Scalar, {1, 64, 8, 8}, {0, 0, 0, 0}, kEnvelopeTask199, std::size(kEnvelopeTask199), 504, 1, 512, 16384, 0},  // env_bcast_add_1x64x8x8_scalar
-    {0, BroadcastOperand::Scalar, {1, 768, 16, 16}, {0, 0, 0, 0}, kEnvelopeTask200, std::size(kEnvelopeTask200), 504, 1, 512, 16384, 0},  // env_bcast_add_1x768x16x16_scalar
-    {0, BroadcastOperand::Scalar, {1, 768, 8, 8}, {0, 0, 0, 0}, kEnvelopeTask201, std::size(kEnvelopeTask201), 504, 1, 512, 16384, 0},  // env_bcast_add_1x768x8x8_scalar
-    {1, BroadcastOperand::Constant, {1, 1, 1024, 375}, {1, 1, 1024, 1}, kEnvelopeTask145, std::size(kEnvelopeTask145), 504, 2, 1024, 4096, 0},  // env_bcast_mul_1x1024x375_blob_1x1024x1
-    {1, BroadcastOperand::Constant, {1, 1024, 8, 8}, {1, 1024, 1, 1}, kEnvelopeTask146, std::size(kEnvelopeTask146), 504, 2, 1024, 4096, 0},  // rrmm_bcast_mul_1x1024x8x8_blob_1x1024x1x1
-    {1, BroadcastOperand::Constant, {1, 256, 32, 32}, {1, 256, 1, 1}, kEnvelopeTask147, std::size(kEnvelopeTask147), 504, 2, 1024, 1024, 0},  // rrmm_bcast_mul_1x256x32x32_blob_1x256x1x1
-    {1, BroadcastOperand::Constant, {1, 256, 8, 8}, {1, 256, 1, 1}, kEnvelopeTask148, std::size(kEnvelopeTask148), 504, 2, 1024, 1024, 0},  // rrmm_bcast_mul_1x256x8x8_blob_1x256x1x1
-    {1, BroadcastOperand::Constant, {1, 3072, 8, 8}, {1, 3072, 1, 1}, kEnvelopeTask149, std::size(kEnvelopeTask149), 504, 2, 1024, 12288, 0},  // rrmm_bcast_mul_1x3072x8x8_blob_1x3072x1x1
-    {1, BroadcastOperand::Constant, {1, 1, 375, 1024}, {1, 1, 1, 1024}, kEnvelopeTask202, std::size(kEnvelopeTask202), 504, 2, 1024, 2048, 0},  // env_bcast_mul_1x375x1024_blob_1x1x1024
-    {1, BroadcastOperand::Constant, {1, 1, 375, 4096}, {1, 1, 1, 4096}, kEnvelopeTask203, std::size(kEnvelopeTask203), 504, 2, 1024, 8192, 0},  // env_bcast_mul_1x375x4096_blob_1x1x4096
-    {1, BroadcastOperand::Constant, {1, 64, 16, 16}, {1, 64, 1, 1}, kEnvelopeTask152, std::size(kEnvelopeTask152), 504, 2, 1024, 256, 0},  // env_bcast_mul_1x64x16x16_blob_1x64x1x1
-    {1, BroadcastOperand::Constant, {1, 64, 8, 8}, {1, 64, 1, 1}, kEnvelopeTask153, std::size(kEnvelopeTask153), 504, 2, 1024, 256, 0},  // env_bcast_mul_1x64x8x8_blob_1x64x1x1
-    {1, BroadcastOperand::Constant, {1, 768, 16, 16}, {1, 768, 1, 1}, kEnvelopeTask154, std::size(kEnvelopeTask154), 504, 2, 1024, 3072, 0},  // env_bcast_mul_1x768x16x16_blob_1x768x1x1
-    {1, BroadcastOperand::Constant, {1, 768, 8, 8}, {1, 768, 1, 1}, kEnvelopeTask155, std::size(kEnvelopeTask155), 504, 2, 1024, 3072, 0},  // env_bcast_mul_1x768x8x8_blob_1x768x1x1
-    {1, BroadcastOperand::Runtime, {1, 1, 1024, 375}, {1, 1, 1024, 375}, kEnvelopeTask204, std::size(kEnvelopeTask204), 504, 1, 512, 16384, 0},  // env_bcast_mul_1x1024x375_runtime_1x1024x375
-    {1, BroadcastOperand::Runtime, {1, 1024, 8, 8}, {1, 1024, 1, 1}, kEnvelopeTask205, std::size(kEnvelopeTask205), 504, 2, 1024, 16384, 0},  // rrmm_bcast_mul_1x1024x8x8_runtime_1x1024x1x1
-    {1, BroadcastOperand::Runtime, {1, 16384, 1, 1}, {1, 16384, 1, 1}, kEnvelopeTask206, std::size(kEnvelopeTask206), 504, 1, 512, 16384, 0},  // env_bcast_mul_1x16384x1x1_runtime_1x16384x1x1
-    {1, BroadcastOperand::Runtime, {1, 200, 1, 1}, {1, 200, 1, 1}, kEnvelopeTask207, std::size(kEnvelopeTask207), 504, 1, 512, 16384, 0},  // env_bcast_mul_1x200x1x1_runtime_1x200x1x1
-    {1, BroadcastOperand::Runtime, {1, 256, 16, 16}, {1, 1, 16, 16}, kEnvelopeTask208, std::size(kEnvelopeTask208), 504, 2, 1024, 16384, 0},  // rrmm_bcast_mul_1x256x16x16_runtime_1x1x16x16
-    {1, BroadcastOperand::Runtime, {1, 256, 32, 32}, {1, 256, 1, 1}, kEnvelopeTask209, std::size(kEnvelopeTask209), 504, 2, 1024, 16384, 0},  // rrmm_bcast_mul_1x256x32x32_runtime_1x256x1x1
-    {1, BroadcastOperand::Runtime, {1, 256, 8, 8}, {1, 256, 1, 1}, kEnvelopeTask210, std::size(kEnvelopeTask210), 504, 2, 1024, 16384, 0},  // rrmm_bcast_mul_1x256x8x8_runtime_1x256x1x1
-    {1, BroadcastOperand::Runtime, {1, 300, 1, 1}, {1, 300, 1, 1}, kEnvelopeTask211, std::size(kEnvelopeTask211), 504, 1, 512, 16384, 0},  // env_bcast_mul_1x300x1x1_runtime_1x300x1x1
-    {1, BroadcastOperand::Runtime, {1, 3072, 1, 1}, {1, 3072, 1, 1}, kEnvelopeTask212, std::size(kEnvelopeTask212), 504, 1, 512, 16384, 0},  // env_bcast_mul_1x3072x1x1_runtime_1x3072x1x1
-    {1, BroadcastOperand::Runtime, {1, 3072, 8, 8}, {1, 3072, 1, 1}, kEnvelopeTask213, std::size(kEnvelopeTask213), 504, 2, 1024, 16384, 0},  // rrmm_bcast_mul_1x3072x8x8_runtime_1x3072x1x1
-    {1, BroadcastOperand::Runtime, {1, 1, 375, 4096}, {1, 1, 375, 4096}, kEnvelopeTask214, std::size(kEnvelopeTask214), 504, 1, 512, 16384, 0},  // env_bcast_mul_1x375x4096_runtime_1x375x4096
-    {1, BroadcastOperand::Runtime, {1, 64, 16, 16}, {1, 1, 1, 1}, kEnvelopeTask215, std::size(kEnvelopeTask215), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x64x16x16_runtime_1x1x1x1
-    {1, BroadcastOperand::Runtime, {1, 64, 16, 16}, {1, 1, 16, 16}, kEnvelopeTask216, std::size(kEnvelopeTask216), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x64x16x16_runtime_1x1x16x16
-    {1, BroadcastOperand::Runtime, {1, 64, 16, 16}, {1, 64, 1, 1}, kEnvelopeTask217, std::size(kEnvelopeTask217), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x64x16x16_runtime_1x64x1x1
-    {1, BroadcastOperand::Runtime, {1, 64, 8, 8}, {1, 1, 1, 1}, kEnvelopeTask218, std::size(kEnvelopeTask218), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x64x8x8_runtime_1x1x1x1
-    {1, BroadcastOperand::Runtime, {1, 64, 8, 8}, {1, 1, 8, 8}, kEnvelopeTask219, std::size(kEnvelopeTask219), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x64x8x8_runtime_1x1x8x8
-    {1, BroadcastOperand::Runtime, {1, 64, 8, 8}, {1, 64, 1, 1}, kEnvelopeTask220, std::size(kEnvelopeTask220), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x64x8x8_runtime_1x64x1x1
-    {1, BroadcastOperand::Runtime, {1, 768, 1, 1}, {1, 768, 1, 1}, kEnvelopeTask221, std::size(kEnvelopeTask221), 504, 1, 512, 16384, 0},  // env_bcast_mul_1x768x1x1_runtime_1x768x1x1
-    {1, BroadcastOperand::Runtime, {1, 768, 16, 16}, {1, 1, 1, 1}, kEnvelopeTask222, std::size(kEnvelopeTask222), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x768x16x16_runtime_1x1x1x1
-    {1, BroadcastOperand::Runtime, {1, 768, 16, 16}, {1, 1, 16, 16}, kEnvelopeTask223, std::size(kEnvelopeTask223), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x768x16x16_runtime_1x1x16x16
-    {1, BroadcastOperand::Runtime, {1, 768, 16, 16}, {1, 768, 1, 1}, kEnvelopeTask224, std::size(kEnvelopeTask224), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x768x16x16_runtime_1x768x1x1
-    {1, BroadcastOperand::Runtime, {1, 768, 8, 8}, {1, 1, 1, 1}, kEnvelopeTask225, std::size(kEnvelopeTask225), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x768x8x8_runtime_1x1x1x1
-    {1, BroadcastOperand::Runtime, {1, 768, 8, 8}, {1, 1, 8, 8}, kEnvelopeTask226, std::size(kEnvelopeTask226), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x768x8x8_runtime_1x1x8x8
-    {1, BroadcastOperand::Runtime, {1, 768, 8, 8}, {1, 768, 1, 1}, kEnvelopeTask227, std::size(kEnvelopeTask227), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x768x8x8_runtime_1x768x1x1
-    {1, BroadcastOperand::Runtime, {1, 8192, 1, 1}, {1, 8192, 1, 1}, kEnvelopeTask228, std::size(kEnvelopeTask228), 504, 1, 512, 16384, 0},  // env_bcast_mul_1x8192x1x1_runtime_1x8192x1x1
-    {1, BroadcastOperand::Runtime, {1, 96, 1, 1}, {1, 96, 1, 1}, kEnvelopeTask229, std::size(kEnvelopeTask229), 504, 1, 512, 16384, 0},  // env_bcast_mul_1x96x1x1_runtime_1x96x1x1
-    {1, BroadcastOperand::Runtime, {1, 96, 16, 16}, {1, 1, 1, 1}, kEnvelopeTask230, std::size(kEnvelopeTask230), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x96x16x16_runtime_1x1x1x1
-    {1, BroadcastOperand::Runtime, {1, 96, 16, 16}, {1, 1, 16, 16}, kEnvelopeTask231, std::size(kEnvelopeTask231), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x96x16x16_runtime_1x1x16x16
-    {1, BroadcastOperand::Runtime, {1, 96, 16, 16}, {1, 96, 1, 1}, kEnvelopeTask232, std::size(kEnvelopeTask232), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x96x16x16_runtime_1x96x1x1
-    {1, BroadcastOperand::Runtime, {1, 96, 8, 8}, {1, 1, 1, 1}, kEnvelopeTask233, std::size(kEnvelopeTask233), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x96x8x8_runtime_1x1x1x1
-    {1, BroadcastOperand::Runtime, {1, 96, 8, 8}, {1, 1, 8, 8}, kEnvelopeTask234, std::size(kEnvelopeTask234), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x96x8x8_runtime_1x1x8x8
-    {1, BroadcastOperand::Runtime, {1, 96, 8, 8}, {1, 96, 1, 1}, kEnvelopeTask235, std::size(kEnvelopeTask235), 504, 2, 1024, 16384, 0},  // env_bcast_mul_1x96x8x8_runtime_1x96x1x1
-    {1, BroadcastOperand::Runtime, {2, 1024, 1, 1}, {2, 1024, 1, 1}, kEnvelopeTask236, std::size(kEnvelopeTask236), 504, 1, 512, 16384, 0},  // env_bcast_mul_2x1024x1x1_runtime_2x1024x1x1
-    {1, BroadcastOperand::Runtime, {2, 512, 1, 1}, {2, 512, 1, 1}, kEnvelopeTask237, std::size(kEnvelopeTask237), 504, 1, 512, 16384, 0},  // env_bcast_mul_2x512x1x1_runtime_2x512x1x1
-    {1, BroadcastOperand::Runtime, {2, 64, 1, 1}, {2, 64, 1, 1}, kEnvelopeTask238, std::size(kEnvelopeTask238), 504, 1, 512, 16384, 0},  // env_bcast_mul_2x64x1x1_runtime_2x64x1x1
-    {1, BroadcastOperand::Runtime, {2, 64, 8, 8}, {1, 64, 1, 1}, kEnvelopeTask239, std::size(kEnvelopeTask239), 504, 2, 1024, 16384, 0},  // env_bcast_mul_2x64x8x8_runtime_1x64x1x1
-    {1, BroadcastOperand::Runtime, {2, 64, 8, 8}, {2, 64, 8, 8}, kEnvelopeTask240, std::size(kEnvelopeTask240), 504, 1, 512, 16384, 0},  // env_bcast_mul_2x64x8x8_runtime_2x64x8x8
-    {1, BroadcastOperand::Runtime, {4, 256, 8, 8}, {1, 256, 1, 1}, kEnvelopeTask241, std::size(kEnvelopeTask241), 504, 2, 1024, 16384, 0},  // rrmm_bcast_mul_4x256x8x8_runtime_1x256x1x1
-    {1, BroadcastOperand::Runtime, {8, 1024, 1, 1}, {8, 1024, 1, 1}, kEnvelopeTask242, std::size(kEnvelopeTask242), 504, 1, 512, 16384, 0},  // env_bcast_mul_8x1024x1x1_runtime_8x1024x1x1
-    {1, BroadcastOperand::Runtime, {8, 512, 1, 1}, {8, 512, 1, 1}, kEnvelopeTask243, std::size(kEnvelopeTask243), 504, 1, 512, 16384, 0},  // env_bcast_mul_8x512x1x1_runtime_8x512x1x1
-    {1, BroadcastOperand::Runtime, {8, 64, 1, 1}, {8, 64, 1, 1}, kEnvelopeTask244, std::size(kEnvelopeTask244), 504, 1, 512, 16384, 0},  // env_bcast_mul_8x64x1x1_runtime_8x64x1x1
-    {1, BroadcastOperand::Runtime, {8, 64, 8, 8}, {1, 64, 1, 1}, kEnvelopeTask245, std::size(kEnvelopeTask245), 504, 2, 1024, 16384, 0},  // env_bcast_mul_8x64x8x8_runtime_1x64x1x1
-    {1, BroadcastOperand::Runtime, {8, 64, 8, 8}, {8, 64, 8, 8}, kEnvelopeTask246, std::size(kEnvelopeTask246), 504, 1, 512, 16384, 0},  // env_bcast_mul_8x64x8x8_runtime_8x64x8x8
-    {1, BroadcastOperand::Scalar, {1, 64, 16, 16}, {0, 0, 0, 0}, kEnvelopeTask247, std::size(kEnvelopeTask247), 504, 1, 512, 16384, 0},  // env_bcast_mul_1x64x16x16_scalar
-    {1, BroadcastOperand::Scalar, {1, 64, 8, 8}, {0, 0, 0, 0}, kEnvelopeTask248, std::size(kEnvelopeTask248), 504, 1, 512, 16384, 0},  // env_bcast_mul_1x64x8x8_scalar
-    {1, BroadcastOperand::Scalar, {1, 768, 16, 16}, {0, 0, 0, 0}, kEnvelopeTask249, std::size(kEnvelopeTask249), 504, 1, 512, 16384, 0},  // env_bcast_mul_1x768x16x16_scalar
-    {1, BroadcastOperand::Scalar, {1, 768, 8, 8}, {0, 0, 0, 0}, kEnvelopeTask250, std::size(kEnvelopeTask250), 504, 1, 512, 16384, 0},  // env_bcast_mul_1x768x8x8_scalar
-    {4, BroadcastOperand::Runtime, {1, 16384, 1, 1}, {1, 16384, 1, 1}, kEnvelopeTask251, std::size(kEnvelopeTask251), 504, 1, 512, 16384, 0},  // env_bcast_sub_1x16384x1x1_runtime_1x16384x1x1
-    {4, BroadcastOperand::Runtime, {1, 200, 1, 1}, {1, 200, 1, 1}, kEnvelopeTask252, std::size(kEnvelopeTask252), 504, 1, 512, 16384, 0},  // env_bcast_sub_1x200x1x1_runtime_1x200x1x1
-    {4, BroadcastOperand::Runtime, {1, 300, 1, 1}, {1, 300, 1, 1}, kEnvelopeTask253, std::size(kEnvelopeTask253), 504, 1, 512, 16384, 0},  // env_bcast_sub_1x300x1x1_runtime_1x300x1x1
-    {4, BroadcastOperand::Runtime, {1, 3072, 1, 1}, {1, 3072, 1, 1}, kEnvelopeTask254, std::size(kEnvelopeTask254), 504, 1, 512, 16384, 0},  // env_bcast_sub_1x3072x1x1_runtime_1x3072x1x1
-    {4, BroadcastOperand::Runtime, {1, 768, 1, 1}, {1, 768, 1, 1}, kEnvelopeTask255, std::size(kEnvelopeTask255), 504, 1, 512, 16384, 0},  // env_bcast_sub_1x768x1x1_runtime_1x768x1x1
-    {4, BroadcastOperand::Runtime, {1, 8192, 1, 1}, {1, 8192, 1, 1}, kEnvelopeTask256, std::size(kEnvelopeTask256), 504, 1, 512, 16384, 0},  // env_bcast_sub_1x8192x1x1_runtime_1x8192x1x1
-    {4, BroadcastOperand::Runtime, {1, 96, 1, 1}, {1, 96, 1, 1}, kEnvelopeTask257, std::size(kEnvelopeTask257), 504, 1, 512, 16384, 0},  // env_bcast_sub_1x96x1x1_runtime_1x96x1x1
+{0, BroadcastOperand::Constant, {1, 1, 1024, 375}, {1, 1, 1024, 1}, kEnvelopeTask145, std::size(kEnvelopeTask145), 504, 2, 1024, 4096, 0, 0},  // env_bcast_add_1x1024x375_blob_1x1024x1
+{0, BroadcastOperand::Constant, {1, 1024, 8, 8}, {1, 1024, 1, 1}, kEnvelopeTask146, std::size(kEnvelopeTask146), 504, 2, 1024, 4096, 0, 0},  // rrmm_bcast_add_1x1024x8x8_blob_1x1024x1x1
+{0, BroadcastOperand::Constant, {1, 256, 32, 32}, {1, 256, 1, 1}, kEnvelopeTask147, std::size(kEnvelopeTask147), 504, 2, 1024, 1024, 0, 0},  // rrmm_bcast_add_1x256x32x32_blob_1x256x1x1
+{0, BroadcastOperand::Constant, {1, 256, 8, 8}, {1, 256, 1, 1}, kEnvelopeTask148, std::size(kEnvelopeTask148), 504, 2, 1024, 1024, 0, 0},  // rrmm_bcast_add_1x256x8x8_blob_1x256x1x1
+{0, BroadcastOperand::Constant, {1, 3072, 8, 8}, {1, 3072, 1, 1}, kEnvelopeTask149, std::size(kEnvelopeTask149), 504, 2, 1024, 12288, 0, 0},  // rrmm_bcast_add_1x3072x8x8_blob_1x3072x1x1
+{0, BroadcastOperand::Constant, {1, 1, 375, 1024}, {1, 1, 1, 1024}, kEnvelopeTask150, std::size(kEnvelopeTask150), 504, 2, 1024, 2048, 0, 0},  // env_bcast_add_1x375x1024_blob_1x1x1024
+{0, BroadcastOperand::Constant, {1, 1, 375, 4096}, {1, 1, 1, 4096}, kEnvelopeTask151, std::size(kEnvelopeTask151), 504, 2, 1024, 8192, 0, 0},  // env_bcast_add_1x375x4096_blob_1x1x4096
+{0, BroadcastOperand::Constant, {1, 64, 16, 16}, {1, 64, 1, 1}, kEnvelopeTask152, std::size(kEnvelopeTask152), 504, 2, 1024, 256, 0, 0},  // env_bcast_add_1x64x16x16_blob_1x64x1x1
+{0, BroadcastOperand::Constant, {1, 64, 8, 8}, {1, 64, 1, 1}, kEnvelopeTask153, std::size(kEnvelopeTask153), 504, 2, 1024, 256, 0, 0},  // env_bcast_add_1x64x8x8_blob_1x64x1x1
+{0, BroadcastOperand::Constant, {1, 768, 16, 16}, {1, 768, 1, 1}, kEnvelopeTask154, std::size(kEnvelopeTask154), 504, 2, 1024, 3072, 0, 0},  // env_bcast_add_1x768x16x16_blob_1x768x1x1
+{0, BroadcastOperand::Constant, {1, 768, 8, 8}, {1, 768, 1, 1}, kEnvelopeTask155, std::size(kEnvelopeTask155), 504, 2, 1024, 3072, 0, 0},  // env_bcast_add_1x768x8x8_blob_1x768x1x1
+{0, BroadcastOperand::Runtime, {1, 1024, 8, 8}, {1, 1024, 1, 1}, kEnvelopeTask156, std::size(kEnvelopeTask156), 504, 2, 1024, 16384, 0, 0},  // rrmm_bcast_add_1x1024x8x8_runtime_1x1024x1x1
+{0, BroadcastOperand::Runtime, {1, 16384, 1, 1}, {1, 16384, 1, 1}, kEnvelopeTask157, std::size(kEnvelopeTask157), 504, 1, 512, 16384, 0, 0},  // env_bcast_add_1x16384x1x1_runtime_1x16384x1x1
+{0, BroadcastOperand::Runtime, {1, 200, 1, 1}, {1, 200, 1, 1}, kEnvelopeTask158, std::size(kEnvelopeTask158), 504, 1, 512, 16384, 0, 0},  // env_bcast_add_1x200x1x1_runtime_1x200x1x1
+{0, BroadcastOperand::Runtime, {1, 256, 16, 16}, {1, 1, 16, 16}, kEnvelopeTask159, std::size(kEnvelopeTask159), 504, 2, 1024, 16384, 0, 0},  // rrmm_bcast_add_1x256x16x16_runtime_1x1x16x16
+{0, BroadcastOperand::Runtime, {1, 256, 32, 32}, {1, 256, 1, 1}, kEnvelopeTask160, std::size(kEnvelopeTask160), 504, 2, 1024, 16384, 0, 0},  // rrmm_bcast_add_1x256x32x32_runtime_1x256x1x1
+{0, BroadcastOperand::Runtime, {1, 256, 8, 8}, {1, 256, 1, 1}, kEnvelopeTask161, std::size(kEnvelopeTask161), 504, 2, 1024, 16384, 0, 0},  // rrmm_bcast_add_1x256x8x8_runtime_1x256x1x1
+{0, BroadcastOperand::Runtime, {1, 300, 1, 1}, {1, 300, 1, 1}, kEnvelopeTask162, std::size(kEnvelopeTask162), 504, 1, 512, 16384, 0, 0},  // env_bcast_add_1x300x1x1_runtime_1x300x1x1
+{0, BroadcastOperand::Runtime, {1, 3072, 1, 1}, {1, 3072, 1, 1}, kEnvelopeTask163, std::size(kEnvelopeTask163), 504, 1, 512, 16384, 0, 0},  // env_bcast_add_1x3072x1x1_runtime_1x3072x1x1
+{0, BroadcastOperand::Runtime, {1, 3072, 8, 8}, {1, 3072, 1, 1}, kEnvelopeTask164, std::size(kEnvelopeTask164), 504, 2, 1024, 16384, 0, 0},  // rrmm_bcast_add_1x3072x8x8_runtime_1x3072x1x1
+{0, BroadcastOperand::Runtime, {1, 64, 16, 16}, {1, 1, 1, 1}, kEnvelopeTask165, std::size(kEnvelopeTask165), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x64x16x16_runtime_1x1x1x1
+{0, BroadcastOperand::Runtime, {1, 64, 16, 16}, {1, 1, 16, 16}, kEnvelopeTask166, std::size(kEnvelopeTask166), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x64x16x16_runtime_1x1x16x16
+{0, BroadcastOperand::Runtime, {1, 64, 16, 16}, {1, 64, 1, 1}, kEnvelopeTask167, std::size(kEnvelopeTask167), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x64x16x16_runtime_1x64x1x1
+{0, BroadcastOperand::Runtime, {1, 64, 8, 8}, {1, 1, 1, 1}, kEnvelopeTask168, std::size(kEnvelopeTask168), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x64x8x8_runtime_1x1x1x1
+{0, BroadcastOperand::Runtime, {1, 64, 8, 8}, {1, 1, 8, 8}, kEnvelopeTask169, std::size(kEnvelopeTask169), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x64x8x8_runtime_1x1x8x8
+{0, BroadcastOperand::Runtime, {1, 64, 8, 8}, {1, 64, 1, 1}, kEnvelopeTask170, std::size(kEnvelopeTask170), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x64x8x8_runtime_1x64x1x1
+{0, BroadcastOperand::Runtime, {1, 768, 1, 1}, {1, 768, 1, 1}, kEnvelopeTask171, std::size(kEnvelopeTask171), 504, 1, 512, 16384, 0, 0},  // env_bcast_add_1x768x1x1_runtime_1x768x1x1
+{0, BroadcastOperand::Runtime, {1, 768, 16, 16}, {1, 1, 1, 1}, kEnvelopeTask172, std::size(kEnvelopeTask172), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x768x16x16_runtime_1x1x1x1
+{0, BroadcastOperand::Runtime, {1, 768, 16, 16}, {1, 1, 16, 16}, kEnvelopeTask173, std::size(kEnvelopeTask173), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x768x16x16_runtime_1x1x16x16
+{0, BroadcastOperand::Runtime, {1, 768, 16, 16}, {1, 768, 1, 1}, kEnvelopeTask174, std::size(kEnvelopeTask174), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x768x16x16_runtime_1x768x1x1
+{0, BroadcastOperand::Runtime, {1, 768, 8, 8}, {1, 1, 1, 1}, kEnvelopeTask175, std::size(kEnvelopeTask175), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x768x8x8_runtime_1x1x1x1
+{0, BroadcastOperand::Runtime, {1, 768, 8, 8}, {1, 1, 8, 8}, kEnvelopeTask176, std::size(kEnvelopeTask176), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x768x8x8_runtime_1x1x8x8
+{0, BroadcastOperand::Runtime, {1, 768, 8, 8}, {1, 768, 1, 1}, kEnvelopeTask177, std::size(kEnvelopeTask177), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x768x8x8_runtime_1x768x1x1
+{0, BroadcastOperand::Runtime, {1, 8, 375, 375}, {1, 8, 375, 375}, kEnvelopeTask178, std::size(kEnvelopeTask178), 504, 1, 512, 16384, 0, 0},  // env_bcast_add_1x8x375x375_runtime_1x8x375x375
+{0, BroadcastOperand::Runtime, {1, 8192, 1, 1}, {1, 8192, 1, 1}, kEnvelopeTask179, std::size(kEnvelopeTask179), 504, 1, 512, 16384, 0, 0},  // env_bcast_add_1x8192x1x1_runtime_1x8192x1x1
+{0, BroadcastOperand::Runtime, {1, 96, 1, 1}, {1, 96, 1, 1}, kEnvelopeTask180, std::size(kEnvelopeTask180), 504, 1, 512, 16384, 0, 0},  // env_bcast_add_1x96x1x1_runtime_1x96x1x1
+{0, BroadcastOperand::Runtime, {1, 96, 16, 16}, {1, 1, 1, 1}, kEnvelopeTask181, std::size(kEnvelopeTask181), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x96x16x16_runtime_1x1x1x1
+{0, BroadcastOperand::Runtime, {1, 96, 16, 16}, {1, 1, 16, 16}, kEnvelopeTask182, std::size(kEnvelopeTask182), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x96x16x16_runtime_1x1x16x16
+{0, BroadcastOperand::Runtime, {1, 96, 16, 16}, {1, 96, 1, 1}, kEnvelopeTask183, std::size(kEnvelopeTask183), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x96x16x16_runtime_1x96x1x1
+{0, BroadcastOperand::Runtime, {1, 96, 8, 8}, {1, 1, 1, 1}, kEnvelopeTask184, std::size(kEnvelopeTask184), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x96x8x8_runtime_1x1x1x1
+{0, BroadcastOperand::Runtime, {1, 96, 8, 8}, {1, 1, 8, 8}, kEnvelopeTask185, std::size(kEnvelopeTask185), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x96x8x8_runtime_1x1x8x8
+{0, BroadcastOperand::Runtime, {1, 96, 8, 8}, {1, 96, 1, 1}, kEnvelopeTask186, std::size(kEnvelopeTask186), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_1x96x8x8_runtime_1x96x1x1
+{0, BroadcastOperand::Runtime, {2, 1024, 1, 1}, {2, 1024, 1, 1}, kEnvelopeTask187, std::size(kEnvelopeTask187), 504, 1, 512, 16384, 0, 0},  // env_bcast_add_2x1024x1x1_runtime_2x1024x1x1
+{0, BroadcastOperand::Runtime, {2, 512, 1, 1}, {2, 512, 1, 1}, kEnvelopeTask188, std::size(kEnvelopeTask188), 504, 1, 512, 16384, 0, 0},  // env_bcast_add_2x512x1x1_runtime_2x512x1x1
+{0, BroadcastOperand::Runtime, {2, 64, 1, 1}, {2, 64, 1, 1}, kEnvelopeTask189, std::size(kEnvelopeTask189), 504, 1, 512, 16384, 0, 0},  // env_bcast_add_2x64x1x1_runtime_2x64x1x1
+{0, BroadcastOperand::Runtime, {2, 64, 8, 8}, {1, 64, 1, 1}, kEnvelopeTask190, std::size(kEnvelopeTask190), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_2x64x8x8_runtime_1x64x1x1
+{0, BroadcastOperand::Runtime, {2, 64, 8, 8}, {2, 64, 8, 8}, kEnvelopeTask191, std::size(kEnvelopeTask191), 504, 1, 512, 16384, 0, 0},  // env_bcast_add_2x64x8x8_runtime_2x64x8x8
+{0, BroadcastOperand::Runtime, {4, 256, 8, 8}, {1, 256, 1, 1}, kEnvelopeTask192, std::size(kEnvelopeTask192), 504, 2, 1024, 16384, 0, 0},  // rrmm_bcast_add_4x256x8x8_runtime_1x256x1x1
+{0, BroadcastOperand::Runtime, {8, 1024, 1, 1}, {8, 1024, 1, 1}, kEnvelopeTask193, std::size(kEnvelopeTask193), 504, 1, 512, 16384, 0, 0},  // env_bcast_add_8x1024x1x1_runtime_8x1024x1x1
+{0, BroadcastOperand::Runtime, {8, 512, 1, 1}, {8, 512, 1, 1}, kEnvelopeTask194, std::size(kEnvelopeTask194), 504, 1, 512, 16384, 0, 0},  // env_bcast_add_8x512x1x1_runtime_8x512x1x1
+{0, BroadcastOperand::Runtime, {8, 64, 1, 1}, {8, 64, 1, 1}, kEnvelopeTask195, std::size(kEnvelopeTask195), 504, 1, 512, 16384, 0, 0},  // env_bcast_add_8x64x1x1_runtime_8x64x1x1
+{0, BroadcastOperand::Runtime, {8, 64, 8, 8}, {1, 64, 1, 1}, kEnvelopeTask196, std::size(kEnvelopeTask196), 504, 2, 1024, 16384, 0, 0},  // env_bcast_add_8x64x8x8_runtime_1x64x1x1
+{0, BroadcastOperand::Runtime, {8, 64, 8, 8}, {8, 64, 8, 8}, kEnvelopeTask197, std::size(kEnvelopeTask197), 504, 1, 512, 16384, 0, 0},  // env_bcast_add_8x64x8x8_runtime_8x64x8x8
+    {0, BroadcastOperand::Scalar, {1, 64, 16, 16}, {0, 0, 0, 0}, kEnvelopeTask198, std::size(kEnvelopeTask198), 504, 1, 512, 16384, 0, 0x3800},  //env_bcast_add_1x64x16x16_scalar
+    {0, BroadcastOperand::Scalar, {1, 64, 8, 8}, {0, 0, 0, 0}, kEnvelopeTask199, std::size(kEnvelopeTask199), 504, 1, 512, 16384, 0, 0x3800},  //env_bcast_add_1x64x8x8_scalar
+    {0, BroadcastOperand::Scalar, {1, 768, 16, 16}, {0, 0, 0, 0}, kEnvelopeTask200, std::size(kEnvelopeTask200), 504, 1, 512, 16384, 0, 0x3800},  //env_bcast_add_1x768x16x16_scalar
+    {0, BroadcastOperand::Scalar, {1, 768, 8, 8}, {0, 0, 0, 0}, kEnvelopeTask201, std::size(kEnvelopeTask201), 504, 1, 512, 16384, 0, 0x3800},  //env_bcast_add_1x768x8x8_scalar
+{1, BroadcastOperand::Constant, {1, 1, 1024, 375}, {1, 1, 1024, 1}, kEnvelopeTask145, std::size(kEnvelopeTask145), 504, 2, 1024, 4096, 0, 0},  // env_bcast_mul_1x1024x375_blob_1x1024x1
+{1, BroadcastOperand::Constant, {1, 1024, 8, 8}, {1, 1024, 1, 1}, kEnvelopeTask146, std::size(kEnvelopeTask146), 504, 2, 1024, 4096, 0, 0},  // rrmm_bcast_mul_1x1024x8x8_blob_1x1024x1x1
+{1, BroadcastOperand::Constant, {1, 256, 32, 32}, {1, 256, 1, 1}, kEnvelopeTask147, std::size(kEnvelopeTask147), 504, 2, 1024, 1024, 0, 0},  // rrmm_bcast_mul_1x256x32x32_blob_1x256x1x1
+{1, BroadcastOperand::Constant, {1, 256, 8, 8}, {1, 256, 1, 1}, kEnvelopeTask148, std::size(kEnvelopeTask148), 504, 2, 1024, 1024, 0, 0},  // rrmm_bcast_mul_1x256x8x8_blob_1x256x1x1
+{1, BroadcastOperand::Constant, {1, 3072, 8, 8}, {1, 3072, 1, 1}, kEnvelopeTask149, std::size(kEnvelopeTask149), 504, 2, 1024, 12288, 0, 0},  // rrmm_bcast_mul_1x3072x8x8_blob_1x3072x1x1
+{1, BroadcastOperand::Constant, {1, 1, 375, 1024}, {1, 1, 1, 1024}, kEnvelopeTask202, std::size(kEnvelopeTask202), 504, 2, 1024, 2048, 0, 0},  // env_bcast_mul_1x375x1024_blob_1x1x1024
+{1, BroadcastOperand::Constant, {1, 1, 375, 4096}, {1, 1, 1, 4096}, kEnvelopeTask203, std::size(kEnvelopeTask203), 504, 2, 1024, 8192, 0, 0},  // env_bcast_mul_1x375x4096_blob_1x1x4096
+{1, BroadcastOperand::Constant, {1, 64, 16, 16}, {1, 64, 1, 1}, kEnvelopeTask152, std::size(kEnvelopeTask152), 504, 2, 1024, 256, 0, 0},  // env_bcast_mul_1x64x16x16_blob_1x64x1x1
+{1, BroadcastOperand::Constant, {1, 64, 8, 8}, {1, 64, 1, 1}, kEnvelopeTask153, std::size(kEnvelopeTask153), 504, 2, 1024, 256, 0, 0},  // env_bcast_mul_1x64x8x8_blob_1x64x1x1
+{1, BroadcastOperand::Constant, {1, 768, 16, 16}, {1, 768, 1, 1}, kEnvelopeTask154, std::size(kEnvelopeTask154), 504, 2, 1024, 3072, 0, 0},  // env_bcast_mul_1x768x16x16_blob_1x768x1x1
+{1, BroadcastOperand::Constant, {1, 768, 8, 8}, {1, 768, 1, 1}, kEnvelopeTask155, std::size(kEnvelopeTask155), 504, 2, 1024, 3072, 0, 0},  // env_bcast_mul_1x768x8x8_blob_1x768x1x1
+{1, BroadcastOperand::Runtime, {1, 1, 1024, 375}, {1, 1, 1024, 375}, kEnvelopeTask204, std::size(kEnvelopeTask204), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_1x1024x375_runtime_1x1024x375
+{1, BroadcastOperand::Runtime, {1, 1024, 8, 8}, {1, 1024, 1, 1}, kEnvelopeTask205, std::size(kEnvelopeTask205), 504, 2, 1024, 16384, 0, 0},  // rrmm_bcast_mul_1x1024x8x8_runtime_1x1024x1x1
+{1, BroadcastOperand::Runtime, {1, 16384, 1, 1}, {1, 16384, 1, 1}, kEnvelopeTask206, std::size(kEnvelopeTask206), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_1x16384x1x1_runtime_1x16384x1x1
+{1, BroadcastOperand::Runtime, {1, 200, 1, 1}, {1, 200, 1, 1}, kEnvelopeTask207, std::size(kEnvelopeTask207), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_1x200x1x1_runtime_1x200x1x1
+{1, BroadcastOperand::Runtime, {1, 256, 16, 16}, {1, 1, 16, 16}, kEnvelopeTask208, std::size(kEnvelopeTask208), 504, 2, 1024, 16384, 0, 0},  // rrmm_bcast_mul_1x256x16x16_runtime_1x1x16x16
+{1, BroadcastOperand::Runtime, {1, 256, 32, 32}, {1, 256, 1, 1}, kEnvelopeTask209, std::size(kEnvelopeTask209), 504, 2, 1024, 16384, 0, 0},  // rrmm_bcast_mul_1x256x32x32_runtime_1x256x1x1
+{1, BroadcastOperand::Runtime, {1, 256, 8, 8}, {1, 256, 1, 1}, kEnvelopeTask210, std::size(kEnvelopeTask210), 504, 2, 1024, 16384, 0, 0},  // rrmm_bcast_mul_1x256x8x8_runtime_1x256x1x1
+{1, BroadcastOperand::Runtime, {1, 300, 1, 1}, {1, 300, 1, 1}, kEnvelopeTask211, std::size(kEnvelopeTask211), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_1x300x1x1_runtime_1x300x1x1
+{1, BroadcastOperand::Runtime, {1, 3072, 1, 1}, {1, 3072, 1, 1}, kEnvelopeTask212, std::size(kEnvelopeTask212), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_1x3072x1x1_runtime_1x3072x1x1
+{1, BroadcastOperand::Runtime, {1, 3072, 8, 8}, {1, 3072, 1, 1}, kEnvelopeTask213, std::size(kEnvelopeTask213), 504, 2, 1024, 16384, 0, 0},  // rrmm_bcast_mul_1x3072x8x8_runtime_1x3072x1x1
+{1, BroadcastOperand::Runtime, {1, 1, 375, 4096}, {1, 1, 375, 4096}, kEnvelopeTask214, std::size(kEnvelopeTask214), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_1x375x4096_runtime_1x375x4096
+{1, BroadcastOperand::Runtime, {1, 64, 16, 16}, {1, 1, 1, 1}, kEnvelopeTask215, std::size(kEnvelopeTask215), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x64x16x16_runtime_1x1x1x1
+{1, BroadcastOperand::Runtime, {1, 64, 16, 16}, {1, 1, 16, 16}, kEnvelopeTask216, std::size(kEnvelopeTask216), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x64x16x16_runtime_1x1x16x16
+{1, BroadcastOperand::Runtime, {1, 64, 16, 16}, {1, 64, 1, 1}, kEnvelopeTask217, std::size(kEnvelopeTask217), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x64x16x16_runtime_1x64x1x1
+{1, BroadcastOperand::Runtime, {1, 64, 8, 8}, {1, 1, 1, 1}, kEnvelopeTask218, std::size(kEnvelopeTask218), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x64x8x8_runtime_1x1x1x1
+{1, BroadcastOperand::Runtime, {1, 64, 8, 8}, {1, 1, 8, 8}, kEnvelopeTask219, std::size(kEnvelopeTask219), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x64x8x8_runtime_1x1x8x8
+{1, BroadcastOperand::Runtime, {1, 64, 8, 8}, {1, 64, 1, 1}, kEnvelopeTask220, std::size(kEnvelopeTask220), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x64x8x8_runtime_1x64x1x1
+{1, BroadcastOperand::Runtime, {1, 768, 1, 1}, {1, 768, 1, 1}, kEnvelopeTask221, std::size(kEnvelopeTask221), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_1x768x1x1_runtime_1x768x1x1
+{1, BroadcastOperand::Runtime, {1, 768, 16, 16}, {1, 1, 1, 1}, kEnvelopeTask222, std::size(kEnvelopeTask222), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x768x16x16_runtime_1x1x1x1
+{1, BroadcastOperand::Runtime, {1, 768, 16, 16}, {1, 1, 16, 16}, kEnvelopeTask223, std::size(kEnvelopeTask223), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x768x16x16_runtime_1x1x16x16
+{1, BroadcastOperand::Runtime, {1, 768, 16, 16}, {1, 768, 1, 1}, kEnvelopeTask224, std::size(kEnvelopeTask224), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x768x16x16_runtime_1x768x1x1
+{1, BroadcastOperand::Runtime, {1, 768, 8, 8}, {1, 1, 1, 1}, kEnvelopeTask225, std::size(kEnvelopeTask225), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x768x8x8_runtime_1x1x1x1
+{1, BroadcastOperand::Runtime, {1, 768, 8, 8}, {1, 1, 8, 8}, kEnvelopeTask226, std::size(kEnvelopeTask226), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x768x8x8_runtime_1x1x8x8
+{1, BroadcastOperand::Runtime, {1, 768, 8, 8}, {1, 768, 1, 1}, kEnvelopeTask227, std::size(kEnvelopeTask227), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x768x8x8_runtime_1x768x1x1
+{1, BroadcastOperand::Runtime, {1, 8192, 1, 1}, {1, 8192, 1, 1}, kEnvelopeTask228, std::size(kEnvelopeTask228), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_1x8192x1x1_runtime_1x8192x1x1
+{1, BroadcastOperand::Runtime, {1, 96, 1, 1}, {1, 96, 1, 1}, kEnvelopeTask229, std::size(kEnvelopeTask229), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_1x96x1x1_runtime_1x96x1x1
+{1, BroadcastOperand::Runtime, {1, 96, 16, 16}, {1, 1, 1, 1}, kEnvelopeTask230, std::size(kEnvelopeTask230), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x96x16x16_runtime_1x1x1x1
+{1, BroadcastOperand::Runtime, {1, 96, 16, 16}, {1, 1, 16, 16}, kEnvelopeTask231, std::size(kEnvelopeTask231), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x96x16x16_runtime_1x1x16x16
+{1, BroadcastOperand::Runtime, {1, 96, 16, 16}, {1, 96, 1, 1}, kEnvelopeTask232, std::size(kEnvelopeTask232), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x96x16x16_runtime_1x96x1x1
+{1, BroadcastOperand::Runtime, {1, 96, 8, 8}, {1, 1, 1, 1}, kEnvelopeTask233, std::size(kEnvelopeTask233), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x96x8x8_runtime_1x1x1x1
+{1, BroadcastOperand::Runtime, {1, 96, 8, 8}, {1, 1, 8, 8}, kEnvelopeTask234, std::size(kEnvelopeTask234), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x96x8x8_runtime_1x1x8x8
+{1, BroadcastOperand::Runtime, {1, 96, 8, 8}, {1, 96, 1, 1}, kEnvelopeTask235, std::size(kEnvelopeTask235), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_1x96x8x8_runtime_1x96x1x1
+{1, BroadcastOperand::Runtime, {2, 1024, 1, 1}, {2, 1024, 1, 1}, kEnvelopeTask236, std::size(kEnvelopeTask236), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_2x1024x1x1_runtime_2x1024x1x1
+{1, BroadcastOperand::Runtime, {2, 512, 1, 1}, {2, 512, 1, 1}, kEnvelopeTask237, std::size(kEnvelopeTask237), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_2x512x1x1_runtime_2x512x1x1
+{1, BroadcastOperand::Runtime, {2, 64, 1, 1}, {2, 64, 1, 1}, kEnvelopeTask238, std::size(kEnvelopeTask238), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_2x64x1x1_runtime_2x64x1x1
+{1, BroadcastOperand::Runtime, {2, 64, 8, 8}, {1, 64, 1, 1}, kEnvelopeTask239, std::size(kEnvelopeTask239), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_2x64x8x8_runtime_1x64x1x1
+{1, BroadcastOperand::Runtime, {2, 64, 8, 8}, {2, 64, 8, 8}, kEnvelopeTask240, std::size(kEnvelopeTask240), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_2x64x8x8_runtime_2x64x8x8
+{1, BroadcastOperand::Runtime, {4, 256, 8, 8}, {1, 256, 1, 1}, kEnvelopeTask241, std::size(kEnvelopeTask241), 504, 2, 1024, 16384, 0, 0},  // rrmm_bcast_mul_4x256x8x8_runtime_1x256x1x1
+{1, BroadcastOperand::Runtime, {8, 1024, 1, 1}, {8, 1024, 1, 1}, kEnvelopeTask242, std::size(kEnvelopeTask242), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_8x1024x1x1_runtime_8x1024x1x1
+{1, BroadcastOperand::Runtime, {8, 512, 1, 1}, {8, 512, 1, 1}, kEnvelopeTask243, std::size(kEnvelopeTask243), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_8x512x1x1_runtime_8x512x1x1
+{1, BroadcastOperand::Runtime, {8, 64, 1, 1}, {8, 64, 1, 1}, kEnvelopeTask244, std::size(kEnvelopeTask244), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_8x64x1x1_runtime_8x64x1x1
+{1, BroadcastOperand::Runtime, {8, 64, 8, 8}, {1, 64, 1, 1}, kEnvelopeTask245, std::size(kEnvelopeTask245), 504, 2, 1024, 16384, 0, 0},  // env_bcast_mul_8x64x8x8_runtime_1x64x1x1
+{1, BroadcastOperand::Runtime, {8, 64, 8, 8}, {8, 64, 8, 8}, kEnvelopeTask246, std::size(kEnvelopeTask246), 504, 1, 512, 16384, 0, 0},  // env_bcast_mul_8x64x8x8_runtime_8x64x8x8
+    {1, BroadcastOperand::Scalar, {1, 64, 16, 16}, {0, 0, 0, 0}, kEnvelopeTask247, std::size(kEnvelopeTask247), 504, 1, 512, 16384, 0, 0x3800},  //env_bcast_mul_1x64x16x16_scalar
+    {1, BroadcastOperand::Scalar, {1, 64, 8, 8}, {0, 0, 0, 0}, kEnvelopeTask248, std::size(kEnvelopeTask248), 504, 1, 512, 16384, 0, 0x3800},  //env_bcast_mul_1x64x8x8_scalar
+    {1, BroadcastOperand::Scalar, {1, 768, 16, 16}, {0, 0, 0, 0}, kEnvelopeTask249, std::size(kEnvelopeTask249), 504, 1, 512, 16384, 0, 0x3800},  //env_bcast_mul_1x768x16x16_scalar
+    {1, BroadcastOperand::Scalar, {1, 768, 8, 8}, {0, 0, 0, 0}, kEnvelopeTask250, std::size(kEnvelopeTask250), 504, 1, 512, 16384, 0, 0x3800},  //env_bcast_mul_1x768x8x8_scalar
+{4, BroadcastOperand::Runtime, {1, 16384, 1, 1}, {1, 16384, 1, 1}, kEnvelopeTask251, std::size(kEnvelopeTask251), 504, 1, 512, 16384, 0, 0},  // env_bcast_sub_1x16384x1x1_runtime_1x16384x1x1
+{4, BroadcastOperand::Runtime, {1, 200, 1, 1}, {1, 200, 1, 1}, kEnvelopeTask252, std::size(kEnvelopeTask252), 504, 1, 512, 16384, 0, 0},  // env_bcast_sub_1x200x1x1_runtime_1x200x1x1
+{4, BroadcastOperand::Runtime, {1, 300, 1, 1}, {1, 300, 1, 1}, kEnvelopeTask253, std::size(kEnvelopeTask253), 504, 1, 512, 16384, 0, 0},  // env_bcast_sub_1x300x1x1_runtime_1x300x1x1
+{4, BroadcastOperand::Runtime, {1, 3072, 1, 1}, {1, 3072, 1, 1}, kEnvelopeTask254, std::size(kEnvelopeTask254), 504, 1, 512, 16384, 0, 0},  // env_bcast_sub_1x3072x1x1_runtime_1x3072x1x1
+{4, BroadcastOperand::Runtime, {1, 768, 1, 1}, {1, 768, 1, 1}, kEnvelopeTask255, std::size(kEnvelopeTask255), 504, 1, 512, 16384, 0, 0},  // env_bcast_sub_1x768x1x1_runtime_1x768x1x1
+{4, BroadcastOperand::Runtime, {1, 8192, 1, 1}, {1, 8192, 1, 1}, kEnvelopeTask256, std::size(kEnvelopeTask256), 504, 1, 512, 16384, 0, 0},  // env_bcast_sub_1x8192x1x1_runtime_1x8192x1x1
+{4, BroadcastOperand::Runtime, {1, 96, 1, 1}, {1, 96, 1, 1}, kEnvelopeTask257, std::size(kEnvelopeTask257), 504, 1, 512, 16384, 0, 0},  // env_bcast_sub_1x96x1x1_runtime_1x96x1x1
+    {1, BroadcastOperand::Scalar, {1, 8, 375, 375}, {0, 0, 0, 0}, kEnvelopeTask258, std::size(kEnvelopeTask258), 504, 1, 512, 16384, 0, 0x2C00},  // env_bcast_mul_1x8x375x375_scalar (bd scale 0x1p-4), std::size(kEnvelopeTask258), 504, 1, 512, 16384, 0, 0x2C00},  // env_bcast_mul_1x8x375x375_scalar (bd scale 0x1p-4)
 };

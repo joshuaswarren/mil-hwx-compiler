@@ -496,6 +496,11 @@ struct OracleBroadcastTemplate {
     std::size_t constantOffsetBytes;
     std::size_t constantBytes;
     std::uint64_t scratchAllocationBytes;
+    // The fp16 scalar operand baked into this row's captured task words
+    // (0x3800 = 0.5 for the parity-campaign rows; 0x2C00 = 0x1p-4 for the
+    // bd-scale capture). encodeBroadcast refuses a requested scalar that
+    // the row's words do not encode.
+    std::uint16_t scalarBits;
 };
 
 struct OracleUnaryTask {
@@ -1924,9 +1929,10 @@ Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
     if (!source)
         throw std::invalid_argument(
             "H13 broadcast is outside the decoded parity envelope");
-    if (operand == BroadcastOperand::Scalar && scalarBits != 0x3800)
+    if (operand == BroadcastOperand::Scalar && scalarBits != source->scalarBits)
         throw std::invalid_argument(
-            "H13 scalar broadcast requires the decoded fp16 0.5 operand");
+            "H13 scalar broadcast operand does not match the bits baked "
+            "into the decoded row");
     Program program;
     program.taskSurfaceChannels = {5, 4, 6, 7};
     program.task = taskBytesFor(source->words, source->wordCount);

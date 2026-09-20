@@ -1335,13 +1335,20 @@ static BOOL broadcastPlan(ANEGraphOperation *operation,
                           NSDictionary<NSString *, NSData *> *synthesizedConstants,
                           BOOL preferNative, H13BroadcastPlan *plan,
                           ANEGraphValue *__autoreleasing *constantOut) {
-    if (preferNative && nativeBinaryPlan(operation)) {
+    ANEGraphValue *y = operation.operands[@"y"].value;
+    const BOOL scalarConstantOperand = y && constantValue(y) &&
+        y.type.kind == ANEValueTypeKindScalar &&
+        y.type.elementType == ANEElementTypeFP16;
+    if (preferNative && nativeBinaryPlan(operation) && !scalarConstantOperand) {
         // Native keeps every shape it already served. Where the decoded
         // table covers the exact geometry as one whole-tensor program, the
         // broadcast beats the thousands-of-programs 64-lane split, so fall
         // through only for covered shapes.
+        // A scalar constant operand has no tensor shape, so the
+        // batchedShape(y) probe below cannot speak for it: Scalar rows are
+        // decided by the decoded table in the candidate body instead
+        // (fail-closed through supportsBroadcast).
         ANEGraphValue *x = operation.operands[@"x"].value;
-        ANEGraphValue *y = operation.operands[@"y"].value;
         H13BroadcastPlan probe{};
         if (!x || !y || !batchedShape(x, &probe.shape.x) ||
             !batchedShape(operation.results[0], &probe.result) ||
@@ -1354,7 +1361,6 @@ static BOOL broadcastPlan(ANEGraphOperation *operation,
             return NO;
     }
     ANEGraphValue *x = operation.operands[@"x"].value;
-    ANEGraphValue *y = operation.operands[@"y"].value;
     H13BroadcastPlan candidate{};
     if (!binaryEncoding(operation.operationName, &candidate.operation) ||
         operation.arguments.count != 2 || !x || !y) return NO;

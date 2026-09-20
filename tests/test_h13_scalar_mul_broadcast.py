@@ -20,7 +20,7 @@ output payload for the eventual device decode comparison.
 
 Routing trace (all paths verified in source, no template invented):
 1. parityPlan (ANEH13Compiler.mm L1240): scalar operand accepted ONLY
-   when scalarBits == 0x3800 (fp16 0.5). bd scale 0x1p-4 = 0x1400 -> NO.
+   when scalarBits == 0x3800 (fp16 0.5). bd scale 0x1p-4 fp16 bits 0x2C00 -> NO.
 2. broadcastPlan (L1338): Scalar operand reaches the decoded envelope
    table, but kBroadcastTasks (H13EnvelopeTemplates.inc, 525 rows) has
    Scalar-mul rows ONLY for {1,64,8,8}, {1,64,16,16}, {1,768,8,8},
@@ -87,6 +87,63 @@ def test_scalar_mul_at_attention_scale_is_one_program(tmp_path) -> None:
         "constant-fold is chunking instead of using the broadcast binary")
     ops = {p["operation"] for p in programs}
     assert ops == {"mul"}, ops
+
+
+def test_compiled_task_bytes_match_apple_capture(tmp_path) -> None:
+    """Byte proof: the locally compiled single program's task stream
+    must byte-match the Apple ane-compile-hwx capture for the same
+    MIL (capture sha256 e60db231…; task stream at 0x4000, 504 bytes,
+    126 words; decoded task_count 1)."""
+    import struct
+    manifest = _compile(tmp_path)
+    assert len(manifest["programs"]) == 1
+    anec = (tmp_path / "out" / "program-0.anec").read_bytes()
+    # The task stream begins after the 0x1000-byte envelope header. The
+    # local compiler emits the parity convention (commit ea903c4): header
+    # word 0 carries the driver-derived kernel-window bits, and the three
+    # 5-bit channel selectors in header word 8 are rebound in the swapped
+    # {input=5, output=4} order. Normalize the Apple capture with exactly
+    # the parity suite's bound_task_descriptor transform, then require a
+    # byte-exact match.
+    binding = {5: 4, 4: 5, 6: 6}
+
+    def bound(words):
+        header = list(words)
+        for shift in (0, 6, 12):
+            channel = (header[8] >> shift) & 31
+            if channel >= 4:
+                header[8] = ((header[8] & ~(31 << shift))
+                             | (binding[channel] << shift))
+        header[0] = (header[0] & ~0x00FF0000) | 0x00400000
+        return header
+
+    stream = anec[0x1000:]
+    assert len(stream) >= 504, f"ANEC payload too small: {len(stream)}"
+    words = struct.unpack("<126I", stream[:504])
+    assert words[1] == 0x87, f"unexpected task length word: {words[1]:#x}"
+    apple_bin = ROOT / "tests" / "fixtures" / "h13" / (
+        "bd_scale_mul_1x8x375x375_scalar.task")
+    apple = struct.unpack("<126I", apple_bin.read_bytes())
+    assert list(words) == bound(apple), (
+        "task stream differs from the Apple capture under the parity "
+        "channel binding)")
+
+
+def test_wrong_scalar_value_is_rejected(tmp_path) -> None:
+    """Fail-closed: requesting 0.5 (0x3800) against the bd-scale row
+    [1,8,375,375] must not silently compile a wrong-value program."""
+    mil = MIL.replace("0x1p-4", "0x1p-1")
+    (tmp_path / "half.mil").write_text(mil)
+    result = subprocess.run(
+        [str(COMPILER), "--mil", str(tmp_path / "half.mil"),
+         "--model-root", str(tmp_path),
+         "--target", "H13", "--format", "anec",
+         "--output", str(tmp_path / "out-half")],
+        capture_output=True, text=True, timeout=600, check=False)
+    assert result.returncode != 0, (
+        "0.5 scalar at the bd-scale shape compiled — the row must reject "
+        "a scalar whose bits differ from the captured 0x1p-4")
+    assert "scalar broadcast" in (result.stdout + result.stderr)
 
 
 def test_semantic_reference_fp16_scale(tmp_path) -> None:
