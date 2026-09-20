@@ -1187,28 +1187,6 @@ static NSString *stringArgument(ANEGraphArgument *argument) {
     return argument.kind == ANEGraphArgumentKindString ? argument.text : nil;
 }
 
-/// Exactly the fp16 scalar 1.0 (bits 0x3C00) as a constant operand: the
-/// Scalar spelling or the rank-0 tensor spelling the encoder MIL uses
-/// (`val = fp16(1.0)` or `val = tensor<fp16, []>(fp16(1.0))`). fp16Scalar
-/// rejects non-finite literals, so only a finite exact 1.0 matches, and a
-/// BLOBFILE payload does not match — the scalar-2.0 gate is literal-only
-/// and this stays consistent with it.
-static BOOL exactUnitFp16Constant(ANEGraphValue *value) {
-    if (!value || !constantValue(value) ||
-        value.type.elementType != ANEElementTypeFP16)
-        return NO;
-    if (value.type.kind != ANEValueTypeKindScalar &&
-        !(value.type.kind == ANEValueTypeKindTensor &&
-          value.type.shape.count == 0))
-        return NO;
-    ANEGraphArgument *literal = value.producer.attributes[@"val"];
-    if (literal.kind == ANEGraphArgumentKindCall &&
-        literal.callArguments.count == 1 &&
-        [literal.calleeName isEqualToString:@"tensor"])
-        literal = literal.callArguments[0].value;
-    uint16_t bits = 0;
-    return fp16Scalar(literal, &bits) && bits == 0x3c00;
-}
 
 struct H13ParityPlan {
     BOOL unary;
@@ -1960,6 +1938,50 @@ static BOOL blobBackedConstant(ANEGraphValue *value) {
     ANEGraphArgument *payload = literal.callArguments[0].value;
     return payload.kind == ANEGraphArgumentKindCall &&
         [payload.calleeName isEqualToString:@"BLOBFILE"];
+}
+
+/// Exactly the fp16 scalar 1.0 (bits 0x3C00) as a constant operand: the
+/// Scalar spelling or the rank-0 tensor spelling the encoder MIL uses
+/// (`val = fp16(1.0)`, `val = tensor<fp16, []>(fp16(1.0))`, or the
+/// rank-0 BLOBFILE payload the real encoder pins in normalized.bin).
+/// A BLOBFILE divisor resolves through the verified blob reader with the
+/// shared resolvedConstants cache; a load failure is fatal (the reader
+/// emits its own diagnostic). Only an exact 1.0 half respells — the
+/// scalar-2.0 gate is untouched and every other payload keeps its
+/// refusal.
+static BOOL exactUnitFp16Constant(
+    ANEGraphValue *value, NSURL *modelRoot,
+    NSMutableDictionary<NSString *, NSData *> *resolvedConstants,
+    ANEDiagnosticEngine *diagnostics, BOOL *fatal) {
+    *fatal = NO;
+    if (!value || !constantValue(value) ||
+        value.type.elementType != ANEElementTypeFP16)
+        return NO;
+    if (value.type.kind != ANEValueTypeKindScalar &&
+        !(value.type.kind == ANEValueTypeKindTensor &&
+          value.type.shape.count == 0))
+        return NO;
+    ANEGraphArgument *literal = value.producer.attributes[@"val"];
+    if (literal.kind == ANEGraphArgumentKindCall &&
+        literal.callArguments.count == 1 &&
+        [literal.calleeName isEqualToString:@"tensor"])
+        literal = literal.callArguments[0].value;
+    uint16_t bits = 0;
+    if (fp16Scalar(literal, &bits)) return bits == 0x3c00;
+    if (!blobBackedConstant(value)) return NO;
+    NSData *payload = resolvedConstants[value.name];
+    if (!payload) {
+        payload = [ANEBlobResolver loadConstantForOperation:value.producer
+            expectedBytes:2 modelRoot:modelRoot diagnostics:diagnostics];
+        if (!payload) {
+            *fatal = YES;
+            return NO;
+        }
+        resolvedConstants[value.name] = payload;
+    }
+    if (payload.length != 2) return NO;
+    memcpy(&bits, payload.bytes, 2);
+    return bits == 0x3c00;
 }
 
 /// The only operation consuming `value`, or nil when the value has zero or
@@ -2753,15 +2775,25 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             // class (values, -0, +/-inf, NaN all carry unchanged; no
             // rounding), so flooring the identity is the original
             // operation. The decoded Floor rows serve it; the captured
-            // scalar-2.0 floor_div row is untouched. The divisor operand
-            // drops here, at the earliest shared point — the Floor
-            // program binds x only, and a retained y desyncs the
-            // program-input walk.
-            if (second && shape.kind == ane::h13::H13BooleanKind::FloorDiv &&
-                exactUnitFp16Constant(second))
-                shape.kind = ane::h13::H13BooleanKind::Floor;
-            else if (second)
+            // scalar-2.0 floor_div row is untouched. The real encoder
+            // carries the divisor as a rank-0 fp16 BLOBFILE constant, so
+            // the exact-1.0 check resolves it through the verified blob
+            // reader. The divisor operand drops here, at the earliest
+            // shared point — the Floor program binds x only, and a
+            // retained y desyncs the program-input walk.
+            if (second && shape.kind == ane::h13::H13BooleanKind::FloorDiv) {
+                BOOL fatal = NO;
+                if (exactUnitFp16Constant(second, modelRoot,
+                                          resolvedConstants, diagnostics,
+                                          &fatal))
+                    shape.kind = ane::h13::H13BooleanKind::Floor;
+                else if (fatal)
+                    return NO;
+                else
+                    [operands addObject:second];
+            } else if (second) {
                 [operands addObject:second];
+            }
         }
         // The shape comes from the full-tensor operand: for select with a
         // scalar fill that is b, never the scalar.

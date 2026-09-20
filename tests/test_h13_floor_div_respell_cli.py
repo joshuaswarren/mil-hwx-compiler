@@ -275,6 +275,63 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-fdiv-respell-") as d:
     compile_source(root, "div3-blob", wrapped(body, "tensor<fp16, [1]> x"),
                    expected_code="h13.invalid-constant-input")
 
+    # 3b. The real encoder carries the divisor as a rank-0 fp16 BLOBFILE
+    # constant (normalized.bin; Main pins payload 1.0). The respell
+    # resolves it through the verified blob reader at the real offsets —
+    # 576/1216 are the actual var_23 divisor records in the pinned graph,
+    # 704/1344 the normalized.bin pair Main named — and stays byte-
+    # identical to the direct floor spelling. A blob payload of anything
+    # else keeps its refusal.
+    one = struct.pack("<e", 1.0)
+    two = struct.pack("<e", 2.0)
+    three = struct.pack("<e", 3.0)
+
+    def blob_file(records):
+        # Records at absolute offsets, resolver layout: 24-byte header at
+        # the BLOBFILE offset, payload at offset + 64.
+        size = max(off for off, _ in records) + 64 + 2
+        data = bytearray(size)
+        for off, payload in records:
+            data[off:off + 24] = struct.pack("<IIQQ", 0xDEADBEEF, 1,
+                                             len(payload), off + 64)
+            data[off + 64:off + 66] = payload
+        return bytes(data)
+
+    (root / "normalized.bin").write_bytes(blob_file(
+        [(off, one) for off in (576, 1216, 704, 1344)]))
+    for off in (576, 1216, 704, 1344):
+        body = blob_const("d", "tensor<fp16, []>",
+                          f"tensor<fp16, []>(BLOBFILE("
+                          f"path = string(\"@model_path/normalized.bin\"), "
+                          f"offset = uint64({off})))")
+        body += ("    tensor<fp16, [1]> y = floor_div(x = x, y = d)"
+                 '[name = string("y")];\n')
+        package = deterministic(root, f"div1-blob-{off}",
+                                wrapped(body, "tensor<fp16, [1]> x"))
+        floor_package = deterministic(
+            root, f"div1-blob-floor-{off}",
+            wrapped('    tensor<fp16, [1]> y = floor(x = x)'
+                    '[name = string("y")];\n',
+                    "tensor<fp16, [1]> x"))
+        assert anec_task_stream(package) == \
+            anec_task_stream(floor_package), off
+        manifest = json.loads((package / "manifest.json").read_text())
+        assert len(manifest["programs"][0]["inputs"]) == 1, off
+        validate(root, package)
+    (root / "normalized2.bin").write_bytes(blob_file(
+        [(704, two), (1344, three)]))
+    for off in (704, 1344):
+        body = blob_const("d", "tensor<fp16, []>",
+                          f"tensor<fp16, []>(BLOBFILE("
+                          f"path = string(\"@model_path/normalized2.bin\"), "
+                          f"offset = uint64({off})))")
+        body += ("    tensor<fp16, [1]> y = floor_div(x = x, y = d)"
+                 '[name = string("y")];\n')
+        compile_source(root, f"div-blob-refuse-{off}",
+                       wrapped(body, "tensor<fp16, [1]> x"),
+                       expected_code="h13.invalid-constant-input",
+                       expected_message="floor_div lowers the captured scalar-2.0 divisor only")
+
     # 4. Pipeline: floor_div(x, 1.0) -> t; select(-inf fill, t, cond) -> y.
     # The -inf fill is a rank-0 fp16 blob constant promoted onto the
     # runtime-a select row; the fill rides the program as a constant
@@ -423,5 +480,54 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-fdiv-respell-") as d:
                    wrapped(body, "tensor<fp16, [1, 64, 1, 1]> b, "
                                  "tensor<bool, [1, 64, 1, 1]> m"),
                    expected_code="h13.select-needs-decoded-encoder")
+
+    # 6. The real encoder statements, verbatim spellings and offsets from
+    # the pinned encoder graph, each as its own graph (the real graph
+    # consumes floor_div through the int32 mask chain, which stays blocked
+    # on the cast family): floor_div with the var_23 divisor record
+    # (normalized.bin offset 576, payload 1.0 per Main), and the
+    # attention-mask select with the var_8 -inf fill record (offset
+    # 31460800) against a bool cond at [1, 8, 375, 375]. Real blob
+    # offsets, both respells.
+    (root / "encoder_normalized.bin").write_bytes(blob_file(
+        [(576, one), (1216, one),
+         (31460800, struct.pack("<e", float("-inf"))),
+         (33558272, struct.pack("<e", float("-inf")))]))
+    fdiv_body = blob_const(
+        "var_23_promoted_to_fp16", "tensor<fp16, []>",
+        "tensor<fp16, []>(BLOBFILE("
+        "path = string(\"@model_path/encoder_normalized.bin\"), "
+        "offset = uint64(576)))") + \
+        '    tensor<fp16, [1]> y = floor_div(x = x, ' \
+        'y = var_23_promoted_to_fp16)' \
+        '[name = string("floor_div_1_cast_fp16")];\n'
+    package = deterministic(root, "encoder-fdiv-statement",
+                            wrapped(fdiv_body, "tensor<fp16, [1]> x"))
+    validate(root, package)
+    manifest = json.loads((package / "manifest.json").read_text())
+    assert manifest["programs"][0]["operation"] == "floor_div"
+    assert len(manifest["programs"][0]["inputs"]) == 1
+    select_body = blob_const(
+        "var_8_to_fp16", "tensor<fp16, []>",
+        "tensor<fp16, []>(BLOBFILE("
+        "path = string(\"@model_path/encoder_normalized.bin\"), "
+        "offset = uint64(31460800)))") + \
+        '    tensor<fp16, [1, 8, 375, 375]> y = select(' \
+        'a = var_8_to_fp16, b = b, cond = var_373)' \
+        '[name = string("attention_mask_9_cast_fp16")];\n'
+    package = deterministic(root, "encoder-select-statement",
+                            wrapped(select_body,
+                                    "tensor<fp16, [1, 8, 375, 375]> b, "
+                                    "tensor<bool, [1, 8, 375, 375]> var_373"))
+    validate(root, package)
+    manifest = json.loads((package / "manifest.json").read_text())
+    select_program = manifest["programs"][0]
+    assert select_program["inputs"][0].get("binding") == "constant"
+    assert select_program["constantInputs"]["var_8_to_fp16"] == \
+        "00fc" * 1125000
+    rrb_375 = json.loads(
+        (captures / "select_rrb_1x8x375x375.json").read_text())
+    assert anec_task_stream(package) == \
+        capture_stream(rrb_375, SELECTOR_REMAP["select"])
 
 print("h13 floor_div respell cli: PASS")

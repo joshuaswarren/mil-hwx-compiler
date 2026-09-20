@@ -67,10 +67,29 @@ def main() -> int:
                 stream.seek(offset)
                 stream.write(struct.pack("<IIQQ", 0xDEADBEEF, 1,
                     entry["count"] * ELEMENT_SIZES[entry["elem"]], payload))
-                if entry["name"] == "var_5_to_fp16":
-                    # The real epsilon record: fp16 0x00a8 = 0x1.5p-17.
+                # Known real payloads (Main, 2026-09-20): the length
+                # divisors var_23* are fp16 1.0; the add operands
+                # var_133/var_177 are fp16 1.0; the select -inf fills
+                # var_8/var_13 are fp16 -inf. The epsilon record is the
+                # receipt-verified fp16 0x00a8 = 0x1.5p-17. Everything
+                # else stays zero-filled: values never feed a compile
+                # gate except through the named constants above.
+                known = {
+                    "var_5_to_fp16": b"\xa8\x00",
+                    "var_23_promoted_to_fp16": b"\x00\x3c",
+                    "var_23_promoted_1_to_fp16": b"\x00\x3c",
+                    "var_133_promoted_to_fp16": b"\x00\x3c",
+                    "var_177_promoted_to_fp16": b"\x00\x3c",
+                    "var_8_to_fp16": b"\x00\xfc",
+                    "var_13_to_fp16": b"\x00\xfc",
+                }
+                if entry["name"] in known:
+                    if entry["elem"] != "fp16" or entry["count"] != 1:
+                        raise SystemExit(
+                            f"{name}: known payload {entry['name']} is not "
+                            "one fp16 lane")
                     stream.seek(payload)
-                    stream.write(b"\xa8\x00")
+                    stream.write(known[entry["name"]])
         print(f"{name}: {len(entries)} constants, sparse file {size} bytes")
     probe = text.replace(
         '    tensor<string, []> linear_217_cast_fp16_to_fp32_dtype_0 = '

@@ -12,6 +12,7 @@ runtime), dtypes, and shapes the encoder source uses.
 from __future__ import annotations
 
 import json
+import struct
 import subprocess
 import sys
 import tempfile
@@ -53,8 +54,20 @@ def const_i32(name: str, shape: tuple[int, ...], value: int = 2) -> str:
             f'val = tensor<int32, [{shape_s}]>({vals})];')
 
 
-def probe(name: str, arguments: str, body: list[str], result: str) -> dict:
-    return {"name": name, "mil": program(arguments, body, result)}
+def probe(name: str, arguments: str, body: list[str], result: str,
+          files: dict[str, list[tuple[int, bytes]]] | None = None) -> dict:
+    spec = {"name": name, "mil": program(arguments, body, result)}
+    if files:
+        spec["files"] = files
+    return spec
+
+
+def blob_payload(offset: int, payload: bytes) -> tuple[int, bytes]:
+    """One BLOBFILE record at an absolute offset: the resolver reads the
+    24-byte header there and the payload at offset + 64 (the real
+    model's record->payload stride)."""
+    return offset, (struct.pack("<IIQQ", 0xDEADBEEF, 1, len(payload),
+                                offset + 64) + b"\0" * 40 + payload)
 
 
 def arange_const_i32(name: str, count: int) -> str:
@@ -101,12 +114,17 @@ PROBES.append(probe(
     [const_i32("y", (), 2),
      'tensor<int32, [1]> out = floor_div(x = x, y = y)[name = string("out")];'],
     "out"))
+# The real form: the divisor is a rank-0 fp16 BLOBFILE constant
+# (var_23_promoted_to_fp16, normalized.bin offset 576, payload 1.0).
 PROBES.append(probe(
     "floor_div_f16",
     "tensor<fp16, [1]> x",
-    [const_f16("y", ()),
+    ['tensor<fp16, []> y = const()[name = string("y"), '
+     'val = tensor<fp16, []>(BLOBFILE(path = string("@model_path/weights/normalized.bin"), '
+     'offset = uint64(576)))];',
      'tensor<fp16, [1]> out = floor_div(x = x, y = y)[name = string("out")];'],
-    "out"))
+    "out",
+    files={"weights/normalized.bin": [blob_payload(576, struct.pack("<e", 1.0))]}))
 
 # --- tile (1: the encoder mask form) ---
 PROBES.append(probe(
@@ -172,6 +190,20 @@ PROBES.append(probe(
      'tensor<fp16, [1, 1024, 375]> out = select(a = a, b = b, cond = cond)[name = string("out")];'],
     "out"))
 
+# The attention-mask form: constant-a select with the real blob-backed
+# -inf fill (var_8, offset 31460800) at the decoded 8-head geometry.
+PROBES.append(probe(
+    "select_consta_blob_1x8x375x375",
+    "tensor<fp16, [1, 8, 375, 375]> b, tensor<bool, [1, 8, 375, 375]> cond",
+    ['tensor<fp16, []> a = const()[name = string("a"), '
+     'val = tensor<fp16, []>(BLOBFILE(path = string("@model_path/weights/normalized.bin"), '
+     'offset = uint64(31460800)))];',
+     'tensor<fp16, [1, 8, 375, 375]> out = select(a = a, b = b, cond = cond)[name = string("out")];'],
+    "out",
+    files={"weights/normalized.bin": [
+        blob_payload(576, struct.pack("<e", 1.0)),
+        blob_payload(31460800, struct.pack("<e", float("-inf")))]}))
+
 # --- two-op chains: interior casts feeding consumers (island spellings) ---
 PROBES.append(probe(
     "chain_castf2i_less",
@@ -200,6 +232,14 @@ PROBES.append(probe(
 
 
 def run_probe(root: Path, spec: dict) -> dict:
+    for relpath, records in (spec.get("files") or {}).items():
+        path = root / relpath
+        data = bytearray(
+            (max(off for off, _ in records) + 64 + 2))
+        for offset, blob in records:
+            data[offset:offset + len(blob)] = blob
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(bytes(data))
     mil = root / f"{spec['name']}.mil"
     mil.write_text(spec["mil"])
     out = root / f"out-{spec['name']}"
