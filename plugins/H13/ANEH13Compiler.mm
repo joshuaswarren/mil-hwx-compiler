@@ -97,6 +97,7 @@ static BOOL normEncoding(NSString *name, ane::h13::NormOperation *encoding) {
     else if ([name isEqualToString:@"reduce_sum"]) *encoding = ane::h13::NormOperation::ReduceSum;
     else if ([name isEqualToString:@"reduce_max"]) *encoding = ane::h13::NormOperation::ReduceMax;
     else if ([name isEqualToString:@"reduce_mean"]) *encoding = ane::h13::NormOperation::ReduceMean;
+    else if ([name isEqualToString:@"reduce_min"]) *encoding = ane::h13::NormOperation::ReduceMin;
     else return NO;
     return YES;
 }
@@ -2781,7 +2782,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 ? (xIsBool && resultIsFp16) : (xIsBool && resultIsBool);
             if (!dtypeOK)
                 return reject(diagnostics,
-                    @"H13 lowers only the decoded cast directions — bool x to fp16, and bool logical_not; Apple's own tool refuses every other encoder cast (fp32/fp16, int32/fp16, fp16/int32, bool/int32, int32/bool), int32 less, logical_and and reduce_min, so they have no device form",
+                    @"H13 lowers only the decoded cast directions — bool x to fp16, and bool logical_not; Apple's own tool refuses every other encoder cast (fp32/fp16, int32/fp16, fp16/int32, bool/int32, int32/bool), int32 less, logical_and and int32 reduce_min (fp16 reduce_min decodes; see the 2026-09-20 capture), so those have no device form",
                     operation, @"h13.cast-needs-decoded-encoder");
             if (constantValue(x))
                 return reject(diagnostics,

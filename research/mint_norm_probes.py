@@ -567,6 +567,7 @@ OPERATION_ENUM = {
     "reduce_sum": "NormOperation::ReduceSum",
     "reduce_max": "NormOperation::ReduceMax",
     "reduce_mean": "NormOperation::ReduceMean",
+    "reduce_min": "NormOperation::ReduceMin",
 }
 
 

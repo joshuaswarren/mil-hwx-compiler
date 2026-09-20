@@ -26,7 +26,7 @@ enum class UnaryOperation {
     Tanh,
 };
 
-enum class NormOperation { Softmax, LayerNorm, ReduceSum, ReduceMax, ReduceMean };
+enum class NormOperation { Softmax, LayerNorm, ReduceSum, ReduceMax, ReduceMean, ReduceMin };
 
 struct ElementwiseShape {
     std::uint32_t channels;
