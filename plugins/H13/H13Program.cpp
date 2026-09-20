@@ -434,6 +434,12 @@ struct OracleNormTemplate {
     ElementwiseShape output;
     std::uint32_t axisMask;
     bool keepDims;
+    /// The fp16 epsilon Apple bakes into the task stream (0 for softmax and
+    /// reductions, which take none). The control captures prove the
+    /// granularity: fp32(1e-5), fp32(0x1.5p-17) and fp16(0x1.5p-17) all
+    /// compile to byte-identical Apple programs, so the claim key is the
+    /// fp16 rounding (0x00a8 in every decoded layer_norm row).
+    std::uint16_t epsilonHalves;
     NormConstants constants;
     const std::uint32_t *words;
     std::size_t wordCount;
@@ -670,11 +676,13 @@ const OracleBroadcastTemplate *broadcastTemplate(BinaryOperation operation,
 }
 
 const OracleNormTemplate *normTemplate(NormOperation operation,
-                                       NormShape shape) {
+                                       NormShape shape,
+                                       std::uint16_t epsilonHalves) {
     for (const auto &candidate : kNormTasks)
         if (candidate.operation == operation &&
             candidate.axisMask == shape.axisMask &&
             candidate.keepDims == shape.keepDims &&
+            candidate.epsilonHalves == epsilonHalves &&
             sameShape(candidate.input, shape.input) &&
             sameShape(candidate.output, shape.output)) return &candidate;
     return nullptr;
@@ -2004,12 +2012,14 @@ Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
     return program;
 }
 
-bool supportsNormParity(NormOperation operation, NormShape shape) {
-    return normTemplate(operation, shape);
+bool supportsNormParity(NormOperation operation, NormShape shape,
+                        std::uint16_t epsilonHalves) {
+    return normTemplate(operation, shape, epsilonHalves);
 }
 
-Program encodeNormParity(NormOperation operation, NormShape shape) {
-    const auto *source = normTemplate(operation, shape);
+Program encodeNormParity(NormOperation operation, NormShape shape,
+                         std::uint16_t epsilonHalves) {
+    const auto *source = normTemplate(operation, shape, epsilonHalves);
     if (!source)
         throw std::invalid_argument(
             "H13 normalization geometry is outside the decoded parity envelope");

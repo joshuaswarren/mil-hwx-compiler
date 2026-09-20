@@ -410,10 +410,39 @@ def covered(record: dict[str, Any]) -> bool:
 
 def template_key(record: dict[str, Any]) -> tuple:
     """What the compiler knows before it picks a program: the operation, the
-    input surface, which axes reduce, and whether the rank is kept."""
+    input surface, which axes reduce, whether the rank is kept, and the fp16
+    epsilon the task stream bakes (0 for softmax/reductions, which take no
+    epsilon). The control captures prove the epsilon granularity: fp32(1e-5),
+    fp32(0x1.5p-17) and fp16(0x1.5p-17) all produce byte-identical Apple
+    programs, because Apple bakes the fp16 rounding (0x00a8) into the words."""
     return (record["parameters"]["operation"],
             canonical_shape(record["parameters"]["shape"]),
-            normalized_axes(record), keep_dims(record))
+            normalized_axes(record), keep_dims(record),
+            epsilon_halves(record))
+
+
+EPSILON_ATTRIBUTE = re.compile(r"epsilon = (?:fp32|fp16)\(([^)]*)\)")
+EPSILON_WORD_HIGH = 0x3C000000
+
+
+def epsilon_halves(record: dict[str, Any]) -> int:
+    """The fp16 halves Apple bakes into a layer_norm task stream, derived
+    from the MIL attribute and verified against the decoded words: every
+    layer_norm row carries the epsilon in the low half of a 0x3c00-prefixed
+    word, and no softmax or reduction row carries one."""
+    if record["parameters"]["operation"] != "layer_norm":
+        return 0
+    match = EPSILON_ATTRIBUTE.search(record["mil"])
+    if not match:
+        raise SystemExit(f"{record['case']} layer_norm has no epsilon attribute")
+    text = match.group(1).strip()
+    value = float.fromhex(text) if text.lower().startswith("0x") else float(text)
+    bits = struct.unpack("<H", struct.pack("<e", value))[0]
+    if EPSILON_WORD_HIGH | bits not in stream_words(record):
+        raise SystemExit(
+            f"{record['case']} bakes no epsilon word "
+            f"0x{EPSILON_WORD_HIGH | bits:08x} for fp16({text})")
+    return bits
 
 
 LUT_WORDS = re.compile(r"k(\w+)KERNWords\[\] = \{([^}]*)\}")
@@ -455,21 +484,80 @@ def constant_kind(record: dict[str, Any], tables: dict[str, bytes]) -> str:
         f"{section['nonzero_bytes']} nonzero) matches no known H13 LUT layout")
 
 
-def selected(target: str) -> list[dict[str, Any]]:
+def template_conflicts(previous, record):
+    """The byte-level fields two same-key rows must agree on. The campaign
+    enriches descriptors with provenance the captures do not carry
+    (constant_section raw_path/raw_sha256, the multi-program task_section
+    slice parity itself treats as optional), so those do not compare."""
+    if previous["task_descriptors"] != record["task_descriptors"]:
+        return "task_descriptors"
+    left = {key: value for key, value in previous["program_descriptor"].items()
+            if key != "task_section"}
+    right = {key: value for key, value in record["program_descriptor"].items()
+             if key != "task_section"}
+    if left != right:
+        return "program_descriptor"
+    if previous["tensor_descriptors"] != record["tensor_descriptors"]:
+        return "tensor_descriptors"
+    for key in ("size", "sha256", "nonzero_bytes"):
+        if previous["constant_section"][key] != record["constant_section"][key]:
+            return f"constant_section.{key}"
+    return None
+
+
+def selected_from(directory: Path, strict: bool = True) -> list[dict[str, Any]]:
     records: dict[tuple, dict[str, Any]] = {}
-    for path in sorted((ROOT / "research/oracles" / target).glob("*.json")):
+    for path in sorted(directory.glob("*.json")):
         record = json.loads(path.read_text())
-        if not covered(record):
+        try:
+            usable = covered(record)
+        except (ValueError, SystemExit) as error:
+            # Minted corpus records must fit the CHW template schema; a
+            # capture that does not (the batched [375, 1024, 1, 1] form,
+            # whose template row would need a batch key) stays evidence and
+            # only skips the table.
+            if strict:
+                raise
+            print(f"skipping capture {record['case']}: {error}", file=sys.stderr)
+            continue
+        if not usable:
             continue
         key = template_key(record)
         previous = records.setdefault(key, record)
         if previous is not record:
-            for field in ("task_descriptors", "constant_section",
-                          "program_descriptor", "tensor_descriptors"):
-                if previous[field] != record[field]:
-                    raise SystemExit(
-                        f"{record['case']} and {previous['case']} share a "
-                        f"template key but differ in {field}")
+            conflict = template_conflicts(previous, record)
+            if conflict:
+                raise SystemExit(
+                    f"{record['case']} and {previous['case']} share a "
+                    f"template key but differ in {conflict}")
+    return [records[key] for key in sorted(records)]
+
+
+def selected(target: str) -> list[dict[str, Any]]:
+    return selected_from(ROOT / "research/oracles" / target)
+
+
+def selected_captures(target: str) -> list[dict[str, Any]]:
+    """The Apple `ane-compile-hwx` capture records decoded from Main's
+    control captures, merged into the template table with the same
+    consistency rule as the minted corpus."""
+    return selected_from(ROOT / "research/oracles" / f"{target}-captures",
+                         strict=False)
+
+
+def selected_with_captures(target: str) -> list[dict[str, Any]]:
+    """Both corpora under one key-dedup: the capture controls restate
+    existing minted rows byte-for-byte, so they collapse into them, and any
+    capture that restates a row with different bytes fails the merge."""
+    records: dict[tuple, dict[str, Any]] = {}
+    for record in selected(target) + selected_captures(target):
+        previous = records.setdefault(template_key(record), record)
+        if previous is not record:
+            conflict = template_conflicts(previous, record)
+            if conflict:
+                raise SystemExit(
+                    f"{record['case']} and {previous['case']} share a "
+                    f"template key but differ in {conflict}")
     return [records[key] for key in sorted(records)]
 
 
@@ -528,7 +616,7 @@ def emit(records: list[dict[str, Any]], out) -> None:
                                 for word in words[start:start + 8])
                 print(f"    {row},", file=out)
             print("};", file=out)
-        operation, input_shape, axes, kept = template_key(record)
+        operation, input_shape, axes, kept, epsilon = template_key(record)
         output_shape = canonical_shape(result_shape(record))
         # The axis shift mirrors normSurface on the original MIL shape, not
         # the canonical shape (whose leading units are already gone).
@@ -539,6 +627,7 @@ def emit(records: list[dict[str, Any]], out) -> None:
             f"{{{output_shape[0]}, {output_shape[1]}, {output_shape[2]}}}, "
             f"0x{mil_axes_mask:02x}, "
             f"{'true' if kept else 'false'}, "
+            f"0x{epsilon:04x}, "
             f"NormConstants::{constant_kind(record, tables)}, "
             f"{symbol}, std::size({symbol}), "
             f"{(descriptor['task_words_minus_one'] + 1) * 4}, "
@@ -552,7 +641,7 @@ def emit(records: list[dict[str, Any]], out) -> None:
 
 
 def emit_templates(args: argparse.Namespace) -> int:
-    records = selected(args.targets[0])
+    records = selected_with_captures(args.targets[0])
     if not records:
         raise SystemExit("no decoded normalization or reduction oracles found")
     with Path(args.template_output).open("w") as out:

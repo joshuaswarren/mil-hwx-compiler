@@ -301,11 +301,15 @@ Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
                         std::size_t constantBytes = 0,
                         std::uint16_t scalarBits = 0x3800);
 /// True when the decoded Apple corpus covers this softmax, layer_norm, or
-/// reduction geometry as one multi-task program.
-bool supportsNormParity(NormOperation operation, NormShape shape);
+/// reduction geometry as one multi-task program. `epsilonHalves` must carry
+/// the fp16 epsilon the MIL asks for: a layer_norm row is claimed only when
+/// its baked fp16 halves equal it (0 for softmax and reductions).
+bool supportsNormParity(NormOperation operation, NormShape shape,
+                        std::uint16_t epsilonHalves);
 /// Encodes Apple's own task stream for the geometry, with the LUT constant
 /// section the decoded oracle carries.
-Program encodeNormParity(NormOperation operation, NormShape shape);
+Program encodeNormParity(NormOperation operation, NormShape shape,
+                         std::uint16_t epsilonHalves);
 /// True when the decoded Apple corpus covers this convolution as one program.
 bool supportsConvParity(ConvShape shape);
 /// Apple's constant-section layout for a convolution weight. `weights` is the

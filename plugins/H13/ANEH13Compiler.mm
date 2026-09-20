@@ -791,10 +791,19 @@ static BOOL constantAxisMask(ANEGraphValue *value, NSUInteger rank,
             ![literal.calleeValueType isEqualToValueType:value.type] ||
             literal.callArguments.count != 1) return NO;
         ANEGraphArgument *payload = literal.callArguments[0].value;
-        if (payload.kind != ANEGraphArgumentKindList ||
-            payload.elements.count != value.type.shape[0].unsignedIntegerValue)
+        long long bare = 0;
+        if (payload.kind == ANEGraphArgumentKindList &&
+            payload.elements.count == value.type.shape[0].unsignedIntegerValue) {
+            axes = payload.elements;
+        } else if (value.type.shape[0].unsignedIntegerValue == 1 &&
+                   int32Literal(payload, &bare)) {
+            // The rank-3 encoder spell writes one-element vectors as bare
+            // scalars: `tensor<int32, [1]>(-1)` carries an int literal, not
+            // a list — the same spelling int32Vector accepts for conv.
+            axes = @[payload];
+        } else {
             return NO;
-        axes = payload.elements;
+        }
     }
     if (!axes.count) return NO;
     std::uint32_t resolved = 0;
@@ -1473,13 +1482,77 @@ struct H13NormPlan {
     ane::h13::NormShape shape;
     NSUInteger inputElements;
     NSUInteger outputElements;
+    std::uint16_t epsilonHalves = 0;
 };
 
+/// Resolves a layer_norm epsilon into the fp16 halves Apple bakes into the
+/// task stream. The control captures prove the granularity: fp32(1e-5),
+/// fp32(0x1.5p-17) and fp16(0x1.5p-17) all compile to byte-identical Apple
+/// programs (fp16 0x00a8, the rounding of both fp32 spellings), so the
+/// claim key is the fp16 rounding and any epsilon that rounds elsewhere has
+/// no row. The real encoder model spells the epsilon as a rank-0 fp16
+/// constant — an fp16 literal or the BLOBFILE record whose payload is the
+/// 2-byte fp16 value — so both spellings resolve through the same key.
+static BOOL normEpsilonHalves(ANEGraphArgument *argument, NSURL *modelRoot,
+                              ANEDiagnosticEngine *diagnostics,
+                              NSMutableDictionary<NSString *, NSData *>
+                                  *resolvedConstants,
+                              std::uint16_t *halvesOut) {
+    if (argument.kind == ANEGraphArgumentKindCall) {
+        if ([argument.calleeName isEqualToString:@"fp32"] &&
+            argument.callArguments.count == 1) {
+            float value = 0.0f;
+            if (!fp32Attribute(argument, &value)) return NO;
+            uint16_t halves = fp16Bits(static_cast<double>(value));
+            if ((halves & 0x7c00u) == 0x7c00u) return NO;
+            *halvesOut = halves;
+            return YES;
+        }
+        return fp16Scalar(argument, halvesOut);
+    }
+    if (argument.kind != ANEGraphArgumentKindValue || !argument.value)
+        return NO;
+    ANEGraphValue *value = argument.value;
+    if (!constantValue(value) || value.producer.arguments.count ||
+        value.type.kind != ANEValueTypeKindTensor ||
+        value.type.shape.count ||
+        value.type.elementType != ANEElementTypeFP16) return NO;
+    ANEGraphArgument *literal = value.producer.attributes[@"val"];
+    if (!literal || literal.kind != ANEGraphArgumentKindCall ||
+        literal.callArguments.count != 1 ||
+        ![literal.calleeValueType isEqualToValueType:value.type]) return NO;
+    ANEGraphArgument *payload = literal.callArguments[0].value;
+    if (fp16Scalar(payload, halvesOut)) return YES;
+    if (payload.kind == ANEGraphArgumentKindCall &&
+        [payload.calleeName isEqualToString:@"BLOBFILE"]) {
+        if (!modelRoot) return NO;
+        NSData *data = resolvedConstants[value.name];
+        if (!data) {
+            data = [ANEBlobResolver loadConstantForOperation:value.producer
+                expectedBytes:2 modelRoot:modelRoot diagnostics:diagnostics];
+            if (!data) return NO;
+            resolvedConstants[value.name] = data;
+        }
+        if (data.length != 2) return NO;
+        uint16_t halves = 0;
+        [data getBytes:&halves length:2];
+        if ((halves & 0x7c00u) == 0x7c00u) return NO;
+        *halvesOut = halves;
+        return YES;
+    }
+    return NO;
+}
+
 /// Matches the softmax, layer_norm, and reduction programs whose whole H13
-/// task streams are decoded from Apple oracles. `epsilon` must be the decoded
-/// 1e-5 and layer_norm must carry no gamma or beta: Apple's compiler in this
-/// harness rejects every affine form, so no oracle covers one.
-static BOOL normParityPlan(ANEGraphOperation *operation, H13NormPlan *plan) {
+/// task streams are decoded from Apple oracles and the encoder-geometry
+/// captures. A layer_norm row is claimed only when the requested epsilon
+/// rounds to the row's baked fp16 halves, and layer_norm must carry no
+/// gamma or beta: no decoded row covers an affine form.
+static BOOL normParityPlan(ANEGraphOperation *operation, NSURL *modelRoot,
+                           ANEDiagnosticEngine *diagnostics,
+                           NSMutableDictionary<NSString *, NSData *>
+                               *resolvedConstants,
+                           H13NormPlan *plan) {
     ANEGraphValue *x = operation.operands[@"x"].value;
     NSString *name = operation.operationName;
     H13NormPlan candidate{};
@@ -1495,13 +1568,15 @@ static BOOL normParityPlan(ANEGraphOperation *operation, H13NormPlan *plan) {
                           x.type.shape.count, inputShift,
                           &candidate.shape.axisMask))
         return NO;
-    float epsilon = 0.0f;
+    std::uint16_t epsilonHalves = 0;
     if (softmax) {
         if (operation.arguments.count != 2) return NO;
     } else if (layerNorm) {
         if (operation.arguments.count != 3 ||
-            !fp32Attribute(operation.arguments[@"epsilon"], &epsilon) ||
-            epsilon != 1e-5f) return NO;
+            !normEpsilonHalves(operation.arguments[@"epsilon"], modelRoot,
+                               diagnostics, resolvedConstants,
+                               &epsilonHalves))
+            return NO;
     } else {
         if (operation.arguments.count != 3) return NO;
     }
@@ -1512,8 +1587,10 @@ static BOOL normParityPlan(ANEGraphOperation *operation, H13NormPlan *plan) {
     if (!tensorElementCount(x, &candidate.inputElements) ||
         !tensorElementCount(operation.results[0], &candidate.outputElements))
         return NO;
-    if (!ane::h13::supportsNormParity(candidate.operation, candidate.shape))
+    if (!ane::h13::supportsNormParity(candidate.operation, candidate.shape,
+                                      epsilonHalves))
         return NO;
+    candidate.epsilonHalves = epsilonHalves;
     *plan = candidate;
     return YES;
 }
@@ -2062,9 +2139,11 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     }
 
     H13NormPlan normalization{};
-    if (normParityPlan(operation, &normalization)) {
+    if (normParityPlan(operation, modelRoot, diagnostics, resolvedConstants,
+                       &normalization)) {
         program = ane::h13::encodeNormParity(normalization.operation,
-                                             normalization.shape);
+                                             normalization.shape,
+                                             normalization.epsilonHalves);
         *inputsOut = @[x];
         *constantInputOut = nil;
         *constantDataOut = nil;
@@ -2791,8 +2870,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         if (normEncoding(name, &normOperation))
             return reject(diagnostics, [NSString stringWithFormat:
                 @"H13 '%@' needs a decoded geometry: fp16 static shapes, "
-                 "constant axes, no gamma or beta, epsilon 1e-5, and an input "
-                 "and output surface inside the oracle parity envelope", name],
+                 "constant axes, no gamma or beta, an epsilon that rounds to "
+                 "the decoded fp16 row, and an input and output surface "
+                 "inside the oracle parity envelope", name],
                 operation, @"h13.norm-outside-envelope");
         if ([name isEqualToString:@"tile"]) {
             ANEGraphValue *reps = operation.operands[@"reps"].value;
@@ -3950,7 +4030,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 parityPlan(operation, synthesizedConstants, !chainSchedule, &operationPlan);
             H13ConvPlan convolutionPlan{};
             BOOL normalization = !parity && !broadcast &&
-                normParityPlan(operation, &normalizationPlan);
+                normParityPlan(operation, modelRoot, diagnostics,
+                               resolvedConstants, &normalizationPlan);
             BOOL convolution = !parity && !broadcast && !normalization &&
                 convParityPlan(operation, &convolutionPlan);
             BOOL tiled = [operation.operationName isEqualToString:@"tile"];

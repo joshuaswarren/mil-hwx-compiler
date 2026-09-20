@@ -1,0 +1,32 @@
+{
+  "case": "control_unbracketed",
+  "constant_section": null,
+  "error": "apple-refused: no model.hwx in the capture (control_unbracketed pins Apple's rejection of the unbracketed tensor<int32, [1]>(N) axes literal)",
+  "family": "normalization",
+  "hwx_bytes": null,
+  "hwx_sha256": null,
+  "mil": "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n  func main<ios18>(tensor<fp16, [1, 1024, 1, 1]> x) {\n    tensor<int32, [1]> axes = const()[name = string(\"axes\"), val = tensor<int32, [1]>(1)];\n    tensor<fp16, [1, 1024, 1, 1]> y = layer_norm(x = x, axes = axes, epsilon = fp32(0.00001))[name = string(\"y\")];\n  } -> (y);\n}\n",
+  "parameters": {
+    "affine": false,
+    "axes": [
+      1
+    ],
+    "operation": "layer_norm",
+    "shape": [
+      1,
+      1024,
+      1,
+      1
+    ]
+  },
+  "program_descriptor": null,
+  "provenance": {
+    "capture_dir": "/tmp/ln-factorial-main/control_unbracketed",
+    "tool": "ane-compile-hwx (Apple, CPU-only; Main's capture)"
+  },
+  "schema_version": 1,
+  "target": "h13",
+  "task_descriptors": [],
+  "tensor_descriptors": [],
+  "weights": {}
+}
