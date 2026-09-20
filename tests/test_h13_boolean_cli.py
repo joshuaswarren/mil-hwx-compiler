@@ -433,7 +433,10 @@ with tempfile.TemporaryDirectory() as temporary:
                    wrapped(body, "tensor<fp16, [1, 3, 1, 1]> a"),
                    expected_code="h13.boolean-outside-envelope")
 
-    # The -inf constant-a select keeps its exact pending reason.
+    # The -inf constant-a select now promotes onto the runtime-a rows:
+    # a rank-0 fp16 -inf fill is packing-invariant, so it materializes as
+    # a constant runtime input and the task stream is the captured
+    # runtime-a row byte for byte.
     payload = struct.pack("<e", float("-inf"))
     header = struct.pack("<IxxxxQQ", 0xDEADBEEF, len(payload), 64 + 24)
     (root / "weights.bin").write_bytes(b"\0" * 64 + header + payload)
@@ -442,10 +445,19 @@ with tempfile.TemporaryDirectory() as temporary:
                              " offset = uint64(64)))")
     body += ("    tensor<fp16, [1, 8, 375, 375]> y = select("
              "a = neg_inf, b = b, cond = m)[name = string(\"y\")];\n")
-    compile_source(root, "bool-select-const-a",
+    package = compile_source(root, "bool-select-const-a",
                    wrapped(body, "tensor<fp16, [1, 8, 375, 375]> b, "
-                                 "tensor<bool, [1, 8, 375, 375]> m"),
-                   expected_code="h13.select-needs-decoded-encoder",
-                   expected_message="materializes the fill as a runtime constant input")
+                                 "tensor<bool, [1, 8, 375, 375]> m"))
+    manifest = json.loads((package / "manifest.json").read_text())
+    promoted = manifest["programs"][0]
+    assert promoted["encoder"] == "apple-parity-boolean"
+    assert promoted["inputs"][0].get("binding") == "constant"
+    assert promoted["constantInputs"]["neg_inf"] == "00fc" * 1125000
+    capture_ninf = json.loads((Path(__file__).resolve().parents[1] /
+        "research/oracles/h13/boolean/"
+        "select_rrb_1x8x375x375.json").read_text())
+    assert anec_task_stream(package / "program-0.anec") == \
+        capture_stream(capture_ninf, SELECTOR_REMAP["select"])
+    validate(root, package)
 
     print("h13 boolean cli: PASS")

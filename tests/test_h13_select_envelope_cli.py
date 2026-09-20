@@ -68,10 +68,19 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-select-envelope-") as direc
         assert program["operation"] == "select"
         assert program["encoder"] == "apple-parity-boolean"
         assert program["taskDescriptors"] == 5
-    compile_source(root, "enc-ninf-scalar",
-                   const_a("[1, 8, 375, 375]", "tensor<fp16, []>"),
-                   expected_code="h13.select-needs-decoded-encoder",
-                   expected_message="materializes the fill as a runtime constant input")
+    # The rank-0 fp16 -inf fill promotes onto the runtime-a rows with the
+    # fill materialized as a constant runtime input (packing-invariant).
+    manifest = compile_source(root, "enc-ninf-scalar",
+                              const_a("[1, 8, 375, 375]", "tensor<fp16, []>"))
+    program = manifest["programs"][0]
+    assert program["operation"] == "select"
+    assert program["encoder"] == "apple-parity-boolean"
+    assert program["taskDescriptors"] == 5
+    assert program["inputs"][0].get("binding") == "constant"
+    assert program["constantInputs"]["a"] == "00fc" * 1125000
+    # A full-shape constant a keeps the exact refusal: the captured
+    # const-a row's retained section cannot discriminate the packing for
+    # arbitrary constants, and only the rank-0 fill is packing-invariant.
     compile_source(root, "enc-ninf-tensor",
                    const_a("[1, 8, 375, 375]", "tensor<fp16, [1, 8, 375, 375]>"),
                    expected_code="h13.select-needs-decoded-encoder",

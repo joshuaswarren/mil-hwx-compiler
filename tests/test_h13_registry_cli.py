@@ -117,7 +117,9 @@ with tempfile.TemporaryDirectory() as temporary:
 
     # select — the encoder's attention-bias family: -inf fill against an
     # fp16 0/1 mask (the decision doc's boundary conversion means no bool
-    # dtype reaches the device).
+    # dtype reaches the device). The rank-0 fp16 -inf fill promotes onto
+    # the runtime-a rows with the fill materialized as a constant runtime
+    # input — packing-invariant, every lane the same 0xFC00 half.
     payload = struct.pack("<e", float("-inf"))
     header_bytes = struct.pack("<IxxxxQQ", 0xDEADBEEF, len(payload), 64 + 24)
     (root / "weights.bin").write_bytes(b"\0" * 64 + header_bytes + payload)
@@ -126,15 +128,19 @@ with tempfile.TemporaryDirectory() as temporary:
                              " offset = uint64(64)))")
     body += ("    tensor<fp16, [1, 8, 375, 375]> y = select("
              "a = neg_inf, b = b, cond = m)[name = string(\"y\")];\n")
-    compile_source(root, "registry-select-neg-inf", source(
+    neg_inf = compile_source(root, "registry-select-neg-inf", source(
         body, header([1, 8, 375, 375]) + " b, "
               + "tensor<bool, [1, 8, 375, 375]> m",
-        "y"),
-        expected_code="h13.select-needs-decoded-encoder",
-        expected_message="materializes the fill as a runtime constant input")
+        "y"))
+    neg_inf_manifest = json.loads((neg_inf / "manifest.json").read_text())
+    promoted = neg_inf_manifest["programs"][0]
+    assert promoted["encoder"] == "apple-parity-boolean"
+    assert promoted["taskDescriptors"] == 5
+    assert promoted["inputs"][0].get("binding") == "constant"
+    assert promoted["constantInputs"]["neg_inf"] == "00fc" * 1125000
 
-    # The +0.0-fill family rejects the same way here: it belongs to the
-    # frontend mul rewrite, not to a compiler encoder.
+    # The +0.0-fill family rejects: no other constant is packing-invariant
+    # (it belongs to the frontend mul rewrite, not to a compiler encoder).
     body = const("zero", "fp16(0.0)")
     body += ("    tensor<fp16, [1, 1024, 375]> y = select("
              "a = zero, b = b, cond = m)[name = string(\"y\")];\n")

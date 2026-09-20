@@ -252,6 +252,7 @@ test-h13: $(BUILD)/test_h13_encoding $(BUILD)/test_h13_anec $(BUILD)/mil-hwxc
 	python3 tests/test_h13_batched_cli.py $(BUILD)/mil-hwxc
 	python3 tests/test_h13_registry_cli.py $(BUILD)/mil-hwxc
 	python3 tests/test_h13_boolean_cli.py $(BUILD)/mil-hwxc
+	python3 tests/test_h13_floor_div_respell_cli.py $(BUILD)/mil-hwxc
 	python3 tests/test_h13_tile_cli.py $(BUILD)/mil-hwxc
 	python3 tests/test_h13_linear_tiling_cli.py $(BUILD)/mil-hwxc
 	python3 tests/test_h13_matmul_envelope_cli.py $(BUILD)/mil-hwxc

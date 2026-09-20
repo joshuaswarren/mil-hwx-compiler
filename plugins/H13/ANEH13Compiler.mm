@@ -1187,6 +1187,29 @@ static NSString *stringArgument(ANEGraphArgument *argument) {
     return argument.kind == ANEGraphArgumentKindString ? argument.text : nil;
 }
 
+/// Exactly the fp16 scalar 1.0 (bits 0x3C00) as a constant operand: the
+/// Scalar spelling or the rank-0 tensor spelling the encoder MIL uses
+/// (`val = fp16(1.0)` or `val = tensor<fp16, []>(fp16(1.0))`). fp16Scalar
+/// rejects non-finite literals, so only a finite exact 1.0 matches, and a
+/// BLOBFILE payload does not match — the scalar-2.0 gate is literal-only
+/// and this stays consistent with it.
+static BOOL exactUnitFp16Constant(ANEGraphValue *value) {
+    if (!value || !constantValue(value) ||
+        value.type.elementType != ANEElementTypeFP16)
+        return NO;
+    if (value.type.kind != ANEValueTypeKindScalar &&
+        !(value.type.kind == ANEValueTypeKindTensor &&
+          value.type.shape.count == 0))
+        return NO;
+    ANEGraphArgument *literal = value.producer.attributes[@"val"];
+    if (literal.kind == ANEGraphArgumentKindCall &&
+        literal.callArguments.count == 1 &&
+        [literal.calleeName isEqualToString:@"tensor"])
+        literal = literal.callArguments[0].value;
+    uint16_t bits = 0;
+    return fp16Scalar(literal, &bits) && bits == 0x3c00;
+}
+
 struct H13ParityPlan {
     BOOL unary;
     BOOL scalarConstant;
@@ -2710,6 +2733,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         else if ([name isEqualToString:@"cast"]) shape.kind = ane::h13::H13BooleanKind::CastBoolToFp16;
         else if ([name isEqualToString:@"logical_not"]) shape.kind = ane::h13::H13BooleanKind::LogicalNot;
         else shape.kind = ane::h13::H13BooleanKind::FloorDiv;
+        // Declared before the first envelope goto: ARC forbids jumping
+        // over a __strong initialization.
+        NSData *selectFill = nil;
         NSMutableArray<ANEGraphValue *> *operands = [NSMutableArray array];
         if (shape.kind == ane::h13::H13BooleanKind::Select) {
             for (NSString *key in @[@"a", @"b", @"cond"]) {
@@ -2722,7 +2748,20 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         } else {
             [operands addObject:operation.operands[@"x"].value];
             ANEGraphValue *second = operation.operands[@"y"].value;
-            if (second) [operands addObject:second];
+            // floor_div(x, exact fp16 1.0) == floor(x) universally:
+            // dividing by fp16 1.0 is the IEEE identity for every input
+            // class (values, -0, +/-inf, NaN all carry unchanged; no
+            // rounding), so flooring the identity is the original
+            // operation. The decoded Floor rows serve it; the captured
+            // scalar-2.0 floor_div row is untouched. The divisor operand
+            // drops here, at the earliest shared point — the Floor
+            // program binds x only, and a retained y desyncs the
+            // program-input walk.
+            if (second && shape.kind == ane::h13::H13BooleanKind::FloorDiv &&
+                exactUnitFp16Constant(second))
+                shape.kind = ane::h13::H13BooleanKind::Floor;
+            else if (second)
+                [operands addObject:second];
         }
         // The shape comes from the full-tensor operand: for select with a
         // scalar fill that is b, never the scalar.
@@ -2796,25 +2835,60 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 goto boolean_reject;
         }
         // The const-operand twins: floor over a BLOBFILE x, floor_div over
-        // the captured scalar-2.0 y, select over the -inf blob a. The
-        // select -inf twin's constant section is not yet derivable from a
-        // uniform-value capture, so runtime-a stays the lowering form.
+        // the captured scalar-2.0 y. The select family has no usable
+        // decoded constant section — the captured const-a row carries
+        // uniform -inf values whose retained section cannot discriminate
+        // the packing for arbitrary constants — but the encoder's -inf
+        // fill is packing-invariant: every lane of a rank-0 fp16 -inf
+        // constant materializes to the same half (0xFC00), so promoting
+        // the fill to the runtime-a rows with a constant runtime input is
+        // exact. Any other constant keeps the refusal.
+        if (shape.kind == ane::h13::H13BooleanKind::Select &&
+            constantValue(operation.operands[@"a"].value)) {
+            ANEGraphValue *fill = operation.operands[@"a"].value;
+            BOOL scalarFillSpelling =
+                fill.type.elementType == ANEElementTypeFP16 &&
+                (fill.type.kind == ANEValueTypeKindScalar ||
+                 (fill.type.kind == ANEValueTypeKindTensor &&
+                  fill.type.shape.count == 0));
+            if (scalarFillSpelling && blobBackedConstant(fill)) {
+                NSData *payload = resolvedConstants[fill.name];
+                if (!payload) {
+                    payload = [ANEBlobResolver loadConstantForOperation:
+                        fill.producer expectedBytes:2 modelRoot:modelRoot
+                        diagnostics:diagnostics];
+                    if (!payload) return NO;
+                    resolvedConstants[fill.name] = payload;
+                }
+                uint16_t halves = 0;
+                if (payload.length == 2)
+                    memcpy(&halves, payload.bytes, 2);
+                if (halves == 0xfc00) {
+                    std::size_t lanes = (std::size_t)shape.channels *
+                        shape.height * shape.width;
+                    NSMutableData *materialized = [NSMutableData
+                        dataWithLength:lanes * 2];
+                    uint16_t *values = (uint16_t *)materialized.mutableBytes;
+                    for (std::size_t index = 0; index < lanes; ++index)
+                        values[index] = 0xfc00;
+                    selectFill = materialized;
+                }
+            }
+            if (!selectFill)
+                return reject(diagnostics,
+                    @"H13 select with a constant a belongs to the frontend, which materializes the fill as a runtime constant input and routes the +0.0-fill family through its exact mul rewrite: the captured constant-a form carries uniform -inf values whose retained section cannot discriminate the packing for arbitrary constants, so this path lowers only the rank-0 fp16 -inf fill (promoted onto the runtime-a rows with the fill materialized as a constant runtime input) and runtime-a forms with a bool cond",
+                    operation, @"h13.select-needs-decoded-encoder");
+        }
         shape.constInput =
             (shape.kind == ane::h13::H13BooleanKind::Floor &&
              constantValue(primary)) ||
             (shape.kind == ane::h13::H13BooleanKind::FloorDiv &&
-             constantValue(operation.operands[@"y"].value)) ||
-            (shape.kind == ane::h13::H13BooleanKind::Select &&
-             constantValue(operation.operands[@"a"].value));
-        if (shape.kind == ane::h13::H13BooleanKind::Select && shape.constInput)
-            return reject(diagnostics,
-                @"H13 select with a constant a belongs to the frontend, which materializes the fill as a runtime constant input and routes the +0.0-fill family through its exact mul rewrite: the captured constant-a form carries uniform -inf values whose retained section cannot discriminate the packing for arbitrary constants, so this path lowers only runtime-a forms with a bool cond",
-                operation, @"h13.select-needs-decoded-encoder");
+             constantValue(operation.operands[@"y"].value));
         if (!ane::h13::supportsBooleanOp(shape)) {
         boolean_reject:
             return reject(diagnostics,
                 [NSString stringWithFormat:
-                    @"H13 %@ is outside the decoded boolean envelope: the captured geometries are less at CHW (375,1,1)/(750,1,1)/(1500,1,1)/(64,1,1) with a bool result, floor at (1,1,1)/(64,1,1)/(512,1,1) runtime or blob x, select at (64,1,1)/(8,375,375) with runtime a and a bool cond, floor_div at (1,1,1)/(64,1,1) with runtime y or the scalar 2.0, bool-to-fp16 cast at [1,1,width,1] widths (64,375,750,1500,2048), and logical_not at [1,1,h,w] (64,64)/(749,375)/(375,375) — fp16-result less and fp16-cond select are rejected by Apple's own tool, so no device form exists for them",
+                    @"H13 %@ is outside the decoded boolean envelope: the captured geometries are less at CHW (375,1,1)/(750,1,1)/(1500,1,1)/(64,1,1) with a bool result, floor at (1,1,1)/(64,1,1)/(512,1,1) runtime or blob x, select at (64,1,1)/(8,375,375) with runtime a and a bool cond, floor_div at (1,1,1)/(64,1,1) with runtime y, the scalar 2.0, or the exact fp16 scalar 1.0 (served by the floor rows), bool-to-fp16 cast at [1,1,width,1] widths (64,375,750,1500,2048), and logical_not at [1,1,h,w] (64,64)/(749,375)/(375,375) — fp16-result less and fp16-cond select are rejected by Apple's own tool, so no device form exists for them",
                     name],
                 operation, @"h13.boolean-outside-envelope");
         }
@@ -2862,8 +2936,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             }
             *inputsOut = inputs;
         }
-        *constantInputOut = nil;
-        *constantDataOut = nil;
+        *constantInputOut = selectFill ? operation.operands[@"a"].value : nil;
+        *constantDataOut = selectFill;
         *manifestOperationOut = name;
         return YES;
      } else {

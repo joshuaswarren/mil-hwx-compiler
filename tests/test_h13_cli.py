@@ -1511,10 +1511,13 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
                              epsilon='0.001'),
                  'layer-norm-epsilon', success=False,
                  diagnostic='h13.norm-outside-envelope')
+    # Affine layer_norm peels only where every stage has a decoded row;
+    # the per-channel mul at (512,1,1) has none, so the peel still refuses
+    # (fail-closed), just through the const-stage gate.
     compile_text(norm_source('layer_norm', axes=(1,), shape=(1, 512, 1, 1),
                              affine=True),
                  'layer-norm-affine', success=False,
-                 diagnostic='h13.norm-outside-envelope')
+                 diagnostic='h13.invalid-constant-input')
     # A reduction over the batch axis has no decoded surface form.
     compile_text(norm_source('reduce_sum', axes=(0,), shape=(1, 512, 1, 1),
                              output_shape=(1, 512, 1, 1)),
