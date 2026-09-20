@@ -4231,6 +4231,14 @@ static NSString *BoundaryCastDirection(ANEGraphValue *value) {
         recordTensor(tensors, input, input.type.shape, @"input");
     NSArray<NSString *> *binaryNames =
         @[@"add", @"mul", @"maximum", @"minimum", @"sub", @"real_div"];
+    // Values computed by a statistics row (layer_norm) carry that row's
+    // fp16 rounding through every elementwise-exact consumer; such tensors
+    // declare the fp16-envelope comparison class so the runner compares
+    // them against the pre-declared envelope instead of bit-exactness.
+    NSMutableSet<NSString *> *envelopeValues = [NSMutableSet set];
+    NSArray<NSString *> *envelopePropagators = @[
+        @"add", @"mul", @"sub", @"transpose", @"reshape", @"squeeze",
+        @"expand_dims", @"slice_by_index"];
     ANEGraphOperation *operation = nil;
     try {
         for (operation in operations) {
@@ -4479,6 +4487,19 @@ static NSString *BoundaryCastDirection(ANEGraphValue *value) {
                 ANEGraphValue *constantInput = nil;
                 NSData *constantData = nil;
                 NSString *manifestOperation = nil;
+                NSString *loweredName = operation.operationName;
+                if ([loweredName isEqualToString:@"layer_norm"])
+                    [envelopeValues addObject:operation.results[0].name];
+                else
+                    for (NSString *key in operation.operands)
+                        if ([envelopeValues containsObject:
+                                operation.operands[key].value.name] &&
+                            [envelopePropagators
+                                containsObject:loweredName]) {
+                            [envelopeValues
+                                addObject:operation.results[0].name];
+                            break;
+                        }
                 if (!lowerOperation(operation, modelRoot, diagnostics, !chainSchedule,
                                     synthesizedConstants, resolvedConstants,
                                     inputOffset, inputSliceElements, outputOffset,
@@ -4540,6 +4561,7 @@ static NSString *BoundaryCastDirection(ANEGraphValue *value) {
                 NSArray<NSNumber *> *fullOutputShape = outputShapes[operation.results[0].name]
                     ?: operation.results[0].type.shape;
                 recordTensor(tensors, operation.results[0], fullOutputShape, outputRole);
+
                 NSUInteger fullOutputElements = 1;
                 for (NSNumber *dimension in fullOutputShape)
                     fullOutputElements *= dimension.unsignedIntegerValue;
@@ -4781,6 +4803,13 @@ static NSString *BoundaryCastDirection(ANEGraphValue *value) {
         NSMutableDictionary *record = [tensors[name] mutableCopy];
         if (record) {
             record[@"accumulation"] = @"chunked-fp16";
+            tensors[name] = record;
+        }
+    }
+    for (NSString *name in envelopeValues) {
+        NSMutableDictionary *record = [tensors[name] mutableCopy];
+        if (record) {
+            record[@"comparison"] = @"fp16-envelope";
             tensors[name] = record;
         }
     }

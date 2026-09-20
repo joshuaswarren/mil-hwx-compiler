@@ -155,12 +155,23 @@ print("h13 boundary cast cli: PASS")
 # fp16-envelope class through every downstream elementwise op; elementwise
 # chains outside a statistics stage stay exact. (Main-directed: the LN
 # numeric envelope is declared, never retrofitted onto a failed exact run.)
-envelope_source = BOUNDARY.replace(
-    "tensor<int32, [375]> encoder_mask = cast(dtype = dtype_i32, x = mask)[name = string(\"encoder_mask\")];\n    ",
-    "").replace("  } -> (encoder_hidden, encoder_mask);", "  } -> (encoder_hidden);")
+ones = ", ".join(["fp16(0x1p+0)"] * 1024)
+envelope_source = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 375, 1024]> x) {
+    tensor<int32, [1]> axes = const()[name = string("axes"), val = tensor<int32, [1]>([-1])];
+    tensor<fp16, [1, 1, 1024]> gamma = const()[name = string("gamma"), val = tensor<fp16, [1, 1, 1024]>([%s])];
+    tensor<fp16, [1, 1, 1024]> beta = const()[name = string("beta"), val = tensor<fp16, [1, 1, 1024]>([%s])];
+    tensor<fp16, [1, 375, 1024]> normalized = layer_norm(x = x, axes = axes, epsilon = fp32(0.00001))[name = string("normalized")];
+    tensor<fp16, [1, 375, 1024]> scaled = mul(x = normalized, y = gamma)[name = string("scaled")];
+    tensor<fp16, [1, 375, 1024]> encoder_hidden = add(x = scaled, y = beta)[name = string("encoder_hidden")];
+  } -> (encoder_hidden);
+}
+""" % (ones, ones)
 with tempfile.TemporaryDirectory() as directory:
     root = Path(directory)
-    out, manifest = run_compile(root, "envelope-classes", envelope_source, b"")
+    out, manifest = run_compile(root, "envelope-classes", envelope_source)
     tensors = manifest["tensors"]
     assert tensors["normalized"].get("comparison") == "fp16-envelope", tensors["normalized"]
     assert tensors["scaled"].get("comparison") == "fp16-envelope", tensors["scaled"]

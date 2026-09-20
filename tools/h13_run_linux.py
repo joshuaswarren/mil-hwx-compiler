@@ -450,9 +450,21 @@ def _host_boundary_convert(convert, raw):
     raise ValueError(f"unsupported host boundary conversion {convert!r}")
 
 
+def envelope_tensors(manifest):
+    """Tensors computed downstream of a statistics row (layer_norm): the
+    row's fp16 statistics rounding propagates elementwise, so these compare
+    against the pre-declared fp16 envelope instead of bit-exactness."""
+    tensors = manifest["tensors"]
+    return {name for name, tensor in tensors.items()
+            if tensor.get("comparison") == "fp16-envelope"
+            or tensors.get(tensor.get("aliasOf", name), {}).get("comparison")
+            == "fp16-envelope"}
+
+
 def _check_outputs(manifest, tensors, output_names, actual, expected,
                    failure_directory=None):
     chunked = chunked_tensors(manifest)
+    envelope = envelope_tensors(manifest)
     for name in output_names:
         target = tensors[name].get("aliasOf", name)
         convert = tensors[name].get("hostConvert")
@@ -463,6 +475,14 @@ def _check_outputs(manifest, tensors, output_names, actual, expected,
                     f"{name}: converted device output differs from the exact "
                     f"reference ({convert} boundary conversion)")
             actual[name] = converted
+            continue
+        if name in envelope or target in envelope:
+            dv = struct.unpack(f"<{len(actual[name]) // 2}e", actual[name])
+            rv = struct.unpack(f"<{len(expected[name]) // 2}e", expected[name])
+            if any(abs(a - b) > 0.02 + 0.02 * abs(b) for a, b in zip(dv, rv)):
+                raise ValueError(
+                    f"{name}: device output exceeds the fp16 envelope "
+                    f"(0.02 + 0.02 * |reference|)")
             continue
         try:
             compare_fp16(actual[name], expected[name], target in chunked)

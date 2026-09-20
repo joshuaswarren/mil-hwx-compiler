@@ -300,8 +300,6 @@ def main():
     print("H13 preflight validation: all cases behave as gated")
 
 
-if __name__ == "__main__":
-    sys.exit(main())
 
 
 class T6001Fixture(Fixture):
@@ -378,3 +376,7 @@ class SnapshotAttestation(unittest.TestCase):
 
     def test_tampered_snapshot_refused(self):
         self.snapshot_pass_and_tamper(True)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -71,11 +71,17 @@ else
     fail "no reviewed identity file; set ANE_REVIEWED_IDENTITIES to the reviewed key=value file; refusing an unreviewed host"
 fi
 for key in firmware cpus platform-device dt-engine-reg-address dt-engine-reg-size \
-           dt-compatible module-srcversion module-ko module-ko-sha256 module-parameters \
+           dt-compatible module-srcversion module-ko module-ko-sha256 \
            libane-python-sha256 libane-archive-sha256 compiler-commit compiler-sha256; do
-    grep -q "^$key=" "$reviewed" 2>/dev/null || \
+    if grep -q "^$key=" "$reviewed" 2>/dev/null; then
+        [[ -n $(sed -n "s/^$key=//p" "$reviewed" 2>/dev/null | head -1) ]] || \
+            fail "reviewed identities empty $key; the review must pin it before submission"
+    else
         fail "reviewed identities omit $key; the review must pin it before submission"
+    fi
 done
+grep -q "^module-parameters=" "$reviewed" 2>/dev/null || \
+    fail "reviewed identities omit module-parameters; the review must pin it before submission"
 require() { sed -n "s/^$1=//p" "$reviewed" 2>/dev/null | head -1; }
 check() { # observed reviewed label; a mismatch refuses the host
     { [[ -n $2 ]] && [[ $1 == "$2" ]]; } || \
