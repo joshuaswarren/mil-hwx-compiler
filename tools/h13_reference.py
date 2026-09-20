@@ -354,6 +354,8 @@ def _resolve(expression, environment, model_root):
             resolved = [fp16(item) for item in resolved]
         elif expression.call_type.dtype.startswith(("int", "uint")):
             resolved = [int(item) for item in resolved]
+        elif expression.call_type.dtype == "string":
+            pass  # dtype-selector constants keep their string values
         else:
             raise ValueError(f"unsupported tensor element type {expression.call_type.dtype}")
         return Tensor(expression.call_type.dtype, expression.call_type.shape, tuple(resolved))
@@ -732,6 +734,32 @@ def _execute(operation, environment, model_root):
     if name == "softmax":
         return _softmax(arguments["x"], int(arguments["axis"]),
                         operation.result_type)
+    if name == "less":
+        # The decoded boolean compare: fp16 operands broadcast, bool 0/1
+        # result, exact per element.
+        left = _tensor(arguments["x"])
+        right = _tensor(arguments["y"])
+        shape = _broadcast_shape(left.shape, right.shape)
+        result = tuple(1 if a < b else 0 for a, b in zip(
+            _broadcast_values(left, shape), _broadcast_values(right, shape)))
+        return Tensor("bool", shape, result)
+    if name == "cast":
+        # The two exact host boundary conversions the H13 gate accepts:
+        # fp16 -> fp32 widens without rounding, bool 0/1 -> int32 widens
+        # exactly. Any other direction stays unsupported.
+        dtype_value = arguments["dtype"]
+        dtype = (dtype_value.values[0]
+                 if isinstance(dtype_value, Tensor)
+                 else str(dtype_value))
+        source = _tensor(arguments["x"])
+        if dtype == "fp32" and source.dtype == "fp16":
+            return Tensor("fp32", source.shape,
+                          tuple(float(v) for v in source.values))
+        if dtype == "int32" and source.dtype == "bool":
+            return Tensor("int32", source.shape,
+                          tuple(1 if v else 0 for v in source.values))
+        raise ValueError("cast supports only the exact fp16->fp32 and "
+                         "bool->int32 boundary directions")
     if name == "layer_norm":
         if "gamma" in arguments or "beta" in arguments:
             raise ValueError("H13 layer_norm carries no gamma or beta")
@@ -765,9 +793,18 @@ def evaluate(mil_text, model_root, inputs):
     outputs = {}
     for name in returns:
         value = environment.get(name)
-        if not isinstance(value, Tensor) or value.dtype != "fp16":
-            raise ValueError("H13 reference outputs must be fp16 tensors")
-        outputs[name] = encode_fp16(value.values)
+        if not isinstance(value, Tensor) or \
+                value.dtype not in ("fp16", "fp32", "int32"):
+            raise ValueError("H13 reference outputs must be fp16, fp32, "
+                             "or int32 tensors")
+        if value.dtype == "fp16":
+            outputs[name] = encode_fp16(value.values)
+        elif value.dtype == "fp32":
+            outputs[name] = struct.pack(
+                f"<{len(value.values)}f", *value.values)
+        else:
+            outputs[name] = struct.pack(
+                f"<{len(value.values)}i", *value.values)
     return outputs
 
 

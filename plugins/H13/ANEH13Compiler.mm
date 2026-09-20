@@ -3160,6 +3160,25 @@ static MILProgramSyntax *PeelAffineLayerNormsInProgram(
         attributes:program.attributes functions:functions range:program.range];
 }
 
+/// The exact host boundary conversion a `cast` result carries, or nil:
+/// fp16 tensor widened to fp32, or bool tensor widened to int32. Both are
+/// lossless value conversions, so the returned logical output binds to the
+/// source storage and the host performs the widening after readback.
+static NSString *BoundaryCastDirection(ANEGraphValue *value) {
+    if (!value || value.type.kind != ANEValueTypeKindTensor ||
+        value.type.shape.count == 0) return nil;
+    ANEGraphOperation *producer = value.producer;
+    if (!producer || ![producer.operationName isEqualToString:@"cast"])
+        return nil;
+    ANEGraphValue *source = producer.operands[@"x"].value;
+    if (!source || source.type.kind != ANEValueTypeKindTensor) return nil;
+    if (value.type.elementType == ANEElementTypeFP32 &&
+        source.type.elementType == ANEElementTypeFP16) return @"fp32";
+    if (value.type.elementType == ANEElementTypeInt32 &&
+        source.type.elementType == ANEElementTypeBool) return @"int32";
+    return nil;
+}
+
 @implementation ANEH13Compiler
 + (BOOL)compileMILData:(NSData *)milData
              modelRoot:(NSURL *)modelRoot
@@ -3221,12 +3240,22 @@ static MILProgramSyntax *PeelAffineLayerNormsInProgram(
     if (!function.returnValues.count)
         return reject(diagnostics, @"H13 requires at least one function result",
             lastSourceOperation, chain ? chainCode : @"h13.unsupported-program");
+    // Exact host boundary conversions, the only conversions the H13 gate
+    // accepts: fp16 -> fp32 widens without rounding (fp16 is a subsumed
+    // IEEE format) and bool 0/1 -> int32 widens exactly. The ANE program
+    // stays the decoded source row; the manifest declares the conversion
+    // (hostConvert) for the host handoff and no ANE conversion executes.
+    NSMutableSet<NSString *> *returnedLogicalNames = [NSMutableSet set];
     for (ANEGraphValue *returnedValue in function.returnValues)
-        if (!fp16Tensor(returnedValue) && !boolTensor(returnedValue))
+        [returnedLogicalNames addObject:returnedValue.name];
+    for (ANEGraphValue *returnedValue in function.returnValues) {
+        if (fp16Tensor(returnedValue) || boolTensor(returnedValue)) continue;
+        if (!BoundaryCastDirection(returnedValue))
             return reject(diagnostics,
                 @"H13 logical result conversions require explicit hardware or GPU coverage",
                 returnedValue.producer ?: lastSourceOperation,
                 @"h13.unsupported-logical-result-conversion");
+    }
 
     for (ANEGraphValue *input in function.inputs) {
         BOOL used = NO;
@@ -3615,6 +3644,25 @@ static MILProgramSyntax *PeelAffineLayerNormsInProgram(
             continue;
         }
 
+        if ([name isEqualToString:@"cast"] &&
+            [returnedLogicalNames containsObject:candidate.results[0].name]) {
+            NSString *direction = BoundaryCastDirection(candidate.results[0]);
+            if (direction &&
+                !constantBackedView(candidate.operands[@"x"].value)) {
+                ANEGraphValue *source = candidate.operands[@"x"].value;
+                aliases[candidate.results[0].name] = @{
+                    @"aliasOf": source.name,
+                    @"shape": candidate.results[0].type.shape,
+                    @"hostConvert": direction};
+                [manifestValues addObject:candidate.results[0]];
+                ANEGraphValue *alias = [[ANEGraphValue alloc]
+                    initWithName:source.name
+                    type:candidate.results[0].type];
+                [loweredValues setObject:alias
+                    forKey:candidate.results[0]];
+                continue;
+            }
+        }
         BOOL reshape = [name isEqualToString:@"reshape"];
         BOOL squeeze = [name isEqualToString:@"squeeze"];
         BOOL expand = [name isEqualToString:@"expand_dims"];
@@ -4657,12 +4705,21 @@ static MILProgramSyntax *PeelAffineLayerNormsInProgram(
             elements *= dimension.unsignedIntegerValue;
         NSString *role = [returnedSourceNames containsObject:name]
             ? @"output" : @"intermediate";
+        NSString *hostConvert = alias[@"hostConvert"];
+        if (hostConvert) {
+            // A host boundary conversion: the surface holds the source
+            // element size while the logical output is the widened dtype.
+            tensors[name] = @{@"shape": shape, @"logicalBytes": @(elements * 4),
+                @"role": role, @"aliasOf": alias[@"aliasOf"],
+                @"hostConvert": hostConvert};
+        } else {
         BOOL boolAlias = [tensors[alias[@"aliasOf"]][@"dtype"] isEqualToString:@"bool"];
         tensors[name] = boolAlias
             ? @{@"shape": shape, @"logicalBytes": @(elements),
                 @"role": role, @"aliasOf": alias[@"aliasOf"], @"dtype": @"bool"}
             : @{@"shape": shape, @"logicalBytes": @(elements * 2),
                 @"role": role, @"aliasOf": alias[@"aliasOf"]};
+        }
     }
     for (NSString *name in intermediateStorageNames) {
         NSMutableArray<NSArray<NSNumber *> *> *produced = [NSMutableArray array];
@@ -4754,9 +4811,18 @@ static MILProgramSyntax *PeelAffineLayerNormsInProgram(
             physicalElementCounts[storageName].unsignedIntegerValue;
         NSUInteger resultOffset =
             [[valueBaseOffsets objectForKey:returned] unsignedIntegerValue];
-        NSUInteger elements = 0;
-        if (!tensorElementCount(logical, &elements) ||
-            elements > physicalElements || resultOffset > physicalElements - elements)
+        // Boundary-conversion logicals widen their storage dtype, so the
+        // count runs over the declared shape rather than the fp16/bool
+        // element rule the storage surface uses; the result gate has
+        // already restricted these to the two exact directions.
+        NSUInteger elements =
+            logical.type.kind == ANEValueTypeKindTensor &&
+                logical.type.shape.count ? 1 : 0;
+        BOOL counted = elements;
+        for (NSNumber *dimension in logical.type.shape)
+            elements *= dimension.unsignedIntegerValue;
+        if (!counted || elements > physicalElements ||
+            resultOffset > physicalElements - elements)
             return reject(diagnostics,
                 @"H13 logical result exceeds its physical output storage",
                 logical.producer ?: lastSourceOperation,

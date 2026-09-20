@@ -436,11 +436,34 @@ def _check_deadline(deadline, deadline_seconds, program_index, now):
             "kernel submission")
 
 
+def _host_boundary_convert(convert, raw):
+    """The host half of a manifest-declared boundary conversion: widen the
+    read-back source surface to the logical output dtype. fp16 -> fp32 and
+    bool 0/1 -> int32 are lossless, so the comparison after conversion is
+    exact."""
+    if convert == "fp32":
+        halves = struct.unpack(f"<{len(raw) // 2}e", raw)
+        return struct.pack(f"<{len(halves)}f", *halves)
+    if convert == "int32":
+        flags = struct.unpack(f"<{len(raw)}B", raw)
+        return struct.pack(f"<{len(flags)}i", *flags)
+    raise ValueError(f"unsupported host boundary conversion {convert!r}")
+
+
 def _check_outputs(manifest, tensors, output_names, actual, expected,
                    failure_directory=None):
     chunked = chunked_tensors(manifest)
     for name in output_names:
         target = tensors[name].get("aliasOf", name)
+        convert = tensors[name].get("hostConvert")
+        if convert:
+            converted = _host_boundary_convert(convert, actual[name])
+            if converted != expected[name]:
+                raise ValueError(
+                    f"{name}: converted device output differs from the exact "
+                    f"reference ({convert} boundary conversion)")
+            actual[name] = converted
+            continue
         try:
             compare_fp16(actual[name], expected[name], target in chunked)
         except ValueError as error:
