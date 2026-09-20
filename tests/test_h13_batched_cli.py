@@ -131,7 +131,7 @@ with tempfile.TemporaryDirectory() as temporary:
     verified = 0
     for capture in captures:
         record = json.loads(capture.read_text())
-        if record.get("error") or len(record["task_descriptors"]) % 26 not in (0, 25):
+        if record.get("error"):
             continue
         root_dir = capture.parent
         weights = root_dir / (capture.stem + ".weights.bin")
@@ -154,6 +154,11 @@ with tempfile.TemporaryDirectory() as temporary:
         assert program["encoder"] == (
             "apple-parity-batched-matmul" if record["parameters"]["w_storage"] == "runtime"
             else "apple-parity-batched-matvec")
+        captured_inputs = [d for d in record["tensor_descriptors"] if d["binding"] == 1]
+        assert len(program["inputs"]) == len(captured_inputs), capture.stem
+        for emitted, captured in zip(program["inputs"], captured_inputs):
+            expected = captured["shape"] + [captured["strides"][1], captured["strides"][2]]
+            assert emitted["nchw"] == expected, (capture.stem, emitted["name"], emitted["nchw"], expected)
         runtime = record["parameters"]["w_storage"] == "runtime"
         assert anec_task_stream(package / "program-0.anec") == \
             capture_stream(record, runtime), capture.stem

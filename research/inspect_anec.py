@@ -405,9 +405,9 @@ def validate_program(directory, program, tensors):
         require(matmul and len(inputs) == 2,
                 'a runtime-operand matmul binds both operands as inputs')
     if encoder in (PARITY_BATCHED_MATMUL, PARITY_BATCHED_MATVEC):
-        require(program['taskDescriptors'] % 26 == 0 and
-                program['taskDescriptors'] >= 52,
-                'a batched matmul carries 26 tasks per batch')
+        batch = math.prod(outputs[0]["shape"][:-2])
+        require(batch >= 2 and program["taskDescriptors"] in (26 * batch, 26 * batch + 1),
+                "a batched matmul carries 26 tasks per batch and at most one prefix")
     if operation == 'tile':
         # A materialized tile runs one task over its whole surfaces: one
         # runtime input, whole-tensor bindings, and the output replicating

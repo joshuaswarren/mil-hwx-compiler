@@ -1655,14 +1655,17 @@ Program encodeBatchedMatmul(BatchedMatmulShape shape,
     if (packed)
         std::memcpy(program.constants.data(), packed, packedBytes);
     program.constantOffsetBytes = (program.task.size() + 127) / 128 * 128;
+    // Prefix tasks transpose the original runtime surfaces; bindings must
+    // describe those inputs, not the post-transpose matmul geometry.
+    const auto x = batchedTensor(shape.runtimeWeight ? 6 : 5, shape.batch,
+        shape.transposeX ? shape.reduction : shape.rows,
+        shape.transposeX ? shape.rows : shape.reduction);
     if (shape.runtimeWeight) {
-        program.inputs = {batchedTensor(5, shape.batch, shape.reduction,
-                                        shape.columns),
-                          batchedTensor(6, shape.batch, shape.rows,
-                                        shape.reduction)};
+        program.inputs = {batchedTensor(5, shape.batch,
+            shape.transposeY ? shape.columns : shape.reduction,
+            shape.transposeY ? shape.reduction : shape.columns), x};
     } else {
-        program.inputs = {batchedTensor(5, shape.batch, shape.rows,
-                                        shape.reduction)};
+        program.inputs = {x};
     }
     if (shape.runtimeWeight)
         nameSecondSource(program.task, program.firstTaskBytes,
