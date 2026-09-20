@@ -35,39 +35,9 @@ SENTINEL = 0xA5
 TILE_SIZE = 0x4000  # 16384
 TILE_COUNT = 0x20   # 32
 
-# struct ane_nn offsets (aarch64, derived from ane.h):
-#   offset 0:    int fd (4B) + 4B padding
-#   offset 8:    void* data (8B)
-#   offset 16:   struct anec anec (packed, aligned(1), 1704B)
-#   offset 1720: struct ane_bo chans[32] (32B each)
-#   offset 2744: struct ane_bo btsp_chan (32B)
-#   offset 2776: struct ane_bind bind {src[32], dst[32]}
-#
-# struct anec (packed, aligned(1)):
-#   offset 0:   u64 size
-#   offset 8:   u32 td_size
-#   offset 12:  u32 td_count
-#   offset 16:  u64 tsk_size
-#   offset 24:  u64 krn_size
-#   offset 32:  u32 src_count
-#   offset 36:  u32 dst_count
-#   offset 40:  u32 tiles[32]
-#   offset 168: u64 nchw[32][6]
-#   total: 1704 bytes
-#
-# struct ane_bo:
-#   offset 0:  void* map
-#   offset 8:  u64 size
-#   offset 16: u32 handle (+4B pad)
-#   offset 24: u64 offset
-#   total: 32 bytes
-
-NN_CHANS_OFFSET = 1720
-NN_BIND_OFFSET = 2776
-BIND_SRC_OFFSET = 0
-BIND_DST_OFFSET = 32
-ANEOFF_MAP = 0
-ANEOFF_SIZE = 8
+# All struct offsets come from the C header via the test helper library
+# (tests/dst_sentinel_helper/dst_prefill_helper.c), which uses ane.h
+# types directly — no hard-coded ctypes offsets.
 
 NOT_MIL = """program(1.3)
 [buildInfo = dict<string, string>({})]
@@ -104,34 +74,26 @@ def open_lib():
     return lib
 
 
-def read_u8(nn_addr, offset):
-    return ctypes.cast(nn_addr + offset, ctypes.POINTER(ctypes.c_uint8)).contents.value
+HELPER = None
 
-
-def read_u64(nn_addr, offset):
-    return ctypes.cast(nn_addr + offset, ctypes.POINTER(ctypes.c_uint64)).contents.value
-
-
-def read_ptr(nn_addr, offset):
-    return ctypes.cast(nn_addr + offset, ctypes.POINTER(ctypes.c_void_p)).contents.value
-
-
-def get_surface(nn_addr, bdx):
-    """Read chans[bdx].map and chans[bdx].size from the nn struct."""
-    chans_base = nn_addr + NN_CHANS_OFFSET
-    map_addr = read_ptr(chans_base + bdx * 32)
-    size = read_u64(chans_base + bdx * 32 + 8)
-    return map_addr, size
-
-
-def get_dst_bdx(nn_addr):
-    """Read bind.dst[0] — the channel index for output 0."""
-    return read_u8(nn_addr + NN_BIND_OFFSET + BIND_DST_OFFSET)
-
-
-def get_src_bdx(nn_addr):
-    """Read bind.src[0] — the channel index for input 0."""
-    return read_u8(nn_addr + NN_BIND_OFFSET + BIND_SRC_OFFSET)
+def open_helper():
+    global HELPER
+    helper_so = str(Path(__file__).resolve().parent / "dst_sentinel_helper"
+                    / "libdst_prefill_test.so")
+    HELPER = ctypes.CDLL(helper_so)
+    for n, rt, at in (
+        ("__ane_dst_prefill", ctypes.c_void_p,
+         [ctypes.c_void_p, ctypes.c_uint8, ctypes.c_uint32]),
+        ("__ane_dst_surface_size", ctypes.c_uint64,
+         [ctypes.c_void_p, ctypes.c_uint32]),
+        ("__ane_dst_surface_map", ctypes.c_void_p,
+         [ctypes.c_void_p, ctypes.c_uint32]),
+        ("__ane_dst_channel", ctypes.c_uint8,
+         [ctypes.c_void_p, ctypes.c_uint32]),
+        ("__ane_src_channel", ctypes.c_uint8,
+         [ctypes.c_void_p, ctypes.c_uint32]),
+    ):
+        f = getattr(HELPER, n); f.restype = rt; f.argtypes = at
 
 
 def compile_mil(root, name, mil_text):
@@ -162,16 +124,13 @@ def run_case(root, name, mil_text, input_arr, input_shape, label):
     s0 = int(lib.__ane_src_size(nn, 0))
     d0 = int(lib.__ane_dst_size(nn, 0))
 
-    # Read the bind table to get the actual channel indices
-    src_bdx = get_src_bdx(nn_addr)
-    dst_bdx = get_dst_bdx(nn_addr)
-
-    # Read the surface pointers from the nn struct
-    src_map, src_size = get_surface(nn_addr, src_bdx)
-    dst_map, dst_size = get_surface(nn_addr, dst_bdx)
-    print(f"  [{name}] src ch{src_bdx}: map=0x{src_map:x} size={src_size}")
-    print(f"  [{name}] dst ch{dst_bdx}: map=0x{dst_map:x} size={dst_size}")
-    print(f"  [{name}] __ane: src_size={s0} dst_size={d0}")
+    # Read the bind table and surface pointers via the C helper
+    src_bdx = HELPER.__ane_src_channel(nn, 0)
+    dst_bdx = HELPER.__ane_dst_channel(nn, 0)
+    dst_map = HELPER.__ane_dst_surface_map(nn, 0)
+    dst_size = int(HELPER.__ane_dst_surface_size(nn, 0))
+    print(f"  [{name}] src ch{src_bdx} dst ch{dst_bdx} "
+          f"__ane src={s0} dst={d0}")
 
     # Cross-check: the nn-struct dst size must match __ane_dst_size
     assert dst_size == d0, f"{name}: nn struct dst {dst_size} != API {d0}"
@@ -181,11 +140,8 @@ def run_case(root, name, mil_text, input_arr, input_shape, label):
     lib.__ane_read(nn, ctypes.c_char_p(pre_buf.ctypes.data), 0)
     pre_nz = int(np.count_nonzero(pre_buf))
 
-    # GENUINE DST PREFILL: write the sentinel via the nn-struct surface pointer
-    dst_view = np.frombuffer(
-        ctypes.string_at(dst_map, dst_size), dtype=np.uint8).copy()
-    dst_view[:] = SENTINEL
-    ctypes.memmove(dst_map, dst_view.ctypes.data, dst_size)
+    # GENUINE DST PREFILL: write the sentinel via the C helper
+    HELPER.__ane_dst_prefill(nn, SENTINEL, 0)
 
     # Verify the prefill via __ane_read
     verify = np.zeros(dst_size, dtype=np.uint8)
@@ -202,8 +158,8 @@ def run_case(root, name, mil_text, input_arr, input_shape, label):
         x[r, c] = 0x01
     x_flat = x.flatten()
 
-    # Send input (bool 1-byte lanes through the src surface)
-    in_map, in_size = get_surface(nn_addr, src_bdx)
+    # Stage the input via __ane_send (the src surface is bound by the
+    # C helper's channel query; the strict-fill __ane_send writes there)
     in_view = np.frombuffer(
         ctypes.string_at(in_map, in_size), dtype=np.uint8).copy()
     in_view[:] = 0
