@@ -265,6 +265,10 @@ def _tensor(value, expected_type=None):
         if expected_type.dtype == "fp16":
             result = Tensor("fp16", expected_type.shape,
                             decode_fp16(bytes(value)))
+        elif expected_type.dtype == "bool":
+            if any(item not in (0, 1) for item in value):
+                raise ValueError("bool input bytes must be zero or one")
+            result = Tensor("bool", expected_type.shape, tuple(value))
         elif expected_type.dtype == "int32":
             count = math.prod(expected_type.shape)
             if len(value) != count * 4:
@@ -274,8 +278,7 @@ def _tensor(value, expected_type=None):
                             struct.unpack_from(f"<{count}i",
                                                bytes(value)))
         else:
-            raise ValueError("raw input requires an fp16 or int32 tensor "
-                             "type")
+            raise ValueError("raw input requires an fp16, bool, or int32 tensor type")
     elif isinstance(value, (list, tuple)):
         if expected_type is None:
             raise ValueError("input sequences require a tensor type")
