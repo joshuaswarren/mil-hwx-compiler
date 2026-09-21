@@ -247,12 +247,17 @@ def reference_criteria(manifest, reference_outputs):
     by every correctness check before benchmark timings are reported."""
     tensors = manifest["tensors"]
     chunked = chunked_tensors(manifest)
-    return {
-        name: (f"|device - reference| <= {CHUNKED_ATOL} + "
-               f"{CHUNKED_RTOL} * |reference|"
-               if tensors[name].get("aliasOf", name) in chunked
-               else "exact fp16 values; signed zeros equal, NaNs rejected")
-        for name in sorted(reference_outputs)}
+
+    def criterion(name):
+        target = tensors[name].get("aliasOf", name)
+        if target in chunked:
+            return (f"|device - reference| <= {CHUNKED_ATOL} + "
+                    f"{CHUNKED_RTOL} * |reference|")
+        if tensors[target].get("dtype") == "bool":
+            return "exact bool bytes"
+        return "exact fp16 values; signed zeros equal, NaNs rejected"
+
+    return {name: criterion(name) for name in sorted(reference_outputs)}
 
 
 def build_plan(manifest, reference_outputs):
@@ -331,25 +336,40 @@ def _intermediate_buffer(binding, tensors, regions):
 
     Producers and consumers can use different physical layouts -- a parity
     matvec writes dense rows while an elementwise program reads 64-byte lanes
-    -- so composition goes through dense fp16.
+    -- so composition goes through dense values at the intermediate's own
+    element size (one byte bool, two fp16; a producer of a different dtype
+    has no meaning and is refused).
     """
     _, offset, count, _ = inspect_anec.binding_interval(binding, tensors)
-    dense = bytearray(count * 2)
+    element = _element_bytes(tensors[binding["name"]])
+    dense = bytearray(count * element)
     covered = [False] * count
     for produced_binding, data in regions:
-        _, produced_offset, produced_count, _ = \
+        produced_name, produced_offset, produced_count, _ = \
             inspect_anec.binding_interval(produced_binding, tensors)
+        produced_element = _element_bytes(tensors[produced_name])
+        if produced_element != element:
+            raise ValueError(
+                f"intermediate {binding['name']} producer {produced_name} "
+                "carries a different element size")
         produced = inspect_anec.convert_tensor(produced_binding, data, False)
         start = max(offset, produced_offset)
         end = min(offset + count, produced_offset + produced_count)
-        for element in range(start, end):
-            source = (element - produced_offset) * 2
-            destination = (element - offset) * 2
-            dense[destination:destination + 2] = produced[source:source + 2]
-            covered[element - offset] = True
+        for element_index in range(start, end):
+            source = (element_index - produced_offset) * element
+            destination = (element_index - offset) * element
+            dense[destination:destination + element] = \
+                produced[source:source + element]
+            covered[element_index - offset] = True
     if not all(covered):
         raise ValueError(f"intermediate {binding['name']} lacks a produced logical range")
     return bytes(inspect_anec.convert_tensor(binding, bytes(dense), True))
+
+
+def _element_bytes(tensor):
+    """Bytes per element for a manifest tensor record: one for a bool
+    surface, two for fp16."""
+    return 1 if tensor.get("dtype") == "bool" else 2
 
 
 def _unpack_outputs(manifest, regions, names):
@@ -358,12 +378,13 @@ def _unpack_outputs(manifest, regions, names):
     for name in names:
         target = tensors[name].get("aliasOf", name)
         target_tensor = tensors[target]
+        element = _element_bytes(target_tensor)
         result = bytearray(target_tensor["logicalBytes"])
-        written = [False] * (target_tensor["logicalBytes"] // 2)
+        written = [False] * (target_tensor["logicalBytes"] // element)
         for binding, data in regions.get(target, []):
             _, offset, count, _ = inspect_anec.binding_interval(binding, tensors)
             values = inspect_anec.convert_tensor(binding, data, False)
-            result[offset * 2:(offset + count) * 2] = values
+            result[offset * element:(offset + count) * element] = values
             written[offset:offset + count] = [True] * count
         if not all(written):
             raise ValueError(f"output {name} lacks a produced logical range")
@@ -509,6 +530,12 @@ def _check_outputs(manifest, tensors, output_names, actual, expected,
                 raise ValueError(
                     f"{name}: device output exceeds the fp16 envelope "
                     f"(0.02 + 0.02 * |reference|)")
+            continue
+        if tensors[target].get("dtype") == "bool":
+            if actual[name] != expected[name]:
+                raise ValueError(
+                    f"{name}: device bool output differs from the exact "
+                    f"reference")
             continue
         try:
             compare_fp16(actual[name], expected[name], target in chunked)

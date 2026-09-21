@@ -489,6 +489,36 @@ def _matmul(left, right, transpose_x, transpose_y, result_type):
     return Tensor("fp16", result_type.shape, tuple(result))
 
 
+def _transpose(value, perm):
+    """A tensor permutation over flat row-major storage: the dtype carries
+    (the decoded bool tail-swap transpose and the fp16 parity transposes
+    permute elements exactly), and the result shape must match the
+    permuted dimensions."""
+    value = _tensor(value)
+    rank = len(value.shape)
+    axes = tuple(int(axis) for axis in perm)
+    if sorted(axes) != list(range(rank)):
+        raise ValueError("transpose perm must be a permutation of the rank")
+    shape = tuple(value.shape[axis] for axis in axes)
+    # Input strides per output position: output position p reads input
+    # axis axes[p], whose row-major stride is the product of the input
+    # dimensions after that axis.
+    strides = [math.prod(value.shape[axis + 1:]) for axis in axes]
+    values = []
+    for flat in range(math.prod(shape)):
+        remainder = flat
+        source = 0
+        for position in range(rank):
+            if position + 1 < rank:
+                index, remainder = divmod(remainder,
+                                          math.prod(shape[position + 1:]))
+            else:
+                index = remainder
+            source += index * strides[position]
+        values.append(value.values[source])
+    return Tensor(value.dtype, shape, tuple(values))
+
+
 def _shape_op(name, value, parameter, result_type):
     value = _tensor(value)
     requested = (tuple(index for index, dimension in enumerate(value.shape) if dimension == 1)
@@ -742,6 +772,8 @@ def _execute(operation, environment, model_root):
     if name in ("reshape", "squeeze", "expand_dims"):
         parameter = arguments.get("shape" if name == "reshape" else "axes")
         return _shape_op(name, arguments["x"], parameter, operation.result_type)
+    if name == "transpose":
+        return _transpose(arguments["x"], _tensor(arguments["perm"]).values)
     if name in ("reduce_sum", "reduce_max", "reduce_mean"):
         axes = _tensor(arguments["axes"]).values
         return _reduce(name, arguments["x"], axes,
@@ -802,6 +834,12 @@ def _execute(operation, environment, model_root):
         if dtype == "int32" and source.dtype == "bool":
             return Tensor("int32", source.shape,
                           tuple(1 if v else 0 for v in source.values))
+        if dtype == "bool" and source.dtype == "fp16":
+            # The decoded 2026-09-20 candidate row: exact zero/nonzero
+            # mapping. Zero (either sign) casts to 0; every other value
+            # class — nonzero finite, +/-inf, NaN — casts to 1.
+            return Tensor("bool", source.shape,
+                          tuple(1 if v else 0 for v in source.values))
         if dtype == "int32" and source.dtype == "fp16":
             # Non-finite values cast to 0 (the de-facto hardware
             # behavior); the mask chain feeds only floored, integral
@@ -812,8 +850,8 @@ def _execute(operation, environment, model_root):
         if dtype == "fp16" and source.dtype == "int32":
             return Tensor("fp16", source.shape,
                           tuple(fp16(v) for v in source.values))
-        raise ValueError("cast supports only the exact fp16->fp32 and "
-                         "bool->int32 boundary directions plus the "
+        raise ValueError("cast supports only the exact fp16->fp32, "
+                         "bool->int32, and fp16->bool directions plus the "
                          "length-chain int32 directions")
     if name == "select":
         # cond ? a : b with full broadcasting; the decoded select rows

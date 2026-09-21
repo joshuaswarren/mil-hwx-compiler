@@ -49,7 +49,11 @@ def a_bytes(width, height, batch):
 
 
 def mask_bytes(width, height):
-    return bytes(((i + j) % 4 == 0) for j in range(height) for i in range(width))
+    # Asymmetric under transpose (coefficients 7 != 11): a symmetric mask
+    # would equal its own tail-swap and could not detect a transpose that
+    # never permutes.
+    return bytes(((i * 7 + j * 11) % 5 == 0)
+                 for j in range(height) for i in range(width))
 
 
 def write_mil(path, body, result):

@@ -743,30 +743,36 @@ def find_bindings(manifest, name, direction, constants=False):
 
 
 def convert_tensor(binding, data, pack):
-    """Packs dense fp16 into, or reads it back from, the physical surface.
+    """Packs dense values into, or reads them back from, the physical
+    surface.
 
-    The elementwise surface holds one element per 64-byte lane; the parity
-    matvec surface holds dense rows, so the row stride comes from the binding.
+    The element size comes from the binding dtype: one byte per bool lane,
+    two per fp16. The elementwise surface holds one element per 64-byte
+    lane; the parity matvec surface holds dense rows, so the row stride
+    comes from the binding.
     """
     logical, physical = binding['logicalBytes'], binding['allocationBytes']
     require(len(data) == (logical if pack else physical), 'incorrect tensor byte count')
+    element = 1 if binding.get('dtype') == 'bool' else 2
     nchw = binding.get('nchw')
     width, row = (nchw[3], nchw[5]) if nchw else (1, 64)
     result = bytearray(physical if pack else logical)
-    for element in range(logical // 2):
-        dense = element * 2
-        offset = (element // width) * row + (element % width) * 2
+    for element_index in range(logical // element):
+        dense = element_index * element
+        offset = ((element_index // width) * row +
+                  (element_index % width) * element)
         if pack:
-            result[offset:offset + 2] = data[dense:dense + 2]
+            result[offset:offset + element] = data[dense:dense + element]
         else:
-            result[dense:dense + 2] = data[offset:offset + 2]
+            result[dense:dense + element] = data[offset:offset + element]
     return result
 
 
 def dense_slice(data, binding, tensors):
     name, offset, count, _ = binding_interval(binding, tensors)
     require(len(data) == tensors[name]['logicalBytes'], 'incorrect dense tensor byte count')
-    return data[offset * 2:(offset + count) * 2]
+    element = 1 if tensors[name].get('dtype') == 'bool' else 2
+    return data[offset * element:(offset + count) * element]
 
 
 def binding_buffer_name(program_index, binding):
