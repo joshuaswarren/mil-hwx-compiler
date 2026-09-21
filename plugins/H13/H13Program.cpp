@@ -992,7 +992,7 @@ Program encodeElementwiseConstant(BinaryOperation operation,
         throw std::logic_error("H13 constant-blob constant size mismatch");
     // The decoded constant-blob TDs cover one 1024-byte span; staging the
     // surface one-element-per-row reaches only the first 16 elements on
-    // hardware (m1-test-host 2026-09-15). Pack the tensor contiguously instead: the
+    // (M1 test host, 2026-09-15). Pack the tensor contiguously instead: the
     // TD's whole span then covers every element.
     auto program = oracleProgram(
         *source, std::vector<std::uint8_t>(constant, constant + constantBytes),
@@ -1274,7 +1274,7 @@ Program encodeLinearParity(std::uint32_t rows, std::uint32_t reduction,
         // The smaller geometries (n128, n640, n4096) have not been
         // measured on device; keep their identity packing so the parity
         // gates against the captured oracles keep passing.
-        // 2026-09-17 CRT (t6001-test-host, receipts/2026-09-17-ffn-mm2-plane.md):
+        // 2026-09-17 CRT (T6001 test host, receipts/2026-09-17-ffn-mm2-plane.md):
         // the (375, 1024, 4096) uniform linear reads the SAME inverse
         // permutation, generalized to 256 planes of 16384 halves
         // (plane P holds group g_inv(P), lane stride 16, no wrap at
@@ -2314,7 +2314,7 @@ std::vector<std::uint8_t> packConvDepthwiseSlots(std::uint32_t taps,
 ///     R(k) = ((k >> 1) & 7) | (k & 0x10) | ((((~k) >> 5) & 1) << 3)
 ///            | ((k & 1) << 5)
 ///
-/// (t6001-test-host measurement, receipts/2026-09-18-encoder-conv-device-gate/
+/// (T6001 test host measurement, receipts/2026-09-18-encoder-conv-device-gate/
 /// f3-writeout-permutation.json). Exact numerics under the bijection mean
 /// the engine computes output run k from the weights packed at run slot
 /// R(k), so dev run k shows ref run k exactly when slot R(k) holds ref
