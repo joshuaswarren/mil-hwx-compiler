@@ -714,6 +714,33 @@ def campaign() -> list[dict[str, Any]]:
                  'cond = cond)[name = string("out")];'],
                 "out")))
     cases.append(case(
+        "candidate_mul_rr_1x375x375", "mul",
+        {"operation": "mul", "dtype": "fp16", "shape": [1, 375, 375]},
+        program("tensor<fp16, [1, 375, 375]> a, tensor<fp16, [1, 375, 375]> b",
+                ['tensor<fp16, [1, 375, 375]> out = mul(x = a, y = b)'
+                 '[name = string("out")];'],
+                "out")))
+    cases.append(case(
+        "candidate_cast_b_to_f16_1x375x375", "cast",
+        {"operation": "cast", "dtype": "bool->fp16",
+         "shape": [1, 375, 375]},
+        program("tensor<bool, [1, 375, 375]> x",
+                ['tensor<string, []> dt = const()[name = string("dt"), '
+                 'val = tensor<string, []>("fp16")];',
+                 'tensor<fp16, [1, 375, 375]> out = cast(dtype = dt, x = x)'
+                 '[name = string("out")];'],
+                "out")))
+    cases.append(case(
+        "candidate_cast_f16_to_b_1x375x375", "cast",
+        {"operation": "cast", "dtype": "fp16->bool",
+         "shape": [1, 375, 375]},
+        program("tensor<fp16, [1, 375, 375]> x",
+                ['tensor<string, []> dt = const()[name = string("dt"), '
+                 'val = tensor<string, []>("bool")];',
+                 'tensor<bool, [1, 375, 375]> out = cast(dtype = dt, x = x)'
+                 '[name = string("out")];'],
+                "out")))
+    cases.append(case(
         "candidate_reduce_min_i32_1x1x375x375_axes2", "reduce-min",
         {"operation": "reduce_min", "dtype": "int32",
          "shape": [1, 1, 375, 375], "axes": [2], "keep_dims": False},
