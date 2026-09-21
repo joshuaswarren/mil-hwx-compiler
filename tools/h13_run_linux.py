@@ -250,11 +250,14 @@ def reference_criteria(manifest, reference_outputs):
 
     def criterion(name):
         target = tensors[name].get("aliasOf", name)
+        if tensors[target].get("dtype") == "bool":
+            # Bool outputs are exact 0/1 bytes no matter what produced
+            # them: there is no rounding to envelope, so even a tensor
+            # downstream of a chunked-fp16 source compares exactly.
+            return "exact bool bytes"
         if target in chunked:
             return (f"|device - reference| <= {CHUNKED_ATOL} + "
                     f"{CHUNKED_RTOL} * |reference|")
-        if tensors[target].get("dtype") == "bool":
-            return "exact bool bytes"
         return "exact fp16 values; signed zeros equal, NaNs rejected"
 
     return {name: criterion(name) for name in sorted(reference_outputs)}
@@ -370,6 +373,12 @@ def _element_bytes(tensor):
     """Bytes per element for a manifest tensor record: one for a bool
     surface, two for fp16."""
     return 1 if tensor.get("dtype") == "bool" else 2
+
+
+def _element_label(tensor):
+    """Human label for a manifest tensor's element type, used in the
+    success line and the published pass criteria."""
+    return "bool" if tensor.get("dtype") == "bool" else "fp16"
 
 
 def _unpack_outputs(manifest, regions, names):
@@ -702,7 +711,7 @@ def benchmark_package(package, mil, model_root, inputs, outputs, adapter, warmup
                                       "program's last readback per iteration; includes "
                                       "Python composition between programs, never "
                                       "program setup.")
-        return final_actual, report
+        return manifest, final_actual, report
     finally:
         _close_all([record["program"] for record in records.values()],
                    sys.exc_info()[1])
@@ -772,19 +781,21 @@ def main():
         inputs, outputs = _paths(args.input), _paths(args.output)
         adapter = None if args.dry_run else LibANEAdapter(args.libane_library, args.device)
         if benchmarking:
-            result, report = benchmark_package(
+            manifest, result, report = benchmark_package(
                 args.package, args.mil, args.model_root, inputs, outputs, adapter,
                 warmup, iterations, deadline_seconds=args.deadline_seconds)
         else:
-            _, result, plan = run_package(
+            manifest, result, plan = run_package(
                 args.package, args.mil, args.model_root, inputs, outputs, adapter,
                 deadline_seconds=args.deadline_seconds)
         if args.dry_run:
             print(json.dumps(plan, indent=2, sort_keys=True))
             return
+        tensors = manifest["tensors"]
         for name, path in outputs.items():
+            label = _element_label(tensors[name])
             path.write_bytes(result[name])
-            print(f"PASS {name}: {len(result[name])} fp16 bytes match the reference; wrote {path}")
+            print(f"PASS {name}: {len(result[name])} {label} bytes match the reference; wrote {path}")
         if benchmarking:
             args.benchmark_json.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
             for program in report["programs"]:

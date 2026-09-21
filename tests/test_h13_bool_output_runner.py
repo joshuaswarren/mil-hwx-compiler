@@ -235,6 +235,29 @@ with tempfile.TemporaryDirectory(prefix="h13-bool-runner-") as directory:
     assert transpose_manifest["tensors"]["out"]["dtype"] == "bool"
 print("PASS runner dry-run plans for bool cast and bool transpose")
 
+# 7b. Labels and criterion priority: the success line reports the actual
+# element type (never a blanket "fp16 bytes"), and a bool tensor keeps
+# the exact-bytes criterion even when a chunked-fp16 source marks it.
+assert h13_run_linux._element_label(
+    {"dtype": "bool"}) == "bool"
+assert h13_run_linux._element_label({}) == "fp16"
+chunked_bool_manifest = {
+    "tensors": {"out": {"dtype": "bool", "logicalBytes": 375,
+                        "role": "output", "shape": [1, 1, 375],
+                        "accumulation": "chunked-fp16"}},
+    "programs": [], "dispatchPlan": [],
+}
+criteria = h13_run_linux.reference_criteria(
+    chunked_bool_manifest, {"out": bytes(375)})
+assert criteria["out"] == "exact bool bytes", criteria
+fp16_criteria = h13_run_linux.reference_criteria(
+    {"tensors": {"out": {"logicalBytes": 8, "role": "output",
+                         "shape": [8]}},
+     "programs": [], "dispatchPlan": []},
+    {"out": bytes(8)})
+assert fp16_criteria["out"].startswith("exact fp16"), fp16_criteria
+print("PASS labels and bool-over-chunked criterion priority")
+
 # 8. The D fixture's recorded mask: the generator's pattern must be
 # asymmetric under tail-swap (the prior (i + j) % 4 == 0 pattern equaled
 # its own transpose and could not detect a no-op transpose), and the

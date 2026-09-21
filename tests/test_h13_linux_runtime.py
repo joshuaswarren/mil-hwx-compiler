@@ -574,7 +574,7 @@ def test_benchmark_publishes_only_correct_gated_report():
                         raise AssertionError("an incorrect benchmark published timings")
                     assert programs and all(program.closed == 1 for program in programs)
                     continue
-                result, report = h13_run_linux.benchmark_package(
+                manifest, result, report = h13_run_linux.benchmark_package(
                     package, mil, root, inputs, outputs, object(),
                     warmup=2, iterations=3, deadline_seconds=60)
                 assert report["schema"] == "mil-hwxc.h13-linux-benchmark.v1"
@@ -612,7 +612,7 @@ def test_benchmark_prepares_before_measuring_and_closes_on_failure():
         events = []
         programs, saved = _with_scripted_programs(correct_surfaces, events)
         try:
-            _, report = h13_run_linux.benchmark_package(
+            _, _, report = h13_run_linux.benchmark_package(
                 package, mil, root, inputs, outputs, object(),
                 warmup=0, iterations=2, deadline_seconds=60)
             first_transfer = next(index for index, event in enumerate(events)
