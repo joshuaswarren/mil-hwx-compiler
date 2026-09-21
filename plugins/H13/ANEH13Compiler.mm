@@ -2174,6 +2174,24 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
 
     if ([name isEqualToString:@"transpose"]) {
         ane::h13::ElementwiseShape transposeIn{}, transposeOut{};
+        if (boolTensor(x) && x.type.shape.count == 3 &&
+            [x.type.shape[0] isEqualToNumber:@1] &&
+            [x.type.shape[1] isEqualToNumber:x.type.shape[2]]) {
+            NSArray<NSNumber *> *perm = int32TensorElements(
+                operation.operands[@"perm"].value);
+            if ([perm isEqualToArray:@[@0, @2, @1]]) {
+                ane::h13::H13BooleanShape boolSwap{};
+                boolSwap.kind = ane::h13::H13BooleanKind::TransposeBool;
+                boolSwap.height = x.type.shape[1].unsignedIntegerValue;
+                boolSwap.width = x.type.shape[2].unsignedIntegerValue;
+                program = ane::h13::encodeBooleanOp(boolSwap, nullptr, 0);
+                *inputsOut = @[x];
+                *constantInputOut = nil;
+                *constantDataOut = nil;
+                *manifestOperationOut = name;
+                return YES;
+            }
+        }
         if (!transposeParityShapes(operation, x, operation.results[0],
                                    &transposeIn, &transposeOut))
             return reject(diagnostics,
@@ -2770,7 +2788,19 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         if ([name isEqualToString:@"less"]) shape.kind = ane::h13::H13BooleanKind::Less;
         else if ([name isEqualToString:@"floor"]) shape.kind = ane::h13::H13BooleanKind::Floor;
         else if ([name isEqualToString:@"select"]) shape.kind = ane::h13::H13BooleanKind::Select;
-        else if ([name isEqualToString:@"cast"]) shape.kind = ane::h13::H13BooleanKind::CastBoolToFp16;
+        else if ([name isEqualToString:@"cast"]) {
+            // The direction resolves from the dtypes: bool x to fp16 is
+            // the decoded 2026-09-19 row, fp16 x to bool the decoded
+            // 2026-09-20 candidate row; the gate below refuses every
+            // other pairing.
+            ANEGraphValue *castX = operation.operands[@"x"].value;
+            ANEGraphValue *castResult = operation.results[0];
+            shape.kind =
+                (castX && castX.type.elementType == ANEElementTypeFP16 &&
+                 castResult.type.elementType == ANEElementTypeBool)
+                    ? ane::h13::H13BooleanKind::CastFp16ToBool
+                    : ane::h13::H13BooleanKind::CastBoolToFp16;
+        }
         else if ([name isEqualToString:@"logical_not"]) shape.kind = ane::h13::H13BooleanKind::LogicalNot;
         else shape.kind = ane::h13::H13BooleanKind::FloorDiv;
         // Declared before the first envelope goto: ARC forbids jumping
@@ -2849,29 +2879,39 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
               operation.results[0].type.elementType == ANEElementTypeBool))
             goto boolean_reject;
         if (shape.kind == ane::h13::H13BooleanKind::CastBoolToFp16 ||
+            shape.kind == ane::h13::H13BooleanKind::CastFp16ToBool ||
             shape.kind == ane::h13::H13BooleanKind::LogicalNot) {
-            // The 2026-09-19 mask-oracle round decoded exactly two cast
-            // directions: bool x to fp16, and logical_not over bool.
-            // Apple's own tool refuses every other encoder cast — fp32 to
-            // fp16, int32 to fp16, fp16 to int32, bool to int32, int32 to
-            // bool, fp16 to fp32 — at every encoder spelling, plus int32
-            // less, logical_and and reduce_min, so those directions have
+            // The decoded cast directions: bool x to fp16 (2026-09-19
+            // mask-oracle round), logical_not over bool, and fp16 x to
+            // bool (2026-09-20 candidate capture). Apple's own tool
+            // refuses every other encoder cast — fp32 to fp16, int32 to
+            // fp16, fp16 to int32, bool to int32, int32 to bool, fp16 to
+            // fp32 — at every encoder spelling, plus int32 less,
+            // logical_and and int32 reduce_min, so those directions have
             // no device form and stay GPU/frontend-owned.
             ANEGraphValue *x = operation.operands[@"x"].value;
             BOOL xIsBool = x &&
                 x.type.kind == ANEValueTypeKindTensor &&
                 x.type.elementType == ANEElementTypeBool;
+            BOOL xIsFp16 = x &&
+                x.type.kind == ANEValueTypeKindTensor &&
+                x.type.elementType == ANEElementTypeFP16;
             BOOL resultIsFp16 =
                 operation.results[0].type.kind == ANEValueTypeKindTensor &&
                 operation.results[0].type.elementType == ANEElementTypeFP16;
             BOOL resultIsBool =
                 operation.results[0].type.kind == ANEValueTypeKindTensor &&
                 operation.results[0].type.elementType == ANEElementTypeBool;
-            BOOL dtypeOK = shape.kind == ane::h13::H13BooleanKind::CastBoolToFp16
-                ? (xIsBool && resultIsFp16) : (xIsBool && resultIsBool);
+            BOOL dtypeOK;
+            if (shape.kind == ane::h13::H13BooleanKind::CastBoolToFp16)
+                dtypeOK = xIsBool && resultIsFp16;
+            else if (shape.kind == ane::h13::H13BooleanKind::CastFp16ToBool)
+                dtypeOK = xIsFp16 && resultIsBool;
+            else
+                dtypeOK = xIsBool && resultIsBool;
             if (!dtypeOK)
                 return reject(diagnostics,
-                    @"H13 lowers only the decoded cast directions — bool x to fp16, and bool logical_not; Apple's own tool refuses every other encoder cast (fp32/fp16, int32/fp16, fp16/int32, bool/int32, int32/bool), int32 less, logical_and and int32 reduce_min (fp16 reduce_min decodes; see the 2026-09-20 capture), so those have no device form",
+                    @"H13 lowers only the decoded cast directions — bool x to fp16, fp16 x to bool (2026-09-20 capture), and bool logical_not; Apple's own tool refuses every other encoder cast (fp32/fp16, int32/fp16, fp16/int32, bool/int32, int32/bool, fp16/fp32), int32 less, logical_and and int32 reduce_min, so those have no device form",
                     operation, @"h13.cast-needs-decoded-encoder");
             if (constantValue(x))
                 return reject(diagnostics,
@@ -3962,6 +4002,30 @@ static NSString *BoundaryCastDirection(ANEGraphValue *value) {
                 // A decoded 1-task transpose program materializes the
                 // permuted surface as one whole-op stream.
                 ane::h13::ElementwiseShape transposeIn{}, transposeOut{};
+                // The 2026-09-20 candidate capture decodes the encoder's
+                // bool tail-swap mask transpose: bool, rank-3 [1, N, N],
+                // perm [0, 2, 1]. Keep it for lowering like the fp16
+                // parity row.
+                BOOL boolTailSwap = boolTensor(x) &&
+                    x.type.shape.count == 3 &&
+                    [x.type.shape[0] isEqualToNumber:@1] &&
+                    [x.type.shape[1] isEqualToNumber:x.type.shape[2]] &&
+                    plan.tailSwap;
+                if (boolTailSwap &&
+                    [int32TensorElements(
+                        candidate.operands[@"perm"].value)
+                        isEqualToArray:@[@0, @2, @1]]) {
+                    ANEGraphValue *result = [[ANEGraphValue alloc]
+                        initWithName:candidate.results[0].name
+                        type:candidate.results[0].type];
+                    [operations addObject:[[ANEGraphOperation alloc]
+                        initWithOperationName:name results:@[result]
+                        arguments:arguments attributes:candidate.attributes
+                        range:candidate.range]];
+                    [manifestValues addObject:result];
+                    [loweredValues setObject:result forKey:candidate.results[0]];
+                    continue;
+                }
                 if (transposeParityShapes(candidate, x, candidate.results[0],
                                           &transposeIn, &transposeOut)) {
                     ANEGraphValue *result = [[ANEGraphValue alloc]
@@ -4720,7 +4784,11 @@ static NSString *BoundaryCastDirection(ANEGraphValue *value) {
                 [booleanOp isEqualToString:@"select"] ||
                 [booleanOp isEqualToString:@"floor_div"] ||
                 [booleanOp isEqualToString:@"cast"] ||
-                [booleanOp isEqualToString:@"logical_not"];
+                [booleanOp isEqualToString:@"logical_not"] ||
+                ([booleanOp isEqualToString:@"transpose"] &&
+                 operation.operands[@"x"].value &&
+                 operation.operands[@"x"].value.type.elementType ==
+                     ANEElementTypeBool);
             BOOL matvecParity = !batched && matmul &&
                 matmulParityShape(operation.operands[@"x"].value, operation.results[0],
                     boolean(operation.arguments[@"transpose_x"], YES),

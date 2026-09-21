@@ -98,6 +98,10 @@ def main():
         elif stem.startswith("candidate_select"):
             kind, const_input = "Select", False
             broadcast_cond = True
+        elif stem.startswith("candidate_transpose_bool"):
+            kind, const_input = "TransposeBool", False
+        elif stem.startswith("candidate_cast_f16_to_b"):
+            kind, const_input = "CastFp16ToBool", False
         elif stem.startswith("select_ninf"):
             kind, const_input = "Select", True
         elif stem.startswith("select"):
@@ -165,6 +169,8 @@ def main():
                 "Select": "H13BooleanKind::Select",
                 "FloorDiv": "H13BooleanKind::FloorDiv",
                 "CastBoolToFp16": "H13BooleanKind::CastBoolToFp16",
+                "CastFp16ToBool": "H13BooleanKind::CastFp16ToBool",
+                "TransposeBool": "H13BooleanKind::TransposeBool",
                 "LogicalNot": "H13BooleanKind::LogicalNot"}[entry["kind"]]
         table.append(
             "    {%s, %s, %s, %d, %d, %d, %s, std::size(%s), %s, std::size(%s), %s, std::size(%s)},"

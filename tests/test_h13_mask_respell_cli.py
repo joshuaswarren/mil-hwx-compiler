@@ -273,15 +273,12 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-mask-respell-") as d:
     compile_source(root, "mask-shared-chain", shared,
                    expected_code="h13.unsupported-chain")
 
-    # 7. The next unsupported op after the prelude (probe line 162): the
-    # attention-mask composition tail-swaps the bool mask
-    # (transpose perm [0,2,1] over [1,375,375]) and feeds logical_and.
-    # The complete permutation swaps two non-unit axes, so it is not a
-    # storage identity; the decoded transpose parity rows are fp16-only;
-    # and logical_and has no decoded form at all — every route stays
-    # refused fail-closed until an Apple capture exists. The planner's
-    # storage-identity exemption itself is proven positive: moving only
-    # unit axes aliases for free.
+    # 7. The next unsupported op after the prelude (probe line 162-163):
+    # the attention-mask composition. The bool tail-swap transpose now
+    # LOWERS through its decoded 1-task row (byte-match below); the
+    # logical_and itself has no decoded form and every exact respell is
+    # geometry-gated (the mul and the cast directions have no decoded
+    # rows at [1, 375, 375]), so the composition refuses fail-closed.
     mask_compose = """program(1.3)
 [buildInfo = dict<string, string>({})]
 {
@@ -293,8 +290,55 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-mask-respell-") as d:
 }
 """
     compile_source(root, "mask-compose-logical-and", mask_compose,
-                   expected_code="h13.nonfoldable-transpose",
-                   expected_message="moves the storage-fastest axis")
+                   expected_code="h13.unsupported-program",
+                   expected_message="no source-qualified encoder for 'logical_and'")
+
+    # The decoded bool tail-swap transpose: byte-match against its
+    # capture, through the same spelling the probe refuses at.
+    transpose_capture = json.loads(
+        (captures / "candidate_transpose_bool_1x375x375_021.json").read_text())
+    transpose_only = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<bool, [1, 375, 375]> attention_mask_3) {
+    tensor<int32, [3]> var_289_perm_0 = const()[name = string("var_289_perm_0"), val = tensor<int32, [3]>([0, 2, 1])];
+    tensor<bool, [1, 375, 375]> out = transpose(perm = var_289_perm_0, x = attention_mask_3)[name = string("out")];
+  } -> (out);
+}
+"""
+    transpose_package = compile_source(root, "bool-tail-swap", transpose_only)
+    validate(root, transpose_package)
+    transpose_manifest = json.loads(
+        (transpose_package / "manifest.json").read_text())
+    assert transpose_manifest["programs"][0]["taskDescriptors"] == \
+        len(transpose_capture["task_descriptors"])
+    assert anec_task_stream(transpose_package) == \
+        capture_stream(transpose_capture, {5: 4, 4: 5, 6: 6, 7: 7})
+
+    # The decoded fp16->bool cast: byte-match against its capture.
+    cast_payload = struct.pack("<e", 1.0)
+    (root / "cast_weights.bin").write_bytes(
+        b"\0" * 64 + struct.pack("<IxxxxQQ", 0xDEADBEEF, 2, 64 + 24) +
+        cast_payload)
+    cast_only = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 1, 375]> x) {
+    tensor<string, []> dt = const()[name = string("dt"), val = tensor<string, []>("bool")];
+    tensor<bool, [1, 1, 375]> out = cast(dtype = dt, x = x)[name = string("out")];
+  } -> (out);
+}
+"""
+    cast_package = compile_source(root, "f16-to-bool-cast", cast_only)
+    validate(root, cast_package)
+    cast_capture = json.loads(
+        (captures / "candidate_cast_f16_to_b_1x1x375.json").read_text())
+    assert anec_task_stream(cast_package) == \
+        capture_stream(cast_capture, {5: 4, 4: 5, 6: 6, 7: 7})
+
+    # The planner proofs: a unit-axis-only move aliases through the real
+    # shared planner (storage identity, zero programs); a non-singleton
+    # swap on an undecoded shape refuses.
     unit_move = """program(1.3)
 [buildInfo = dict<string, string>({})]
 {
@@ -313,25 +357,16 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-mask-respell-") as d:
             for program in unit_manifest["programs"]] == ["mul"], \
         "a unit-axis-only move must alias, emitting no transpose program"
     assert unit_manifest["tensors"]["y"].get("aliasOf") == "t"
-
-    # 8. The real runner path: the software dry-run validates the package
-    # plan through h13_run_linux (including the declared-broadcast input),
-    # and the broadcast fill itself is exercised directly.
-    lengths_input = root / "lengths.fp16"
-    lengths_input.write_bytes(struct.pack("<e", 100.0))
-    runner = str(ROOT / "tools" / "h13_run_linux.py")
-    dry = subprocess.run(
-        [sys.executable, runner, str(package), "--mil", str(root / "mask-respell.mil"),
-         "--model-root", str(root), "--input",
-         f"lengths_13_cast_fp16={lengths_input}", "--output",
-         f"output_mask={root / 'expected_mask.fp16'}", "--dry-run"],
-        capture_output=True, text=True, timeout=120)
-    assert dry.returncode == 0, dry.stdout + dry.stderr
-    from h13_run_linux import _broadcast_fill
-    buffer = bytearray(375 * 64)
-    buffer[0:2] = struct.pack("<e", 100.0)
-    _broadcast_fill(buffer, {"logicalBytes": 2, "nchw": [1, 375, 1, 1, 64, 64]})
-    for lane in range(375):
-        assert struct.unpack_from("<e", buffer, lane * 64)[0] == 100.0, lane
+    negative_move = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 4, 6]> x) {
+    tensor<int32, [3]> perm = const()[name = string("perm"), val = tensor<int32, [3]>([0, 2, 1])];
+    tensor<fp16, [1, 6, 4]> y = transpose(perm = perm, x = x)[name = string("y")];
+  } -> (y);
+}
+"""
+    compile_source(root, "transpose-negative", negative_move,
+                   expected_code="h13.nonfoldable-transpose")
 
 print("h13 mask respell cli: PASS")

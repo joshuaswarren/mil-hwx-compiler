@@ -213,6 +213,8 @@ enum class H13BooleanKind : std::uint8_t {
     Select,
     FloorDiv,
     CastBoolToFp16,
+    CastFp16ToBool,
+    TransposeBool,
     LogicalNot,
 };
 

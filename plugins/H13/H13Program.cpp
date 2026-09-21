@@ -1831,6 +1831,20 @@ Program encodeBooleanOp(H13BooleanShape shape,
         // 375-wide DMA row 384 is the 1-byte cond; row 768 is fp16.
         program.taskSurfaceChannels = {7, 4, 5, 6};
         break;
+    case H13BooleanKind::CastFp16ToBool:
+        // The 2026-09-20 candidate capture: fp16 x to a bool result, one
+        // task, fp16 in (row 768 for W=375) and bool out (row 384).
+        program.inputs = {booleanTensor(5, shape, false)};
+        program.output = booleanTensor(4, shape, true);
+        program.taskSurfaceChannels = {5, 4, 6, 7};
+        break;
+    case H13BooleanKind::TransposeBool:
+        // The 2026-09-20 candidate capture: a bool tail-swap transpose
+        // [1,375,375] perm [0,2,1], one task, bool in and out (row 384).
+        program.inputs = {booleanTensor(5, shape, true)};
+        program.output = booleanTensor(4, shape, true);
+        program.taskSurfaceChannels = {5, 4, 6, 7};
+        break;
     case H13BooleanKind::CastBoolToFp16:
         // The 2026-09-19 mask-oracle captures run one task each: the bool
         // input rides channel 4 (1 byte per lane) and the fp16 result

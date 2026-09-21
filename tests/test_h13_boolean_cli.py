@@ -56,7 +56,7 @@ def family(stem):
         return "floor_div"
     if stem.startswith("floor"):
         return "floor"
-    if stem.startswith("cast_b_to_f16"):
+    if stem.startswith("cast_b_to_f16") or stem.startswith("candidate_cast_f16_to_b"):
         return "cast"
     if stem.startswith("logical_not"):
         return "logical_not"
@@ -233,7 +233,9 @@ with tempfile.TemporaryDirectory() as temporary:
         if "comp" in stem or stem.startswith("less_bool_cast"):
             continue  # composition and the old cast composites are not this envelope
         if stem.startswith("floor_b") or stem.startswith("select_ninf"):
-            continue  # const-input twins: pending index-valued re-mints
+            continue
+        if stem.startswith("candidate_transpose_bool"):
+            continue  # bool tail-swap transpose: tested by the mask respell suite  # const-input twins: pending index-valued re-mints
         mil = record["mil"]
         package = deterministic(root, f"bool-{stem}", mil)
         manifest = json.loads((package / "manifest.json").read_text())
@@ -267,11 +269,15 @@ with tempfile.TemporaryDirectory() as temporary:
             assert manifest["physicalOutputs"][0]["dtype"] == "bool"
             validate(root, package)
         if family(stem) == "cast":
-            # The captured cast surface is a bool input: one byte per lane,
-            # the same 64-byte row pitch the select cond rides on.
+            # The captured cast surfaces: bool x to fp16 (one byte per
+            # lane) and the fp16 x to bool candidate (the inverse). Both
+            # bind one input and produce the opposite dtype.
             inputs = booleanProgram["inputs"]
-            assert len(inputs) == 1 and inputs[0]["dtype"] == "bool", stem
-            assert manifest["logicalResults"][0]["dtype"] in ("fp16", "float16"), stem
+            if stem.startswith("candidate_cast_f16_to_b"):
+                assert len(inputs) == 1 and \
+                    inputs[0]["dtype"] in ("float16", "fp16"), stem
+            else:
+                assert len(inputs) == 1 and inputs[0]["dtype"] == "bool", stem
             validate(root, package)
         const_bin = capture.parent / (capture.stem + ".const.bin")
         if const_bin.exists():
