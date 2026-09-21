@@ -1444,11 +1444,29 @@ static NSData *perChannelConstantData(ANEGraphValue *value, NSUInteger channels,
     ANEGraphArgument *literal = producer.attributes[@"val"];
     if (literal.kind != ANEGraphArgumentKindCall ||
         ![literal.calleeValueType isEqualToValueType:value.type] ||
-        literal.callArguments.count != 1) {
+        !literal.callArguments.count ||
+        (literal.callArguments.count != 1 &&
+         literal.callArguments.count != channels)) {
         reject(diagnostics,
             @"H13 per-channel constants require a matching typed inline list or BLOBFILE payload",
             producer, @"h13.invalid-constant-payload");
         return nil;
+    }
+    if (literal.callArguments.count == channels) {
+        // The bare-element inline spelling: every call argument is one
+        // fp16 lane (the encoder census spells the arange this way).
+        NSMutableData *dense = [NSMutableData dataWithLength:channels * 2];
+        uint16_t *words = static_cast<uint16_t *>(dense.mutableBytes);
+        for (NSUInteger index = 0; index < channels; ++index)
+            if (!fp16Scalar(literal.callArguments[index].value,
+                            &words[index])) {
+                reject(diagnostics,
+                    @"H13 per-channel constants require finite fp16 elements",
+                    producer, @"h13.invalid-constant-payload");
+                return nil;
+            }
+        resolved[value.name] = dense;
+        return dense;
     }
     ANEGraphArgument *payload = literal.callArguments[0].value;
     if (payload.kind == ANEGraphArgumentKindList &&
@@ -2954,6 +2972,32 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     @"H13 floor_div lowers the captured scalar-2.0 divisor only",
                     operation, @"h13.invalid-constant-input");
         }
+        // The encoder's mask compares a constant arange against a runtime
+        // length. The decoded less rows read both operands as runtime
+        // surfaces, so a constant operand materializes as a constant
+        // runtime input — the declared mechanism the select -inf fill
+        // uses. Exactly one constant operand: two has no runtime consumer
+        // and keeps its refusal.
+        NSData *compareFill = nil;
+        ANEGraphValue *compareConstant = nil;
+        if (shape.kind == ane::h13::H13BooleanKind::Less) {
+            ANEGraphValue *xValue = operation.operands[@"x"].value;
+            ANEGraphValue *yValue = operation.operands[@"y"].value;
+            BOOL xConst = constantValue(xValue);
+            BOOL yConst = constantValue(yValue);
+            if (xConst && yConst)
+                return reject(diagnostics,
+                    @"H13 less with two constant operands has no runtime consumer",
+                    operation, @"h13.invalid-constant-input");
+            ANEGraphValue *constant = xConst ? xValue : yValue;
+            if (xConst || yConst) {
+                compareFill = perChannelConstantData(constant,
+                    (NSUInteger)shape.channels * shape.height * shape.width,
+                    modelRoot, diagnostics, resolvedConstants);
+                if (!compareFill) return NO;
+                compareConstant = constant;
+            }
+        }
         program = ane::h13::encodeBooleanOp(shape, scalarLane,
                                             scalarLane ? 2 : 0);
         {
@@ -2968,8 +3012,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             }
             *inputsOut = inputs;
         }
-        *constantInputOut = selectFill ? operation.operands[@"a"].value : nil;
-        *constantDataOut = selectFill;
+        *constantInputOut = selectFill ? operation.operands[@"a"].value
+            : compareConstant;
+        *constantDataOut = selectFill ? selectFill : compareFill;
         *manifestOperationOut = name;
         return YES;
      } else {
@@ -3267,6 +3312,305 @@ static MILProgramSyntax *PeelAffineLayerNormsInProgram(
         attributes:program.attributes functions:functions range:program.range];
 }
 
+/// The int32 values of a `tensor<int32, [N]>` constant, from a BLOBFILE
+/// record (the real encoder's arange) or an inline list. Returns nil on
+/// any mismatch; a blob read failure is fatal (the reader emits its own
+/// diagnostic).
+static NSArray<NSNumber *> *Int32ConstantValues(
+    MILArgumentSyntax *value, NSURL *modelRoot) {
+    MILExpressionSyntax *expression = value.value;
+    if (expression.kind != MILExpressionKindCall ||
+        expression.arguments.count != 1)
+        return nil;
+    MILExpressionSyntax *payload = expression.arguments[0].value;
+    if (payload.kind == MILExpressionKindList) {
+        NSMutableArray<NSNumber *> *values = [NSMutableArray array];
+        for (MILExpressionSyntax *element in payload.elements) {
+            if (element.kind != MILExpressionKindInteger) return nil;
+            [values addObject:@(strtoll(element.atom.UTF8String,
+                nullptr, 0))];
+        }
+        return values;
+    }
+    if (payload.kind != MILExpressionKindCall ||
+        ![payload.calleeName isEqualToString:@"BLOBFILE"])
+        return nil;
+    NSString *path = nil;
+    unsigned long long offset = 0;
+    for (MILArgumentSyntax *argument in payload.arguments) {
+        MILExpressionSyntax *argumentValue = argument.value;
+        if ([argument.name isEqualToString:@"path"]) {
+            // Both `string("...")` and a bare string literal spell the
+            // path.
+            if (argumentValue.kind == MILExpressionKindCall &&
+                [argumentValue.calleeName isEqualToString:@"string"] &&
+                argumentValue.arguments.count == 1)
+                argumentValue = argumentValue.arguments[0].value;
+            if (argumentValue.kind == MILExpressionKindString)
+                path = argumentValue.atom;
+        }
+        if ([argument.name isEqualToString:@"offset"] &&
+            argumentValue.kind == MILExpressionKindCall &&
+            [argumentValue.calleeName isEqualToString:@"uint64"] &&
+            argumentValue.arguments.count == 1)
+            offset = strtoull(
+                argumentValue.arguments[0].value.atom.UTF8String, nullptr, 0);
+    }
+    if (![path hasPrefix:@"@model_path/"]) return nil;
+    NSString *relative = [path substringFromIndex:@"@model_path/".length];
+    NSString *rootPath = modelRoot.URLByStandardizingPath.path;
+    NSString *candidate = [[rootPath stringByAppendingPathComponent:relative]
+        stringByStandardizingPath];
+    NSData *file = [NSData dataWithContentsOfFile:candidate];
+    if (!file || offset > file.length - 24) return nil;
+    const uint8_t *bytes = static_cast<const uint8_t *>(file.bytes);
+    uint32_t magic = 0;
+    uint64_t payloadLength = 0;
+    uint64_t payloadOffset = 0;
+    memcpy(&magic, bytes + offset, sizeof(magic));
+    memcpy(&payloadLength, bytes + offset + 8, sizeof(payloadLength));
+    memcpy(&payloadOffset, bytes + offset + 16, sizeof(payloadOffset));
+    NSUInteger count = (NSUInteger)(payloadLength / 4);
+    if (magic != 0xDEADBEEFu || !count || payloadLength % 4 ||
+        payloadOffset > file.length - payloadLength)
+        return nil;
+    NSMutableArray<NSNumber *> *values = [NSMutableArray arrayWithCapacity:count];
+    for (NSUInteger index = 0; index < count; ++index) {
+        int32_t element = 0;
+        memcpy(&element, bytes + payloadOffset + index * 4, sizeof(element));
+        [values addObject:@(element)];
+    }
+    return values;
+}
+
+/// The encoder's length mask compares an int32 arange constant against an
+/// int32 cast of a floored fp16 length scalar. The int32 domain has no
+/// decoded H13 form, but every value in the compare is exact in fp16: the
+/// arange values are integers within fp16's exact integer range, and the
+/// floor proves the runtime side integral. When the statement matches
+/// that shape exactly — int32 const x, expand_dims(cast(int32, floor
+/// output)) y, bool result — and the int32 chain has no other consumers,
+/// it respells to the decoded fp16 less row: an inline fp16 copy of the
+/// arange values against the fp16 length directly. Anything else keeps
+/// the int32 refusals.
+static NSArray<MILOperationSyntax *> *RespellLengthMaskCompare(
+    MILOperationSyntax *operation,
+    NSDictionary<NSString *, MILOperationSyntax *> *constants,
+    NSDictionary<NSString *, MILOperationSyntax *> *producers,
+    NSArray<MILOperationSyntax *> *operations,
+    NSArray<NSString *> *returnNames, NSURL *modelRoot,
+    NSUInteger *respellCount) {
+    if (operation.results.count != 1 ||
+        ![operation.operationName isEqualToString:@"less"] ||
+        ![operation.results[0].type.name isEqualToString:@"tensor"] ||
+        operation.results[0].type.typeArguments.count != 1 ||
+        ![operation.results[0].type.typeArguments[0].name
+            isEqualToString:@"bool"])
+        return nil;
+    MILArgumentSyntax *xArgument = nil;
+    MILArgumentSyntax *yArgument = nil;
+    for (MILArgumentSyntax *argument in operation.arguments) {
+        if ([argument.name isEqualToString:@"x"]) xArgument = argument;
+        if ([argument.name isEqualToString:@"y"]) yArgument = argument;
+    }
+    if (!xArgument.value || !yArgument.value ||
+        xArgument.value.kind != MILExpressionKindIdentifier ||
+        yArgument.value.kind != MILExpressionKindIdentifier) return nil;
+    MILOperationSyntax *arange = constants[xArgument.value.atom];
+    MILOperationSyntax *expanded = producers[yArgument.value.atom];
+    if (!arange || !expanded ||
+        arange.results.count != 1 || expanded.results.count != 1 ||
+        ![arange.results[0].type.name isEqualToString:@"tensor"] ||
+        arange.results[0].type.typeArguments.count != 1 ||
+        ![arange.results[0].type.typeArguments[0].name
+            isEqualToString:@"int32"] ||
+        ![expanded.operationName isEqualToString:@"expand_dims"]) {
+        return nil;
+    }
+    MILArgumentSyntax *expandedInput = nil;
+    for (MILArgumentSyntax *argument in expanded.arguments)
+        if ([argument.name isEqualToString:@"x"]) expandedInput = argument;
+    if (!expandedInput.value ||
+        expandedInput.value.kind != MILExpressionKindIdentifier) return nil;
+    MILOperationSyntax *cast = producers[expandedInput.value.atom];
+    if (!cast || cast.results.count != 1 ||
+        ![cast.operationName isEqualToString:@"cast"]) return nil;
+    MILArgumentSyntax *dtypeArgument = nil;
+    MILArgumentSyntax *castInput = nil;
+    for (MILArgumentSyntax *argument in cast.arguments) {
+        if ([argument.name isEqualToString:@"dtype"]) dtypeArgument = argument;
+        if ([argument.name isEqualToString:@"x"]) castInput = argument;
+    }
+    if (!dtypeArgument.value ||
+        dtypeArgument.value.kind != MILExpressionKindIdentifier ||
+        !castInput.value ||
+        castInput.value.kind != MILExpressionKindIdentifier) {
+        return nil;
+    }
+    MILOperationSyntax *dtype = constants[dtypeArgument.value.atom];
+    if (!dtype || dtype.results.count != 1) {
+        return nil;
+    }
+    MILArgumentSyntax *dtypeValue = nil;
+    for (MILArgumentSyntax *attribute in dtype.attributes)
+        if ([attribute.name isEqualToString:@"val"]) dtypeValue = attribute;
+    if (!dtypeValue.value || dtypeValue.value.kind != MILExpressionKindCall ||
+        dtypeValue.value.arguments.count != 1 ||
+        dtypeValue.value.arguments[0].value.kind != MILExpressionKindString ||
+        ![dtypeValue.value.arguments[0].value.atom
+            isEqualToString:@"int32"]) {
+        return nil;
+    }
+    MILOperationSyntax *source = producers[castInput.value.atom];
+    if (!source || source.results.count != 1 ||
+        ![source.operationName isEqualToString:@"floor"] ||
+        ![source.results[0].type.name isEqualToString:@"tensor"] ||
+        source.results[0].type.typeArguments.count != 1 ||
+        ![source.results[0].type.typeArguments[0].name
+            isEqualToString:@"fp16"]) {
+        return nil;
+    }
+    // The int32 chain must have no other consumers: the compare is the
+    // only reader of both links, and neither is returned.
+    if ([returnNames containsObject:expanded.results[0].name] ||
+        [returnNames containsObject:cast.results[0].name]) return nil;
+    for (MILOperationSyntax *candidate in operations) {
+        if (candidate == operation || candidate == expanded ||
+            candidate == cast) continue;
+        for (MILArgumentSyntax *argument in candidate.arguments)
+            if (argument.value.kind == MILExpressionKindIdentifier &&
+                  ([argument.value.atom isEqualToString:
+                        expanded.results[0].name] ||
+                   [argument.value.atom isEqualToString:
+                        cast.results[0].name])) return nil;
+    }
+    MILArgumentSyntax *arangeValue = nil;
+    for (MILArgumentSyntax *attribute in arange.attributes)
+        if ([attribute.name isEqualToString:@"val"]) arangeValue = attribute;
+    if (!arangeValue) return nil;
+    NSArray<NSNumber *> *values = Int32ConstantValues(arangeValue,
+        modelRoot);
+    if (!values.count || values.count > 2048) {
+        return nil;
+    }
+    NSMutableArray<MILExpressionSyntax *> *elements = [NSMutableArray array];
+    for (NSNumber *value in values) {
+        int32_t element = value.intValue;
+        // fp16 carries integers exactly up to 2048; anything else keeps
+        // the int32 refusals.
+        if (element != (int32_t)(int16_t)element || element > 2048 ||
+            element < -2048) return nil;
+        [elements addObject:[[MILExpressionSyntax alloc]
+            initWithKind:MILExpressionKindCall atom:nil calleeType:nil
+            calleeName:@"fp16"
+            arguments:@[[[MILArgumentSyntax alloc] initWithName:nil
+                value:[[MILExpressionSyntax alloc]
+                    initWithKind:MILExpressionKindInteger
+                    atom:[NSString stringWithFormat:@"%d", element]
+                    calleeType:nil calleeName:nil arguments:@[] elements:@[]
+                    range:operation.range]]]
+            elements:@[] range:operation.range]];
+    }
+    ANESourceRange range = operation.range;
+    NSString *arangeName = [NSString stringWithFormat:@"%@.f16respell",
+        arange.results[0].name];
+    MILTypeSyntax *elementType = [[MILTypeSyntax alloc] initWithName:@"fp16"
+        typeArguments:@[] dimensions:@[]];
+    MILTypeSyntax *tensorType = [[MILTypeSyntax alloc] initWithName:@"tensor"
+        typeArguments:@[elementType]
+        dimensions:@[@((NSInteger)values.count)]];
+    MILExpressionSyntax *list = [[MILExpressionSyntax alloc]
+        initWithKind:MILExpressionKindList atom:nil calleeType:nil
+        calleeName:nil arguments:@[] elements:elements range:range];
+    MILOperationSyntax *arangeRespell = [[MILOperationSyntax alloc]
+        initWithResults:@[[[MILResultSyntax alloc] initWithType:tensorType
+            name:arangeName]]
+        operationName:@"const"
+        arguments:@[]
+        attributes:@[PeelNamedValue(@"name",
+            [[MILExpressionSyntax alloc] initWithKind:MILExpressionKindString
+                atom:arangeName calleeType:nil calleeName:nil arguments:@[]
+                elements:@[] range:range]),
+            PeelNamedValue(@"val", PeelTensorCall(
+                @[@((NSInteger)values.count)], list))]
+        range:range];
+    MILOperationSyntax *compare = [[MILOperationSyntax alloc]
+        initWithResults:operation.results
+        operationName:@"less"
+        arguments:@[PeelNamedValue(@"x", PeelIdentifier(arangeName, range)),
+                    PeelNamedValue(@"y", PeelIdentifier(
+                        source.results[0].name, range))]
+        attributes:operation.attributes range:range];
+    *respellCount += 1;
+    return @[arangeRespell, compare];
+}
+
+static MILProgramSyntax *RespellLengthMaskComparesInProgram(
+    MILProgramSyntax *program, NSURL *modelRoot) {
+    if (!program) return nil;
+    NSMutableArray<MILFunctionSyntax *> *functions = nil;
+    for (NSUInteger index = 0; index < program.functions.count; ++index) {
+        MILFunctionSyntax *function = program.functions[index];
+        NSDictionary<NSString *, MILOperationSyntax *> *constants =
+            PeelConstants(function.operations);
+        NSMutableDictionary<NSString *, MILOperationSyntax *> *producers =
+            [NSMutableDictionary dictionary];
+        NSMutableArray<NSString *> *returnNames = [NSMutableArray array];
+        for (NSString *name in function.returnNames)
+            [returnNames addObject:name];
+        for (MILOperationSyntax *operation in function.operations)
+            if (operation.results.count == 1)
+                producers[operation.results[0].name] = operation;
+        NSMutableArray<MILOperationSyntax *> *expanded = nil;
+        NSUInteger respellCount = 0;
+        NSMutableSet<NSString *> *retired = [NSMutableSet set];
+        for (NSUInteger position = 0; position < function.operations.count;
+             ++position) {
+            MILOperationSyntax *operation = function.operations[position];
+            NSArray<MILOperationSyntax *> *group = RespellLengthMaskCompare(
+                operation, constants, producers, function.operations,
+                returnNames, modelRoot, &respellCount);
+            if (!group) {
+                if (expanded) [expanded addObject:operation];
+                continue;
+            }
+            if (!expanded)
+                expanded = [function.operations
+                    subarrayWithRange:NSMakeRange(0, position)].mutableCopy;
+            [expanded addObjectsFromArray:group];
+            NSString *expandedName = operation.arguments[1].value.atom;
+            MILArgumentSyntax *expandedInput = nil;
+            for (MILArgumentSyntax *argument in
+                    producers[expandedName].arguments)
+                if ([argument.name isEqualToString:@"x"])
+                    expandedInput = argument;
+            if (expandedInput &&
+                expandedInput.value.kind == MILExpressionKindIdentifier)
+                [retired addObject:expandedInput.value.atom];
+            [retired addObject:expandedName];
+        }
+        if (!expanded) continue;
+        // Drop the retired int32 chain links; any survivor with a
+        // remaining consumer would trip the consume gate, so only links
+        // the rewrite orphans are removed.
+        NSMutableArray<MILOperationSyntax *> *kept = [NSMutableArray array];
+        for (MILOperationSyntax *operation in expanded)
+            if (!(operation.results.count == 1 &&
+                  [retired containsObject:operation.results[0].name]))
+                [kept addObject:operation];
+        if (!functions)
+            functions = [program.functions
+                subarrayWithRange:NSMakeRange(0, index)].mutableCopy;
+        [functions addObject:[[MILFunctionSyntax alloc]
+            initWithName:function.name opset:function.opset
+            parameters:function.parameters operations:kept
+            returnNames:function.returnNames range:function.range]];
+    }
+    if (!functions) return program;
+    return [[MILProgramSyntax alloc] initWithVersion:program.version
+        attributes:program.attributes functions:functions range:program.range];
+}
+
 /// The exact host boundary conversion a `cast` result carries, or nil:
 /// fp16 tensor widened to fp32, or bool tensor widened to int32. Both are
 /// lossless value conversions, so the returned logical output binds to the
@@ -3316,6 +3660,7 @@ static NSString *BoundaryCastDirection(ANEGraphValue *value) {
         diagnostics:diagnostics];
     MILProgramSyntax *syntax = parser.parseProgram;
     syntax = PeelAffineLayerNormsInProgram(syntax);
+    syntax = RespellLengthMaskComparesInProgram(syntax, modelRoot);
     ANEGraphModule *module = syntax
         ? [MILGraphImporter importProgram:syntax diagnostics:diagnostics] : nil;
     if (!module || diagnostics.errorCount ||
@@ -4636,11 +4981,31 @@ static NSString *BoundaryCastDirection(ANEGraphValue *value) {
                         wholeOperand ? fullElements : inputSliceElements;
                     NSUInteger physicalElements =
                         wholeOperand ? fullElements : inputPhysicalElements;
+                    // The decoded less rows read both surfaces full-width,
+                    // so a smaller operand (the length scalar against the
+                    // arange) is a declared host broadcast: the binding
+                    // carries the source extent and the host repeats the
+                    // value across the surface before dispatch. Declared,
+                    // not silent — the storage checks see the source
+                    // extent, and an undeclared gap still refuses.
+                    const ane::h13::TensorLayout &surface =
+                        program.inputs.at(index);
+                    const NSUInteger surfaceElements =
+                        (NSUInteger)surface.nchw[1] * surface.nchw[2] *
+                        surface.nchw[3];
+                    const BOOL declaredBroadcast = input != constantInput &&
+                        [manifestOperation isEqualToString:@"less"] &&
+                        fullElements > 0 && fullElements < surfaceElements;
+                    if (declaredBroadcast) {
+                        sliceElements = fullElements;
+                        physicalElements = fullElements;
+                    }
                     NSArray<NSNumber *> *logicalShape =
                         inputOffset == 0 && sliceElements == fullElements
                             ? fullShape : @[@(sliceElements)];
                     NSMutableDictionary *record =
                         [binding(input, logicalShape, program.inputs.at(index)) mutableCopy];
+                    if (declaredBroadcast) record[@"broadcast"] = @YES;
                     BOOL aliasShape =
                         ![fullShape isEqualToArray:tensors[input.name][@"shape"]];
                     NSUInteger baseOffset =

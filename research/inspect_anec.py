@@ -309,8 +309,15 @@ def check_binding(binding, index, tiles, layouts, tensors):
     require(binding.get('role') in (None, 'intermediate'),
             'unsupported binding role')
     _, _, count, physical = binding_interval(binding, tensors)
-    require(count == logical_elements and physical == physical_elements,
-            'slice physical elements differ from its binding layout')
+    if binding.get('broadcast'):
+        # A declared host broadcast: the binding carries a smaller source
+        # operand and the host repeats it across the surface before
+        # dispatch, so the slice spans the source, not the read extent.
+        require(count == logical_elements and physical == count,
+                'declared broadcast slice must match its source shape')
+    else:
+        require(count == logical_elements and physical == physical_elements,
+                'slice physical elements differ from its binding layout')
     return physical_elements
 
 
@@ -430,18 +437,27 @@ def validate_program(directory, program, tensors):
             tensor['role'] == 'output' and tensor['shape'] == outputs[0]['shape']
             for tensor in tensors.values())
         shapes = [item['shape'] for item in inputs]
-        require(len({len(shape) for shape in shapes}) == 1,
-                'elementwise operands must share a rank')
-        # Identical shapes are the degenerate broadcast; any other operand
-        # axis must be 1 or the result's extent.
-        broadcast = [max(extents) for extents in zip(*shapes)]
-        require(all(extent in (1, result) for shape in shapes
-                    for extent, result in zip(shape, broadcast)),
-                'elementwise operands must broadcast against each other')
-        require(outputs[0]['shape'] == broadcast or
-                (output_is_returned_alias and
-                 math.prod(outputs[0]['shape']) == math.prod(broadcast)),
-                'elementwise operation shapes must match')
+        declared = any(item.get('broadcast') for item in inputs)
+        if declared:
+            # A declared host broadcast: the smaller operand's binding
+            # carries its source shape and the host repeats it across the
+            # row's surface before dispatch.
+            require(all(math.prod(shape) == 1 for item, shape in
+                        zip(inputs, shapes) if item.get('broadcast')),
+                    'a declared broadcast source must be one element')
+        else:
+            require(len({len(shape) for shape in shapes}) == 1,
+                    'elementwise operands must share a rank')
+            # Identical shapes are the degenerate broadcast; any other operand
+            # axis must be 1 or the result's extent.
+            broadcast = [max(extents) for extents in zip(*shapes)]
+            require(all(extent in (1, result) for shape in shapes
+                        for extent, result in zip(shape, broadcast)),
+                    'elementwise operands must broadcast against each other')
+            require(outputs[0]['shape'] == broadcast or
+                    (output_is_returned_alias and
+                     math.prod(outputs[0]['shape']) == math.prod(broadcast)),
+                    'elementwise operation shapes must match')
     require(outputs[0]['name'] not in {item['name'] for item in inputs},
             'program output must differ from its inputs')
     marked_constants = {item['name'] for item in inputs

@@ -260,9 +260,22 @@ def _tensor(value, expected_type=None):
     if isinstance(value, Tensor):
         result = value
     elif isinstance(value, (bytes, bytearray, memoryview)):
-        if expected_type is None or expected_type.dtype != "fp16":
-            raise ValueError("raw input requires an fp16 tensor type")
-        result = Tensor("fp16", expected_type.shape, decode_fp16(bytes(value)))
+        if expected_type is None:
+            raise ValueError("raw input requires an expected tensor type")
+        if expected_type.dtype == "fp16":
+            result = Tensor("fp16", expected_type.shape,
+                            decode_fp16(bytes(value)))
+        elif expected_type.dtype == "int32":
+            count = math.prod(expected_type.shape)
+            if len(value) != count * 4:
+                raise ValueError("int32 input byte count differs from its "
+                                 "MIL type")
+            result = Tensor("int32", expected_type.shape,
+                            struct.unpack_from(f"<{count}i",
+                                               bytes(value)))
+        else:
+            raise ValueError("raw input requires an fp16 or int32 tensor "
+                             "type")
     elif isinstance(value, (list, tuple)):
         if expected_type is None:
             raise ValueError("input sequences require a tensor type")
@@ -743,10 +756,38 @@ def _execute(operation, environment, model_root):
         result = tuple(1 if a < b else 0 for a, b in zip(
             _broadcast_values(left, shape), _broadcast_values(right, shape)))
         return Tensor("bool", shape, result)
+    if name == "floor":
+        # IEEE floor with the value classes carried: -0 keeps its sign,
+        # +/-inf and NaN pass through. The encoder spells it over fp16.
+        source = _tensor(arguments["x"])
+        values = []
+        for value in source.values:
+            if math.isnan(value) or math.isinf(value) or value == 0.0:
+                values.append(value)
+            else:
+                values.append(fp16(float(math.floor(value))))
+        return Tensor(source.dtype, source.shape, tuple(values))
+    if name == "floor_div":
+        # Exact for the compiled envelope: the only constant divisors
+        # that lower are fp16 1.0 (an IEEE identity for every class) and
+        # the captured scalar 2.0. Dividing then flooring preserves the
+        # classes either way.
+        quotient = _binary("real_div", _tensor(arguments["x"]),
+                           _tensor(arguments["y"]), operation.result_type)
+        values = []
+        for value in quotient.values:
+            if math.isnan(value) or math.isinf(value) or value == 0.0:
+                values.append(value)
+            else:
+                values.append(fp16(float(math.floor(value))))
+        return Tensor(quotient.dtype, quotient.shape, tuple(values))
     if name == "cast":
         # The two exact host boundary conversions the H13 gate accepts:
         # fp16 -> fp32 widens without rounding, bool 0/1 -> int32 widens
-        # exactly. Any other direction stays unsupported.
+        # exactly. The length mask chain adds the two int32 directions
+        # the respell serves: fp16 -> int32 truncates (exact for the
+        # floored, integral values the mask chain feeds it) and
+        # int32 -> fp16 rounds to nearest like any fp16 conversion.
         dtype_value = arguments["dtype"]
         dtype = (dtype_value.values[0]
                  if isinstance(dtype_value, Tensor)
@@ -758,8 +799,19 @@ def _execute(operation, environment, model_root):
         if dtype == "int32" and source.dtype == "bool":
             return Tensor("int32", source.shape,
                           tuple(1 if v else 0 for v in source.values))
+        if dtype == "int32" and source.dtype == "fp16":
+            # Non-finite values cast to 0 (the de-facto hardware
+            # behavior); the mask chain feeds only floored, integral
+            # values, where the cast is exact.
+            return Tensor("int32", source.shape,
+                          tuple(int(v) if math.isfinite(v) else 0
+                                for v in source.values))
+        if dtype == "fp16" and source.dtype == "int32":
+            return Tensor("fp16", source.shape,
+                          tuple(fp16(v) for v in source.values))
         raise ValueError("cast supports only the exact fp16->fp32 and "
-                         "bool->int32 boundary directions")
+                         "bool->int32 boundary directions plus the "
+                         "length-chain int32 directions")
     if name == "layer_norm":
         if "gamma" in arguments or "beta" in arguments:
             raise ValueError("H13 layer_norm carries no gamma or beta")
@@ -794,14 +846,16 @@ def evaluate(mil_text, model_root, inputs):
     for name in returns:
         value = environment.get(name)
         if not isinstance(value, Tensor) or \
-                value.dtype not in ("fp16", "fp32", "int32"):
+                value.dtype not in ("fp16", "fp32", "int32", "bool"):
             raise ValueError("H13 reference outputs must be fp16, fp32, "
-                             "or int32 tensors")
+                             "int32, or bool tensors")
         if value.dtype == "fp16":
             outputs[name] = encode_fp16(value.values)
         elif value.dtype == "fp32":
             outputs[name] = struct.pack(
                 f"<{len(value.values)}f", *value.values)
+        elif value.dtype == "bool":
+            outputs[name] = bytes(1 if v else 0 for v in value.values)
         else:
             outputs[name] = struct.pack(
                 f"<{len(value.values)}i", *value.values)

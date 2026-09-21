@@ -295,7 +295,29 @@ def build_plan(manifest, reference_outputs):
 
 def _runtime_buffer(dense, binding, tensors):
     sliced = inspect_anec.dense_slice(dense, binding, tensors)
-    return bytes(inspect_anec.convert_tensor(binding, sliced, True))
+    buffer = bytearray(inspect_anec.convert_tensor(binding, sliced, True))
+    if binding.get("broadcast"):
+        _broadcast_fill(buffer, binding)
+    return bytes(buffer)
+
+
+def _broadcast_fill(buffer: bytearray, binding) -> None:
+    """A declared broadcast binding carries a smaller source operand; the
+    decoded row reads the surface full-width, so the host repeats the
+    source value across every lane before dispatch (exact: a copy, no
+    arithmetic). The source must be one element."""
+    source = binding["logicalBytes"]
+    if source not in (1, 2):
+        raise ValueError("declared broadcast source must be one element")
+    element = bytes(buffer[:source])
+    width, row = binding["nchw"][3], binding["nchw"][5]
+    element_size = source
+    total = 0
+    offset = 0
+    while offset + element_size <= len(buffer):
+        buffer[offset:offset + element_size] = element
+        total += 1
+        offset = (total // width) * row + (total % width) * element_size
 
 
 def _constant_buffer(program, binding):
@@ -401,6 +423,10 @@ def _program_inputs(manifest, tensors, dense_inputs, intermediate_regions,
             data = _constant_buffer(program, binding)
         elif tensors[name]["role"] == "intermediate":
             data = _intermediate_buffer(binding, tensors, intermediate_regions.get(name, []))
+            if binding.get("broadcast"):
+                filled = bytearray(data)
+                _broadcast_fill(filled, binding)
+                data = bytes(filled)
         else:
             data = _runtime_buffer(dense_inputs[name], binding, tensors)
         input_buffers.append(data)
