@@ -273,4 +273,45 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-mask-respell-") as d:
     compile_source(root, "mask-shared-chain", shared,
                    expected_code="h13.unsupported-chain")
 
+    # 7. The next unsupported op after the prelude (probe line 162): the
+    # attention-mask composition tail-swaps the bool mask
+    # (transpose perm [0,2,1] over [1,375,375]) and feeds logical_and.
+    # The complete permutation swaps two non-unit axes, so it is not a
+    # storage identity; the decoded transpose parity rows are fp16-only;
+    # and logical_and has no decoded form at all — every route stays
+    # refused fail-closed until an Apple capture exists. The planner's
+    # storage-identity exemption itself is proven positive: moving only
+    # unit axes aliases for free.
+    mask_compose = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<bool, [1, 375, 375]> attention_mask_3) {
+    tensor<int32, [3]> var_289_perm_0 = const()[name = string("var_289_perm_0"), val = tensor<int32, [3]>([0, 2, 1])];
+    tensor<bool, [1, 375, 375]> var_289 = transpose(perm = var_289_perm_0, x = attention_mask_3)[name = string("transpose_144")];
+    tensor<bool, [1, 375, 375]> attention_mask_5 = logical_and(x = attention_mask_3, y = var_289)[name = string("attention_mask_5")];
+  } -> (attention_mask_5);
+}
+"""
+    compile_source(root, "mask-compose-logical-and", mask_compose,
+                   expected_code="h13.nonfoldable-transpose",
+                   expected_message="moves the storage-fastest axis")
+    unit_move = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 4, 5]> x) {
+    tensor<fp16, [1, 4, 5]> ones = const()[name = string("ones"), val = tensor<fp16, [1, 4, 5]>([0x3800, 0x3800, 0x3800, 0x3800, 0x3800, 0x3800, 0x3800, 0x3800, 0x3800, 0x3800, 0x3800, 0x3800, 0x3800, 0x3800, 0x3800, 0x3800, 0x3800, 0x3800, 0x3800, 0x3800])];
+    tensor<fp16, [1, 4, 5]> t = mul(x = x, y = ones)[name = string("t")];
+    tensor<int32, [3]> perm = const()[name = string("perm"), val = tensor<int32, [3]>([1, 0, 2])];
+    tensor<fp16, [4, 1, 5]> y = transpose(perm = perm, x = t)[name = string("y")];
+  } -> (y);
+}
+"""
+    unit_package = compile_source(root, "transpose-unit-axis", unit_move)
+    validate(root, unit_package)
+    unit_manifest = json.loads((unit_package / "manifest.json").read_text())
+    assert [program["operation"]
+            for program in unit_manifest["programs"]] == ["mul"], \
+        "a unit-axis-only move must alias, emitting no transpose program"
+    assert unit_manifest["tensors"]["y"].get("aliasOf") == "t"
+
 print("h13 mask respell cli: PASS")
