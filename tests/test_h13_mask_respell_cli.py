@@ -314,4 +314,24 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-mask-respell-") as d:
         "a unit-axis-only move must alias, emitting no transpose program"
     assert unit_manifest["tensors"]["y"].get("aliasOf") == "t"
 
+    # 8. The real runner path: the software dry-run validates the package
+    # plan through h13_run_linux (including the declared-broadcast input),
+    # and the broadcast fill itself is exercised directly.
+    lengths_input = root / "lengths.fp16"
+    lengths_input.write_bytes(struct.pack("<e", 100.0))
+    runner = str(ROOT / "tools" / "h13_run_linux.py")
+    dry = subprocess.run(
+        [sys.executable, runner, str(package), "--mil", str(root / "mask-respell.mil"),
+         "--model-root", str(root), "--input",
+         f"lengths_13_cast_fp16={lengths_input}", "--output",
+         f"output_mask={root / 'expected_mask.fp16'}", "--dry-run"],
+        capture_output=True, text=True, timeout=120)
+    assert dry.returncode == 0, dry.stdout + dry.stderr
+    from h13_run_linux import _broadcast_fill
+    buffer = bytearray(375 * 64)
+    buffer[0:2] = struct.pack("<e", 100.0)
+    _broadcast_fill(buffer, {"logicalBytes": 2, "nchw": [1, 375, 1, 1, 64, 64]})
+    for lane in range(375):
+        assert struct.unpack_from("<e", buffer, lane * 64)[0] == 100.0, lane
+
 print("h13 mask respell cli: PASS")
