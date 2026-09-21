@@ -482,12 +482,15 @@ with tempfile.TemporaryDirectory() as temporary:
                    encoder_matmul_source(),
                    expected_code="h13.nonfoldable-transpose",
                    expected_message="no decoded encoder permutes surface strides")
-    # Encoder-shaped bool [1,375,375] perm [0,2,1]: same exact-perm
-    # contract as fp16, so this fast-axis tail-swap is not a view.
+    # Encoder-shaped bool [1,375,375] perm [0,2,1]: the decoded
+    # TransposeBool row now lowers the tail-swap (2026-09-20 capture),
+    # but the consuming select at (1,375,375) with a full-size cond has
+    # no decoded row — the captured GLU row covers (1,1024,375) with a
+    # broadcast cond, not this geometry.
     compile_source(root, "transpose-encoder-bool",
                    encoder_bool_source(),
-                   expected_code="h13.nonfoldable-transpose",
-                   expected_message="moves the storage-fastest axis")
+                   expected_code="h13.boolean-outside-envelope",
+                   expected_message="select is outside the decoded boolean envelope")
     view = compile_source(root, "transpose-bool-view",
                           bool_view_transpose_source())
     view_manifest = json.loads((view / "manifest.json").read_text())
