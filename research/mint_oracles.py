@@ -671,6 +671,60 @@ def campaign() -> list[dict[str, Any]]:
         convolution(1, 64, 64, 8, False, True),
     ])
     cases.extend(envelope_campaign())
+    # 2026-09-20 encoder-coverage candidates (Main-authorized oracle
+    # window): the undecoded forms that block full-graph coverage after
+    # the mask-prelude respell. Exact real-encoder spellings; a decode
+    # earns a template row + tests, a refusal is recorded fail-closed.
+    cases.append(case(
+        "candidate_logical_and_bool_1x375x375", "logical-and",
+        {"operation": "logical_and", "dtype": "bool",
+         "shape": [1, 375, 375]},
+        program("tensor<bool, [1, 375, 375]> a, tensor<bool, [1, 375, 375]> b",
+                ['tensor<bool, [1, 375, 375]> out = logical_and(x = a, '
+                 'y = b)[name = string("out")];'],
+                "out")))
+    cases.append(case(
+        "candidate_transpose_bool_1x375x375_021", "transpose",
+        {"operation": "transpose", "dtype": "bool", "shape": [1, 375, 375],
+         "perm": [0, 2, 1]},
+        program("tensor<bool, [1, 375, 375]> x",
+                ['tensor<int32, [3]> perm = const()[name = string("perm"), '
+                 'val = tensor<int32, [3]>([0, 2, 1])];',
+                 'tensor<bool, [1, 375, 375]> out = transpose(perm = perm, '
+                 'x = x)[name = string("out")];'],
+                "out")))
+    cases.append(case(
+        "candidate_cast_f16_to_b_1x1x375", "cast",
+        {"operation": "cast", "dtype": "fp16->bool",
+         "shape": [1, 1, 375]},
+        program("tensor<fp16, [1, 1, 375]> x",
+                ['tensor<string, []> dt = const()[name = string("dt"), '
+                 'val = tensor<string, []>("bool")];',
+                 'tensor<bool, [1, 1, 375]> out = cast(dtype = dt, x = x)'
+                 '[name = string("out")];'],
+                "out")))
+    cases.append(case(
+        "candidate_select_rrb_1x1024x375_bcast_cond", "select",
+        {"operation": "select", "shape": [1, 1024, 375],
+         "cond": [1, 1, 375], "cond_dtype": "bool"},
+        program("tensor<fp16, [1, 1024, 375]> a, "
+                "tensor<fp16, [1, 1024, 375]> b, "
+                "tensor<bool, [1, 1, 375]> cond",
+                ['tensor<fp16, [1, 1024, 375]> out = select(a = a, b = b, '
+                 'cond = cond)[name = string("out")];'],
+                "out")))
+    cases.append(case(
+        "candidate_reduce_min_i32_1x1x375x375_axes2", "reduce-min",
+        {"operation": "reduce_min", "dtype": "int32",
+         "shape": [1, 1, 375, 375], "axes": [2], "keep_dims": False},
+        program("tensor<int32, [1, 1, 375, 375]> x",
+                ['tensor<int32, [1]> axes = const()[name = string("axes"), '
+                 'val = tensor<int32, [1]>([2])];',
+                 'tensor<bool, []> keep = const()[name = string("keep"), '
+                 'val = bool(false)];',
+                 'tensor<int32, [1, 1, 375]> out = reduce_min(axes = axes, '
+                 'keep_dims = keep, x = x)[name = string("out")];'],
+                "out")))
     names = [item["name"] for item in cases]
     if len(names) != len(set(names)):
         raise AssertionError("campaign contains duplicate case names")

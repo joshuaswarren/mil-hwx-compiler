@@ -219,6 +219,11 @@ enum class H13BooleanKind : std::uint8_t {
 struct H13BooleanShape {
     H13BooleanKind kind = H13BooleanKind::Floor;
     bool constInput = false;
+    // The captured GLU-geometry select row reads its cond as a 375-byte
+    // one-row surface and broadcasts it over the channels itself, so the
+    // cond binding carries the operand's own shape instead of the
+    // result-sized read the full-width rows declare.
+    bool broadcastCond = false;
     std::uint32_t channels = 1;
     std::uint32_t height = 1;
     std::uint32_t width = 1;

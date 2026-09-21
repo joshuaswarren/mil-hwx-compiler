@@ -88,12 +88,16 @@ def main():
         stem = path.stem
         if stem.startswith("floor_div_comp") or stem.startswith("less_bool_cast"):
             continue  # native floor_div and the pure less are the implemented forms
+        broadcast_cond = False
         if stem.startswith("less"):
             kind, const_input = "Less", False
         elif stem.startswith("floor_div_native"):
             kind, const_input = "FloorDiv", "_s2" in stem
         elif stem.startswith("floor_"):
             kind, const_input = "Floor", stem.startswith("floor_b")
+        elif stem.startswith("candidate_select"):
+            kind, const_input = "Select", False
+            broadcast_cond = True
         elif stem.startswith("select_ninf"):
             kind, const_input = "Select", True
         elif stem.startswith("select"):
@@ -106,6 +110,7 @@ def main():
             raise SystemExit(f"{stem}: unclassified capture")
         entry["kind"] = kind
         entry["constInput"] = const_input
+        entry["broadcastCond"] = broadcast_cond
         entry["name"] = stem
         entries.append(entry)
     print(f"verified {len(entries)} entries")
@@ -119,6 +124,7 @@ def main():
            "struct H13BooleanTemplate {",
            "    H13BooleanKind kind;",
            "    bool constInput;",
+           "    bool broadcastCond;",
            "    std::uint32_t channels, height, width;",
            "    const std::uint32_t *words;",
            "    std::size_t wordCount;",
@@ -161,8 +167,9 @@ def main():
                 "CastBoolToFp16": "H13BooleanKind::CastBoolToFp16",
                 "LogicalNot": "H13BooleanKind::LogicalNot"}[entry["kind"]]
         table.append(
-            "    {%s, %s, %d, %d, %d, %s, std::size(%s), %s, std::size(%s), %s, std::size(%s)},"
+            "    {%s, %s, %s, %d, %d, %d, %s, std::size(%s), %s, std::size(%s), %s, std::size(%s)},"
             % (kind, "true" if entry["constInput"] else "false",
+               "true" if entry["broadcastCond"] else "false",
                channels, height, width,
                wname, wname, cname, cname, sname, sname))
     out.append("static const H13BooleanTemplate kBooleanTasks[] = {")

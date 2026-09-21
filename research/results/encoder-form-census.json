@@ -4,19 +4,19 @@
     {
       "name": "less_cmask_f16_1500",
       "exit": 0,
-      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmpbczg9y3m/out-less_cmask_f16_1500",
+      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmp1wyh0jsl/out-less_cmask_f16_1500",
       "lowered": true
     },
     {
       "name": "less_cmask_f16_750",
       "exit": 0,
-      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmpbczg9y3m/out-less_cmask_f16_750",
+      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmp1wyh0jsl/out-less_cmask_f16_750",
       "lowered": true
     },
     {
       "name": "less_cmask_f16_375",
       "exit": 0,
-      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmpbczg9y3m/out-less_cmask_f16_375",
+      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmp1wyh0jsl/out-less_cmask_f16_375",
       "lowered": true
     },
     {
@@ -28,7 +28,7 @@
     {
       "name": "floor_f16_1",
       "exit": 0,
-      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmpbczg9y3m/out-floor_f16_1",
+      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmp1wyh0jsl/out-floor_f16_1",
       "lowered": true
     },
     {
@@ -40,13 +40,13 @@
     {
       "name": "floor_div_f16",
       "exit": 0,
-      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmpbczg9y3m/out-floor_div_f16",
+      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmp1wyh0jsl/out-floor_div_f16",
       "lowered": true
     },
     {
       "name": "tile_mask_1x1x375",
       "exit": 0,
-      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmpbczg9y3m/out-tile_mask_1x1x375",
+      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmp1wyh0jsl/out-tile_mask_1x1x375",
       "lowered": true
     },
     {
@@ -58,7 +58,7 @@
     {
       "name": "logical_not_mask",
       "exit": 0,
-      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmpbczg9y3m/out-logical_not_mask",
+      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmp1wyh0jsl/out-logical_not_mask",
       "lowered": true
     },
     {
@@ -117,14 +117,14 @@
     },
     {
       "name": "select_am_1x1024x375",
-      "exit": 65,
-      "diagnostic": "6:5: error [h13.select-needs-decoded-encoder]: H13 select with a constant a belongs to the frontend, which materializes the fill as a runtime constant input and routes the +0.0-fill family through its exact mul rewrite: the captured constant-a form carries uniform -inf values whose retained section cannot discriminate the packing for arbitrary constants, so this path lowers only the rank-0 fp16 -inf fill (promoted onto the runtime-a rows with the fill materialized as a constant runtime input) and runtime-a forms with a bool cond",
-      "lowered": false
+      "exit": 0,
+      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmp1wyh0jsl/out-select_am_1x1024x375",
+      "lowered": true
     },
     {
       "name": "select_consta_blob_1x8x375x375",
       "exit": 0,
-      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmpbczg9y3m/out-select_consta_blob_1x8x375x375",
+      "diagnostic": "compiled target=H13 artifacts=1 format=anec output=/tmp/tmp1wyh0jsl/out-select_consta_blob_1x8x375x375",
       "lowered": true
     },
     {

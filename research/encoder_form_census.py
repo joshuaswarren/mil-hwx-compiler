@@ -183,12 +183,18 @@ for pname, arg, dtype in CAST_FORMS:
         "out"))
 
 # --- select (2 runtime forms; the 8-head one is certified, listed for contrast) ---
+# The real GLU form: the fill is the rank-0 fp16 -inf blob the encoder
+# pins (var_13 @normalized.bin 33558272), promoted onto the runtime-a row.
 PROBES.append(probe(
     "select_am_1x1024x375",
     "tensor<fp16, [1, 1024, 375]> b, tensor<bool, [1, 1, 375]> cond",
-    [const_f16("a", ()),
+    ['tensor<fp16, []> a = const()[name = string("a"), '
+     'val = tensor<fp16, []>(BLOBFILE(path = string("@model_path/weights/normalized.bin"), '
+     'offset = uint64(33558272)))];',
      'tensor<fp16, [1, 1024, 375]> out = select(a = a, b = b, cond = cond)[name = string("out")];'],
-    "out"))
+    "out",
+    files={"weights/normalized.bin": [
+        blob_payload(33558272, struct.pack("<e", float("-inf")))]}))
 
 # The attention-mask form: constant-a select with the real blob-backed
 # -inf fill (var_8, offset 31460800) at the decoded 8-head geometry.

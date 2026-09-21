@@ -1691,6 +1691,7 @@ const H13BooleanTemplate *booleanTemplate(H13BooleanShape shape) {
     for (const auto &candidate : kBooleanTasks)
         if (candidate.kind == shape.kind &&
             candidate.constInput == shape.constInput &&
+            candidate.broadcastCond == shape.broadcastCond &&
             candidate.channels == shape.channels &&
             candidate.height == shape.height &&
             candidate.width == shape.width)
@@ -1810,9 +1811,19 @@ Program encodeBooleanOp(H13BooleanShape shape,
         program.taskSurfaceChannels = {5, 4, 6, 7};
         break;
     case H13BooleanKind::Select:
-        program.inputs = {booleanTensor(5, shape, false),
-                          booleanTensor(6, shape, false),
-                          booleanTensor(7, shape, true)};
+        if (shape.broadcastCond) {
+            // The captured GLU-geometry row reads its cond as a 375-byte
+            // one-row bool surface (row stride 384) and broadcasts it
+            // over the channels itself, so the cond binding is the
+            // operand's own shape, not a result-sized read.
+            program.inputs = {
+                booleanTensor(5, shape, false), booleanTensor(6, shape, false),
+                {7, {1, 1, 1, 375, 384, 384}, alignTile(384), 1u}};
+        } else {
+            program.inputs = {booleanTensor(5, shape, false),
+                              booleanTensor(6, shape, false),
+                              booleanTensor(7, shape, true)};
+        }
         program.output = booleanTensor(4, shape, false);
         // Words select cond-true on 4, cond-false on 5, bool cond on 6,
         // result on 7. MIL select(a, b, cond) is cond?a:b, so a binds to
@@ -1909,11 +1920,12 @@ Program encodeTileOp(H13TileShape shape) {
             shape.inChannels != 1 ? shape.inChannels : source->inChannels;
     program.inputs = shape.runtimeInput
         ? std::vector<TensorLayout>{booleanTensor(5, {H13BooleanKind::Floor, false,
-                                                      inChannels, source->inHeight,
+                                                      false, inChannels,
+                                                      source->inHeight,
                                                       source->inWidth}, false)}
         : std::vector<TensorLayout>{};
     program.output = booleanTensor(shape.runtimeInput ? 4 : 5,
-                                   {H13BooleanKind::Floor, false,
+                                   {H13BooleanKind::Floor, false, false,
                                     source->outChannels, source->outHeight,
                                     source->outWidth}, false);
     // The runtime input selects 4 and the result 5; the remap lands the

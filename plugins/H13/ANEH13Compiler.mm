@@ -2883,6 +2883,11 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             if (!cond || cond.type.kind != ANEValueTypeKindTensor ||
                 cond.type.elementType != ANEElementTypeBool)
                 goto boolean_reject;
+            NSUInteger condElements = 0;
+            if (tensorElementCount(cond, &condElements) &&
+                condElements < (NSUInteger)shape.channels * shape.height *
+                                    shape.width)
+                shape.broadcastCond = true;
         }
         // The const-operand twins: floor over a BLOBFILE x, floor_div over
         // the captured scalar-2.0 y. The select family has no usable
@@ -4997,6 +5002,16 @@ static NSString *BoundaryCastDirection(ANEGraphValue *value) {
                         [manifestOperation isEqualToString:@"less"] &&
                         fullElements > 0 && fullElements < surfaceElements;
                     if (declaredBroadcast) {
+                        sliceElements = fullElements;
+                        physicalElements = fullElements;
+                    }
+                    // A broadcast-cond select binds its cond surface at
+                    // the operand's own extent: the captured row
+                    // broadcasts the cond over the channels itself, so
+                    // the binding is whole-operand, not result-sized.
+                    if ([manifestOperation isEqualToString:@"select"] &&
+                        input != constantInput &&
+                        fullElements > 0 && fullElements == surfaceElements) {
                         sliceElements = fullElements;
                         physicalElements = fullElements;
                     }

@@ -392,13 +392,13 @@ void checkEncoderConvEnvelope() {
 void checkEncoderSelectEnvelope() {
     using ane::h13::H13BooleanKind;
     using ane::h13::supportsBooleanOp;
-    assert(supportsBooleanOp({H13BooleanKind::Select, false, 8, 375, 375}));
-    assert(supportsBooleanOp({H13BooleanKind::Select, false, 64, 1, 1}));
-    assert(supportsBooleanOp({H13BooleanKind::Select, true, 8, 375, 375}));
-    assert(!supportsBooleanOp({H13BooleanKind::Select, true, 64, 1, 1}));
-    assert(!supportsBooleanOp({H13BooleanKind::Select, false, 1024, 375, 1}));
-    assert(!supportsBooleanOp({H13BooleanKind::Select, false, 1, 1024, 375}));
-    assert(!supportsBooleanOp({H13BooleanKind::Select, false, 8, 128, 128}));
+    assert(supportsBooleanOp({H13BooleanKind::Select, false, false, 8, 375, 375}));
+    assert(supportsBooleanOp({H13BooleanKind::Select, false, false, 64, 1, 1}));
+    assert(supportsBooleanOp({H13BooleanKind::Select, true, false, 8, 375, 375}));
+    assert(!supportsBooleanOp({H13BooleanKind::Select, true, false, 64, 1, 1}));
+    assert(supportsBooleanOp({H13BooleanKind::Select, false, true, 1, 1024, 375}));
+    assert(!supportsBooleanOp({H13BooleanKind::Select, false, false, 1, 1024, 375}));
+    assert(!supportsBooleanOp({H13BooleanKind::Select, false, false, 8, 128, 128}));
 }
 
 

@@ -481,6 +481,45 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-fdiv-respell-") as d:
                                  "tensor<bool, [1, 64, 1, 1]> m"),
                    expected_code="h13.select-needs-decoded-encoder")
 
+    # 5b. The real GLU select (24 encoder statements): the rank-0 fp16
+    # -inf fill (var_13 @normalized.bin 33558272) promotes onto the
+    # captured GLU-geometry row, whose cond is a broadcast [1, 1, 375]
+    # bool surface the row itself reads.
+    fill_payload = struct.pack("<e", float("-inf"))
+    # The real record sits 33.5 MB into the weight file; write it sparse
+    # at the real offset.
+    glu_offset = 33558272
+    weights_sparse = bytearray(glu_offset + 64 + 2)
+    weights_sparse[glu_offset:glu_offset + 24] = struct.pack(
+        "<IIQQ", 0xDEADBEEF, 1, len(fill_payload), glu_offset + 64)
+    weights_sparse[glu_offset + 64:glu_offset + 66] = fill_payload
+    (root / "weights.bin").write_bytes(bytes(weights_sparse))
+    glu = wrapped(
+        blob_const("var_13_to_fp16", "tensor<fp16, []>",
+                   "tensor<fp16, []>(BLOBFILE("
+                   "path = string(\"@model_path/weights.bin\"), "
+                   "offset = uint64(33558272)))") +
+        '    tensor<fp16, [1, 1024, 375]> y = select(a = var_13_to_fp16, '
+        'b = b, cond = all_masked_rows_1)'
+        '[name = string("input_41_cast_fp16")];\n',
+        "tensor<fp16, [1, 1024, 375]> b, "
+        "tensor<bool, [1, 1, 375]> all_masked_rows_1")
+    glu_package = deterministic(root, "glu-select", glu)
+    validate(root, glu_package)
+    glu_manifest = json.loads((glu_package / "manifest.json").read_text())
+    glu_program = glu_manifest["programs"][0]
+    assert glu_program["operation"] == "select"
+    assert glu_program["taskDescriptors"] == 5
+    assert glu_program["inputs"][0].get("binding") == "constant"
+    assert glu_program["constantInputs"]["var_13_to_fp16"] == "00fc" * 384000
+    assert glu_program["inputs"][2]["shape"] == [1, 1, 375]
+    assert glu_program["inputs"][2]["logicalBytes"] == 375
+    glu_capture = json.loads(
+        (captures / "candidate_select_rrb_1x1024x375_bcast_cond.json")
+        .read_text())
+    assert anec_task_stream(glu_package) == \
+        capture_stream(glu_capture, SELECTOR_REMAP["select"])
+
     # 6. The real encoder statements, verbatim spellings and offsets from
     # the pinned encoder graph, each as its own graph (the real graph
     # consumes floor_div through the int32 mask chain, which stays blocked

@@ -1,0 +1,41 @@
+{
+  "case": "candidate_logical_and_bool_1x375x375",
+  "compiler": {
+    "command": [
+      "/tmp/h13-oracle/bin/ane-compile-hwx",
+      "CAPTURE_DIR",
+      "OUTPUT_DIR",
+      "h13"
+    ],
+    "decoder_sha256": "125da0249ca3c3ba0ca1f9f0cabfd1db54a965abb75f9f4cdcc2598e255c8fbc",
+    "driver_sha256": "4e5ab9e8de08f9318387d575ffc978da8842971594fe99d157301b09677753fb",
+    "host": "studio-host.local",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "tool": "/tmp/h13-oracle/bin/ane-compile-hwx",
+    "tool_sha256": "3d13fc85c2a6baa0b7628f0848269b16fb99f742180f0085f608c371bb9da6e0"
+  },
+  "constant_section": null,
+  "error": "MIL validation report: 1/1 invalid operations:\nIn Function \"main\", Invalid operation #0:\ntensor<bool, [1, 375, 375]> out = ios18.logical_and(x = a, y = b)[milId = uint64(0), name = string(\"out\")];\nValidation error: \"Unsupported MIL operation \"logical_and\".\"\ncallback_status=1",
+  "family": "logical-and",
+  "hwx_bytes": null,
+  "hwx_sha256": null,
+  "mil": "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n  func main<ios18>(tensor<bool, [1, 375, 375]> a, tensor<bool, [1, 375, 375]> b) {\n    tensor<bool, [1, 375, 375]> out = logical_and(x = a, y = b)[name = string(\"out\")];\n  } -> (out);\n}\n",
+  "parameters": {
+    "dtype": "bool",
+    "operation": "logical_and",
+    "shape": [
+      1,
+      375,
+      375
+    ]
+  },
+  "program_descriptor": null,
+  "schema_version": 1,
+  "source_commit": "4771c606b190e7bb909d2d99f393f5f1010493ff",
+  "target": "h13",
+  "task_descriptors": [],
+  "tensor_descriptors": [],
+  "weights": {
+    "storage": "none"
+  }
+}
