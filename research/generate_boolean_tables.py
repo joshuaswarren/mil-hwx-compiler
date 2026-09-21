@@ -100,8 +100,14 @@ def main():
             broadcast_cond = True
         elif stem.startswith("candidate_transpose_bool"):
             kind, const_input = "TransposeBool", False
-        elif stem.startswith("candidate_cast_f16_to_b"):
+        elif stem.startswith("candidate_cast_f16_to_b_1x1x375"):
             kind, const_input = "CastFp16ToBool", False
+        elif stem.startswith("candidate_cast_f16_to_b_1x375x375"):
+            kind, const_input = "CastFp16ToBool", False
+        elif stem.startswith("candidate_cast_b_to_f16_1x375x375"):
+            kind, const_input = "CastBoolToFp16", False
+        elif stem.startswith("candidate_mul_rr"):
+            continue  # elementwise binary op: not a boolean-table row
         elif stem.startswith("select_ninf"):
             kind, const_input = "Select", True
         elif stem.startswith("select"):
@@ -171,6 +177,7 @@ def main():
                 "CastBoolToFp16": "H13BooleanKind::CastBoolToFp16",
                 "CastFp16ToBool": "H13BooleanKind::CastFp16ToBool",
                 "TransposeBool": "H13BooleanKind::TransposeBool",
+
                 "LogicalNot": "H13BooleanKind::LogicalNot"}[entry["kind"]]
         table.append(
             "    {%s, %s, %s, %d, %d, %d, %s, std::size(%s), %s, std::size(%s), %s, std::size(%s)},"

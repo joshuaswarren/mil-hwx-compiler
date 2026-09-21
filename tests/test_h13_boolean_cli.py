@@ -56,7 +56,7 @@ def family(stem):
         return "floor_div"
     if stem.startswith("floor"):
         return "floor"
-    if stem.startswith("cast_b_to_f16") or stem.startswith("candidate_cast_f16_to_b"):
+    if stem.startswith("cast_b_to_f16") or stem.startswith("candidate_cast_f16_to_b") or stem.startswith("candidate_cast_b_to_f16"):
         return "cast"
     if stem.startswith("logical_not"):
         return "logical_not"
@@ -235,7 +235,12 @@ with tempfile.TemporaryDirectory() as temporary:
         if stem.startswith("floor_b") or stem.startswith("select_ninf"):
             continue
         if stem.startswith("candidate_transpose_bool"):
-            continue  # bool tail-swap transpose: tested by the mask respell suite  # const-input twins: pending index-valued re-mints
+            continue  # bool tail-swap transpose: tested by the mask respell suite
+        if stem.startswith("candidate_cast_b_to_f16_1x375x375") or \
+           stem.startswith("candidate_cast_f16_to_b_1x375x375"):
+            continue  # duplicate geometry with cast_b_to_f16_1x1x375x375
+        if stem.startswith("candidate_mul_rr"):
+            continue  # mul runtime-x-runtime: tested by the floor_div respell suite  # const-input twins: pending index-valued re-mints
         mil = record["mil"]
         package = deterministic(root, f"bool-{stem}", mil)
         manifest = json.loads((package / "manifest.json").read_text())

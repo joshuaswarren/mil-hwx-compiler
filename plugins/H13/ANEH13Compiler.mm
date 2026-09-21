@@ -4788,7 +4788,8 @@ static NSString *BoundaryCastDirection(ANEGraphValue *value) {
                 ([booleanOp isEqualToString:@"transpose"] &&
                  operation.operands[@"x"].value &&
                  operation.operands[@"x"].value.type.elementType ==
-                     ANEElementTypeBool);
+                     ANEElementTypeBool) ||
+                false;
             BOOL matvecParity = !batched && matmul &&
                 matmulParityShape(operation.operands[@"x"].value, operation.results[0],
                     boolean(operation.arguments[@"transpose_x"], YES),

@@ -8,7 +8,7 @@
       "h13"
     ],
     "decoder_sha256": "125da0249ca3c3ba0ca1f9f0cabfd1db54a965abb75f9f4cdcc2598e255c8fbc",
-    "driver_sha256": "4e5ab9e8de08f9318387d575ffc978da8842971594fe99d157301b09677753fb",
+    "driver_sha256": "575894c2cbb0d592feae4dc127e541a2b09c32f2f2ec4928076a4fd86b569a33",
     "host": "studio-host.local",
     "platform": "macOS-26.6.2-arm64-arm-64bit",
     "tool": "/tmp/h13-oracle/bin/ane-compile-hwx",
@@ -31,7 +31,7 @@
   },
   "program_descriptor": null,
   "schema_version": 1,
-  "source_commit": "4771c606b190e7bb909d2d99f393f5f1010493ff",
+  "source_commit": "1467de6b4eddea8adeaaf73cf004054bb6383245",
   "target": "h13",
   "task_descriptors": [],
   "tensor_descriptors": [],
