@@ -33,7 +33,9 @@ mil=${1:?"usage: $0 [--package DIR] MIL MODEL_ROOT NAME=input.fp16 ..."}
 model_root=${2:?"usage: $0 [--package DIR] MIL MODEL_ROOT NAME=input.fp16 ..."}
 shift 2
 checkout=${ANE_CHECKOUT:-$HOME/src/omarchy-ane}
-library=$checkout/bindings/python/dylib/libane_python.so
+# ANE_LIBRARY overrides the dlopen path for hosts whose pinned runtime
+# lives outside a bindings tree (e.g. /var/tmp staging on m1-test-host).
+library=${ANE_LIBRARY:-$checkout/bindings/python/dylib/libane_python.so}
 device=${ANE_DEVICE:-/dev/accel/accel0}
 deadline_seconds=${H13_DEADLINE_SECONDS:?set H13_DEADLINE_SECONDS to a positive finite whole-run device-phase budget}
 compiler=${ANE_COMPILER_BIN:-$repo/build/mil-hwxc}

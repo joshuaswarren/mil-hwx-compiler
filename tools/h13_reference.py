@@ -812,6 +812,24 @@ def _execute(operation, environment, model_root):
         raise ValueError("cast supports only the exact fp16->fp32 and "
                          "bool->int32 boundary directions plus the "
                          "length-chain int32 directions")
+    if name == "select":
+        # cond ? a : b with full broadcasting; the decoded select rows
+        # read 0/1 bool conds and fp16 values, so the pick is exact.
+        condition = _tensor(arguments["cond"])
+        if condition.dtype != "bool":
+            raise ValueError("select cond must be bool")
+        chosen_a = _tensor(arguments["a"])
+        chosen_b = _tensor(arguments["b"])
+        shape = _broadcast_shape(_broadcast_shape(
+            chosen_a.shape if isinstance(chosen_a, Tensor) else (),
+            chosen_b.shape if isinstance(chosen_b, Tensor) else ()),
+            condition.shape)
+        a_values = _broadcast_values(chosen_a, shape)
+        b_values = _broadcast_values(chosen_b, shape)
+        c_values = _broadcast_values(condition, shape)
+        values = tuple(a_v if c else b_v
+                       for a_v, b_v, c in zip(a_values, b_values, c_values))
+        return Tensor("fp16", shape, tuple(fp16(v) for v in values))
     if name == "layer_norm":
         if "gamma" in arguments or "beta" in arguments:
             raise ValueError("H13 layer_norm carries no gamma or beta")
