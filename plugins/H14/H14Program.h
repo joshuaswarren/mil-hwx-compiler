@@ -75,6 +75,10 @@ struct TensorLayout {
     std::uint32_t index;
     std::array<std::uint64_t, 6> nchw;
     std::uint64_t allocationBytes;
+    /// Decoded tensor-descriptor element code and byte width: fp16 (5, 2) for
+    /// every surface except select's bool cond (3, 1).
+    std::uint32_t elementCode = 5;
+    std::uint32_t elementBytes = 2;
 };
 
 struct Program {
@@ -138,6 +142,34 @@ std::vector<std::uint8_t> packConvWeights(ConvShape shape,
                                           std::size_t weightBytes,
                                           const std::uint8_t *bias = nullptr,
                                           std::size_t biasBytes = 0);
+/// True when the decoded corpus covers `select` over this CHW surface: two
+/// fp16 tensors and a bool cond of the same shape, or the decoded const-fill
+/// form whose fp16 `a` is a full-size blob constant.
+bool supportsSelectParity(ElementwiseShape shape, bool constFill);
+/// Encodes Apple's five-task select program. The surfaces bind in the decoded
+/// order and the 256-byte selector table rides in the constant section.
+Program encodeSelectParity(ElementwiseShape shape, bool constFill);
+/// One decoded batched runtime-runtime matmul: `[B, rows, reduction]` (or the
+/// rank-4 `[1, B, rows, reduction]` head form) against `[B, reduction,
+/// columns]`, `transpose_y` spelled explicitly. Both operand ranks emit
+/// identical task streams; only the descriptors differ.
+struct BatchedMatmulShape {
+    std::uint32_t rows;
+    std::uint32_t reduction;
+    std::uint32_t columns;
+    std::uint32_t batch;
+    bool headsForm;
+    bool transposeY;
+};
+inline bool operator==(const BatchedMatmulShape &left, const BatchedMatmulShape &right) {
+    return left.rows == right.rows && left.reduction == right.reduction &&
+           left.columns == right.columns && left.batch == right.batch &&
+           left.headsForm == right.headsForm &&
+           left.transposeY == right.transposeY;
+}
+bool supportsBatchedMatmulParity(const BatchedMatmulShape &shape);
+/// Encodes Apple's batched matmul program for the geometry.
+Program encodeBatchedMatmulParity(const BatchedMatmulShape &shape);
 /// Encodes Apple's own H14 convolution task stream for the geometry.
 Program encodeConvParity(ConvShape shape, const std::uint8_t *weights,
                          std::size_t weightBytes,

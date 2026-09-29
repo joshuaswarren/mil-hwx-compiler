@@ -95,6 +95,7 @@ struct OracleConvTemplate {
 #include "H14MatvecTemplates.inc"
 #include "H14NormTemplates.inc"
 #include "H14ConvTemplates.inc"
+#include "H14IslandTemplates.inc"
 // H14's exponential and reciprocal sections are the H13 tables byte-for-byte:
 // research/mint_h14_norm_probes.py resolves every decoded H14 section against
 // these words by SHA-256 before it emits a NormConstants kind.
@@ -360,7 +361,8 @@ void validateTensor(const TensorLayout &tensor, std::uint32_t expectedIndex,
     const auto &nchw = tensor.nchw;
     if (!nchw[0] || !nchw[1] || !nchw[2] || !nchw[3] || !nchw[4] || !nchw[5])
         throw std::invalid_argument("tensor layout has a zero dimension or stride");
-    if ((nchw[5] % 2) || (nchw[4] % nchw[5]) || nchw[5] / 2 < nchw[3])
+    if ((nchw[5] % tensor.elementBytes) || (nchw[4] % nchw[5]) ||
+        nchw[5] / tensor.elementBytes < nchw[3])
         throw std::invalid_argument("unsupported tensor tiling layout");
     const auto minimumPlane = checkedMultiply(nchw[2], nchw[5],
                                               "tensor row span overflows");
@@ -538,8 +540,8 @@ std::vector<std::uint8_t> encodeANEC(const Program &program) {
     if (program.constantOffsetBytes < program.taskStream.size() ||
         program.constantOffsetBytes % 0x40)
         throw std::invalid_argument("H14 ANEC constant offset is invalid");
-    if (program.inputs.empty() || program.inputs.size() > 2)
-        throw std::invalid_argument("H14 ANEC requires one or two input tensors");
+    if (program.inputs.empty() || program.inputs.size() > 3)
+        throw std::invalid_argument("H14 ANEC requires one to three input tensors");
 
     validateTensor(program.output, 4, "output allocation does not cover its physical span");
     for (std::size_t index = 0; index != program.inputs.size(); ++index)
@@ -858,6 +860,82 @@ Program encodeConvParity(ConvShape shape, const std::uint8_t *weights,
     program.output = convTensor(4, shape.output);
     program.scratchDescriptorWord = source->scratchDescriptorWord;
     return program;
+}
+
+const OracleSelectTemplate *selectTemplate(ElementwiseShape shape,
+                                           bool constFill) {
+    for (const auto &candidate : kH14SelectTasks)
+        if (candidate.constFill == constFill &&
+            candidate.shape.channels == shape.channels &&
+            candidate.shape.height == shape.height &&
+            candidate.shape.width == shape.width) return &candidate;
+    return nullptr;
+}
+
+const OracleBatchedMatmulTemplate *batchedMatmulTemplate(
+    const BatchedMatmulShape &shape) {
+    for (const auto &candidate : kH14BatchedMatmulTasks)
+        if (candidate.shape == shape) return &candidate;
+    return nullptr;
+}
+
+/// Replays one whole-program island template: task stream, constant runs,
+/// the three unresolved descriptor words, and the decoded surface layouts.
+template <typename Template>
+Program replayIslandProgram(const Template &source) {
+    Program program = streamProgram(source.text, source.textWords,
+                                    source.taskCount,
+                                    source.programRecordCount,
+                                    source.unresolvedDescriptorWord);
+    program.constants.assign(source.constantBytes, 0);
+    for (std::size_t run = 0; run != source.constantRuns; ++run) {
+        const auto &entry = source.constants[run];
+        for (std::uint32_t offset = 0; offset != entry.count; ++offset) {
+            const std::size_t byte = (entry.index + offset) * 2;
+            if (byte + 1 >= program.constants.size())
+                throw std::logic_error("H14 island constant run leaves its section");
+            program.constants[byte] = static_cast<std::uint8_t>(entry.bits);
+            program.constants[byte + 1] =
+                static_cast<std::uint8_t>(entry.bits >> 8);
+        }
+    }
+    const std::uint32_t inputCount =
+        static_cast<std::uint32_t>(source.tensors.size()) - 1;
+    for (std::uint32_t index = 0; index != inputCount; ++index) {
+        const auto &tensor = source.tensors[index];
+        program.inputs.push_back({tensor.index, tensor.nchw,
+                                  tensor.allocationBytes, tensor.elementCode,
+                                  tensor.elementBytes});
+    }
+    const auto &output = source.tensors.back();
+    program.output = {output.index, output.nchw, output.allocationBytes,
+                      output.elementCode, output.elementBytes};
+    program.scratchDescriptorWord = source.scratchDescriptorWord;
+    return program;
+}
+
+bool supportsSelectParity(ElementwiseShape shape, bool constFill) {
+    return selectTemplate(shape, constFill);
+}
+
+Program encodeSelectParity(ElementwiseShape shape, bool constFill) {
+    const auto *source = selectTemplate(shape, constFill);
+    if (!source)
+        throw std::invalid_argument(
+            "H14 select is outside the decoded parity envelope");
+    return replayIslandProgram(*source);
+}
+
+bool supportsBatchedMatmulParity(const BatchedMatmulShape &shape) {
+    return batchedMatmulTemplate(shape);
+}
+
+Program encodeBatchedMatmulParity(const BatchedMatmulShape &shape) {
+    const auto *source = batchedMatmulTemplate(shape);
+    if (!source)
+        throw std::invalid_argument(
+            "H14 batched matmul geometry is outside the decoded parity envelope");
+    return replayIslandProgram(*source);
 }
 
 Program composePrograms(const std::vector<Program> &programs) {

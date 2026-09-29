@@ -437,7 +437,7 @@ published register ranges and record lengths. Run `make test-hwx-inspection`.
 `--target H14` emits H14 task streams, ANEC containers, and HWX objects for
 the elementwise, matmul, normalization, and reduction families Apple's own
 compiler was sampled on. Every emitted task is word-for-word identical to the
-decoded oracle for that case: `make test-h14-parity` compiles 434 cases in
+decoded oracle for that case: `make test-h14-parity` compiles 749 cases in
 both formats, decodes the emitted stream with `research/h13_td.py`, and
 compares each task's header words and register writes, the program descriptor,
 the tensor descriptors, and the constant-section sha256 with

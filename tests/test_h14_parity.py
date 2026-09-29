@@ -30,18 +30,44 @@ MATVEC_ENCODER = "apple-parity-matvec"
 NORM_ENCODER = "apple-parity-norm"
 ELEMENTWISE_ENCODER = "h14-oracle-parity"
 CONV_ENCODER = "apple-parity-conv"
+SELECT_ENCODER = "apple-parity-select"
+BATCHED_ENCODER = "apple-parity-batched-matmul"
 CONV_FAMILIES = {"env_conv", "conv_probe"}
 
 
 def encoder(oracle):
     if oracle["family"] in CONV_FAMILIES:
         return CONV_ENCODER
+    if oracle["family"] == "env_boolean_select":
+        return SELECT_ENCODER
+    if oracle["family"] == "env_matmul" and \
+            str(oracle["case"]).startswith("gabmm_"):
+        return BATCHED_ENCODER
     if oracle["family"] in {"binary_runtime", "binary_constant", "unary",
                             "env_activation", "env_broadcast"}:
         return ELEMENTWISE_ENCODER
     if oracle["family"] in {"normalization", "reduction"}:
         return NORM_ENCODER
     return MATVEC_ENCODER
+
+
+def island_oracles():
+    """The decoded select and batched-matmul records the island encoders
+    reproduce: runtime-a select with a bool cond, and batched runtime
+    matmuls over a leading batch of two or more."""
+    selected = []
+    for path in sorted((ROOT / "research/oracles/h14").glob("ga*.json")):
+        oracle = json.loads(path.read_text())
+        if oracle.get("error") is not None:
+            continue
+        if oracle["family"] == "env_boolean_select" and \
+                oracle["parameters"]["mode"] == "rr":
+            selected.append(oracle)
+        elif oracle["family"] == "env_matmul" and \
+                oracle["case"].startswith("gabmm_") and \
+                oracle["parameters"]["batch"] > 1:
+            selected.append(oracle)
+    return selected
 
 
 def write_weights(oracle, root):
@@ -450,10 +476,10 @@ def main():
     norm = norm_oracles()
     families = collections.Counter(oracle["family"] for oracle in norm)
     templates = check_norm_templates()
-    assert len(elementwise) == 165, \
-        f"expected 165 decoded elementwise oracles, found {len(elementwise)}"
-    assert len(matvec) == 36, \
-        f"expected 36 decoded matvec oracles, found {len(matvec)}"
+    assert len(elementwise) == 179, \
+        f"expected 179 decoded elementwise oracles, found {len(elementwise)}"
+    assert len(matvec) == 46, \
+        f"expected 46 decoded matvec oracles, found {len(matvec)}"
     assert families == collections.Counter(
         {"normalization": 105, "reduction": 114}), \
         f"decoded H14 norm oracles per family: {dict(families)}"
@@ -465,12 +491,24 @@ def main():
     conv = conv_oracles()
     assert len(conv) == 284, \
         f"expected 284 covered H14 convolution oracles, found {len(conv)}"
-    oracles = elementwise + matvec + probe + norm + conv
+    island = island_oracles()
+    assert len(island) == 13, \
+        f"expected 13 covered island oracles, found {len(island)}"
+    oracles = elementwise + matvec + probe + norm + conv + island
     with tempfile.TemporaryDirectory(prefix="h14-parity-") as directory:
         root = Path(directory)
         check_chain_package(root)
         for oracle in oracles:
-            for artifact_format, check in (("anec", check_anec), ("hwx", check_hwx)):
+            # The island replays are proven in ANEC, which carries the whole
+            # byte-checked payload: task stream, constants, and counts. Their
+            # HWX containers place the text above the surfaces with the
+            # resource split the descriptor records (slot 2 = 0x30000000,
+            # slot 4 per case); the container-address formula is remaining
+            # work (research/h14-model-gap-findings.md), so no HWX artifact
+            # is claimed for them.
+            formats = (("anec", check_anec),) if oracle in island \
+                else (("anec", check_anec), ("hwx", check_hwx))
+            for artifact_format, check in formats:
                 output = root / f"{oracle['case']}-{artifact_format}"
                 manifest = compile_oracle(oracle, output, artifact_format)
                 assert len(manifest["programs"]) == 1, \
@@ -483,8 +521,9 @@ def main():
           f"{len(probe)} known-weight matvec probes over {len(grid)} (K, N) "
           f"grid points, {families['normalization']} softmax/layer_norm, "
           f"{families['reduction']} reduction over {len(templates)} norm "
-          f"templates, {len(conv)} convolution, "
-          f"{len(oracles) * 2} artifacts)")
+          f"templates, {len(conv)} convolution, {len(island)} island "
+          f"select/batched-matmul (ANEC), "
+          f"{(len(oracles) - len(island)) * 2 + len(island)} artifacts)")
 
 
 if __name__ == "__main__":

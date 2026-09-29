@@ -258,12 +258,20 @@ static NSUInteger logicalBytes(ANEGraphValue *value) {
     return elements * 2;
 }
 
+static NSString *elementName(const ane::h14::TensorLayout &layout) {
+    return layout.elementCode == 3 ? @"bool" : @"float16";
+}
+
 static NSDictionary *binding(ANEGraphValue *value,
                              const ane::h14::TensorLayout &layout) {
     NSMutableArray *physical = [NSMutableArray arrayWithCapacity:6];
     for (std::uint64_t dimension : layout.nchw) [physical addObject:@(dimension)];
-    return @{@"name": value.name, @"dtype": @"float16",
-        @"shape": value.type.shape, @"logicalBytes": @(logicalBytes(value)),
+    NSUInteger elements = 1;
+    for (NSNumber *dimension in value.type.shape)
+        elements *= dimension.unsignedIntegerValue;
+    return @{@"name": value.name, @"dtype": elementName(layout),
+        @"shape": value.type.shape,
+        @"logicalBytes": @(elements * layout.elementBytes),
         @"index": @(layout.index), @"nchw": physical,
         @"allocationBytes": @(layout.allocationBytes)};
 }
@@ -279,7 +287,9 @@ static HWXObjectBinding *objectBinding(const ane::h14::TensorLayout &layout,
         role == HWXObjectBindingRoleInput ? @"input%lu" : @"output%lu",
         (unsigned long)ordinal];
     return [[HWXObjectBinding alloc] initWithSymbol:name shortName:name role:role
-        elementType:ANEElementTypeFP16 shape:shape
+        elementType:layout.elementCode == 3 ? ANEElementTypeBool
+                                            : ANEElementTypeFP16
+        shape:shape
         rowStrideBytes:(NSUInteger)layout.nchw[5]
         planeStrideBytes:(NSUInteger)layout.nchw[4]
         batchStrideBytes:batchStride storageByteLength:storageBytes];
@@ -682,6 +692,88 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
     return YES;
 }
 
+/// Matches the batched runtime-runtime matmuls Apple decodes as one program:
+/// rank-3 `[B, rows, reduction]` or rank-4 `[1, B, rows, reduction]` operands
+/// with a leading batch of two or more. The template replay binds the weight
+/// (`y`) before `x`, the decoded surface order.
+static BOOL batchedMatmulPlan(ANEGraphOperation *operation,
+                              ane::h14::BatchedMatmulShape *shape) {
+    ANEGraphValue *x = operation.operands[@"x"].value;
+    ANEGraphValue *y = operation.operands[@"y"].value;
+    if (!x || !y || constantValue(x) || constantValue(y) ||
+        ![operation.operationName isEqualToString:@"matmul"] ||
+        operation.arguments.count != 4 ||
+        !boolean(operation.arguments[@"transpose_x"], NO))
+        return NO;
+    BOOL transposeY = boolean(operation.arguments[@"transpose_y"], YES);
+    NSUInteger xRank = x.type.shape.count, yRank = y.type.shape.count;
+    if (xRank < 3 || xRank > 4 || yRank != xRank) return NO;
+    NSUInteger leading = xRank == 4 ? 2 : 1;
+    for (NSUInteger index = 0; index < leading; ++index)
+        if ([x.type.shape[index] unsignedIntegerValue] !=
+            [y.type.shape[index] unsignedIntegerValue])
+            return NO;
+    NSUInteger batch = xRank == 4
+        ? [x.type.shape[1] unsignedIntegerValue]
+        : [x.type.shape[0] unsignedIntegerValue];
+    if (batch < 2) return NO;
+    NSUInteger rows = [x.type.shape[xRank - 2] unsignedIntegerValue];
+    NSUInteger reduction = [x.type.shape[xRank - 1] unsignedIntegerValue];
+    NSUInteger yReduction = transposeY
+        ? [y.type.shape[yRank - 1] unsignedIntegerValue]
+        : [y.type.shape[yRank - 2] unsignedIntegerValue];
+    NSUInteger columns = transposeY
+        ? [y.type.shape[yRank - 2] unsignedIntegerValue]
+        : [y.type.shape[yRank - 1] unsignedIntegerValue];
+    if (yReduction != reduction || !rows || !reduction || !columns) return NO;
+    if (!tensor(operation.result, operation.result.type.shape)) return NO;
+    ane::h14::BatchedMatmulShape candidate{
+        static_cast<std::uint32_t>(rows),
+        static_cast<std::uint32_t>(reduction),
+        static_cast<std::uint32_t>(columns),
+        static_cast<std::uint32_t>(batch),
+        xRank == 4 ? true : false, transposeY ? true : false};
+    if (!ane::h14::supportsBatchedMatmulParity(candidate)) return NO;
+    *shape = candidate;
+    return YES;
+}
+
+/// Matches `select` with two runtime fp16 tensors and a bool cond of the
+/// same surface, the Parakeet island B form. The decoded const-fill form
+/// (a BLOBFILE `a`) stays outside the envelope.
+static BOOL selectPlan(ANEGraphOperation *operation,
+                       ane::h14::ElementwiseShape *shape) {
+    ANEGraphValue *a = operation.operands[@"a"].value;
+    ANEGraphValue *b = operation.operands[@"b"].value;
+    ANEGraphValue *cond = operation.operands[@"cond"].value;
+    if (![operation.operationName isEqualToString:@"select"] ||
+        !a || !b || !cond || constantValue(a) || constantValue(b) ||
+        constantValue(cond))
+        return NO;
+    if (cond.type.elementType != ANEElementTypeBool ||
+        ![cond.type.shape isEqualToArray:a.type.shape] ||
+        ![b.type.shape isEqualToArray:a.type.shape] ||
+        ![operation.result.type.shape isEqualToArray:a.type.shape])
+        return NO;
+    ane::h14::ElementwiseShape literal{};
+    if (a.type.shape.count == 4) {
+        if (!elementwiseShape(operation.result, &literal)) return NO;
+    } else if (a.type.shape.count == 3 &&
+               [a.type.shape[0] unsignedIntegerValue] == 1) {
+        // A rank-3 [1, C, W] surface lowers to the decoded [1, 1, C, W]
+        // descriptor form.
+        literal = {1u, static_cast<std::uint32_t>(
+            [a.type.shape[1] unsignedIntegerValue]),
+            static_cast<std::uint32_t>(
+            [a.type.shape[2] unsignedIntegerValue])};
+    } else {
+        return NO;
+    }
+    if (!ane::h14::supportsSelectParity(literal, false)) return NO;
+    *shape = literal;
+    return YES;
+}
+
 @implementation ANEH14Compiler
 + (BOOL)compileMILData:(NSData *)milData
              modelRoot:(NSURL *)modelRoot
@@ -842,7 +934,15 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
         NSData *convBias = nil;
         H14ConvPlan convolution{};
         BOOL normalization = NO;
-        if (matvec) {
+        ane::h14::BatchedMatmulShape batchedShape{};
+        ane::h14::ElementwiseShape selectShape{};
+        BOOL batchedMatmul = NO, selectOp = NO;
+        if (matvec && batchedMatmulPlan(operation, &batchedShape)) {
+            batchedMatmul = YES;
+        } else if ([name isEqualToString:@"select"] &&
+                   selectPlan(operation, &selectShape)) {
+            selectOp = YES;
+        } else if (matvec) {
             if (!matvecPlan(operation, modelRoot, diagnostics, &matvecShape,
                             &matvecWeights)) return NO;
         } else if (convParityPlan(operation, &convolution)) {
@@ -878,8 +978,10 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
         }
 
         const BOOL convolutionProgram = convWeights != nil;
-        NSUInteger inputCount = matvec || normalization || convolutionProgram ||
+        NSUInteger inputCount =
+            (matvec && !batchedMatmul) || normalization || convolutionProgram ||
             plan.unary || plan.scalarConstant ? 1 : 2;
+        if (selectOp) inputCount = 3;
         ane::h14::Program program;
         try {
             program = convolutionProgram
@@ -888,6 +990,10 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
                     convWeights.length,
                     static_cast<const std::uint8_t *>(convBias.bytes),
                     convBias.length)
+                : selectOp
+                ? ane::h14::encodeSelectParity(selectShape, false)
+                : batchedMatmul
+                ? ane::h14::encodeBatchedMatmulParity(batchedShape)
                 : matvec
                 ? ane::h14::encodeMatvecParity(matvecShape,
                     static_cast<const std::uint8_t *>(matvecWeights.bytes),
@@ -922,9 +1028,19 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
         }
 
         NSMutableArray<ANEGraphValue *> *inputValues = [NSMutableArray array];
-        [inputValues addObject:operation.operands[@"x"].value];
-        if (inputCount == 2)
+        if (batchedMatmul) {
+            // The decoded surface order binds the weight before x.
             [inputValues addObject:operation.operands[@"y"].value];
+            [inputValues addObject:operation.operands[@"x"].value];
+        } else if (selectOp) {
+            [inputValues addObject:operation.operands[@"a"].value];
+            [inputValues addObject:operation.operands[@"b"].value];
+            [inputValues addObject:operation.operands[@"cond"].value];
+        } else {
+            [inputValues addObject:operation.operands[@"x"].value];
+            if (inputCount == 2)
+                [inputValues addObject:operation.operands[@"y"].value];
+        }
         NSMutableArray<NSDictionary *> *inputRecords = [NSMutableArray array];
         for (NSUInteger index = 0; index < inputCount; ++index) {
             ANEGraphValue *value = inputValues[index];
@@ -950,8 +1066,11 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
                 (unsigned long)programIndex, format],
             @"bytes": @(payload.length), @"taskDescriptors": @(program.taskCount),
             @"encoder": convolutionProgram ? @"apple-parity-conv"
+                : (selectOp ? @"apple-parity-select"
+                : (batchedMatmul ? @"apple-parity-batched-matmul"
                 : (matvec ? @"apple-parity-matvec"
-                : (normalization ? @"apple-parity-norm" : @"h14-oracle-parity")),
+                : (normalization ? @"apple-parity-norm"
+                : @"h14-oracle-parity")))),
             @"operation": operation.operationName, @"inputs": inputRecords,
             @"constantInputs": @{}, @"outputs": @[outputRecord],
             @"constantOffset": @(program.constantOffsetBytes),

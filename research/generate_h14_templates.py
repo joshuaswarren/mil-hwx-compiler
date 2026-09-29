@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ORACLES = ROOT / "research/oracles/h14"
 OUTPUT = ROOT / "plugins/H14/H14ElementwiseTemplates.inc"
 MATVEC_OUTPUT = ROOT / "plugins/H14/H14MatvecTemplates.inc"
+ISLAND_OUTPUT = ROOT / "plugins/H14/H14IslandTemplates.inc"
 CONSTANT_ALIGNMENT = 0x40
 
 # Task-stream framing: a 16-byte zero prefix that decodes as a zero-size task,
@@ -47,7 +48,7 @@ UNARY_OPERATIONS = {"abs": 0, "exp": 1, "gelu": 2, "leaky_relu": 3, "relu": 4,
 GELU_MODES = {"EXACT": "gelu",
               "SIGMOID_APPROXIMATION": "gelu_sigmoid_approximation",
               "TANH_APPROXIMATION": "gelu_tanh_approximation"}
-RUNTIME_BINARY = {"add", "mul", "maximum", "minimum", "sub"}
+RUNTIME_BINARY = {"add", "mul", "maximum", "minimum", "sub", "real_div"}
 UNARY = set(UNARY_OPERATIONS)
 KINDS = {"binary_runtime": "BinaryRuntime", "binary_constant": "BinaryScalar",
          "unary": "Unary"}
@@ -324,13 +325,201 @@ def generate_matvec() -> str:
     return "\n".join(lines)
 
 
+def island_oracles() -> list[dict[str, Any]]:
+    """The decoded select and batched-matmul records the island tables cover."""
+    selected = []
+    for path in sorted(ORACLES.glob("ga*.json")):
+        oracle = json.loads(path.read_text())
+        if oracle.get("error") is not None:
+            continue
+        if oracle["family"] in ("env_boolean_select", "env_matmul") and \
+                (oracle["case"].startswith("gasel_") or
+                 oracle["case"].startswith("gabmm_")):
+            selected.append(oracle)
+    return selected
+
+
+def island_tensor_entries(oracle: dict[str, Any]) -> list[str]:
+    """One `{index, {nchw...}, allocation, elementCode, elementBytes}` literal
+    per decoded descriptor, inputs in the decoded order and the output last.
+    The decoded strides are [batch, plane, row, element] bytes."""
+    entries = []
+    for index, descriptor in enumerate(oracle["tensor_descriptors"]):
+        shape = descriptor["shape"]
+        strides = descriptor["strides"]
+        element_bytes = strides[3]
+        element_code = {1: 3, 2: 5}[element_bytes]
+        channel = 4 if index + 1 == len(oracle["tensor_descriptors"]) \
+            else 5 + index
+        allocation = (descriptor["total_bytes"] + 0x3FFF) & ~0x3FFF
+        entries.append(
+            f"    {{{channel}, {{{shape[0]}, {shape[1]}, {shape[2]}, "
+            f"{shape[3]}, {strides[1]}, {strides[2]}}}, {allocation}, "
+            f"{element_code}, {element_bytes}}},")
+    return entries
+
+
+def generate_island() -> str:
+    """Tables for the Parakeet island families: five-task `select` with a bool
+    cond and the batched runtime-runtime matmuls. Both encode as whole-program
+    replays: every task word, the constant section runs, the three descriptor
+    words the campaign resolves no formula for, and the surface layouts come
+    from the decoded oracle."""
+    lines = ["// Generated from decoded H14 select and batched-matmul oracle",
+             "// task words by research/generate_h14_templates.py.",
+             ""]
+    selects = []
+    batched = []
+    for oracle in island_oracles():
+        parameters = oracle["parameters"]
+        if oracle["family"] == "env_boolean_select":
+            if parameters["mode"] != "rr":
+                # The const-fill form's 2.2 MB section is the -inf fill at a
+                # 376-halfword row stride plus the table; no run encoder, no
+                # template. The runtime form is what the island binds.
+                continue
+        elif parameters["batch"] == 1:
+            # Rank-3 batch-1 runtime matmuls stay outside: the two-task
+            # constant-weight encoder owns the rank-2 grid and nothing covers
+            # these yet.
+            continue
+        stream = task_stream(oracle)
+        runs = constant_runs(oracle)
+        descriptor = oracle["program_descriptor"]
+        trailer = descriptor["trailing_words"]
+        common = (tuple(stream), tuple(runs),
+                  oracle["constant_section"]["size"],
+                  descriptor["task_count"], int(trailer[20], 16),
+                  int(trailer[28], 16), int(trailer[18], 16))
+        tensors = island_tensor_entries(oracle)
+        if oracle["family"] == "env_boolean_select":
+            key_shape = oracle["tensor_descriptors"][0]["shape"]
+            selects.append((parameters, common, tensors, oracle["case"],
+                            key_shape))
+        else:
+            batched.append((parameters, common, tensors, oracle["case"]))
+    lines.append("struct OracleIslandTensor {")
+    lines.append("    std::uint32_t index;")
+    lines.append("    std::array<std::uint64_t, 6> nchw;")
+    lines.append("    std::uint64_t allocationBytes;")
+    lines.append("    std::uint32_t elementCode;")
+    lines.append("    std::uint32_t elementBytes;")
+    lines.append("};")
+    lines.append("")
+    lines.append("struct OracleIslandTemplate {")
+    lines.append("    const std::uint32_t *text;")
+    lines.append("    std::size_t textWords;")
+    lines.append("    std::uint32_t taskCount;")
+    lines.append("    const ConstantRun *constants;")
+    lines.append("    std::size_t constantRuns;")
+    lines.append("    std::size_t constantBytes;")
+    lines.append("    std::uint32_t programRecordCount;")
+    lines.append("    std::uint32_t unresolvedDescriptorWord;")
+    lines.append("    std::uint32_t scratchDescriptorWord;")
+    lines.append("    std::array<OracleIslandTensor, 4> tensors;")
+    lines.append("    std::uint32_t inputCount;")
+    lines.append("};")
+    lines.append("")
+
+    def emit_common(index, common):
+        stream, runs, constant_bytes, task_count, records, unresolved, \
+            scratch = common
+        lines.append(f"static constexpr std::uint32_t kH14IslandText{index}[] = {{")
+        lines.append(word_rows(list(stream)))
+        lines.append("};")
+        constants = "nullptr, 0"
+        if runs:
+            lines.append(f"static constexpr ConstantRun "
+                         f"kH14IslandConstants{index}[] = {{")
+            for start, bits, count in runs:
+                lines.append(f"    {{{start}, 0x{bits:04x}, {count}}},")
+            lines.append("};")
+            constants = (f"kH14IslandConstants{index}, "
+                         f"std::size(kH14IslandConstants{index})")
+        return (f"kH14IslandText{index}, std::size(kH14IslandText{index}), "
+                f"{task_count}, {constants}, {constant_bytes}, "
+                f"0x{records:08x}, 0x{unresolved:08x}, 0x{scratch:08x}")
+
+    entries = []
+    for index, (parameters, common, tensors, case, key_shape) in \
+            enumerate(selects):
+        lines.append(f"// {case}")
+        fields = emit_common(index, common)
+        shape = parameters["shape"]
+        const_fill = 1 if parameters["mode"] == "ninf" else 0
+        lines.append(f"static constexpr std::array<OracleIslandTensor, 4> "
+                     f"kH14SelectTensors{index} = " + "{{")
+        lines.extend(tensors)
+        lines.append("}};")
+        lines.append("")
+        shape_lit = "{%d, %d, %d}" % (key_shape[1], key_shape[2],
+                                      key_shape[3])
+        entries.append("    {" + shape_lit + ", " + str(const_fill) + ", "
+                       + fields + ", kH14SelectTensors%d}" % index + ","),
+    lines.append("struct OracleSelectTemplate {")
+    lines.append("    ElementwiseShape shape;")
+    lines.append("    bool constFill;")
+    lines.append("    const std::uint32_t *text;")
+    lines.append("    std::size_t textWords;")
+    lines.append("    std::uint32_t taskCount;")
+    lines.append("    const ConstantRun *constants;")
+    lines.append("    std::size_t constantRuns;")
+    lines.append("    std::size_t constantBytes;")
+    lines.append("    std::uint32_t programRecordCount;")
+    lines.append("    std::uint32_t unresolvedDescriptorWord;")
+    lines.append("    std::uint32_t scratchDescriptorWord;")
+    lines.append("    std::array<OracleIslandTensor, 4> tensors;")
+    lines.append("};")
+    lines.append("static constexpr OracleSelectTemplate kH14SelectTasks[] = {")
+    lines.extend(entries)
+    lines.append("};")
+    lines.append("")
+
+    entries = []
+    for index, (parameters, common, tensors, case) in enumerate(batched):
+        lines.append(f"// {case}")
+        fields = emit_common(len(selects) + index, common)
+        lines.append(f"static constexpr std::array<OracleIslandTensor, 3> "
+                     f"kH14BatchedTensors{index} = " + "{{")
+        lines.extend(tensors)
+        lines.append("}};")
+        lines.append("")
+        shape_lit = "{%d, %d, %d, %d, %d, %d}" % (
+            parameters["rows"], parameters["reduction"],
+            parameters["columns"], parameters["batch"],
+            1 if parameters["layout"] == "r4heads" else 0,
+            1 if parameters["transpose_y"] else 0)
+        entries.append("    {" + shape_lit + ", " + fields
+                       + ", kH14BatchedTensors%d}" % index + ",")
+    lines.append("struct OracleBatchedMatmulTemplate {")
+    lines.append("    BatchedMatmulShape shape;")
+    lines.append("    const std::uint32_t *text;")
+    lines.append("    std::size_t textWords;")
+    lines.append("    std::uint32_t taskCount;")
+    lines.append("    const ConstantRun *constants;")
+    lines.append("    std::size_t constantRuns;")
+    lines.append("    std::size_t constantBytes;")
+    lines.append("    std::uint32_t programRecordCount;")
+    lines.append("    std::uint32_t unresolvedDescriptorWord;")
+    lines.append("    std::uint32_t scratchDescriptorWord;")
+    lines.append("    std::array<OracleIslandTensor, 3> tensors;")
+    lines.append("};")
+    lines.append("static constexpr OracleBatchedMatmulTemplate "
+                 "kH14BatchedMatmulTasks[] = {")
+    lines.extend(entries)
+    lines.append("};")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true",
                         help="fail when a checked-in file is stale")
     arguments = parser.parse_args()
     for path, generated in ((OUTPUT, generate()),
-                            (MATVEC_OUTPUT, generate_matvec())):
+                            (MATVEC_OUTPUT, generate_matvec()),
+                            (ISLAND_OUTPUT, generate_island())):
         if arguments.check:
             if (path.read_text() if path.exists() else "") != generated:
                 raise SystemExit(f"{path} is stale; regenerate it")
