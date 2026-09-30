@@ -191,14 +191,14 @@ def emit(records: list[dict[str, Any]], out) -> None:
             print(f"static constexpr std::uint32_t {symbol}[] = {{", file=out)
             print(word_rows(list(words)), file=out)
             print("};", file=out)
-        operation, input_shape, axes, kept = h13probes.template_key(record)
+        operation, input_shape, mask, kept = h13probes.template_key(record)
         output_shape = h13probes.canonical_shape(h13probes.result_shape(record))
         trailer = descriptor["trailing_words"]
         rows.append(
             f"    {{{h13probes.OPERATION_ENUM[operation]}, "
             f"{{{input_shape[0]}, {input_shape[1]}, {input_shape[2]}}}, "
             f"{{{output_shape[0]}, {output_shape[1]}, {output_shape[2]}}}, "
-            f"0x{h13probes.axis_mask(axes):02x}, {'true' if kept else 'false'}, "
+            f"0x{mask:02x}, {'true' if kept else 'false'}, "
             f"NormConstants::{h13probes.constant_kind(record, tables)}, "
             f"{symbol}, std::size({symbol}), {descriptor['task_count']}, "
             f"{record['constant_section']['size']}, "

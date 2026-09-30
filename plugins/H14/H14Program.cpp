@@ -193,7 +193,10 @@ std::uint64_t alignTile(std::uint64_t value) {
 }
 
 TensorLayout elementwiseTensor(std::uint32_t index, ElementwiseShape shape) {
-    const std::uint64_t row = std::max<std::uint64_t>(64, shape.width * 2);
+    // Apple rounds the row stride up to a 64-byte boundary; the 64-byte
+    // floor alone leaves non-aligned widths (softmax at (16, 50), the Qwen
+    // attention decode shape) with a row that disagrees with the oracle.
+    const std::uint64_t row = (shape.width * 2 + 63) & ~std::uint64_t(63);
     const std::uint64_t plane = row * shape.height;
     const std::uint64_t bytes = plane * shape.channels;
     return {index, {1, shape.channels, shape.height, shape.width, plane, row},
@@ -201,10 +204,13 @@ TensorLayout elementwiseTensor(std::uint32_t index, ElementwiseShape shape) {
 }
 
 /// Apple's matvec surface: one dense [1, 1, rows, width] fp16 plane whose row
-/// stride is the logical row, without the 64-byte elementwise row padding.
+/// stride is the logical row, with the row rounded up to a 256-byte boundary
+/// once the column count exceeds 256 (matches the Parakeet opt-in 375-reduction
+/// case where the row must be 768, not 750).
 TensorLayout matvecTensor(std::uint32_t index, std::uint32_t rows,
                           std::uint32_t width) {
-    const std::uint64_t row = static_cast<std::uint64_t>(width) * 2;
+    std::uint64_t row = static_cast<std::uint64_t>(width) * 2;
+    if (row > 256) row = (row + 255) & ~std::uint64_t(255);
     const std::uint64_t plane = row * rows;
     return {index, {1, 1, rows, width, plane, row}, alignTile(plane)};
 }

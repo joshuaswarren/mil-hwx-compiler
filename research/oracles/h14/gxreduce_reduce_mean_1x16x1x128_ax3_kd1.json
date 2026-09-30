@@ -1,0 +1,45 @@
+{
+  "case": "gxreduce_reduce_mean_1x16x1x128_ax3_kd1",
+  "compiler": {
+    "command": [
+      "/tmp/h13-oracle/bin/ane-compile-hwx",
+      "CAPTURE_DIR",
+      "OUTPUT_DIR",
+      "h14"
+    ],
+    "decoder_sha256": "125da0249ca3c3ba0ca1f9f0cabfd1db54a965abb75f9f4cdcc2598e255c8fbc",
+    "driver_sha256": "a6e8f70d438973e60913815be66dbd6de19d7200df9053a9efc2a615823d8074",
+    "host": "MacStudio.local",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "tool": "/tmp/h13-oracle/bin/ane-compile-hwx",
+    "tool_sha256": "4013c74393bb3ba6d63bb7a5e5ccb8c61eb811dc32c037fd8e46e41aeb4091e7"
+  },
+  "constant_section": null,
+  "error": "callback_status=1",
+  "family": "reduction",
+  "hwx_bytes": null,
+  "hwx_sha256": null,
+  "mil": "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n  func main<ios18>(tensor<fp16, [1, 16, 1, 128]> x) {\n    tensor<int32, [1]> axes = const()[name = string(\"axes\"), val = tensor<int32, [1]>([3])];\n    tensor<fp16, [1, 16, 1, 1]> y = reduce_mean(x = x, axes = axes, keep_dims = true)[name = string(\"y\")];\n  } -> (y);\n}\n",
+  "parameters": {
+    "axes": [
+      3
+    ],
+    "keep_dims": true,
+    "operation": "reduce_mean",
+    "shape": [
+      1,
+      16,
+      1,
+      128
+    ]
+  },
+  "program_descriptor": null,
+  "schema_version": 1,
+  "source_commit": "81c0477a283b5fe81bc98271fbd53d63bd168c8e",
+  "target": "h14",
+  "task_descriptors": [],
+  "tensor_descriptors": [],
+  "weights": {
+    "storage": "none"
+  }
+}

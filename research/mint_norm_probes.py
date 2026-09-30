@@ -378,9 +378,14 @@ def keep_dims(record: dict[str, Any]) -> bool:
 
 
 def surface(chw: tuple[int, int, int]) -> dict[str, Any]:
-    """The tensor descriptor H13Program's surface formula produces for a CHW."""
+    """The tensor descriptor the elementwise encoder produces for a CHW.
+
+    Apple rounds the row stride up to a 64-byte boundary; the 64-byte floor
+    alone leaves non-aligned widths (the Qwen attention softmax at (16, 50),
+    for instance) with a row that disagrees with the oracle, so we align up
+    to the row boundary the H14 encoder now uses as well."""
     channels, height, width = chw
-    row = max(64, width * 2)
+    row = (width * 2 + 63) & ~63
     plane = row * height
     return {"element_code": 5, "shape": [1, channels, height, width],
             "strides": [plane * channels, plane, row, 2],
@@ -410,10 +415,25 @@ def covered(record: dict[str, Any]) -> bool:
 
 def template_key(record: dict[str, Any]) -> tuple:
     """What the compiler knows before it picks a program: the operation, the
-    input surface, which axes reduce, and whether the rank is kept."""
+    input surface, which axes reduce, and whether the rank is kept. The axis
+    mask is the canonical-CHW bitmask the encoder keys on (NCHW bit i for
+    axis i+1), so the deduplication table maps to the same value the encoder
+    looks up."""
+    axes = normalized_axes(record)
+    rank = len(record["parameters"]["shape"])
+    dimensions = list(record["parameters"]["shape"])
+    shift = 0
+    while len(dimensions) > 3 and dimensions[0] == 1:
+        dimensions.pop(0)
+        shift -= 1
+    while len(dimensions) < 3:
+        dimensions.insert(0, 1)
+        shift += 1
+    mask = 0
+    for axis in axes:
+        mask |= 1 << (axis + shift + 1)
     return (record["parameters"]["operation"],
-            canonical_shape(record["parameters"]["shape"]),
-            normalized_axes(record), keep_dims(record))
+            tuple(dimensions), mask, keep_dims(record))
 
 
 LUT_WORDS = re.compile(r"k(\w+)KERNWords\[\] = \{([^}]*)\}")
