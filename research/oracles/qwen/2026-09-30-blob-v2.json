@@ -1,0 +1,250 @@
+[
+ {
+  "case": "qwenmv_m1_k2048_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 2048,
+   "N": 2048,
+   "ty": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 2048]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenmv_m1_k6144_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 6144,
+   "N": 2048,
+   "ty": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 2048]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenmv_m1_k16_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 16,
+   "N": 2048,
+   "ty": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 2048]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenmv_m1_k512_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 512,
+   "N": 2048,
+   "ty": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 2048]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenmv_m1_k4096_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 4096,
+   "N": 2048,
+   "ty": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 2048]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenmv_m1_k2048_n6144_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 2048,
+   "N": 6144,
+   "ty": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 6144]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenmv_m1_k1024_n1024_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 1024,
+   "N": 1024,
+   "ty": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 1024]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenmv_m1_k2048_n4096_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 2048,
+   "N": 4096,
+   "ty": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 4096]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenmv_m1_k2048_n1024_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 2048,
+   "N": 1024,
+   "ty": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 1024]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenmv_m1_k1024_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 1024,
+   "N": 2048,
+   "ty": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 2048]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenmv_m1_k256_n256_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 256,
+   "N": 256,
+   "ty": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 256]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenmv_m1_k256_n512_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 256,
+   "N": 512,
+   "ty": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 512]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenmv_m1_k512_n256_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 512,
+   "N": 256,
+   "ty": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 256]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenmv_m1_k512_n512_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 512,
+   "N": 512,
+   "ty": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 512]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenmv_m1_k1024_n256_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 1024,
+   "N": 256,
+   "ty": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 256]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenmv_m1_k256_n1024_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 256,
+   "N": 1024,
+   "ty": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 1024]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenbm_const_m1_K128_n128_b16_r4False",
+  "shape": {
+   "rows": 1,
+   "K": 128,
+   "N": 128,
+   "batch": 16,
+   "rank4": false,
+   "const_y": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [16, 1, 128]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenbm_const_m1_K128_n128_b16_r4True",
+  "shape": {
+   "rows": 1,
+   "K": 128,
+   "N": 128,
+   "batch": 16,
+   "rank4": true,
+   "const_y": true
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "EXIT=1\nMIL validation report: 1/2 invalid operations:\nIn Function \"main\", Invalid operation #1:\ntensor<fp16, [1, 16, 1, 128]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(true), x = x, y = w)[milId = uint64(1), name = string(\"product\")];\nValidation error: \"MILFramework error: Error: Cannot retrieve file blob properties.\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenbm_rt_m1_K128_n128_b16_r4False",
+  "shape": {
+   "rows": 1,
+   "K": 128,
+   "N": 128,
+   "batch": 16,
+   "rank4": false,
+   "const_y": false
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "idation report: 1/1 invalid operations:\nIn Function \"main\", Invalid operation #0:\ntensor<fp16, [16, 1, 128]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(false), x = x, y = y)[milId = uint64(0), name = string(\"product\")];\nValidation error: \"ANE internal error: Cannot retrieve transpose mappings between layouts HCW and NCHW\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ },
+ {
+  "case": "qwenbm_rt_m1_K128_n128_b16_r4True",
+  "shape": {
+   "rows": 1,
+   "K": 128,
+   "N": 128,
+   "batch": 16,
+   "rank4": true,
+   "const_y": false
+  },
+  "compiled": false,
+  "has_hwx": false,
+  "log": "XIT=1\nMIL validation report: 1/1 invalid operations:\nIn Function \"main\", Invalid operation #0:\ntensor<fp16, [1, 16, 1, 128]> product = ios18.matmul(transpose_x = bool(false), transpose_y = bool(false), x = x, y = y)[milId = uint64(0), name = string(\"product\")];\nValidation error: \"ANE can only support matmul with input tensors rank between 1 and 4\"\ncallback_status=1\nANECCompile=1 callback_status=1\n"
+ }
+]

@@ -720,8 +720,8 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
     if (!x || !y || constantValue(x) || !constantValue(y) ||
         (linear && operation.arguments.count != 2) ||
         !matvecGeometry(x, operation.result, &rows, &reduction, &columns) ||
-        !tensor(y, transposeY ? @[@(columns), @(reduction)]
-                              : @[@(reduction), @(columns)]))
+        !(tensor(y, @[@(reduction), @(columns)]) ||
+          tensor(y, @[@(columns), @(reduction)])))
         return reject(diagnostics,
             @"H14 matmul requires a runtime fp16 x, a constant rank-2 weight matching its transpose flag, and a matching output shape",
             operation);
