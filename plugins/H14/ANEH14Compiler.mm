@@ -23,6 +23,20 @@ static BOOL reject(ANEDiagnosticEngine *diagnostics, NSString *message,
     return NO;
 }
 
+/// True if `value` is the SSA binding or any SSA binding nested inside this
+/// argument's tuple/list/call-argument tree. H14's compiled programs feed
+/// multi-input ops (concat, slice_by_size, etc.) values through nested
+/// tuples, and the previous flat `operand.value == input` check missed them.
+static BOOL operandUsesValue(ANEGraphArgument *argument, ANEGraphValue *value) {
+    if (!argument) return NO;
+    if (argument.value == value) return YES;
+    for (ANEGraphArgument *element in argument.elements)
+        if (operandUsesValue(element, value)) return YES;
+    for (ANEGraphNamedArgument *callArgument in argument.callArguments)
+        if (operandUsesValue(callArgument.value, value)) return YES;
+    return NO;
+}
+
 static BOOL fp16Tensor(ANEGraphValue *value) {
     return value.type.kind == ANEValueTypeKindTensor &&
         value.type.elementType == ANEElementTypeFP16;
@@ -1050,8 +1064,8 @@ static BOOL rmsNormChainPlan(NSArray<ANEGraphOperation *> *sourceOperations,
         [inputNames addObject:input.name];
         BOOL used = NO;
         for (ANEGraphOperation *candidate in sourceOperations)
-            for (ANEGraphArgument *operand in candidate.operands.allValues)
-                used = used || operand.value == input;
+            for (ANEGraphArgument *argument in candidate.arguments.allValues)
+                used = used || operandUsesValue(argument, input);
         if (!used)
             return reject(diagnostics, @"H14 function inputs must all be used",
                           sourceOperations[0]);
@@ -1061,9 +1075,9 @@ static BOOL rmsNormChainPlan(NSArray<ANEGraphOperation *> *sourceOperations,
         BOOL used = NO;
         for (NSUInteger consumer = index + 1; consumer < sourceOperations.count;
              ++consumer)
-            for (ANEGraphArgument *operand in
-                    sourceOperations[consumer].operands.allValues)
-                used = used || operand.value == value;
+            for (ANEGraphArgument *argument in
+                    sourceOperations[consumer].arguments.allValues)
+                used = used || operandUsesValue(argument, value);
         if (!used)
             return reject(diagnostics,
                 @"H14 operation results not returned must be consumed later",
