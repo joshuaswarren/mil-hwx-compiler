@@ -43,10 +43,42 @@ chain at the Qwen decode shape `[1, 2048, 1, 1]`:
   families, which also uncovered the first campaign's six
   `binary_real_div_1xCx1x1` records.
 
-The chain is decoded evidence but has no encoder: recognizing the nine-op
-subgraph in the frontend is a separate change (`h14.outside-parity-envelope`
-still refuses it). The `garms_chain_*` records pin the target streams for that
-work.
+The chain is now covered by the `apple-parity-rms-norm` encoder: it walks
+the nine-op subgraph in `rmsNormChainPlan`, validates the resolved gamma
+payload as a uniform fp16(0x1p-1) (every halfword = 0x3800), and emits the
+recorded whole-program stream via `OracleRmsNormTemplate` tables generated
+from the captured `garms_chain_c{128,2048}{,_gamma}` oracles. The decoder's
+allow r1 (amax) to be used twice — `real_div(x, amax)` and `mul(rms, amax)`
+both consume it — every other intermediate is still required to be unique.
+Decoded support:
+
+- channels = 128 (no gamma, gamma): `[1, 128, 1, 1]` x → `[1, 128, 1, 1]` y,
+  7-task and 8-task programs, 128 / 640-byte constant sections.
+- channels = 2048 (no gamma, gamma): `[1, 2048, 1, 1]` x → `[1, 2048, 1, 1]` y,
+  7-task and 8-task programs, 128 / 8,320-byte constant sections.
+
+Refused (out of envelope, named): rms_norm chains whose channel count is not
+in {128, 2048}; rms_norm chains with a non-uniform gamma weight (every
+halfword must equal 0x3800); rms_norm chains where any r2..r7 intermediate
+is used more than once; rms_norm chains whose eps literal is not 0x0080
+(fp16 2^-17); rms_norm chains where `x` is not a function input.
+
+## select const-fill (ninf)
+
+The encoder gained the `apple-parity-select` const-fill path for H14:
+`selectPlan` recognizes a constant `a`, loads its BLOBFILE payload, validates
+that the fill is uniform (every halfword matches `fillBits`), and lays the
+fill at `(fillBlocks, fillBlockData, fillBlockStride)` derived from the
+captured `gasel_ninf_1x8x375x375` section (375 blocks × 3000 halfwords at a
+3008-halfword stride; selector table sits in the final 256 bytes). The
+sub-header layout for the BLOBFILE weights.bin is the **aligned** form
+(length at byte 72, payload offset at byte 80) — the convolution/matvec
+sub-header (length at byte 68, payload offset at byte 76) makes the resolver
+emit `Cannot retrieve file blob properties`. Decoded support: the
+single-decoded `[1, 8, 375, 375]` ninf point on H14 (same constant section
+on H13, but the H14 encoder only covers H14). The runtime-form select (a, b,
+cond) on any covered shape still binds three inputs and is supported on both
+targets.
 
 ## (b) Island B: select
 
@@ -97,17 +129,20 @@ the total, the known batch trap). Off-point batches and geometries refuse with
 | Case | Status |
 |---|---|
 | `garms_reduce_reduce_{max,mean}_1x2048x1x1_kd1` | `callback_status=1` — flat-C standalone reductions |
-| `gasel_ninf_*` with `om.blob` header | `Cannot retrieve file blob properties` (header-layout finding; decodes with the aligned header) |
+| `gasel_ninf_*` with `om.blob` sub-header | `Cannot retrieve file blob properties` (header-layout finding; decodes with the aligned header) |
 | select with fp16 cond | refused (upstream H13 finding, unchanged) |
-| `garms_chain_*` | decoded; no encoder yet — refuses as `h14.outside-parity-envelope` |
+| `garms_chain_*` | covered by `apple-parity-rms-norm` (c128, c128_gamma, c2048, c2048_gamma) |
+| `gasel_ninf_1x8x375x375` | covered by `apple-parity-select` const-fill (H14 only) |
 
 ## Remaining work
 
-1. rms_norm: frontend recognition of the coremltools decomposition subgraph,
-   replaying the `garms_chain_c2048{,_gamma}` streams (gamma path needs the
-   per-channel 4-bytes-per-channel constant block).
-2. select const-fill: blob loading with the aligned sub-header plus the
-   376-halfword fill-stride section model; then encode `gasel_ninf_*`.
+1. rms_norm chain support beyond {128, 2048} channels and the uniform
+   fp16(0x1p-1) gamma — generic per-channel weight scaling and shapes with
+   non-trivial spatial extent are decoded-only.
+2. select const-fill shapes beyond `[1, 8, 375, 375]` (the lone decoded ninf
+   point): other mask-fill shapes need their own
+   `fillBlocks / fillBlockData / fillBlockStride / fillBits` measurements
+   from the captured section.
 3. Batched matmul between decoded points (batch 0x28 patch is understood for
    b<=8; the b16 half-batch split and the 4-task pv chunking are decoded but
    not generalized).
