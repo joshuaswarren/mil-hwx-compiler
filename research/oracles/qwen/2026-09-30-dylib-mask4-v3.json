@@ -1,0 +1,182 @@
+[
+ {
+  "case": "qwenmv_m1_k256_n256_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 256,
+   "N": 256,
+   "ty": true
+  },
+  "compiled": false,
+  "out": "compile(mask=0x4) err=11\nHANDLE NO 0\nE5RT encountered an STL exception. msg = Espresso exception: \"Not implemented\": Some ops are not supported on any of the specified backends."
+ },
+ {
+  "case": "qwenmv_m1_k256_n512_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 256,
+   "N": 512,
+   "ty": true
+  },
+  "compiled": false,
+  "out": "compile(mask=0x4) err=11\nHANDLE NO 0\nE5RT encountered an STL exception. msg = Espresso exception: \"Not implemented\": Some ops are not supported on any of the specified backends."
+ },
+ {
+  "case": "qwenmv_m2_k256_n256_ty0",
+  "shape": {
+   "rows": 2,
+   "K": 256,
+   "N": 256,
+   "ty": false
+  },
+  "compiled": false,
+  "out": "compile(mask=0x4) err=11\nHANDLE NO 0\nE5RT encountered an STL exception. msg = Espresso exception: \"Not implemented\": Some ops are not supported on any of the specified backends."
+ },
+ {
+  "case": "qwenmv_m8_k256_n256_ty0",
+  "shape": {
+   "rows": 8,
+   "K": 256,
+   "N": 256,
+   "ty": false
+  },
+  "compiled": false,
+  "out": "compile(mask=0x4) err=11\nHANDLE NO 0\nE5RT encountered an STL exception. msg = Espresso exception: \"Not implemented\": Some ops are not supported on any of the specified backends."
+ },
+ {
+  "case": "qwenmv_m1_k2048_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 2048,
+   "N": 2048,
+   "ty": true
+  },
+  "compiled": false,
+  "out": "compile(mask=0x4) err=11\nHANDLE NO 0\nE5RT encountered an STL exception. msg = Espresso exception: \"Not implemented\": Some ops are not supported on any of the specified backends."
+ },
+ {
+  "case": "qwenmv_m1_k6144_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 6144,
+   "N": 2048,
+   "ty": true
+  },
+  "compiled": false,
+  "out": "compile(mask=0x4) err=11\nHANDLE NO 0\nE5RT encountered an STL exception. msg = Espresso exception: \"Not implemented\": Some ops are not supported on any of the specified backends."
+ },
+ {
+  "case": "qwenmv_m1_k16_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 16,
+   "N": 2048,
+   "ty": true
+  },
+  "compiled": false,
+  "out": "compile(mask=0x4) err=11\nHANDLE NO 0\nE5RT encountered an STL exception. msg = Espresso exception: \"Not implemented\": Some ops are not supported on any of the specified backends."
+ },
+ {
+  "case": "qwenmv_m1_k512_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 512,
+   "N": 2048,
+   "ty": true
+  },
+  "compiled": false,
+  "out": "compile(mask=0x4) err=11\nHANDLE NO 0\nE5RT encountered an STL exception. msg = Espresso exception: \"Not implemented\": Some ops are not supported on any of the specified backends."
+ },
+ {
+  "case": "qwenmv_m1_k4096_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 4096,
+   "N": 2048,
+   "ty": true
+  },
+  "compiled": false,
+  "out": "compile(mask=0x4) err=11\nHANDLE NO 0\nE5RT encountered an STL exception. msg = Espresso exception: \"Not implemented\": Some ops are not supported on any of the specified backends."
+ },
+ {
+  "case": "qwenmv_m1_k2048_n6144_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 2048,
+   "N": 6144,
+   "ty": true
+  },
+  "compiled": false,
+  "out": "compile(mask=0x4) err=11\nHANDLE NO 0\nE5RT encountered an STL exception. msg = Espresso exception: \"Not implemented\": Some ops are not supported on any of the specified backends."
+ },
+ {
+  "case": "qwenmv_m1_k1024_n1024_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 1024,
+   "N": 1024,
+   "ty": true
+  },
+  "compiled": false,
+  "out": "compile(mask=0x4) err=11\nHANDLE NO 0\nE5RT encountered an STL exception. msg = Espresso exception: \"Not implemented\": Some ops are not supported on any of the specified backends."
+ },
+ {
+  "case": "qwenmv_m1_k2048_n4096_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 2048,
+   "N": 4096,
+   "ty": true
+  },
+  "compiled": false,
+  "out": "compile(mask=0x4) err=11\nHANDLE NO 0\nE5RT encountered an STL exception. msg = Espresso exception: \"Not implemented\": Some ops are not supported on any of the specified backends."
+ },
+ {
+  "case": "qwenmv_m1_k2048_n1024_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 2048,
+   "N": 1024,
+   "ty": true
+  },
+  "compiled": false,
+  "out": "compile(mask=0x4) err=11\nHANDLE NO 0\nE5RT encountered an STL exception. msg = Espresso exception: \"Not implemented\": Some ops are not supported on any of the specified backends."
+ },
+ {
+  "case": "qwenmv_m1_k1024_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 1024,
+   "N": 2048,
+   "ty": true
+  },
+  "compiled": false,
+  "out": "compile(mask=0x4) err=11\nHANDLE NO 0\nE5RT encountered an STL exception. msg = Espresso exception: \"Not implemented\": Some ops are not supported on any of the specified backends."
+ },
+ {
+  "case": "qwenbm_m1_K128_n128_b16_r4False_ty0",
+  "shape": {
+   "rows": 1,
+   "K": 128,
+   "N": 128,
+   "batch": 16,
+   "rank4": false,
+   "ty": false
+  },
+  "compiled": false,
+  "out": "compile(mask=0x4) err=11\nHANDLE NO 0\nE5RT encountered an STL exception. msg = Espresso exception: \"Not implemented\": Some ops are not supported on any of the specified backends."
+ },
+ {
+  "case": "qwenbm_m1_K128_n128_b16_r4False_ty1",
+  "shape": {
+   "rows": 1,
+   "K": 128,
+   "N": 128,
+   "batch": 16,
+   "rank4": false,
+   "ty": true
+  },
+  "compiled": false,
+  "out": "compile(mask=0x4) err=11\nHANDLE NO 0\nE5RT encountered an STL exception. msg = Espresso exception: \"Not implemented\": Some ops are not supported on any of the specified backends."
+ }
+]

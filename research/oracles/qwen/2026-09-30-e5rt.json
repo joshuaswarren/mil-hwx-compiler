@@ -1,0 +1,227 @@
+[
+ {
+  "case": "qwenmv_m1_k2048_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "reduction": 2048,
+   "columns": 2048,
+   "transpose_y": true,
+   "batch": null,
+   "rank4": null,
+   "is_batched": false
+  },
+  "weight_bytes": 8388672,
+  "compiled": false,
+  "log": "orge/__init__.py\", line 26, in <module>\n    from ._paired import Paired, paired\n  File \"/Users/joshuawarren/src/ane-af-split-wt/aneforge/_paired.py\", line 9, in <module>\n    _SPLIT = float(np.float16(2 ** 6 + 1))\n                   ^^^^^^^^^^\nAttributeError: module 'numpy' has no attribute 'float16'"
+ },
+ {
+  "case": "qwenmv_m1_k6144_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "reduction": 6144,
+   "columns": 2048,
+   "transpose_y": true,
+   "batch": null,
+   "rank4": null,
+   "is_batched": false
+  },
+  "weight_bytes": 25165888,
+  "compiled": false,
+  "log": "orge/__init__.py\", line 26, in <module>\n    from ._paired import Paired, paired\n  File \"/Users/joshuawarren/src/ane-af-split-wt/aneforge/_paired.py\", line 9, in <module>\n    _SPLIT = float(np.float16(2 ** 6 + 1))\n                   ^^^^^^^^^^\nAttributeError: module 'numpy' has no attribute 'float16'"
+ },
+ {
+  "case": "qwenmv_m1_k16_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "reduction": 16,
+   "columns": 2048,
+   "transpose_y": true,
+   "batch": null,
+   "rank4": null,
+   "is_batched": false
+  },
+  "weight_bytes": 65600,
+  "compiled": false,
+  "log": "orge/__init__.py\", line 26, in <module>\n    from ._paired import Paired, paired\n  File \"/Users/joshuawarren/src/ane-af-split-wt/aneforge/_paired.py\", line 9, in <module>\n    _SPLIT = float(np.float16(2 ** 6 + 1))\n                   ^^^^^^^^^^\nAttributeError: module 'numpy' has no attribute 'float16'"
+ },
+ {
+  "case": "qwenmv_m1_k512_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "reduction": 512,
+   "columns": 2048,
+   "transpose_y": true,
+   "batch": null,
+   "rank4": null,
+   "is_batched": false
+  },
+  "weight_bytes": 2097216,
+  "compiled": false,
+  "log": "orge/__init__.py\", line 26, in <module>\n    from ._paired import Paired, paired\n  File \"/Users/joshuawarren/src/ane-af-split-wt/aneforge/_paired.py\", line 9, in <module>\n    _SPLIT = float(np.float16(2 ** 6 + 1))\n                   ^^^^^^^^^^\nAttributeError: module 'numpy' has no attribute 'float16'"
+ },
+ {
+  "case": "qwenmv_m1_k4096_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "reduction": 4096,
+   "columns": 2048,
+   "transpose_y": true,
+   "batch": null,
+   "rank4": null,
+   "is_batched": false
+  },
+  "weight_bytes": 16777280,
+  "compiled": false,
+  "log": "orge/__init__.py\", line 26, in <module>\n    from ._paired import Paired, paired\n  File \"/Users/joshuawarren/src/ane-af-split-wt/aneforge/_paired.py\", line 9, in <module>\n    _SPLIT = float(np.float16(2 ** 6 + 1))\n                   ^^^^^^^^^^\nAttributeError: module 'numpy' has no attribute 'float16'"
+ },
+ {
+  "case": "qwenmv_m1_k2048_n6144_ty1",
+  "shape": {
+   "rows": 1,
+   "reduction": 2048,
+   "columns": 6144,
+   "transpose_y": true,
+   "batch": null,
+   "rank4": null,
+   "is_batched": false
+  },
+  "weight_bytes": 25165888,
+  "compiled": false,
+  "log": "orge/__init__.py\", line 26, in <module>\n    from ._paired import Paired, paired\n  File \"/Users/joshuawarren/src/ane-af-split-wt/aneforge/_paired.py\", line 9, in <module>\n    _SPLIT = float(np.float16(2 ** 6 + 1))\n                   ^^^^^^^^^^\nAttributeError: module 'numpy' has no attribute 'float16'"
+ },
+ {
+  "case": "qwenmv_m2_k256_n256_ty0",
+  "shape": {
+   "rows": 2,
+   "reduction": 256,
+   "columns": 256,
+   "transpose_y": false,
+   "batch": null,
+   "rank4": null,
+   "is_batched": false
+  },
+  "weight_bytes": 131136,
+  "compiled": false,
+  "log": "orge/__init__.py\", line 26, in <module>\n    from ._paired import Paired, paired\n  File \"/Users/joshuawarren/src/ane-af-split-wt/aneforge/_paired.py\", line 9, in <module>\n    _SPLIT = float(np.float16(2 ** 6 + 1))\n                   ^^^^^^^^^^\nAttributeError: module 'numpy' has no attribute 'float16'"
+ },
+ {
+  "case": "qwenmv_m8_k256_n256_ty0",
+  "shape": {
+   "rows": 8,
+   "reduction": 256,
+   "columns": 256,
+   "transpose_y": false,
+   "batch": null,
+   "rank4": null,
+   "is_batched": false
+  },
+  "weight_bytes": 131136,
+  "compiled": false,
+  "log": "orge/__init__.py\", line 26, in <module>\n    from ._paired import Paired, paired\n  File \"/Users/joshuawarren/src/ane-af-split-wt/aneforge/_paired.py\", line 9, in <module>\n    _SPLIT = float(np.float16(2 ** 6 + 1))\n                   ^^^^^^^^^^\nAttributeError: module 'numpy' has no attribute 'float16'"
+ },
+ {
+  "case": "qwenmv_m1_k1024_n1024_ty1",
+  "shape": {
+   "rows": 1,
+   "reduction": 1024,
+   "columns": 1024,
+   "transpose_y": true,
+   "batch": null,
+   "rank4": null,
+   "is_batched": false
+  },
+  "weight_bytes": 2097216,
+  "compiled": false,
+  "log": "orge/__init__.py\", line 26, in <module>\n    from ._paired import Paired, paired\n  File \"/Users/joshuawarren/src/ane-af-split-wt/aneforge/_paired.py\", line 9, in <module>\n    _SPLIT = float(np.float16(2 ** 6 + 1))\n                   ^^^^^^^^^^\nAttributeError: module 'numpy' has no attribute 'float16'"
+ },
+ {
+  "case": "qwenmv_m1_k2048_n4096_ty1",
+  "shape": {
+   "rows": 1,
+   "reduction": 2048,
+   "columns": 4096,
+   "transpose_y": true,
+   "batch": null,
+   "rank4": null,
+   "is_batched": false
+  },
+  "weight_bytes": 16777280,
+  "compiled": false,
+  "log": "orge/__init__.py\", line 26, in <module>\n    from ._paired import Paired, paired\n  File \"/Users/joshuawarren/src/ane-af-split-wt/aneforge/_paired.py\", line 9, in <module>\n    _SPLIT = float(np.float16(2 ** 6 + 1))\n                   ^^^^^^^^^^\nAttributeError: module 'numpy' has no attribute 'float16'"
+ },
+ {
+  "case": "qwenmv_m1_k2048_n1024_ty1",
+  "shape": {
+   "rows": 1,
+   "reduction": 2048,
+   "columns": 1024,
+   "transpose_y": true,
+   "batch": null,
+   "rank4": null,
+   "is_batched": false
+  },
+  "weight_bytes": 4194368,
+  "compiled": false,
+  "log": "orge/__init__.py\", line 26, in <module>\n    from ._paired import Paired, paired\n  File \"/Users/joshuawarren/src/ane-af-split-wt/aneforge/_paired.py\", line 9, in <module>\n    _SPLIT = float(np.float16(2 ** 6 + 1))\n                   ^^^^^^^^^^\nAttributeError: module 'numpy' has no attribute 'float16'"
+ },
+ {
+  "case": "qwenmv_m1_k1024_n2048_ty1",
+  "shape": {
+   "rows": 1,
+   "reduction": 1024,
+   "columns": 2048,
+   "transpose_y": true,
+   "batch": null,
+   "rank4": null,
+   "is_batched": false
+  },
+  "weight_bytes": 4194368,
+  "compiled": false,
+  "log": "orge/__init__.py\", line 26, in <module>\n    from ._paired import Paired, paired\n  File \"/Users/joshuawarren/src/ane-af-split-wt/aneforge/_paired.py\", line 9, in <module>\n    _SPLIT = float(np.float16(2 ** 6 + 1))\n                   ^^^^^^^^^^\nAttributeError: module 'numpy' has no attribute 'float16'"
+ },
+ {
+  "case": "qwenbm_m1_K_128_n128_b16_r40_ty0",
+  "shape": {
+   "rows": 1,
+   "reduction": 128,
+   "columns": 128,
+   "transpose_y": false,
+   "batch": 16,
+   "rank4": false,
+   "is_batched": true
+  },
+  "weight_bytes": 32832,
+  "compiled": false,
+  "log": "orge/__init__.py\", line 26, in <module>\n    from ._paired import Paired, paired\n  File \"/Users/joshuawarren/src/ane-af-split-wt/aneforge/_paired.py\", line 9, in <module>\n    _SPLIT = float(np.float16(2 ** 6 + 1))\n                   ^^^^^^^^^^\nAttributeError: module 'numpy' has no attribute 'float16'"
+ },
+ {
+  "case": "qwenbm_m1_K_128_n128_b16_r41_ty0",
+  "shape": {
+   "rows": 1,
+   "reduction": 128,
+   "columns": 128,
+   "transpose_y": false,
+   "batch": 16,
+   "rank4": true,
+   "is_batched": true
+  },
+  "weight_bytes": 32832,
+  "compiled": false,
+  "log": "orge/__init__.py\", line 26, in <module>\n    from ._paired import Paired, paired\n  File \"/Users/joshuawarren/src/ane-af-split-wt/aneforge/_paired.py\", line 9, in <module>\n    _SPLIT = float(np.float16(2 ** 6 + 1))\n                   ^^^^^^^^^^\nAttributeError: module 'numpy' has no attribute 'float16'"
+ },
+ {
+  "case": "qwenbm_m1_K_128_n128_b16_r40_ty1",
+  "shape": {
+   "rows": 1,
+   "reduction": 128,
+   "columns": 128,
+   "transpose_y": true,
+   "batch": 16,
+   "rank4": false,
+   "is_batched": true
+  },
+  "weight_bytes": 32832,
+  "compiled": false,
+  "log": "orge/__init__.py\", line 26, in <module>\n    from ._paired import Paired, paired\n  File \"/Users/joshuawarren/src/ane-af-split-wt/aneforge/_paired.py\", line 9, in <module>\n    _SPLIT = float(np.float16(2 ** 6 + 1))\n                   ^^^^^^^^^^\nAttributeError: module 'numpy' has no attribute 'float16'"
+ }
+]
