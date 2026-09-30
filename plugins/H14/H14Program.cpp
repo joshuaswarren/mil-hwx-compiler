@@ -98,6 +98,7 @@ struct OracleConvTemplate {
 #include "H14ConvTemplates.inc"
 #include "H14IslandTemplates.inc"
 #include "H14RmsNormTemplates.inc"
+#include "H14ChainTemplates.inc"
 // H14's exponential and reciprocal sections are the H13 tables byte-for-byte:
 // research/mint_h14_norm_probes.py resolves every decoded H14 section against
 // these words by SHA-256 before it emits a NormConstants kind.
@@ -892,6 +893,59 @@ const OracleBatchedMatmulTemplate *batchedMatmulTemplate(
     for (const auto &candidate : kH14BatchedMatmulTasks)
         if (candidate.shape == shape) return &candidate;
     return nullptr;
+}
+
+const OracleChainTemplate *chainTemplate(std::uint32_t channels,
+                                         std::uint32_t height,
+                                         std::uint32_t width) {
+    for (const auto &candidate : kChainTemplates)
+        if (candidate.channels == channels && candidate.height == height &&
+            candidate.width == width) return &candidate;
+    return nullptr;
+}
+
+bool supportsChainParity(std::uint32_t channels, std::uint32_t height,
+                         std::uint32_t width) {
+    return chainTemplate(channels, height, width) != nullptr;
+}
+
+/// Replays one whole-program chain template: 3-task stream with three
+/// fp16 boundary inputs and one output, all at the same CHW surface.
+Program encodeChainParity(std::uint32_t channels, std::uint32_t height,
+                          std::uint32_t width) {
+    const auto *source = chainTemplate(channels, height, width);
+    if (!source)
+        throw std::invalid_argument(
+            "H14 3-op chain is outside the decoded parity envelope "
+            "(only the sigmoid -> mul -> add form at [1, 16, 128, 1] "
+            "covers Apple-side emission as one ANEC)");
+    Program program = streamProgram(source->text, source->textWords,
+                                    source->taskCount,
+                                    source->programRecordCount,
+                                    source->unresolvedDescriptorWord);
+    program.constants.assign(source->constantBytes, 0);
+    for (std::size_t run = 0; run != source->constantRuns; ++run) {
+        const auto &entry = source->constants[run];
+        for (std::uint32_t offset = 0; offset != entry.count; ++offset) {
+            const std::size_t byte = (entry.index + offset) * 2;
+            if (byte + 1 >= program.constants.size())
+                throw std::logic_error("H14 chain constant run leaves its section");
+            program.constants[byte] = static_cast<std::uint8_t>(entry.bits);
+            program.constants[byte + 1] =
+                static_cast<std::uint8_t>(entry.bits >> 8);
+        }
+    }
+    program.scratchDescriptorWord = source->scratchDescriptorWord;
+    for (std::uint32_t index = 0; index != source->inputCount; ++index) {
+        const auto &tensor = source->inputs[index];
+        program.inputs.push_back({tensor.index, tensor.nchw,
+                                  tensor.allocationBytes, tensor.elementCode,
+                                  tensor.elementBytes});
+    }
+    const auto &output = *source->output;
+    program.output = {output.index, output.nchw, output.allocationBytes,
+                      output.elementCode, output.elementBytes};
+    return program;
 }
 
 /// Replays one whole-program island template: task stream, constant runs,

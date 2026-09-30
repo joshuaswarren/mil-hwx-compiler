@@ -517,8 +517,8 @@ def main():
     norm = norm_oracles()
     families = collections.Counter(oracle["family"] for oracle in norm)
     templates = check_norm_templates()
-    assert len(elementwise) == 236, \
-        f"expected 236 decoded elementwise oracles, found {len(elementwise)}"
+    assert len(elementwise) == 238, \
+        f"expected 238 decoded elementwise oracles, found {len(elementwise)}"
     assert len(matvec) == 57, \
         f"expected 57 decoded matvec oracles, found {len(matvec)}"
     assert families == collections.Counter(

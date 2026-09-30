@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace ane::h14 {
@@ -194,6 +195,17 @@ Program encodeConvParity(ConvShape shape, const std::uint8_t *weights,
                          std::size_t weightBytes,
                          const std::uint8_t *bias = nullptr,
                          std::size_t biasBytes = 0);
+/// One decoded 3-op whole-chain ANEC the F5 family needs: the
+/// `sigmoid -> mul -> add` form Apple emits as one three-task program at
+/// `[1, 16, 128, 1]`. The decoder reads three boundary inputs and writes
+/// the final op's result through the same surface shape.
+bool supportsChainParity(std::uint32_t channels, std::uint32_t height,
+                         std::uint32_t width);
+/// Encodes Apple's whole-chain H14 program for `sigmoid -> mul -> add` at
+/// the given fp16 surface. Throws outside the decoded
+/// `[1, 16, 128, 1]` parity envelope.
+Program encodeChainParity(std::uint32_t channels, std::uint32_t height,
+                          std::uint32_t width);
 /// Byte lengths of the tasks a task stream carries, in stream order.
 /// A decoded epilogue Apple folds into the producer's own task instead of
 /// emitting the consumer as a separate program.

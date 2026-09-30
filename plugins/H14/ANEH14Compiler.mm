@@ -1053,16 +1053,20 @@ static BOOL rmsNormChainPlan(NSArray<ANEGraphOperation *> *sourceOperations,
                 sourceOperations[index], @"h14.unsupported-chain");
     }
     if (chainSchedule) {
-        if (!chain || function.inputs.count > 2)
+        if (!chain || function.inputs.count > 3)
             return reject(diagnostics,
-                @"H14 composed scheduling needs at least two operations and at most two boundary inputs",
+                @"H14 composed scheduling needs at least two operations and at most three boundary inputs",
                 sourceOperations[0], @"h14.chain-outside-envelope");
         ANEGraphOperation *first = sourceOperations[0];
-        if (sourceOperations.count != 2)
+        BOOL creadoutChain = sourceOperations.count == 3 &&
+            [sourceOperations[0].operationName isEqualToString:@"sigmoid"] &&
+            [sourceOperations[1].operationName isEqualToString:@"mul"] &&
+            [sourceOperations[2].operationName isEqualToString:@"add"];
+        if (sourceOperations.count != 2 && !creadoutChain)
             return reject(diagnostics,
-                @"h14.chain-unrepresentable-edge: composed scheduling supports exactly one producer followed by relu",
+                @"h14.chain-unrepresentable-edge: composed scheduling supports exactly one producer followed by relu, or the three-op sigmoid -> mul -> add form Apple emits as one ANEC",
                 sourceOperations[0], @"h14.chain-unrepresentable-edge");
-        if (![lastOperation.operationName isEqualToString:@"relu"])
+        if (!creadoutChain && ![lastOperation.operationName isEqualToString:@"relu"])
             return reject(diagnostics,
                 @"h14.chain-unrepresentable-edge: only a final relu has a decoded single-kernel fusion",
                 lastOperation, @"h14.chain-unrepresentable-edge");
@@ -1070,7 +1074,7 @@ static BOOL rmsNormChainPlan(NSArray<ANEGraphOperation *> *sourceOperations,
             BOOL firstUse = NO;
             for (ANEGraphArgument *operand in first.operands.allValues)
                 firstUse = firstUse || operand.value == input;
-            if (!firstUse)
+            if (!firstUse && !creadoutChain)
                 return reject(diagnostics,
                     @"H14 composed scheduling needs every boundary input resident in the first operation",
                     first, @"h14.chain-outside-envelope");
@@ -1116,11 +1120,101 @@ static BOOL rmsNormChainPlan(NSArray<ANEGraphOperation *> *sourceOperations,
                                      &rmsConsumed);
     if (rmsChain) rmsInput = sourceOperations[0].operands[@"x"].value;
 
+    // F5: the 3-op `sigmoid -> mul -> add` chain at the same fp16 surface is
+    // a one-shot three-task ANEC. Handle it before the per-op loop so the
+    // chain encoder emits a single program instead of three.
+    BOOL creadoutChain = chainSchedule && sourceOperations.count == 3 &&
+        [sourceOperations[0].operationName isEqualToString:@"sigmoid"] &&
+        [sourceOperations[1].operationName isEqualToString:@"mul"] &&
+        [sourceOperations[2].operationName isEqualToString:@"add"];
+
     for (NSUInteger operationIndex = 0;
          operationIndex < sourceOperations.count; ) {
         ANEGraphOperation *operation = sourceOperations[operationIndex];
         NSString *name = operation.operationName;
         NSData *selectAFillBytes = nil;
+        if (creadoutChain && operationIndex == 0) {
+            ANEGraphOperation *sigmoidOp = sourceOperations[0];
+            ANEGraphOperation *mulOp = sourceOperations[1];
+            ANEGraphOperation *addOp = sourceOperations[2];
+            NSArray<NSNumber *> *sigmoidShape = sigmoidOp.result.type.shape;
+            if (sigmoidShape.count != 4 ||
+                sigmoidShape[0].unsignedIntegerValue != 1) {
+                return reject(diagnostics,
+                    @"H14 3-op chain encoder needs a rank-4 fp16 surface with leading batch of one",
+                    sigmoidOp, @"h14.chain-outside-envelope");
+            }
+            const std::uint32_t channels = sigmoidShape[1].unsignedIntValue;
+            const std::uint32_t height = sigmoidShape[2].unsignedIntValue;
+            const std::uint32_t width = sigmoidShape[3].unsignedIntValue;
+            if (!ane::h14::supportsChainParity(channels, height, width))
+                return reject(diagnostics,
+                    @"H14 3-op sigmoid -> mul -> add is only decoded at [1, 16, 128, 1]",
+                    sigmoidOp, @"h14.chain-outside-envelope");
+            ane::h14::Program program;
+            NSData *payload = nil;
+            try {
+                program = ane::h14::encodeChainParity(channels, height, width);
+                if (hwx) {
+                    payload = encodeHWX(program, error);
+                    if (!payload) return NO;
+                } else {
+                    std::vector<std::uint8_t> anec = ane::h14::encodeANEC(program);
+                    payload = [NSData dataWithBytes:anec.data() length:anec.size()];
+                }
+            } catch (const std::exception &exception) {
+                return reject(diagnostics,
+                    [NSString stringWithUTF8String:exception.what()], sigmoidOp,
+                    @"h14.chain-outside-envelope");
+            }
+            NSMutableArray<NSDictionary *> *inputRecords = [NSMutableArray array];
+            for (NSUInteger index = 0; index < 3; ++index) {
+                ANEGraphValue *value = (index == 0
+                    ? sigmoidOp.operands[@"x"].value
+                    : (index == 1 ? mulOp.operands[@"x"].value
+                                  : mulOp.operands[@"y"].value));
+                NSMutableDictionary *item =
+                    [binding(value, program.inputs[index]) mutableCopy];
+                if (![inputNames containsObject:value.name])
+                    item[@"role"] = @"intermediate";
+                [inputRecords addObject:item];
+            }
+            // The third input is the h_residual carried into the add; if it
+            // is a function input, the binding already declared it. If it
+            // came from a prior result, mark it intermediate.
+            ANEGraphValue *residualValue = addOp.operands[@"y"].value;
+            NSMutableDictionary *residualBinding =
+                [binding(residualValue, program.inputs[2]) mutableCopy];
+            residualBinding[@"role"] = @"input";
+            inputRecords[2] = residualBinding;
+            NSMutableDictionary *outputRecord =
+                [binding(addOp.result, program.output) mutableCopy];
+            outputRecord[@"role"] = @"output";
+            tensors[addOp.result.name] = @{
+                @"shape": addOp.result.type.shape,
+                @"logicalBytes": @(logicalBytes(addOp.result)),
+                @"role": @"output",
+            };
+            NSDictionary *record = @{
+                @"file": [NSString stringWithFormat:@"program-0.%@", format],
+                @"bytes": @(payload.length),
+                @"taskDescriptors": @(program.taskCount),
+                @"encoder": @"composed-chain",
+                @"operation": @"chain",
+                @"ops": @[@"sigmoid", @"mul", @"add"],
+                @"inputs": inputRecords,
+                @"constantInputs": @{},
+                @"outputs": @[outputRecord],
+                @"constantOffset": @(program.constantOffsetBytes),
+                @"constantBytes": @(program.constants.size()),
+                @"firstTaskBytes": @(program.firstTaskBytes),
+            };
+            [programRecords addObject:record];
+            [payloads addObject:payload];
+            [dispatchPlan addObject:@0];
+            operationIndex = sourceOperations.count;
+            continue;
+        }
         if (chainSchedule && operation == lastOperation) {
             ANEGraphValue *value = operation.operands[@"x"].value;
             if (operation.arguments.count != 1 || !value)
