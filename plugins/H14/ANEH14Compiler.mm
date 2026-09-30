@@ -394,6 +394,22 @@ static NSUInteger parityShapes(ANEGraphValue *value,
     if (elementwiseShape(value, &literal) &&
         (literal.height != 1 || literal.width != 1))
         shapes[count++] = literal;
+    // A rank-3 fp16 tensor is the literal CHW surface with an implicit
+    // batch of one — the same convention normSurface applies when it pads
+    // a short rank on the left. Apple's own descriptors normalize the
+    // Qwen3.8 staged decoder's rank-3 [16, 128, 128] elementwise/mul
+    // surfaces to (16, 128, 128), and the minted envelope covers them.
+    if (!count && value.type.shape.count == 3) {
+        const uint64_t channels = value.type.shape[0].unsignedLongLongValue;
+        const uint64_t height = value.type.shape[1].unsignedLongLongValue;
+        const uint64_t width = value.type.shape[2].unsignedLongLongValue;
+        if (channels && height && width && channels <= UINT32_MAX &&
+            height <= UINT32_MAX && width <= UINT32_MAX) {
+            shapes[count++] = {static_cast<std::uint32_t>(channels),
+                               static_cast<std::uint32_t>(height),
+                               static_cast<std::uint32_t>(width)};
+        }
+    }
     shapes[count++] = {static_cast<std::uint32_t>(elements), 1, 1};
     return count;
 }
