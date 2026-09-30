@@ -837,9 +837,23 @@ static BOOL rmsNormChainPlan(NSArray<ANEGraphOperation *> *sourceOperations,
         !boolean(op1.arguments[@"keep_dims"], YES))
         return NO;
     long long values[3];
-    if (!int32Vector(op1.operands[@"axes"].value, 3, values) ||
-        values[0] != 1 || values[1] != 2 || values[2] != 3)
+    // Accept the canonical axes=[1,2,3] form (3-element int32 vector),
+    // OR the channel-flat-only axes=[1] form (1-element vector) when the
+    // surface height and width are both 1. Apple decodes the [1, 2048, 1, 1]
+    // axes=[1] reduce_max point but never the [1, 2048, 1, 1] axes=[1,2,3]
+    // point — the surface is mathematically equivalent at H=W=1, so the
+    // decoder accepts both.
+    const BOOL surfaceIsChannelFlat =
+        xValue.type.shape[2].unsignedIntegerValue == 1 &&
+        xValue.type.shape[3].unsignedIntegerValue == 1;
+    if (surfaceIsChannelFlat &&
+        int32Vector(op1.operands[@"axes"].value, 1, values) &&
+        values[0] == 1) {
+        values[1] = values[2] = 0;
+    } else if (!int32Vector(op1.operands[@"axes"].value, 3, values) ||
+               values[0] != 1 || values[1] != 2 || values[2] != 3) {
         return NO;
+    }
     // r1 (amax) is consumed twice: once by op2's real_div and once by op7's
     // mul. Every other intermediate (r2..r7) must still be unique.
     NSUInteger r1Uses = 0;
