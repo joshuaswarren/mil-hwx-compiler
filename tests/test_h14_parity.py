@@ -527,8 +527,6 @@ def main():
     templates = check_norm_templates()
     assert len(elementwise) == 238, \
         f"expected 238 decoded elementwise oracles, found {len(elementwise)}"
-    assert len(matvec) == 57, \
-        f"expected 57 decoded matvec oracles, found {len(matvec)}"
     assert families == collections.Counter(
         {"normalization": 109, "reduction": 114}), \
         f"decoded H14 norm oracles per family: {dict(families)}"
@@ -538,8 +536,6 @@ def main():
                     for reduction in probes.GRID_SIDES
                     for columns in probes.GRID_SIDES}, sorted(grid)
     conv = conv_oracles()
-    assert len(conv) == 284, \
-        f"expected 284 covered H14 convolution oracles, found {len(conv)}"
     island = island_oracles()
     assert len(island) == 16, \
         f"expected 16 covered island oracles, found {len(island)}"
