@@ -704,9 +704,14 @@ static BOOL batchedMatmulPlan(ANEGraphOperation *operation,
     if (!x || !y || constantValue(x) || constantValue(y) ||
         ![operation.operationName isEqualToString:@"matmul"] ||
         operation.arguments.count != 4 ||
-        !boolean(operation.arguments[@"transpose_x"], NO))
+        !operation.arguments[@"transpose_x"] ||
+        !operation.arguments[@"transpose_y"]) {
         return NO;
+    }
     BOOL transposeY = boolean(operation.arguments[@"transpose_y"], YES);
+    // transpose_x defaults to false when absent; the early-out above ensured
+    // the argument is present so the decoded value is read here.
+    BOOL transposeX = boolean(operation.arguments[@"transpose_x"], YES);
     NSUInteger xRank = x.type.shape.count, yRank = y.type.shape.count;
     if (xRank < 3 || xRank > 4 || yRank != xRank) return NO;
     NSUInteger leading = xRank == 4 ? 2 : 1;
@@ -718,19 +723,26 @@ static BOOL batchedMatmulPlan(ANEGraphOperation *operation,
         ? [x.type.shape[1] unsignedIntegerValue]
         : [x.type.shape[0] unsignedIntegerValue];
     if (batch < 2) return NO;
-    NSUInteger rows = [x.type.shape[xRank - 2] unsignedIntegerValue];
-    NSUInteger reduction = [x.type.shape[xRank - 1] unsignedIntegerValue];
+    // Apply transpose_x to read logical rows and reduction. The decoded
+    // BatchedMatmulShape always carries the post-transpose geometry, so
+    // tx=true swaps the last two dims before reading.
+    NSUInteger xRows = transposeX
+        ? [x.type.shape[xRank - 1] unsignedIntegerValue]
+        : [x.type.shape[xRank - 2] unsignedIntegerValue];
+    NSUInteger xReduction = transposeX
+        ? [x.type.shape[xRank - 2] unsignedIntegerValue]
+        : [x.type.shape[xRank - 1] unsignedIntegerValue];
     NSUInteger yReduction = transposeY
         ? [y.type.shape[yRank - 1] unsignedIntegerValue]
         : [y.type.shape[yRank - 2] unsignedIntegerValue];
     NSUInteger columns = transposeY
         ? [y.type.shape[yRank - 2] unsignedIntegerValue]
         : [y.type.shape[yRank - 1] unsignedIntegerValue];
-    if (yReduction != reduction || !rows || !reduction || !columns) return NO;
+    if (yReduction != xReduction || !xRows || !xReduction || !columns) return NO;
     if (!tensor(operation.result, operation.result.type.shape)) return NO;
     ane::h14::BatchedMatmulShape candidate{
-        static_cast<std::uint32_t>(rows),
-        static_cast<std::uint32_t>(reduction),
+        static_cast<std::uint32_t>(xRows),
+        static_cast<std::uint32_t>(xReduction),
         static_cast<std::uint32_t>(columns),
         static_cast<std::uint32_t>(batch),
         xRank == 4 ? true : false, transposeY ? true : false};

@@ -533,8 +533,8 @@ def main():
     assert len(conv) == 284, \
         f"expected 284 covered H14 convolution oracles, found {len(conv)}"
     island = island_oracles()
-    assert len(island) == 14, \
-        f"expected 14 covered island oracles, found {len(island)}"
+    assert len(island) == 16, \
+        f"expected 16 covered island oracles, found {len(island)}"
     rms = rms_norm_oracles()
     assert len(rms) == 4, \
         f"expected 4 rms_norm_chain oracles, found {len(rms)}"

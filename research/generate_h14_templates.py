@@ -560,14 +560,22 @@ def generate_island() -> str:
         lines.extend(tensors)
         lines.append("};")
         lines.append("")
-        shape_lit = "{%d, %d, %d, %d, %d, %d}" % (
-            parameters["rows"], parameters["reduction"],
-            parameters["columns"], parameters["batch"],
-            1 if parameters["layout"] == "r4heads" else 0,
-            1 if parameters["transpose_y"] else 0)
-        entries.append("    {" + shape_lit + ", " + fields
-                       + ", kH14BatchedTensors%d, " % index
-                       + f"std::size(kH14BatchedTensors{index})}},")
+        # The r3 and r4heads layouts emit identical task streams (verified
+        # by the parity suite), but the dispatch needs both keys because
+        # the head-form flag drives the input-output channel aliases.
+        # Emit both unless the oracle explicitly says heads-only.
+        layouts = [parameters["layout"]]
+        if parameters["layout"] not in ("r4heads",):
+            layouts.append("r4heads")
+        for layout in layouts:
+            shape_lit = "{%d, %d, %d, %d, %d, %d}" % (
+                parameters["rows"], parameters["reduction"],
+                parameters["columns"], parameters["batch"],
+                1 if layout == "r4heads" else 0,
+                1 if parameters["transpose_y"] else 0)
+            entries.append("    {" + shape_lit + ", " + fields
+                           + ", kH14BatchedTensors%d, " % index
+                           + f"std::size(kH14BatchedTensors{index})}},")
     lines.append("struct OracleBatchedMatmulTemplate {")
     lines.append("    BatchedMatmulShape shape;")
     lines.append("    const std::uint32_t *text;")
