@@ -67,9 +67,35 @@ def program(arguments: str, body: list[str], result: str) -> str:
 
 
 def blob(payload: bytes) -> bytes:
+    """The weights.bin layout the H14 convolution and matvec families expect.
+
+    The convolution parity envelope hashes its constant section against the
+    first `payload_bytes` bytes of `blob(payload)`, including the 128-byte
+    sub-header that ``mint_conv_probes.case_weights`` slices into weights and
+    bias. Apple's conv resolver reads the payload length and offset at
+    byte 68 and 76 of the chunk, so the packing hash depends on writing the
+    uint64s packed against the magic without the four-byte gap the resolver
+    itself uses (length@72, offset@80). Shifting them four bytes higher
+    changes the halfwords columns 0..31 see and breaks every packed section.
+    """
     result = bytearray(128 + len(payload))
     struct.pack_into("<II", result, 0, 1, 2)
     struct.pack_into("<IQQ", result, 64, 0xDEADBEEF, len(payload), 128)
+    result[128:] = payload
+    return bytes(result)
+
+
+def aligned_blob(payload: bytes) -> bytes:
+    """The weights.bin layout Apple's H14 select const-fill resolver wants:
+    a four-byte gap between the magic and the length/offset uint64s so the
+    resolver reads ``length`` at byte 72 and ``offset`` at byte 80. The
+    select const-fill oracle refuses the conv layout ("Cannot retrieve
+    file blob properties"); the rms_norm chain oracle wants the same."""
+    result = bytearray(128 + len(payload))
+    struct.pack_into("<II", result, 0, 1, 2)
+    struct.pack_into("<I", result, 64, 0xDEADBEEF)
+    struct.pack_into("<Q", result, 72, len(payload))
+    struct.pack_into("<Q", result, 80, 128)
     result[128:] = payload
     return bytes(result)
 
@@ -723,7 +749,7 @@ def decode_task_safely(task: bytes, target: str) -> dict[str, Any]:
         }
 
 
-def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
+def parse_hwx(data: bytes, target: str, capture_constant_bytes: bool = False) -> dict[str, Any]:
     if len(data) < 32:
         raise ValueError("HWX Mach-O header is truncated")
     magic, _, subtype, _, command_count, command_bytes, _, _ = struct.unpack_from(
@@ -854,6 +880,8 @@ def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
             "chunk_bytes": chunk_bytes,
             "chunk_count": (len(constant_data) + chunk_bytes - 1) // chunk_bytes,
             "chunks": chunks,
+            **({"constant_bytes_hex": constant_data.hex()}
+               if capture_constant_bytes else {}),
         },
         "task_descriptors": descriptors,
         "task_decode_errors": sum("decode_error" in item for item in descriptors),
@@ -902,7 +930,9 @@ def run_case(item: dict[str, Any], target: str, output: Path,
             error = (result.stderr or result.stdout).strip()
             hwx = compiled / "model.hwx"
             if result.returncode == 0 and hwx.is_file():
-                record.update(parse_hwx(hwx.read_bytes(), target))
+                record.update(parse_hwx(
+                    hwx.read_bytes(), target,
+                    bool(item.get("capture_constant_bytes"))))
                 record["error"] = None
                 status = "decoded"
             else:

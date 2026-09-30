@@ -30,6 +30,7 @@ MATVEC_ENCODER = "apple-parity-matvec"
 NORM_ENCODER = "apple-parity-norm"
 ELEMENTWISE_ENCODER = "h14-oracle-parity"
 CONV_ENCODER = "apple-parity-conv"
+RMS_ENCODER = "apple-parity-rms-norm"
 SELECT_ENCODER = "apple-parity-select"
 BATCHED_ENCODER = "apple-parity-batched-matmul"
 CONV_FAMILIES = {"env_conv", "conv_probe"}
@@ -38,6 +39,8 @@ CONV_FAMILIES = {"env_conv", "conv_probe"}
 def encoder(oracle):
     if oracle["family"] in CONV_FAMILIES:
         return CONV_ENCODER
+    if oracle["family"] == "rms_norm_chain":
+        return RMS_ENCODER
     if oracle["family"] == "env_boolean_select":
         return SELECT_ENCODER
     if oracle["family"] == "env_matmul" and \
@@ -53,15 +56,15 @@ def encoder(oracle):
 
 def island_oracles():
     """The decoded select and batched-matmul records the island encoders
-    reproduce: runtime-a select with a bool cond, and batched runtime
-    matmuls over a leading batch of two or more."""
+    reproduce: runtime-a select with a bool cond, const-fill select with a
+    full-size -inf `a`, and batched runtime matmuls over a leading batch."""
     selected = []
     for path in sorted((ROOT / "research/oracles/h14").glob("ga*.json")):
         oracle = json.loads(path.read_text())
         if oracle.get("error") is not None:
             continue
         if oracle["family"] == "env_boolean_select" and \
-                oracle["parameters"]["mode"] == "rr":
+                oracle["parameters"]["mode"] in ("rr", "ninf"):
             selected.append(oracle)
         elif oracle["family"] == "env_matmul" and \
                 oracle["case"].startswith("gabmm_") and \
@@ -70,8 +73,30 @@ def island_oracles():
     return selected
 
 
+def rms_norm_oracles():
+    """The decoded coremltools rms_norm decomposition chains: 7 tasks without
+    gamma, 8 tasks with the gamma mul riding at the tail."""
+    selected = []
+    for path in sorted((ROOT / "research/oracles/h14").glob("garms_chain_*.json")):
+        oracle = json.loads(path.read_text())
+        if oracle.get("error") is None:
+            selected.append(oracle)
+    return selected
+
+
 def write_weights(oracle, root):
-    """Recreates the exact weights.bin Apple's compiler saw for this case."""
+    """Recreates the exact weights.bin Apple's compiler saw for this case.
+
+    Apple's sub-header layout is per-oracle: the convolution, matvec, and
+    softmax/layer_norm envelopes hash the first `payload_bytes` bytes of the
+    weights.bin (including the 128-byte sub-header), so their packed
+    constant sections only match when the magic, length and offset sit
+    where ``mint_conv_probes.case_weights`` reads them (length@68,
+    offset@76). The select const-fill and rms_norm chain oracles carry
+    ``blob_layout = "aligned"``; Apple's resolver for those families reads
+    length at byte 72 and offset at byte 80 and refuses the conv layout.
+    Picking the layout per oracle record keeps both envelopes byte-exact.
+    """
     description = oracle.get("weights", {})
     if description.get("storage") != "BLOBFILE":
         return
@@ -84,17 +109,33 @@ def write_weights(oracle, root):
     if oracle["family"] == "matvec_probe":
         payload = probes.payload(parameters["reduction"], parameters["columns"],
                                  parameters["pattern"])
-        assert hashlib.sha256(payload).hexdigest() == \
-            description["payload_sha256"], oracle["case"]
     elif description.get("value") == "distinct":
         # The known-weight convolution probes carry one distinct fp16 pattern
         # per element, which is what proves the packing permutation.
         payload = mint_conv_probes.known_weights(
             description["payload_bytes"] // 2)
-    else:
-        assert description["value"] == "fp16(0x1p-1)", oracle["case"]
+    elif description["value"] == "fp16(0x1p-1)":
         payload = mint_oracles.half_payload(description["payload_bytes"] // 2)
-    (root / "weights.bin").write_bytes(mint_oracles.blob(payload))
+    elif description["value"] == "fp16 -inf":
+        # The const-fill select form carries a full-size fp16 -inf BLOBFILE;
+        # the encoder validates it as a uniform -inf fill and packs the
+        # 376-halfword-row section.
+        payload = struct.pack("<e", float("-inf")) * (
+            description["payload_bytes"] // 2)
+    else:
+        raise AssertionError(
+            f"{oracle['case']}: unexpected weight value "
+            f"{description.get('value')!r}")
+    if description.get("payload_sha256"):
+        assert hashlib.sha256(payload).hexdigest() == \
+            description["payload_sha256"], oracle["case"]
+    layout = description.get("blob_layout")
+    if layout is None and oracle["family"] == "rms_norm_chain" and \
+            oracle["parameters"].get("gamma"):
+        layout = "aligned"
+    packer = (mint_oracles.aligned_blob if layout == "aligned"
+              else mint_oracles.blob)
+    (root / "weights.bin").write_bytes(packer(payload))
 
 
 def grid_probe_oracles():
@@ -492,21 +533,25 @@ def main():
     assert len(conv) == 284, \
         f"expected 284 covered H14 convolution oracles, found {len(conv)}"
     island = island_oracles()
-    assert len(island) == 13, \
-        f"expected 13 covered island oracles, found {len(island)}"
-    oracles = elementwise + matvec + probe + norm + conv + island
+    assert len(island) == 14, \
+        f"expected 14 covered island oracles, found {len(island)}"
+    rms = rms_norm_oracles()
+    assert len(rms) == 4, \
+        f"expected 4 rms_norm_chain oracles, found {len(rms)}"
+    oracles = elementwise + matvec + probe + norm + conv + island + rms
     with tempfile.TemporaryDirectory(prefix="h14-parity-") as directory:
         root = Path(directory)
         check_chain_package(root)
         for oracle in oracles:
-            # The island replays are proven in ANEC, which carries the whole
-            # byte-checked payload: task stream, constants, and counts. Their
-            # HWX containers place the text above the surfaces with the
-            # resource split the descriptor records (slot 2 = 0x30000000,
-            # slot 4 per case); the container-address formula is remaining
-            # work (research/h14-model-gap-findings.md), so no HWX artifact
-            # is claimed for them.
-            formats = (("anec", check_anec),) if oracle in island \
+            # The whole-program island replays (select + batched matmul) and
+            # the rms_norm chain replay carry the byte-checked payload in
+            # ANEC alone; their HWX containers place the text above the
+            # surfaces with the resource split the descriptor records (slot
+            # 2 = 0x30000000, slot 4 per case); the container-address
+            # formula is remaining work (research/h14-model-gap-findings.md),
+            # so no HWX artifact is claimed for them.
+            whole_program = oracle in island or oracle in rms
+            formats = (("anec", check_anec),) if whole_program \
                 else (("anec", check_anec), ("hwx", check_hwx))
             for artifact_format, check in formats:
                 output = root / f"{oracle['case']}-{artifact_format}"
@@ -522,8 +567,8 @@ def main():
           f"grid points, {families['normalization']} softmax/layer_norm, "
           f"{families['reduction']} reduction over {len(templates)} norm "
           f"templates, {len(conv)} convolution, {len(island)} island "
-          f"select/batched-matmul (ANEC), "
-          f"{(len(oracles) - len(island)) * 2 + len(island)} artifacts)")
+          f"select/batched-matmul (ANEC), {len(rms)} rms_norm chain (ANEC), "
+          f"{(len(oracles) - len(island) - len(rms)) * 2 + len(island) + len(rms)} artifacts)")
 
 
 if __name__ == "__main__":
