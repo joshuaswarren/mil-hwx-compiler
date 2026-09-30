@@ -230,6 +230,32 @@ static BOOL fp16Scalar(ANEGraphArgument *argument, uint16_t *bits) {
     return (*bits & 0x7c00u) != 0x7c00u;
 }
 
+/// Resolves a constant fp16 operand — a scalar const or a single-element
+/// fp16 tensor of any rank — into its IEEE 754 bits. coremltools spells
+/// the eps literal either as `fp16 eps = const()` or as a `[1, 1, 1, 1]`
+/// tensor const, so a const-op eps folds like an inline literal.
+static BOOL constantFp16Bits(ANEGraphValue *value, uint16_t *bits) {
+    if (!value ||
+        ![value.producer.operationName isEqualToString:@"const"] ||
+        value.producer.arguments.count)
+        return NO;
+    ANEGraphArgument *literal = value.producer.attributes[@"val"];
+    if (value.type.kind == ANEValueTypeKindScalar &&
+        value.type.elementType == ANEElementTypeFP16)
+        return fp16Scalar(literal, bits);
+    if (value.type.kind != ANEValueTypeKindTensor ||
+        value.type.elementType != ANEElementTypeFP16 ||
+        value.type.shape.count < 1 ||
+        literal.kind != ANEGraphArgumentKindCall ||
+        ![literal.calleeValueType isEqualToValueType:value.type] ||
+        literal.callArguments.count != 1)
+        return NO;
+    ANEGraphArgument *payload = literal.callArguments[0].value;
+    if (payload.kind != ANEGraphArgumentKindList ||
+        payload.elements.count != 1) return NO;
+    return fp16Scalar(payload.elements[0], bits);
+}
+
 static BOOL fp32Attribute(ANEGraphArgument *argument, float *valueOut) {
     if (argument.kind != ANEGraphArgumentKindCall ||
         ![argument.calleeName isEqualToString:@"fp32"] ||
@@ -848,7 +874,8 @@ static BOOL rmsNormChainPlan(NSArray<ANEGraphOperation *> *sourceOperations,
         op1.arguments.count != 3 ||
         !boolean(op1.arguments[@"keep_dims"], YES))
         return NO;
-    long long values[3];
+    long long values[3] = {0, 0, 0};
+    NSUInteger axesCount = 0;
     // Accept the canonical axes=[1,2,3] form (3-element int32 vector),
     // OR the channel-flat-only axes=[1] form (1-element vector) when the
     // surface height and width are both 1. Apple decodes the [1, 2048, 1, 1]
@@ -861,10 +888,12 @@ static BOOL rmsNormChainPlan(NSArray<ANEGraphOperation *> *sourceOperations,
     if (surfaceIsChannelFlat &&
         int32Vector(op1.operands[@"axes"].value, 1, values) &&
         values[0] == 1) {
-        values[1] = values[2] = 0;
+        axesCount = 1;
     } else if (!int32Vector(op1.operands[@"axes"].value, 3, values) ||
                values[0] != 1 || values[1] != 2 || values[2] != 3) {
         return NO;
+    } else {
+        axesCount = 3;
     }
     // r1 (amax) is consumed twice: once by op2's real_div and once by op7's
     // mul. Every other intermediate (r2..r7) must still be unique.
@@ -885,18 +914,21 @@ static BOOL rmsNormChainPlan(NSArray<ANEGraphOperation *> *sourceOperations,
     if (!consumeUnique(r3)) return NO;
     ANEGraphOperation *op4 = nextOp(startIndex + 4, @"reduce_mean");
     if (!op4 || op4.operands[@"x"].value != r3) return NO;
+    // coremltools declares each reduce's axes as its own const op, so the
+    // two vectors fold equal by content, not by shared operand identity.
+    long long meanValues[3] = {0, 0, 0};
     if (op4.arguments.count != 3 ||
-        op4.operands[@"axes"].value != op1.operands[@"axes"].value ||
+        !int32Vector(op4.operands[@"axes"].value, axesCount, meanValues) ||
+        meanValues[0] != values[0] ||
+        meanValues[1] != values[1] || meanValues[2] != values[2] ||
         !boolean(op4.arguments[@"keep_dims"], YES)) return NO;
     ANEGraphValue *r4 = op4.result;
     if (!consumeUnique(r4)) return NO;
     ANEGraphOperation *op5 = nextOp(startIndex + 5, @"add");
     if (!op5 || op5.operands[@"x"].value != r4) return NO;
     ANEGraphValue *epsValue = op5.operands[@"y"].value;
-    if (!epsValue || !constantValue(epsValue)) return NO;
     uint16_t epsBits = 0;
-    if (!fp16Scalar(epsValue.producer.attributes[@"val"], &epsBits) ||
-        epsBits != 0x0080) return NO;
+    if (!constantFp16Bits(epsValue, &epsBits) || epsBits != 0x0080) return NO;
     ANEGraphValue *r5 = op5.result;
     if (!consumeUnique(r5)) return NO;
     ANEGraphOperation *op6 = nextOp(startIndex + 6, @"sqrt");
