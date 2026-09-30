@@ -353,3 +353,42 @@ Compiled-package ANEC facts (Parakeet islands, from the merged build):
 | `attn-a-kt/p1` | 16384 | 184 | 21184 | in ch5/6, out ch4 | same |
 | `select-8head` | 256 | 244 | 5696 | in ch5/6/7, out ch4 | `firstTaskBytes % 16 = 4` |
 | `pv` | 16384 | 192 | 22528 | in ch5/6, out ch4 | none |
+
+---
+
+# H14 Batch 3 follow-up (date 2026-09-30, actor H14Batch3)
+
+## F3 (b16 rank-4 batched matmul rows=1 / rows=128) — LANDED
+
+Two Apple-decoded oracles (`env_mm_r3rr_m1_k128_n128_tx0_ty0_b16` and
+`env_mm_r3rr_m128_k1_n128_tx1_ty1_b16`) routed into
+`research/oracles/h14/gabmm_r4_*.json`. `batchedMatmulPlan` dispatch
+fixed to honor `transpose_x=true` (logical rows/reduction post-transpose).
+Generator emits both `headsForm=false` and `headsForm=true` from each r3
+oracle (Parakeet r3/r4 streams are identical).
+
+Parity: 832 -> 834 PASS (16 island templates).
+
+Matrix unchanged: B-state still refuses because the per-head broadcast
+at `{16,1,128} x {16,1,1}` is not in the F1 broadcast table. F3 alone
+is correctly compiled but gated on additional F1 broadcast shapes.
+
+## F2 / F4 / F5 — DECODED-FINDINGS
+
+See `~/.local/share/apple-silicon-lab/entries/H14Batch3/2026-09-30T0001Z-h14-batch3-f2-f4-f5-decoded-findings.md`.
+
+- F2: decoder fix landed in `fb9e715` (H14Batch2). Dispatch still
+  refuses A/A-next/D/E classes — root cause is the harness's separate
+  `op1_axes` const op spelling; needs inline-axes rewrite in harness.
+- F5: 3-op chain oracle decoded (49152 bytes, 3 tasks). Chain encoder
+  only handles producer+relu. Needs OracleChainTemplate table extension.
+- F4: Apple rejected `mul+add` upstream at both rank-4 and rank-2
+  softmax attention. No decoded oracle exists; family cannot be finished.
+
+## Next mint batch priority
+
+1. F1b: per-head broadcast at `{16,1,128} x {16,1,1}` and
+   `{16,1,1} x {16,1,128}`. Apple mint. Once landed, F1b+F3 unlocks 18 B-state.
+2. F2: inline the axes literal in the staged MIL.
+3. F5: wire the decoded 3-op chain template.
+4. F4: mint a chainable upstream variant on Apple.
