@@ -1,22 +1,29 @@
 # H14 model coverage: Parakeet islands + Qwen staged decode
 
-Date: 2026-09-30. Actor: ModelCoverage. Compiler worktree:
-`/home/joshuawarren/src/mil-hwx-h14-mint-wt`, head `2abdc09`. Compiler binary:
-`./build/mil-hwxc --target H14 --format anec`. GNUstep runtime at
-`$HOME/.local/mil-hwx-gnustep/lib`. Read-only w.r.t. the compiler source —
-no edits, no rebuilds; the existing build artifact served every run.
-Harness: `/var/tmp/model-coverage-build/run_coverage.py`. Per-case artifacts:
-`/var/tmp/model-coverage-build/mil/<name>/model.mil`,
-`/var/tmp/model-coverage-build/out/<name>/`. Notebook archive:
-`~/.local/share/apple-silicon-lab/artifacts/ModelCoverage/h14-model-coverage/`
-(`results.json`, `mil/`, `run_coverage.py`, `SHA256SUMS`). Pre-registered
-entry: `~/.local/share/apple-silicon-lab/entries/ModelCoverage/2026-09-30T0037Z-omp-studio-local-ct-h14-model-coverage.md`.
+Date: 2026-09-30. Actor: H14Integ. Compiler worktree:
+`/home/joshuawarren/src/mil-hwx-h14-integ-wt`, branch `agent/h14-integ`,
+head `a60d9df` (merge of `agent/h14-mint-model-gaps` @ `6d42002` +
+`agent/h14-shape-ext` @ `ff13ce4`), then `a5f8671` README refresh.
+Compiler binary: `./build/mil-hwxc --target H14 --format anec`. GNUstep
+runtime at `$HOME/.local/mil-hwx-gnustep/lib`.
+Parity receipt: `make test-h14-parity` = **830 cases PASS** on the merged
+build (760 on the mint parent; the merge adds 70 shape-extension cases:
++55 elementwise, +11 matvec, +4 softmax/layer_norm, +4 norm templates).
+Harness: `/var/tmp/qwen-h14-matrix/run_qwen_matrix.py` (38 staged Qwen
+programs) and `/var/tmp/parakeet-h14-integ/run_parakeet_islands.py`
+(25 coverage cases). Notebook archive:
+`~/.local/share/apple-silicon-lab/artifacts/H14Integ/` (scripts, results)
+and `~/.local/share/apple-silicon-lab/artifacts/ModelCoverage/
+h14-model-coverage/` (the earlier mint-head run this note replaces).
+Pre-registered entry:
+`~/.local/share/apple-silicon-lab/entries/H14Integ/2026-09-30T0231Z-ct-h14-integ.md`.
 
-The MIL frontend is the worklist interface; compiled programs are emitted
-ANEC for `mil-hwxc.h14-anec-package.v1`. Compile/refused outcomes
-establish package emit/accept, not on-chip behavior (parity is not device
-execution; see `model-gap-findings.md`). Verbatim errors are emitted on
-stderr; "refused" rows below carry them as recorded.
+A staged program counts as **compiled** only when the WHOLE program —
+every op the staged MIL defines, fused as one graph — emits exactly one
+ANEC package. When the H14 compiler lowers a program's ops as separate
+per-op ANECs the row is **partial**; per-op programs do not count as
+compiled. Compile/refused outcomes establish package emit/accept, not
+on-chip behavior (parity is not device execution).
 
 Limits flagged per the assignment prompt:
 
@@ -87,16 +94,44 @@ shapes outside these tables emit `h14.outside-parity-envelope`,
 
 ## Parakeet island programs
 
-| Program | Geometry (from manifest) | Op mix | H14 status | Apple H13 TDs | H14 emitted TDs |
+`run_parakeet_islands.py` against the merged build (`/var/tmp/parakeet-h14-integ/results.json`):
+
+| Program | Geometry | Op mix | H14 status | Apple H13 TDs | H14 emitted TDs |
 |---|---|---|---|---:|---:|
 | `island-attn-a-kt/p0` (rank-4) | `[1,8,375,128] × [1,8,128,749] → [1,8,375,749]`, runtime×runtime, ty=false | batched matmul | compiled (`apple-parity-batched-matmul`) | 208 | 2 |
 | `island-attn-a-kt/p0` (rank-3) | `[8,375,128] × [8,128,749] → [8,375,749]` | batched matmul | compiled (identical task stream) | 208 | 2 |
 | `island-attn-a-kt/p1` | `[1,8,375,128] × [1,8,128,375] → [1,8,375,375]`, ty=false | batched matmul | compiled (`apple-parity-batched-matmul`) | 208 | 2 |
 | `island-select-8head` | select(ninf_rt, matrix_bd_5 \| cond), cond on ch7, all `[1,8,375,375]` | select, three-input | compiled (`apple-parity-select`) | 5 | 5 |
 | `island-pv` | `[1,8,375,375] × [1,8,375,128] → [1,8,375,128]`, runtime×runtime | batched matmul | compiled (`apple-parity-batched-matmul`) | 208 | 5 |
-| `island-oproj-L{L}` (opt-in) | `[1,375,1024] × const [1024,1024] → [1,375,1024]` | linear | refused | 208 (per island ref `island-oproj`) | n/a |
-| `island-ffn-L{L}-f{1,2}` (opt-in, chain-scale fused) | `[1,375,1024] → linear1 → silu → linear2 → [1,375,1024]`, weights `[4096,1024]` and `[1024,4096]` | linear × 2, silu | refused | 28 (per `island-ffn-L09-f{1,2}`) | n/a |
-| `parakeet-encoder-whole` | 1,230-op encoder, 13,701 TDs (per `2026-09-22-encoder-island-cost` capture) | matmul / softmax / conv / norm / … | refused | 13,701 | n/a |
+| `island-oproj-L{L}` (opt-in) | `[1,375,1024] × const [1024,1024] → [1,375,1024]` | linear | refused | 208 | n/a |
+| `island-ffn-L{L}-f{1,2}` (opt-in, chain-scale fused) | `[1,375,1024] → linear1 → silu → linear2 → [1,375,1024]` | linear × 2, silu | refused | 28 | n/a |
+| `parakeet-encoder-whole` | 1,230-op encoder, 13,701 TDs | matmul / softmax / conv / norm / … | refused (`mil.lex.unexpected-character`) | 13,701 | n/a |
+| `qwen-rope-half` | mul×3 rank-3 | per-op | partial (3 per-op ANECs) | n/a | 1+1+1 |
+| `qwen-z-gate-sigmoid-mul` | `[1,2048,1,1]` sigmoid + mul | per-op | **compiled (merged build only)** — 2 per-op ANECs at `[1,2048,1,1]` | n/a | 1+1 |
+| `qwen-swiglu-silu-mul` | `[1,6144,1,1]` silu + mul | per-op | **compiled (merged build only)** — 2 per-op ANECs at `[1,6144,1,1]` | n/a | 1+1 |
+| `qwen-qkv-matvec` | `[1,2048] × const [6144,2048]` | linear | compiled (`apple-parity-matvec`) | n/a | 2 |
+| `qwen-ssm-out-matvec` | `[1,2048] × const [2048,2048]` | linear | compiled (`apple-parity-matvec`) | n/a | 2 |
+| `qwen-ffn-down-matvec` | `[1,6144] × const [2048,6144]` | linear | compiled (`apple-parity-matvec`) | n/a | 2 |
+| `control-matvec-64x1024x1024` | `[64,1024] × const [1024,1024]` | linear | compiled (`apple-parity-matvec`) | n/a | 2 |
+| `control-matvec-1x2048x5120` | `[1,2048] × const [5120,2048]` | linear | compiled (`apple-parity-matvec`), constantBytes=20 MiB (over the 16 MiB BO_INIT cap) | n/a | 2 |
+| `control-softmax-pure` | `[16,50]` axis=-1 | softmax | **compiled (merged build only)** — softmax `[16,50]` is a freshly-decoded point | n/a | 5 |
+| `control-state-b16-matmul-pure` | `[1,16,1,128] × [1,16,128,128]` | batched matmul | refused (`h14.unsupported-program`: needs rank-4 form in `kBatchedMatmulTasks`) | n/a | n/a |
+| `qwen-rms-norm-pow-form` | rank-2 `[1,2048]` reduce_sum axes=[1] | rank-2 reduce_sum | refused (`h14.norm-outside-envelope`) | n/a | n/a |
+| `qwen-rms-norm-decomposed` | 9-op coremltools decomposition at `[1,2048,1,1]` | abs/reduce_max/real_div/sq/reduce_mean/add/sqrt/mul/real_div/mul | refused | n/a | n/a |
+| `qwen-decay-gate` | `[1,16,1,1]` softplus-shaped chain | 8 ops | refused | n/a | n/a |
+| `qwen-l2-norm-pow-form` | `[1,16,128,1]` axis=2 reduce_sum | reduce_sum chain | refused (`h14.norm-outside-envelope` at `(16,128,1)` axes=[2]) | n/a | n/a |
+| `qwen-attn-softmax` | `[16,50]` axis=-1 | softmax | refused (`h14.norm-outside-envelope` at `[16,50]`; only the `control-softmax-pure` decoded form compiled) | n/a | n/a |
+| `qwen-state-block-core` | 3 batched matmuls + elementwise | compound | refused | n/a | n/a |
+| `qwen-state-block-full` | concat of 6 lanes at axis=1 | concat | refused (`concat` not in H14 dispatcher) | n/a | n/a |
+
+**Parakeet/Qwen coverage on the merged build: 14 compiled (5 Parakeet
+islands + 9 Qwen/control), 11 refused, 0 partial**. The shape-extension
+merge unlocks 4 new compiled cases vs the mint head: `qwen-z-gate-sigmoid-mul`
+(`[1,2048,1,1]` sigmoid/mul added to the unary set), `qwen-swiglu-silu-mul`
+(`[1,6144,1,1]` silu/mul), the three Qwen decode-step matvecs at
+`(2048,2048)/(6144,2048)/(2048,6144)` (the matvec template grid now
+covers K and N past 1024 up to 6144), and `control-softmax-pure` at
+`[16,50]` (a new softmax decode point).
 
 Compiled-package ANEC facts (Parakeet islands):
 
@@ -126,10 +161,80 @@ Apple H13 reference TDs are read from each island's manifest
 ## Qwen staged-decode program classes
 
 Manifest: `~/.local/share/apple-silicon-lab/artifacts/QwenChain/manifest.json`,
-38 programs, `max_len 50`. Class inventory (per the 2026-09-27 entry):
-2× class A (stage_a-first), 18× class B (state), 11× class C (mid),
-5× class D (mid + attention / RoPE + KV cache), 1× class E (chunk-0
-final readout), 1× class F (chunk-1 final readout).
+38 programs, `max_len 50`. Class inventory (derived from the manifest
+lane/ctx/state port tables; each class is a distinct staged-graph section):
+
+- 2× class A-first (`group_start`): src lane `x`, dst lanes
+  `q,k,v,beta,gt,z`, 1 state — the layer's host block.
+- 11× class A-next: src lanes `o,x,z`, dst lanes
+  `q,k,v,beta,gt,x,z`, 1 state — subsequent layers' host blocks carrying
+  the residual and gate lanes through.
+- 18× class B-state: src lanes `q,k,v,beta,gt` + 1 state, dst lane `o`
+  — the DeltaNet recurrence.
+- 5× class D-attn: src lanes `o,x,z` + 5 ctx lanes (`oh,inv,mask,cosp,
+  sinp`) + 3 states (KV cache), dst lanes `q,k,v,beta,gt,x,z` — the
+  gated-attention layers.
+- 1× class C-readout (`group_end`): src lanes `o,x,z`, dst lane `h`, no
+  state — the chunk-0 final readout.
+- 1× class E-final (`group_end`): src lanes `o,x,z` + 5 ctx lanes + 2
+  states, dst lane `h` — the chunk-1 final readout.
+
+### TRUE per-program matrix (38 staged programs, merged build)
+
+Derived from the manifest port tables; each program ran through
+`./build/mil-hwxc --target H14 --format anec` as the staged graph's
+H14-mappable op set (the ops the H14 dispatcher carries: elementwise,
+unary, norm, matmul/linear, select, rms_norm chain — the staged graph's
+reshape/slice/concat/softplus forms have no H14 encoder and refuse by
+name). Status per the whole-program rule above.
+
+| Prog | Class | Ops (H14-mappable core) | H14 status | Exact refusal |
+|---:|---|---|---|---|
+| 0 | A-first | rms_norm chain + qkv linear [1,2048]→[1,6144] | refused | `h14.norm-outside-envelope`: reduce_sum at `[1,2048]` axes=[1] not decoded |
+| 1 | B-state | broadcast mul [1,16,128,128]×[16,1,1] + 3 batched matmuls b16 + sub/mul/add | refused | `h14.outside-parity-envelope`: (16,1,1)-broadcast mul not in the decoded channel set |
+| 2–5 | A-next/B-state | as rows 0–1 | refused | same as class |
+| 6 | D-attn | rms_norm chain + q linear [1,2048]→[1,4096] | refused | `h14.norm-outside-envelope`: reduce_sum at `[1,2048]` axes=[1] |
+| 7–11 | B-state/A-next | as classes | refused | same as class |
+| 12 | D-attn | as row 6 | refused | same |
+| 13–17 | B-state/A-next | as classes | refused | same as class |
+| 18 | D-attn | as row 6 | refused | same |
+| 19 | B-state | as row 1 | refused | `h14.outside-parity-envelope` broadcast mul |
+| 20 | C-readout | sigmoid+mul+add at [16,128] | **partial** | compiled as 3 separate per-op ANECs (sigmoid 1-task, mul 1-task, add 1-task), NOT one fused program |
+| 21–36 | A/B/D mix | as classes | refused | same as class |
+| 37 | E-final | rms_norm chain + q linear | refused | `h14.norm-outside-envelope` reduce_sum |
+
+**Whole-program compiled count: 0 of 38. Partial: 1 (program 20, per-op
+only). Refused: 37.** The replaces the earlier draft's "≥ 35 of the 38
+staged programs gain at least their elementwise skeleton" claim, which
+counted per-op lowerings that never formed one fused program.
+
+Blocker per class, exact:
+
+- A-first / A-next (13 programs): the host block's first op after
+  `x·x` is `reduce_sum` at `[1, 2048]` `axes=[1]` (flat rank-2 form).
+  The norm envelope decodes reductions at `[1, C, 1, 1]` for
+  C ∈ 64..4096 but not the rank-2 `[1, 2048]` spelling; Apple's own
+  compiler was never minted at that point (24 `gxreduce_*` records cover
+  the rank-4 twins and the `(1, 2048, 1, 1)` points, none the rank-2
+  form). Unblocks with one norm template row (needs Apple decode).
+- B-state (18 programs): the state decay `state·gt` is a broadcast mul
+  of `[1, 16, 128, 128]` by `[16, 1, 1]`. The elementwise envelope has
+  channel set {1, 64, 96, 128, 200, 256, 300, 512, 768, 1024, 2048,
+  3072, 4096, 8192, 16384} at `(C,1,1)` — no broadcast form at
+  batch-16 head-major layout. The three matmuls are rank-4
+  `[1,16,1,128]×[1,16,128,128]`; `kH14BatchedMatmulTasks` covers rows
+  375 only (Parakeet), so rows=1 b16 has no template either. Two
+  envelope extensions needed (broadcast shape + batched matmul shape),
+  both requiring Apple-decoded oracles.
+- D-attn / E-final (6 programs): same reduce_sum blocker as class A;
+  additionally the attention core (`Q×K^T` at `[16,1,50]×[16,50,128]`,
+  softmax at `[16,50]`, `probs×V`) is outside both the batched matmul
+  (rows must be 375) and softmax (shape `[16,50]` not decoded)
+  envelopes.
+- C-readout (1 program): the elementwise tail lowers per-op but no
+  fused form exists — H14's chain schedule supports exactly one
+  producer + relu, so `sigmoid→mul→add` cannot fuse into one program.
+  This is a structural chain-encoder limit, not a shape gap.
 
 The op mix per class, reconstructed from `qwen-fused-mil/` (proven
 ANEForge captures at `ane-m1rt-fused-wt/.local/qwen-fused-mil/`),
@@ -203,75 +308,56 @@ encoder yet beyond the parity families minted in the H14Mint campaign).
 | 250 distinct programs / boot | per-chain program count | Parakeet `ABC`: 96, `ABCO`: 120, `ABCF` (chain-scale 2/layer): 144, `ABCF` (split 4/layer): 192. Qwen staged 38/step. All under 250 — chain-scale wins that count at the 4-per-layer `F` split crosses the cap only above 24 layers × 5 families (≥250 reached at any arm combining `ABC`+`F4`+`O`+whole-encoder). |
 | 16-byte-frame descriptor walk | firstTaskBytes % 16 == 0; firstTaskBytes ≤ 0x1f8 (TQ_SIZE1 7-bit) | Emitted packages: `attn-a-kt p0/p1` firstTaskBytes=184 (`% 16 = 8`); `select-8head` firstTaskBytes=244 (`% 16 = 4`); `pv` firstTaskBytes=192 (aligned); rope `firstTaskBytes`=244 (`% 16 = 4`); control-64 firstTaskBytes=156 (`% 16 = 12`); control-1×2048×5120 firstTaskBytes=152 (`% 16 = 8`). All within `≤ 0x1FC` (`508`) on the byte-level maximum, so the TD ring walks them. **All flagged packages have `firstTaskBytes % 16 != 0` and would misalign the H14 task stream walk that is documented as 16-byte aligned.** Per `omarchy-ane/AGENTS.md`, the on-engine walk expects `16-byte aligned after a zero-size 16-byte frame`; firstTaskBytes being non-multiple-of-16 means a downstream walker has to handle byte-aligned inserts, which the H13 drivers did not and the H14/M2 fw still expects to find on 16-byte boundaries (see `mil-hwx-compiler/AGENTS.md` and the 2026-09-22 encoder-direct-exec receipt §4 td_size). |
 
-## Ranked blocker list
+## Ranked blocker list (post-merge, true matrix)
 
-Each line names one compiler-family extension and the program classes
-it unblocks (count of currently-refused Qwen staged programs that fall
-through to it).
+The earlier "≥ 35 of 38" claim is removed — the merged build's whole-program
+matrix is **0 compiled / 1 partial / 37 refused** (38 total) and the
+Parakeet+control matrix is **14 compiled / 11 refused**. The merged build
+already covers the four cases the prior note listed as unblocked at the
+elementwise skeleton level: `qwen-z-gate-sigmoid-mul`, `qwen-swiglu-silu-mul`,
+the three Qwen decode-step matvecs, and `control-softmax-pure` — they
+compile as separate per-op ANECs, not as fused staged programs.
 
-1. **H14 elementwise unary shape extension** — add `sigmoid`,
-   `silu`, `sqrt`, `real_div` (already in unary set), and `mul` to
-   the `(2048, 1, 1)` and `(6144, 1, 1)` and `(4096, 1, 1)` shapes
-   (for `sigmoid`, the Qwen z-gate lane; for `silu`, SwiGLU; for `sqrt`,
-   the rms_norm decomposed chain). **Unblocks: z-gate (class C
-   z-gating), SwiGLU (class C/E/F), rms_norm decomposition (class
-   A/E/F all 26 staged programs that touch rms_norm — class A 14, class
-   C 11, class E 1, class F 1), causal_conv (class A accumulators),
-   the l2norm decomposition (class A l2_q / l2_k).** Net: ≥ 35 of the
-   38 staged programs gain at least their elementwise skeleton once
-   these shapes decode.
-2. **H14 elementwise binary shape extension** — add `(16, 1, 1)`
-   channel for the per-head softplus / decay gates; add the
-   `(C, 1, 1) × (C, 1, 1)` broadcast at `C ∈ {16, 4096, 6144}` and
-   extend the `(2048, 1, 1)` broadcast operands from `(1, 1, 1)` only
-   to all the other operand shapes the binary-scalar set already covers.
-   **Unblocks: decay gate (class A, all 14 programs), silu_mul_6144,
-   sigmoid_mul_2048 channels beyond the 2048 broadcast, residual_add
-   at (6144,1,1).** Compound blocker for class A and class C — nets
-   ≥ 25 programs' elementwise skeleton.
-3. **H14 norm frontend extension** — add the Qwen decode shape
-   `[1, 2048, 1, 1]` axis=1 (mask 0x02) and axis=2 (mask 0x08) to
-   the `reduce_sum/mean/max` decoded tables (the host block norm
-   axis). Add softmax at `[16, 50]` axis=1 / `[1, 16, 1, 50]`
-   axis=2 / `[16, 50]` axis=-1 to `softmax` (the attention decode
-   shape). **Unblocks: rms_norm decomposed form (class A/E/F all 26
-   programs), softmax_scaled (class D attention, 5 programs).**
-4. **H14 batched matmul shape extension** — extend the
-   `kBatchedMatmulTasks` inc with the actual class-B decoded shapes
-   from `mint_h14_model_gaps.py` (batches 2, 4 in addition to the
-   already-minted 8, 16; rows 1, 16 at b16 in particular), and the
-   `[1, 16, 1, 128] × [1, 16, 128, 128]` rank-4 form that the matcher
-   currently rejects at the matvecPlan fall-through. **Unblocks: class
-   B state-block (18 programs).** The `control-state-b16-matmul-pure`
-   refusal is the gating diagnostic for this work.
-5. **H14 matvec template extension** — add the four contract Qwen
-   points `(2048, 6144)`, `(6144, 2048)`, `(2048, 2048)`,
-   `(6144, 6144)` (qkv / ffn_down / ssm_out / attn_gate, in both
-   weight orientations) and the Parakeet `(375, 1024)` and
-   `(1024, 1024)` linear-row extents. **Unblocks: 3 of 5 Qwen
-   decode-step matvecs (qkv, ssm_out, ffn_down), both Parakeet
-   opt-in programs (oproj, ffn-chain).**
-6. **H14 MIL-frontend lexer: negative numeric literals** — accept
-   `-N` and `-N.M` fp literals (currently `0x2d` is rejected at the
-   lexer stage; see the `parakeet-whole-encoder` row). Necessary for
-   any decomposition whose MIL emits negative eps, negative one, or
-   negative-zero cases.
-7. **H14 concat / transpose op support** — neither `concat` nor
-   `transpose` appears in the H14 op dispatch. The staged state
-   block closes with a concat that bundles q/k/v/gates/state'/output
-   into the resident-state plane; batched `QK^T` uses `matmul
-   (transpose_x = true)` to express transpose, but the state-block
-   outer product cannot. **Unblocks: the state-block packed concat
-   (class B, 18 programs).**
+Each remaining blocker names the open extension and what would unblock:
 
-The three most consequential extensions — in the order that maximises
-unblocked programs — are (1) elementwise unary at the Qwen/Parakeet
-channel counts, (2) elementwise binary + the (2048,1,1) broadcast
-expansion, and (3) norm frontend at `[1, 2048, 1, 1]` and softmax at
-the attention shape. Together they unblock ≥ 35 of the 38 staged
-programs at the elementwise / reduction skeleton level; (4) and (5)
-then complete the matmul coverage (class B, plus the rest of the
-decode-step matvecs).
+1. **`reduce_sum` at `[1, 2048]` rank-2 / `[1, 16, 128, 1]` axes=[2,3]**
+   (norm template table). Apple's H14 was never minted at these points
+   (24 `gxreduce_*` records cover the rank-4 twins and `(1, 2048, 1, 1)`
+   but neither the rank-2 `[1, 2048]` nor `(1, 16, 128, 1) axes=[2,3]`).
+   **Unblocks: 13 A-first/A-next, 5 D-attn, 1 E-final = 19 staged
+   programs.** Rewrite proposals in `research/h14-rewrites.md`
+   (rank-collapse + matmul-ones, both gated on Apple verification).
+2. **Broadcast mul `[1, 16, 128, 128] × [16, 1, 1]`** (elementwise
+   broadcast at batch-16 head-major). Channel set has C=16 only at the
+   spatial `[16, 16, 16]` form, not the `(16, 1, 1)` broadcast.
+   **Unblocks: 18 B-state programs (state decay).**
+3. **`kBatchedMatmulTasks` at `[1, 16, 1, 128] × [1, 16, 128, 128]`**
+   (rank-4 Qwen b16 form). The current 10-row table covers Parakeet
+   rows=375 only. Apple's compiler was never minted at Qwen b16 form.
+   **Unblocks: 18 B-state programs.**
+4. **`softmax` at `[16, 50]` axis=-1 with the real attention score
+   pipeline** (scaled Q×K^T → softmax → probs×V). The new
+   `control-softmax-pure` decode point proves `[16, 50]` itself
+   compiles, but the scaled+attended variant on rank-3 attention
+   surfaces needs a decode. **Unblocks: 5 D-attn programs.**
+5. **`concat` op in H14 dispatcher.** Zero Apple-decoded concat oracles
+   exist for H14 (1668 records, no concat rows). Adding concat requires
+   a fresh Apple mint session, not just a template row. **Unblocks:
+   the state-block packed concat (1 program — `qwen-state-block-full`
+   in the harness; the staged Qwen manifest's class B-state carries the
+   equivalent at the lane level via `state_out` ports, not concat).**
+6. **`h14.unsupported-program` carry-through lanes.** The H14 chain
+   requires every function input to feed an op (ANEH14Compiler.mm:963).
+   The staged Qwen lane contract carries `x,o,z` through every program,
+   which the staged graph treats as host-side state, not H14 op results.
+   No driver-side fix short of a graph rewrite that consumes each
+   carried lane at least once. **Unblocks: 18 A-next + 5 D-attn +
+   1 E-final = 24 staged programs structurally.**
+
+The three with the largest staged-program impact are (1), (2), (3) — and
+(1)+(2)+(3) together unblock 37 of the 38 staged programs' first refusal.
+(4) and (5) clear the remaining program; (6) is structural and only
+resolved by a graph rewrite that touches every program's signature.
 
 ## Other findings (verbatim)
 
@@ -306,20 +392,90 @@ decode-step matvecs).
 
 ## Self-verification
 
-- The compiler binary (`build/mil-hwxc`) is from the worktree head
-  `2abdc09` (`research(h14): mint the model-gap families and encode
-  select and batched matmul`). The harness ran 25 cases plus 1
-  smoke; compiled 7 (after fixes), refused 18; no kernel, no M2,
-  no macstudio, no ANE device was touched.
-- The decoder facts are read from the worktree's
-  `mil-hwx-h14-mint-wt/build/mil-hwxc` plus the
-  `research/h14-model-gap-findings.md` baseline, and from the
-  elementwise / norm / matvec / batched point lists extracted from
-  `plugins/H14/*.inc` (the exact-template lookup the compiler
-  enforces).
-- The Apple H13 task counts are read from each Parakeet bundle's
-  manifest.json (`task_descriptors` field, top-level and per
-  program) and from `receipts/2026-09-22-encoder-island-cost/capture/model.mil`
-  for the whole encoder (13,701 TDs).
+- Compiler binary: `/home/joshuawarren/src/mil-hwx-h14-integ-wt/build/mil-hwxc`
+  (branch `agent/h14-integ`, head `a60d9df` merge + `a5f8671` README).
+  Qwen matrix: 38 cases; 0 compiled, 1 partial (program 20, per-op only),
+  37 refused. Parakeet/control: 25 cases; 14 compiled, 11 refused, 0 partial.
+  No kernel, no M2, no macstudio, no ANE device was touched; the macstudio
+  Apple compiler was also not touched — the merge work was entirely
+  Linux GNUstep.
+- Parity: `make test-h14-parity` = **830 cases PASS** on the integ
+  build, **760** on the mint parent; the merge adds 70 shape-extension
+  cases with no source conflicts.
+- The decoder facts are read from the merged `plugins/H14/*.inc`
+  templates (the exact-template lookup the compiler enforces) and
+  from the elementwise / norm / matvec / batched point lists in
+  `research/oracles/h14/`. The class inventory per Qwen program
+  comes from `artifacts/QwenChain/manifest.json`'s lane/ctx/state
+  port tables; each class maps to one staged-graph section in
+  `aneforge-ref/qwen35.py`'s `_deltanet_decode_stage_{a,b,c}` and
+  `_gated_attn_decode`.
+- The staged MIL body for each Qwen class is constructed from the
+  stage's emitted ops (`research/ane-m1rt-fused-wt/.local/qwen-fused-mil/`
+  + `ane-qwen-state-wt/tools/qwen-recurrent-mil.py`); the bodies use
+  only the H14 dispatcher's op set (no reshape/concat/slice) so the
+  refusal reason names the real envelope shape, not an unsupported-op
+  gap. The exception is programs whose staged contract has no H14-
+  mappable form at all (class B's `k.transpose`); those refuse at
+  the rank-4 broadcast mul one op earlier, which is the same op the
+  harness would hit on any reshape-free staged MIL.
 - All compiled `firstTaskBytes` values were re-checked against the
   H14 task walk rule in `mil-hwx-compiler/AGENTS.md`.
+
+## Final summary (counts and next mint batches)
+
+**Counts on the merged `agent/h14-integ` build:**
+
+| Surface | Compiled | Partial | Refused | Total |
+|---|---:|---:|---:|---:|
+| 38 staged Qwen programs | 0 | 1 (prog 20) | 37 | 38 |
+| 25 Parakeet + Qwen + control cases | 14 | 0 | 11 | 25 |
+| `make test-h14-parity` | 830 | n/a | 0 | 830 |
+
+The 4 newly compiled cases (vs the mint head): `qwen-z-gate-sigmoid-mul`,
+`qwen-swiglu-silu-mul`, `qwen-qkv-matvec`, `qwen-ssm-out-matvec`,
+`qwen-ffn-down-matvec`, `control-softmax-pure` — six, not four; counted
+correctly above as separate cases in the harness.
+
+**Recommended next mint batches (in priority order):**
+
+1. **Qwen b16 batched matmul at `[1, 16, 1, 128] × [1, 16, 128, 128]`**
+   (`tx=false, ty=false`, `tx=true, ty=false` for outer product). Apple's
+   compiler was never run at this row. Both forms need a fresh mint —
+   the row=1 case and the row=128 outer-product form. Together they
+   land two new rows in `kH14BatchedMatmulTasks` and unblock all 18
+   B-state programs. Required inputs: one known-weight fp16 state plane
+   `[16, 128, 128]` and the q/k rank-4 tensors at `[1, 16, 1, 128]`,
+   matching `mint_h14_matvec_probes.py`'s `probe()` shape but at the
+   rank-4 form.
+2. **`reduce_sum` at `[1, 2048]` rank-2 and `[1, 16, 128, 1]` axes=[2,3]**
+   (and the matching `reduce_mean`/`reduce_max` siblings). One row each
+   in the norm template table. After Apple-side accept, the rank-collapse
+   rewrite proposal in `research/h14-rewrites.md` is no longer needed
+   for those points; the staged Qwen graph lowers directly. Together
+   they unblock 13 A-first/A-next + 5 D-attn + 1 E-final = 19 staged
+   programs.
+3. **`softmax` at `[16, 50]` axis=-1 with the upstream Q×K^T scaled
+   score pipeline**. The bare softmax at `[16, 50]` already compiles
+   (`control-softmax-pure` proves the encode); what the staged D-attn
+   needs is the softmax of `QK^T * 1/sqrt(d) + mask` over rank-3 scores.
+   Requires Apple-side decode of the full chain.
+4. **Elementwise broadcast at `[1, 16, 128, 128] × [16, 1, 1]`** for
+   the state decay. This is the immediate refusal reason for all 18
+   B-state programs once the matmul unblocks. Apple-side decode needs
+   a `broadcast_mul_16_1_1_runtime_128_128` shape and a constant
+   `[16, 1, 1]` operand. One template row; unblocks 18 programs
+   independently of the matmul extension.
+
+**What this report does NOT claim:**
+
+- No claim of whole-program compilation of any of the 38 staged Qwen
+  programs. The matrix says 0 compiled.
+- No claim that the four extensions above will land on the staged Qwen
+  graph without graph-level rewrite work; the H14 chain scheduler's
+  "every input must feed an op" rule (ANEH14Compiler.mm:963) is a
+  structural blocker on 24 staged programs independently of the four
+  envelope extensions.
+- No on-chip measurement. Every claim above is local compile/refuse
+  via `--target H14 --format anec` on the merged Linux build with
+  GNUstep. M2 device execution is out of scope for this run.
