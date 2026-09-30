@@ -525,8 +525,8 @@ def main():
     norm = norm_oracles()
     families = collections.Counter(oracle["family"] for oracle in norm)
     templates = check_norm_templates()
-    assert len(elementwise) == 238, \
-        f"expected 238 decoded elementwise oracles, found {len(elementwise)}"
+    assert len(elementwise) == 239, \
+        f"expected 239 decoded elementwise oracles, found {len(elementwise)}"
     assert families == collections.Counter(
         {"normalization": 109, "reduction": 114}), \
         f"decoded H14 norm oracles per family: {dict(families)}"
@@ -537,8 +537,8 @@ def main():
                     for columns in probes.GRID_SIDES}, sorted(grid)
     conv = conv_oracles()
     island = island_oracles()
-    assert len(island) == 16, \
-        f"expected 16 covered island oracles, found {len(island)}"
+    assert len(island) == 17, \
+        f"expected 17 covered island oracles, found {len(island)}"
     rms = rms_norm_oracles()
     assert len(rms) == 4, \
         f"expected 4 rms_norm_chain oracles, found {len(rms)}"

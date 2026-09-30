@@ -575,8 +575,35 @@ static constexpr OracleIslandTensor kH14BatchedTensors6[] = {
     {4, {1, 8, 375, 128, 96000, 256}, 770048, 5, 2},
 };
 
-// gabmm_r4_m128_k1_n128_tx1_ty1_b16
+// gabmm_r4_m128_k1_n128_tx1_ty0_b16
 static constexpr std::uint32_t kH14IslandText11[] = {
+    0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x002e0000, 0x00000000, 0x00000008, 0x00000000,
+    0x00000068, 0x00000000, 0x00000000, 0x00050001, 0xb32e0000, 0x00010080, 0x00000001, 0x00000001,
+    0x00010080, 0x00000000, 0x00014010, 0x00000001, 0x10230301, 0x00100000, 0x80810440, 0x00000e21,
+    0x000000ce, 0x00000100, 0x00000454, 0x01002031, 0x860f0141, 0x00500172, 0x00000100, 0x00000100,
+    0x00000100, 0x00000100, 0x0050087a, 0x00000100, 0x80020341, 0x00101c0c, 0x00003c00, 0x80680540,
+    0x01000ef1, 0x00000040, 0x00000400, 0x08302031, 0x23008444, 0x00000000, 0x00000000, 0x21808542,
+    0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00570001, 0x0000000f, 0x00000022, 0x00000000,
+    0x00fff868, 0x00000000, 0x00000000, 0x00050003, 0x00000000, 0xfffc0640, 0x000202c0, 0x00000400,
+    0x00000400, 0x00010e41, 0x00010e41, 0x00010e41, 0x00010e41, 0x00010e41, 0x00010e41, 0x00010e41,
+    0x00010e41, 0x00010e41, 0x00010e41, 0x00010e41, 0x00020651, 0x00010e41, 0x00010e41, 0x00010e41,
+    0x00010e41, 0x00010e41, 0x00070657, 0x00000040, 0x00000080, 0x000000c0, 0x00000100, 0x00000140,
+    0x00000180, 0x000001c0, 0x00000200, 0x00000240, 0x00000280, 0x000002c0, 0x00000300, 0x00000340,
+    0x00000380, 0x000003c0, 0xb30e0000, 0x00010080, 0x00000001, 0x00000080, 0x00010080, 0x00010010,
+    0x00000001, 0x20200001, 0x00100000, 0x80810440, 0x00010e21, 0x000000ce, 0x00000100, 0x00000454,
+    0x01002031, 0x860f0141, 0x00000142, 0x00000100, 0x00000100, 0x00000100, 0x00000100, 0x0000014a,
+    0x00000100, 0x80048340, 0x00010082, 0x00101c00, 0x00003c00, 0x80680540, 0x01010e31, 0x00000100,
+    0x00008000, 0x01302031, 0x21808642, 0x00000000, 0x00000000, 0x22808444, 0x00000000, 0x00000000,
+    0x22008542, 0x00000000, 0x00000000,
+};
+static constexpr OracleIslandTensor kH14BatchedTensors7[] = {
+    {5, {1, 16, 1, 128, 256, 256}, 16384, 5, 2},
+    {6, {1, 16, 1, 128, 256, 256}, 16384, 5, 2},
+    {4, {1, 16, 128, 128, 32768, 256}, 524288, 5, 2},
+};
+
+// gabmm_r4_m128_k1_n128_tx1_ty1_b16
+static constexpr std::uint32_t kH14IslandText12[] = {
     0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x002e0000, 0x00000000, 0x00000008, 0x00000000,
     0x00000068, 0x00000000, 0x00000000, 0x00050001, 0xb32e0000, 0x00010080, 0x00000001, 0x00000001,
     0x00010080, 0x00000000, 0x00014010, 0x00000001, 0x10230301, 0x00100000, 0x80810440, 0x00000e21,
@@ -599,14 +626,14 @@ static constexpr std::uint32_t kH14IslandText11[] = {
     0x80048340, 0x00010082, 0x00101c00, 0x00003c00, 0x80680540, 0x01020e31, 0x00000100, 0x00008000,
     0x01302031, 0x21808642, 0x00000000, 0x00000000, 0x22008542, 0x00000000, 0x00000000,
 };
-static constexpr OracleIslandTensor kH14BatchedTensors7[] = {
+static constexpr OracleIslandTensor kH14BatchedTensors8[] = {
     {5, {1, 16, 128, 1, 8192, 64}, 131072, 5, 2},
     {6, {1, 16, 1, 128, 256, 256}, 16384, 5, 2},
     {4, {1, 16, 128, 128, 32768, 256}, 524288, 5, 2},
 };
 
 // gabmm_r4_m1_k128_n128_tx0_ty0_b16
-static constexpr std::uint32_t kH14IslandText12[] = {
+static constexpr std::uint32_t kH14IslandText13[] = {
     0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x003d0000, 0x0000000f, 0x0000002a, 0x00000000,
     0x00fff868, 0x00000000, 0x00000000, 0x00010001, 0x801c0640, 0x000102c0, 0x00000100, 0x00001000,
     0x00000e21, 0x00000666, 0x00000100, 0xb32e0000, 0x00010080, 0x00000080, 0x00000001, 0x00010080,
@@ -617,14 +644,14 @@ static constexpr std::uint32_t kH14IslandText12[] = {
     0x23008642, 0x00000000, 0x00000000, 0x22808444, 0x00000000, 0x00000000, 0x22008542, 0x00000000,
     0x00000000,
 };
-static constexpr OracleIslandTensor kH14BatchedTensors8[] = {
+static constexpr OracleIslandTensor kH14BatchedTensors9[] = {
     {5, {1, 16, 128, 128, 32768, 256}, 524288, 5, 2},
     {6, {1, 16, 1, 128, 256, 256}, 16384, 5, 2},
     {4, {1, 16, 1, 128, 256, 256}, 16384, 5, 2},
 };
 
 // gabmm_r4heads_m375_k128_n375_tx0_ty0_b8
-static constexpr std::uint32_t kH14IslandText13[] = {
+static constexpr std::uint32_t kH14IslandText14[] = {
     0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x002e0000, 0x0000002d, 0x00000008, 0x00000000,
     0x00fff868, 0x00000000, 0x00000000, 0x00000001, 0xb70e0000, 0x00010080, 0x00000177, 0x00000177,
     0x00010080, 0x00010008, 0x00000001, 0x00000007, 0x00000021, 0x00000000, 0x80a10440, 0x00000e21,
@@ -647,14 +674,14 @@ static constexpr std::uint32_t kH14IslandText13[] = {
     0x21808642, 0x00000000, 0x00000000, 0x22808444, 0x00000000, 0x00000000, 0x22008542, 0x00000000,
     0x00000000,
 };
-static constexpr OracleIslandTensor kH14BatchedTensors9[] = {
+static constexpr OracleIslandTensor kH14BatchedTensors10[] = {
     {5, {1, 8, 128, 375, 98304, 768}, 786432, 5, 2},
     {6, {1, 8, 375, 128, 96000, 256}, 770048, 5, 2},
     {4, {1, 8, 375, 375, 288000, 768}, 2310144, 5, 2},
 };
 
 // gabmm_r4heads_m375_k128_n749_tx0_ty0_b8
-static constexpr std::uint32_t kH14IslandText14[] = {
+static constexpr std::uint32_t kH14IslandText15[] = {
     0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x002e0000, 0x0000002d, 0x00000008, 0x00000000,
     0x00fff868, 0x00000000, 0x00000000, 0x00000001, 0xb70e0000, 0x00010080, 0x00000177, 0x00000177,
     0x00010080, 0x00010008, 0x00000001, 0x00000007, 0x00000021, 0x00000000, 0x80a10440, 0x00000e21,
@@ -677,14 +704,14 @@ static constexpr std::uint32_t kH14IslandText14[] = {
     0x21808642, 0x00000000, 0x00000000, 0x22808444, 0x00000000, 0x00000000, 0x22008542, 0x00000000,
     0x00000000,
 };
-static constexpr OracleIslandTensor kH14BatchedTensors10[] = {
+static constexpr OracleIslandTensor kH14BatchedTensors11[] = {
     {5, {1, 8, 128, 749, 196608, 1536}, 1572864, 5, 2},
     {6, {1, 8, 375, 128, 96000, 256}, 770048, 5, 2},
     {4, {1, 8, 375, 749, 576000, 1536}, 4620288, 5, 2},
 };
 
 // gabmm_r4heads_m375_k375_n128_tx0_ty0_b8
-static constexpr std::uint32_t kH14IslandText15[] = {
+static constexpr std::uint32_t kH14IslandText16[] = {
     0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00300000, 0x00000085, 0x00000008, 0x00000000,
     0x00000068, 0x00000000, 0x00000000, 0x00050001, 0xf32e0000, 0x00010177, 0x00000177, 0x00000177,
     0x00010177, 0x00000000, 0x00014008, 0x00000001, 0x00200001, 0x00100000, 0x00000007, 0x80a10440,
@@ -749,7 +776,7 @@ static constexpr std::uint32_t kH14IslandText15[] = {
     0x21808642, 0x00000000, 0x00000000, 0x22808444, 0x00000000, 0x00000000, 0x22008542, 0x00000000,
     0x00000000,
 };
-static constexpr OracleIslandTensor kH14BatchedTensors11[] = {
+static constexpr OracleIslandTensor kH14BatchedTensors12[] = {
     {5, {1, 8, 375, 128, 96000, 256}, 770048, 5, 2},
     {6, {1, 8, 375, 375, 288000, 768}, 2310144, 5, 2},
     {4, {1, 8, 375, 128, 96000, 256}, 770048, 5, 2},
@@ -784,11 +811,13 @@ static constexpr OracleBatchedMatmulTemplate kH14BatchedMatmulTasks[] = {
     {{375, 128, 749, 8, 1, 1}, kH14IslandText9, std::size(kH14IslandText9), 3, nullptr, 0, 16384, 0x00000023, 0x00000089, 0x000bc000, kH14BatchedTensors5, std::size(kH14BatchedTensors5)},
     {{375, 375, 128, 8, 0, 0}, kH14IslandText10, std::size(kH14IslandText10), 5, nullptr, 0, 16384, 0x0000003f, 0x00000085, 0x00228400, kH14BatchedTensors6, std::size(kH14BatchedTensors6)},
     {{375, 375, 128, 8, 1, 0}, kH14IslandText10, std::size(kH14IslandText10), 5, nullptr, 0, 16384, 0x0000003f, 0x00000085, 0x00228400, kH14BatchedTensors6, std::size(kH14BatchedTensors6)},
-    {{128, 1, 128, 16, 0, 1}, kH14IslandText11, std::size(kH14IslandText11), 3, nullptr, 0, 16384, 0x00000016, 0x0000000f, 0x00004000, kH14BatchedTensors7, std::size(kH14BatchedTensors7)},
-    {{128, 1, 128, 16, 1, 1}, kH14IslandText11, std::size(kH14IslandText11), 3, nullptr, 0, 16384, 0x00000016, 0x0000000f, 0x00004000, kH14BatchedTensors7, std::size(kH14BatchedTensors7)},
-    {{1, 128, 128, 16, 0, 0}, kH14IslandText12, std::size(kH14IslandText12), 1, nullptr, 0, 16384, 0x00000011, 0x0000000f, 0x00000000, kH14BatchedTensors8, std::size(kH14BatchedTensors8)},
-    {{1, 128, 128, 16, 1, 0}, kH14IslandText12, std::size(kH14IslandText12), 1, nullptr, 0, 16384, 0x00000011, 0x0000000f, 0x00000000, kH14BatchedTensors8, std::size(kH14BatchedTensors8)},
-    {{375, 128, 375, 8, 1, 0}, kH14IslandText13, std::size(kH14IslandText13), 2, nullptr, 0, 16384, 0x00000022, 0x0000005d, 0x000bc000, kH14BatchedTensors9, std::size(kH14BatchedTensors9)},
-    {{375, 128, 749, 8, 1, 0}, kH14IslandText14, std::size(kH14IslandText14), 2, nullptr, 0, 16384, 0x00000022, 0x000000b7, 0x000bc000, kH14BatchedTensors10, std::size(kH14BatchedTensors10)},
-    {{375, 375, 128, 8, 1, 0}, kH14IslandText15, std::size(kH14IslandText15), 5, nullptr, 0, 16384, 0x0000003f, 0x00000085, 0x00228400, kH14BatchedTensors11, std::size(kH14BatchedTensors11)},
+    {{128, 1, 128, 16, 0, 0}, kH14IslandText11, std::size(kH14IslandText11), 2, nullptr, 0, 16384, 0x00000015, 0x0000000f, 0x00004000, kH14BatchedTensors7, std::size(kH14BatchedTensors7)},
+    {{128, 1, 128, 16, 1, 0}, kH14IslandText11, std::size(kH14IslandText11), 2, nullptr, 0, 16384, 0x00000015, 0x0000000f, 0x00004000, kH14BatchedTensors7, std::size(kH14BatchedTensors7)},
+    {{128, 1, 128, 16, 0, 1}, kH14IslandText12, std::size(kH14IslandText12), 3, nullptr, 0, 16384, 0x00000016, 0x0000000f, 0x00004000, kH14BatchedTensors8, std::size(kH14BatchedTensors8)},
+    {{128, 1, 128, 16, 1, 1}, kH14IslandText12, std::size(kH14IslandText12), 3, nullptr, 0, 16384, 0x00000016, 0x0000000f, 0x00004000, kH14BatchedTensors8, std::size(kH14BatchedTensors8)},
+    {{1, 128, 128, 16, 0, 0}, kH14IslandText13, std::size(kH14IslandText13), 1, nullptr, 0, 16384, 0x00000011, 0x0000000f, 0x00000000, kH14BatchedTensors9, std::size(kH14BatchedTensors9)},
+    {{1, 128, 128, 16, 1, 0}, kH14IslandText13, std::size(kH14IslandText13), 1, nullptr, 0, 16384, 0x00000011, 0x0000000f, 0x00000000, kH14BatchedTensors9, std::size(kH14BatchedTensors9)},
+    {{375, 128, 375, 8, 1, 0}, kH14IslandText14, std::size(kH14IslandText14), 2, nullptr, 0, 16384, 0x00000022, 0x0000005d, 0x000bc000, kH14BatchedTensors10, std::size(kH14BatchedTensors10)},
+    {{375, 128, 749, 8, 1, 0}, kH14IslandText15, std::size(kH14IslandText15), 2, nullptr, 0, 16384, 0x00000022, 0x000000b7, 0x000bc000, kH14BatchedTensors11, std::size(kH14BatchedTensors11)},
+    {{375, 375, 128, 8, 1, 0}, kH14IslandText16, std::size(kH14IslandText16), 5, nullptr, 0, 16384, 0x0000003f, 0x00000085, 0x00228400, kH14BatchedTensors12, std::size(kH14BatchedTensors12)},
 };
