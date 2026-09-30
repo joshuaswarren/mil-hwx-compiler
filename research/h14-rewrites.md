@@ -9,9 +9,12 @@ Apple's own H14 compiler refuses a small set of reduce shapes with
 `callback_status=1` while accepting sibling shapes. The 24 `gxreduce_*`
 records in `research/oracles/h14/` hold both sides: the accepted points the
 norm encoder already replays, and the rejected points this file proposes to
-rewrite around. Every proposal here keeps the MIL semantics and the staged
-model graph untouched; each rewrite is a suggestion for the harness or a
-future compiler pass, gated on Apple-side verification that has not run.
+model graph untouched; each reduce proposal remains a suggestion for the
+harness or a future compiler pass, gated on Apple-side verification that has
+not run. Rewrite 4 is different: Apple accepted and decoded the two exact
+conv1x1 geometries, and the local Batch8 matrix compiled all 19 labeled
+rewrite variants as two ANEC programs each. The staged model is still
+unchanged, and numerical/token validation has not run.
 
 ## Apple-accepted vs Apple-refused reduce points
 
@@ -117,11 +120,22 @@ current numerical tolerance before treating the forms as interchangeable.
 Status: Apple-decoded rewrite proposal; staged Qwen MIL remains unchanged.
 ## Scope and remaining work
 
-- The staged Qwen MIL remains unchanged. The conv1x1 rewrite is a proposal;
-  its Apple-decoded template is available, but no model conversion or device
-  execution is claimed.
+- The staged Qwen MIL remains unchanged. The explicit Batch8 rw-conv1x1
+  matrix variant compiles all 19 A/D/E cases as two ANEC programs: the
+  7-task rms_norm chain followed by the 1-task convolution. None is one
+  ANEC. This proves local compiler coverage, not token equivalence or device
+  execution; STAGED-QWEN-REF equality remains required before promotion.
+- The direct tx1/ty0 B-state outer product and the three algebraically
+  equivalent spellings Apple accepted all decode to the same two-task stream.
+  The same-shape add at [1,16,128,128] is decoded and wired; full B-state
+  programs now compile as seven ANEC programs each.
+- No standalone reshape+matmul decoder is needed for the current matrix:
+  conv1x1 clears every A/D/E compile refusal, although the local scheduler
+  emits two programs. If one-ANEC coverage is required, the next useful Apple
+  batch is the complete rms_norm-plus-conv chain; an isolated one-task
+  reshape+matmul still leaves two programs and does not close that gap.
 - Add decoder rows only from Apple-decoded task streams. Do not infer task words
   from equivalent tensor shapes.
 - The reduce rewrites above remain unverified on Apple's compiler. The next
-  reduce batch should test rank-3 `reduce_sum` at `[1,16,128]` and the
-  rank-3 matmul-ones spelling at `[1,1,2048]` × `[1,2048,1]`.
+  reduce batch should test rank-3 reduce_sum at [1,16,128] and the
+  rank-3 matmul-ones spelling at [1,1,2048] x [1,2048,1].
