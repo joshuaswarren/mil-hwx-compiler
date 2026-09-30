@@ -159,7 +159,14 @@ def constant_runs(oracle: dict[str, Any]) -> list[tuple[int, int, int]]:
     """Nonzero fp16 halfword runs (index, bits, count) of the constant section."""
     section = oracle["constant_section"]
     halfwords: dict[int, int] = {}
-    if section["nonzero_bytes"]:
+    if section.get("constant_bytes_hex"):
+        # Full captured bytes are authoritative when the mint recorded them.
+        data = bytes.fromhex(section["constant_bytes_hex"])
+        for index, bits in enumerate(struct.unpack(
+                f"<{len(data) // 2}H", data)):
+            if bits:
+                halfwords[index] = bits
+    elif section["nonzero_bytes"]:
         words = section["nonzero_fp16_words"]
         if words is None:
             # Oracles above 256 bytes keep only hashes; the scalar real_div
@@ -359,6 +366,67 @@ def island_tensor_entries(oracle: dict[str, Any]) -> list[str]:
     return entries
 
 
+def ninf_fill_model(oracle: dict[str, Any]) -> dict[str, Any]:
+    """Derive the const-fill section layout from the captured bytes.
+
+    The selector table is the trailing 256 bytes. Everything before it is
+    the fill, laid out as equal blocks of uniform fp16 data halfwords
+    followed by one zero pad halfword per channel. Both numbers come from
+    the zero-run positions in the captured section, not from the shape, and
+    the whole layout is verified against the bytes before it is emitted.
+    """
+    section = oracle["constant_section"]
+    data = bytes.fromhex(section["constant_bytes_hex"])
+    table = data[-256:]
+    fill = data[:-256]
+    halfwords = struct.unpack(f"<{len(fill) // 2}H", fill)
+    nonzero = sorted({bits for bits in halfwords if bits})
+    if len(nonzero) != 1:
+        raise ValueError(f"{oracle['case']}: fill holds {len(nonzero)} "
+                         "distinct nonzero halfwords, expected one")
+    bits = nonzero[0]
+    pads = [index for index, value in enumerate(halfwords) if not value]
+    if not pads:
+        raise ValueError(f"{oracle['case']}: fill carries no pad halfwords")
+    groups: list[list[int]] = []
+    for index in pads:
+        if groups and index == groups[-1][-1] + 1:
+            groups[-1].append(index)
+        else:
+            groups.append([index])
+    pad_start = groups[0][0]
+    pad_count = len(groups[0])
+    block_stride = pad_start + pad_count
+    block_data = pad_start
+    blocks = len(fill) // 2 // block_stride
+    if len(fill) // 2 != blocks * block_stride or blocks != len(groups):
+        raise ValueError(f"{oracle['case']}: fill length does not complete "
+                         "the derived block grid")
+    for block, group in enumerate(groups):
+        if group[0] != block * block_stride + pad_start or \
+                len(group) != pad_count:
+            raise ValueError(f"{oracle['case']}: fill pads are not a uniform "
+                             "block pattern")
+        if any(halfwords[block * block_stride + index] != bits
+               for index in range(block_data)):
+            raise ValueError(f"{oracle['case']}: fill block {block} is not "
+                             f"uniform 0x{bits:04x}")
+    shape = oracle["parameters"]["shape"]
+    elements = shape[1] * shape[2] * shape[3]
+    if block_data * len(groups) != elements:
+        raise ValueError(f"{oracle['case']}: derived fill holds "
+                         f"{block_data * len(groups)} values, the shape "
+                         f"needs {elements}")
+    table_halfwords = {
+        index: bits for index, bits in enumerate(
+            struct.unpack("<128H", table)) if bits}
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != section["sha256"]:
+        raise ValueError(f"{oracle['case']}: captured section hash mismatch")
+    return {"blocks": len(groups), "data": block_data, "stride": block_stride,
+            "bits": bits, "table_runs": sorted(table_halfwords.items())}
+
+
 def generate_island() -> str:
     """Tables for the Parakeet island families: five-task `select` with a bool
     cond and the batched runtime-runtime matmuls. Both encode as whole-program
@@ -370,21 +438,29 @@ def generate_island() -> str:
              ""]
     selects = []
     batched = []
+    fills = {}
     for oracle in island_oracles():
         parameters = oracle["parameters"]
         if oracle["family"] == "env_boolean_select":
-            if parameters["mode"] != "rr":
-                # The const-fill form's 2.2 MB section is the -inf fill at a
-                # 376-halfword row stride plus the table; no run encoder, no
-                # template. The runtime form is what the island binds.
-                continue
+            if parameters["mode"] == "ninf":
+                # The const-fill form: the selector table rides at the end of
+                # the section; the fill before it is packed by the encoder
+                # from the resolved blob through the derived block model.
+                model = ninf_fill_model(oracle)
+                fills[oracle["case"]] = model
+                table_start = model["blocks"] * model["stride"]
+                runs = [(table_start + index, bits, 1)
+                        for index, bits in model["table_runs"]]
+            else:
+                runs = constant_runs(oracle)
         elif parameters["batch"] == 1:
             # Rank-3 batch-1 runtime matmuls stay outside: the two-task
             # constant-weight encoder owns the rank-2 grid and nothing covers
             # these yet.
             continue
+        else:
+            runs = constant_runs(oracle)
         stream = task_stream(oracle)
-        runs = constant_runs(oracle)
         descriptor = oracle["program_descriptor"]
         trailer = descriptor["trailing_words"]
         common = (tuple(stream), tuple(runs),
@@ -404,20 +480,6 @@ def generate_island() -> str:
     lines.append("    std::uint64_t allocationBytes;")
     lines.append("    std::uint32_t elementCode;")
     lines.append("    std::uint32_t elementBytes;")
-    lines.append("};")
-    lines.append("")
-    lines.append("struct OracleIslandTemplate {")
-    lines.append("    const std::uint32_t *text;")
-    lines.append("    std::size_t textWords;")
-    lines.append("    std::uint32_t taskCount;")
-    lines.append("    const ConstantRun *constants;")
-    lines.append("    std::size_t constantRuns;")
-    lines.append("    std::size_t constantBytes;")
-    lines.append("    std::uint32_t programRecordCount;")
-    lines.append("    std::uint32_t unresolvedDescriptorWord;")
-    lines.append("    std::uint32_t scratchDescriptorWord;")
-    lines.append("    std::array<OracleIslandTensor, 4> tensors;")
-    lines.append("    std::uint32_t inputCount;")
     lines.append("};")
     lines.append("")
 
@@ -447,15 +509,21 @@ def generate_island() -> str:
         fields = emit_common(index, common)
         shape = parameters["shape"]
         const_fill = 1 if parameters["mode"] == "ninf" else 0
-        lines.append(f"static constexpr std::array<OracleIslandTensor, 4> "
-                     f"kH14SelectTensors{index} = " + "{{")
+        fill = fills.get(case, {"blocks": 0, "data": 0, "stride": 0,
+                                "bits": 0})
+        lines.append(f"static constexpr OracleIslandTensor "
+                     f"kH14SelectTensors{index}[] = " + "{")
         lines.extend(tensors)
-        lines.append("}};")
+        lines.append("};")
         lines.append("")
         shape_lit = "{%d, %d, %d}" % (key_shape[1], key_shape[2],
                                       key_shape[3])
-        entries.append("    {" + shape_lit + ", " + str(const_fill) + ", "
-                       + fields + ", kH14SelectTensors%d}" % index + ","),
+        entries.append(
+            "    {" + shape_lit + ", " + str(const_fill) + ", "
+            + fields + ", kH14SelectTensors%d, " % index
+            + f"std::size(kH14SelectTensors{index}), "
+            + f"{fill['blocks']}, {fill['data']}, {fill['stride']}, "
+            + "0x%04x}," % fill['bits'])
     lines.append("struct OracleSelectTemplate {")
     lines.append("    ElementwiseShape shape;")
     lines.append("    bool constFill;")
@@ -468,7 +536,15 @@ def generate_island() -> str:
     lines.append("    std::uint32_t programRecordCount;")
     lines.append("    std::uint32_t unresolvedDescriptorWord;")
     lines.append("    std::uint32_t scratchDescriptorWord;")
-    lines.append("    std::array<OracleIslandTensor, 4> tensors;")
+    lines.append("    const OracleIslandTensor *tensors;")
+    lines.append("    std::uint32_t tensorCount;")
+    lines.append("    /// The derived const-fill geometry: the encoder packs")
+    lines.append("    /// fillBlocks blocks of fillBlockData fillBits halfwords")
+    lines.append("    /// plus (stride - data) zero pads, then the table runs.")
+    lines.append("    std::uint32_t fillBlocks;")
+    lines.append("    std::uint32_t fillBlockData;")
+    lines.append("    std::uint32_t fillBlockStride;")
+    lines.append("    std::uint16_t fillBits;")
     lines.append("};")
     lines.append("static constexpr OracleSelectTemplate kH14SelectTasks[] = {")
     lines.extend(entries)
@@ -479,10 +555,10 @@ def generate_island() -> str:
     for index, (parameters, common, tensors, case) in enumerate(batched):
         lines.append(f"// {case}")
         fields = emit_common(len(selects) + index, common)
-        lines.append(f"static constexpr std::array<OracleIslandTensor, 3> "
-                     f"kH14BatchedTensors{index} = " + "{{")
+        lines.append(f"static constexpr OracleIslandTensor "
+                     f"kH14BatchedTensors{index}[] = " + "{")
         lines.extend(tensors)
-        lines.append("}};")
+        lines.append("};")
         lines.append("")
         shape_lit = "{%d, %d, %d, %d, %d, %d}" % (
             parameters["rows"], parameters["reduction"],
@@ -490,7 +566,8 @@ def generate_island() -> str:
             1 if parameters["layout"] == "r4heads" else 0,
             1 if parameters["transpose_y"] else 0)
         entries.append("    {" + shape_lit + ", " + fields
-                       + ", kH14BatchedTensors%d}" % index + ",")
+                       + ", kH14BatchedTensors%d, " % index
+                       + f"std::size(kH14BatchedTensors{index})}},")
     lines.append("struct OracleBatchedMatmulTemplate {")
     lines.append("    BatchedMatmulShape shape;")
     lines.append("    const std::uint32_t *text;")
@@ -502,10 +579,96 @@ def generate_island() -> str:
     lines.append("    std::uint32_t programRecordCount;")
     lines.append("    std::uint32_t unresolvedDescriptorWord;")
     lines.append("    std::uint32_t scratchDescriptorWord;")
-    lines.append("    std::array<OracleIslandTensor, 3> tensors;")
+    lines.append("    const OracleIslandTensor *tensors;")
+    lines.append("    std::uint32_t tensorCount;")
     lines.append("};")
     lines.append("static constexpr OracleBatchedMatmulTemplate "
                  "kH14BatchedMatmulTasks[] = {")
+    lines.extend(entries)
+    lines.append("};")
+    lines.append("")
+    return "\n".join(lines)
+
+
+RMS_OUTPUT = ROOT / "plugins/H14/H14RmsNormTemplates.inc"
+
+
+def rms_oracles() -> list[dict[str, Any]]:
+    """The decoded whole-chain rms_norm decomposition programs."""
+    selected = []
+    for path in sorted(ORACLES.glob("garms_chain_*.json")):
+        oracle = json.loads(path.read_text())
+        if oracle.get("error") is None:
+            selected.append(oracle)
+    return selected
+
+
+def generate_rms() -> str:
+    """Tables for the whole-chain coremltools rms_norm decomposition. One
+    whole-program replay per decoded (channels, gamma) point: every task
+    word, the constant-section runs, the three descriptor words the campaign
+    resolves no formula for, and the two surface layouts come from the
+    decoded oracle. The gamma section tail scales as 4 bytes per channel;
+    the encoder replays its captured runs and validates the resolved blob."""
+    lines = ["// Generated from decoded H14 rms_norm-chain oracle",
+             "// task words by research/generate_h14_templates.py.",
+             ""]
+    lines.append("struct OracleRmsNormTemplate {")
+    lines.append("    std::uint32_t channels;")
+    lines.append("    bool gamma;")
+    lines.append("    const std::uint32_t *text;")
+    lines.append("    std::size_t textWords;")
+    lines.append("    std::uint32_t taskCount;")
+    lines.append("    const ConstantRun *constants;")
+    lines.append("    std::size_t constantRuns;")
+    lines.append("    std::size_t constantBytes;")
+    lines.append("    std::uint32_t programRecordCount;")
+    lines.append("    std::uint32_t unresolvedDescriptorWord;")
+    lines.append("    std::uint32_t scratchDescriptorWord;")
+    lines.append("    const OracleIslandTensor *tensors;")
+    lines.append("    std::uint32_t tensorCount;")
+    lines.append("};")
+    entries = []
+    for index, oracle in enumerate(rms_oracles()):
+        parameters = oracle["parameters"]
+        shape = parameters["shape"]
+        if shape[0] != 1 or shape[2] != 1 or shape[3] != 1:
+            raise ValueError(f"{oracle['case']}: unexpected chain shape "
+                             f"{shape}")
+        stream = task_stream(oracle)
+        runs = constant_runs(oracle)
+        descriptor = oracle["program_descriptor"]
+        trailer = descriptor["trailing_words"]
+        lines.append(f"// {oracle['case']}")
+        lines.append(f"static constexpr std::uint32_t kH14RmsText{index}[] = {{")
+        lines.append(word_rows(list(stream)))
+        lines.append("};")
+        constants = "nullptr, 0"
+        if runs:
+            lines.append(f"static constexpr ConstantRun "
+                         f"kH14RmsConstants{index}[] = {{")
+            for start, bits, count in runs:
+                lines.append(f"    {{{start}, 0x{bits:04x}, {count}}},")
+            lines.append("};")
+            constants = (f"kH14RmsConstants{index}, "
+                         f"std::size(kH14RmsConstants{index})")
+        tensors = island_tensor_entries(oracle)
+        lines.append(f"static constexpr OracleIslandTensor "
+                     f"kH14RmsTensors{index}[] = " + "{")
+        lines.extend(tensors)
+        lines.append("};")
+        lines.append("")
+        entries.append(
+            f"    {{{shape[1]}, "
+            + ("true" if parameters["gamma"] else "false") + ", "
+            + f"kH14RmsText{index}, std::size(kH14RmsText{index}), "
+            + f"{descriptor['task_count']}, {constants}, "
+            + f"{oracle['constant_section']['size']}, "
+            + f"0x{int(trailer[20], 16):08x}, 0x{int(trailer[28], 16):08x}, "
+            + f"0x{int(trailer[18], 16):08x}, "
+            + f"kH14RmsTensors{index}, std::size(kH14RmsTensors{index})}},")
+    lines.append("static constexpr OracleRmsNormTemplate "
+                 "kH14RmsNormTasks[] = {")
     lines.extend(entries)
     lines.append("};")
     lines.append("")
@@ -519,7 +682,8 @@ def main() -> None:
     arguments = parser.parse_args()
     for path, generated in ((OUTPUT, generate()),
                             (MATVEC_OUTPUT, generate_matvec()),
-                            (ISLAND_OUTPUT, generate_island())):
+                            (ISLAND_OUTPUT, generate_island()),
+                            (RMS_OUTPUT, generate_rms())):
         if arguments.check:
             if (path.read_text() if path.exists() else "") != generated:
                 raise SystemExit(f"{path} is stale; regenerate it")

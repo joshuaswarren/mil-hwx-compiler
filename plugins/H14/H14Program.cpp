@@ -1,6 +1,7 @@
 #include "H14Program.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <iterator>
 #include <limits>
 #include <stdexcept>
@@ -96,6 +97,7 @@ struct OracleConvTemplate {
 #include "H14NormTemplates.inc"
 #include "H14ConvTemplates.inc"
 #include "H14IslandTemplates.inc"
+#include "H14RmsNormTemplates.inc"
 // H14's exponential and reciprocal sections are the H13 tables byte-for-byte:
 // research/mint_h14_norm_probes.py resolves every decoded H14 section against
 // these words by SHA-256 before it emits a NormConstants kind.
@@ -862,6 +864,13 @@ Program encodeConvParity(ConvShape shape, const std::uint8_t *weights,
     return program;
 }
 
+const OracleRmsNormTemplate *rmsTemplate(std::uint32_t channels, bool gamma) {
+    for (const auto &candidate : kH14RmsNormTasks)
+        if (candidate.channels == channels && candidate.gamma == gamma)
+            return &candidate;
+    return nullptr;
+}
+
 const OracleSelectTemplate *selectTemplate(ElementwiseShape shape,
                                            bool constFill) {
     for (const auto &candidate : kH14SelectTasks)
@@ -900,14 +909,14 @@ Program replayIslandProgram(const Template &source) {
         }
     }
     const std::uint32_t inputCount =
-        static_cast<std::uint32_t>(source.tensors.size()) - 1;
+        source.tensorCount >= 1 ? source.tensorCount - 1 : 0;
     for (std::uint32_t index = 0; index != inputCount; ++index) {
         const auto &tensor = source.tensors[index];
         program.inputs.push_back({tensor.index, tensor.nchw,
                                   tensor.allocationBytes, tensor.elementCode,
                                   tensor.elementBytes});
     }
-    const auto &output = source.tensors.back();
+    const auto &output = source.tensors[source.tensorCount - 1];
     program.output = {output.index, output.nchw, output.allocationBytes,
                       output.elementCode, output.elementBytes};
     program.scratchDescriptorWord = source.scratchDescriptorWord;
@@ -918,11 +927,85 @@ bool supportsSelectParity(ElementwiseShape shape, bool constFill) {
     return selectTemplate(shape, constFill);
 }
 
-Program encodeSelectParity(ElementwiseShape shape, bool constFill) {
+Program encodeSelectParity(ElementwiseShape shape, bool constFill,
+                           const std::uint8_t *fillPayload,
+                           std::size_t fillBytes) {
     const auto *source = selectTemplate(shape, constFill);
     if (!source)
         throw std::invalid_argument(
             "H14 select is outside the decoded parity envelope");
+    Program program = replayIslandProgram(*source);
+    if (!constFill) return program;
+    // The const-fill section starts with the fill the encoder packs from the
+    // resolved blob through the template's derived block geometry, then ends
+    // with the 256-byte selector table the table runs already lay down. The
+    // template runs carry only the table halfwords (at absolute offsets
+    // >= fillBlocks * stride); the fill halfwords are written here.
+    const std::uint32_t expected =
+        source->fillBlocks * source->fillBlockData;
+    if (!fillPayload || fillBytes != static_cast<std::size_t>(expected) * 2)
+        throw std::invalid_argument(
+            "H14 const-fill select requires the resolved fp16 blob "
+            "(one value per element) to derive the section");
+    fprintf(stderr, "DBG ninf expected=%u fillBlocks=%u fillData=%u payload bytes=%zu\n",
+            expected, source->fillBlocks, source->fillBlockData, fillBytes);
+    for (std::uint32_t index = 0; index != expected; ++index) {
+        const std::uint16_t bits = static_cast<std::uint16_t>(
+            fillPayload[index * 2] | (fillPayload[index * 2 + 1] << 8));
+        if (bits != source->fillBits) {
+            fprintf(stderr, "DBG ninf mismatch at %u: got 0x%04x want 0x%04x (bytes %02x %02x)\n",
+                    index, bits, source->fillBits,
+                    fillPayload[index * 2], fillPayload[index * 2 + 1]);
+            throw std::invalid_argument(
+                "H14 const-fill select covers the decoded uniform fill; a "
+                "different resolved blob is outside the parity envelope");
+        }
+    }
+    const std::uint32_t fillBytesTotal =
+        source->fillBlocks * source->fillBlockStride * 2;
+    if (fillBytesTotal + 256 != program.constants.size())
+        throw std::logic_error(
+            "H14 const-fill select section size does not match the derived "
+            "fill geometry");
+    for (std::uint32_t block = 0; block != source->fillBlocks; ++block) {
+        std::uint8_t *const row =
+            program.constants.data() + block * source->fillBlockStride * 2;
+        for (std::uint32_t index = 0; index != source->fillBlockData;
+             ++index) {
+            row[index * 2] = static_cast<std::uint8_t>(source->fillBits);
+            row[index * 2 + 1] =
+                static_cast<std::uint8_t>(source->fillBits >> 8);
+        }
+    }
+    return program;
+}
+
+bool supportsRmsNormParity(std::uint32_t channels, bool gamma) {
+    return rmsTemplate(channels, gamma);
+}
+
+Program encodeRmsNormParity(std::uint32_t channels, bool gamma,
+                            const std::uint8_t *gammaPayload,
+                            std::size_t gammaBytes) {
+    const auto *source = rmsTemplate(channels, gamma);
+    if (!source)
+        throw std::invalid_argument(
+            "H14 rms_norm chain is outside the decoded parity envelope");
+    if (gamma) {
+        if (!gammaPayload || gammaBytes != channels * 2)
+            throw std::invalid_argument(
+                "H14 rms_norm gamma chain requires the resolved fp16 blob "
+                "(one value per channel) to derive the constant section");
+        for (std::uint32_t index = 0; index != channels; ++index) {
+            const std::uint16_t bits = static_cast<std::uint16_t>(
+                gammaPayload[index * 2] | (gammaPayload[index * 2 + 1] << 8));
+            if (bits != 0x3800)
+                throw std::invalid_argument(
+                    "H14 rms_norm gamma chain covers the decoded uniform "
+                    "fp16(0x1p-1) weight; a different resolved blob is "
+                    "outside the parity envelope");
+        }
+    }
     return replayIslandProgram(*source);
 }
 

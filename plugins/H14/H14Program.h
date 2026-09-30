@@ -144,11 +144,16 @@ std::vector<std::uint8_t> packConvWeights(ConvShape shape,
                                           std::size_t biasBytes = 0);
 /// True when the decoded corpus covers `select` over this CHW surface: two
 /// fp16 tensors and a bool cond of the same shape, or the decoded const-fill
-/// form whose fp16 `a` is a full-size blob constant.
+/// form whose fp16 `a` is a full-size blob constant. The const-fill form
+/// carries its decoded fill geometry in the template; `payload` is the
+/// resolved blob (one fp16 value per element, all the same), which the
+/// encoder packs and validates before replaying the task stream.
 bool supportsSelectParity(ElementwiseShape shape, bool constFill);
 /// Encodes Apple's five-task select program. The surfaces bind in the decoded
 /// order and the 256-byte selector table rides in the constant section.
-Program encodeSelectParity(ElementwiseShape shape, bool constFill);
+Program encodeSelectParity(ElementwiseShape shape, bool constFill,
+                           const std::uint8_t *fillPayload = nullptr,
+                           std::size_t fillBytes = 0);
 /// One decoded batched runtime-runtime matmul: `[B, rows, reduction]` (or the
 /// rank-4 `[1, B, rows, reduction]` head form) against `[B, reduction,
 /// columns]`, `transpose_y` spelled explicitly. Both operand ranks emit
@@ -170,6 +175,20 @@ inline bool operator==(const BatchedMatmulShape &left, const BatchedMatmulShape 
 bool supportsBatchedMatmulParity(const BatchedMatmulShape &shape);
 /// Encodes Apple's batched matmul program for the geometry.
 Program encodeBatchedMatmulParity(const BatchedMatmulShape &shape);
+/// True when the decoded corpus covers the coremltools nine-op rms_norm
+/// decomposition as one whole-chain H14 program: the channel count sits in
+/// the Qwen3.8-2B norm sizes (C=2048 hidden / post / final / RMSNormGated;
+/// C=128 per-head q/k norms), and `gamma` names the eight-task form whose
+/// resolved blob feeds the 4-bytes-per-channel block the encoder derives
+/// from the captured section bytes.
+bool supportsRmsNormParity(std::uint32_t channels, bool gamma);
+/// Encodes Apple's whole-chain rms_norm program for the channel count. With
+/// `gamma`, `gammaPayload` is the resolved fp16 blob (one value per channel);
+/// the encoder validates it and packs the 4-bytes-per-channel constant block
+/// before replaying the captured task stream.
+Program encodeRmsNormParity(std::uint32_t channels, bool gamma,
+                            const std::uint8_t *gammaPayload = nullptr,
+                            std::size_t gammaBytes = 0);
 /// Encodes Apple's own H14 convolution task stream for the geometry.
 Program encodeConvParity(ConvShape shape, const std::uint8_t *weights,
                          std::size_t weightBytes,
