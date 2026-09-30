@@ -1,5 +1,6 @@
 #import "ANEH14Compiler.h"
 
+#import <cstdio>
 #import "ANEBlobResolver.h"
 #import "ANEGraphVerifier.h"
 #import "MILLexer.h"
@@ -738,39 +739,182 @@ static BOOL batchedMatmulPlan(ANEGraphOperation *operation,
     return YES;
 }
 
-/// Matches `select` with two runtime fp16 tensors and a bool cond of the
-/// same surface, the Parakeet island B form. The decoded const-fill form
-/// (a BLOBFILE `a`) stays outside the envelope.
+/// Matches the `select` with two runtime fp16 tensors and a bool cond of the
+/// same surface, the Parakeet island B form. The const-fill form keeps `a`
+/// a BLOBFILE constant whose resolved fp16 blob feeds the encoder's derived
+/// block model; the const-fill call site loads the blob itself so this
+/// recognizer just gates on the shape.
 static BOOL selectPlan(ANEGraphOperation *operation,
-                       ane::h14::ElementwiseShape *shape) {
+                       ane::h14::ElementwiseShape *shape,
+                       ANEGraphValue **aValueOut) {
     ANEGraphValue *a = operation.operands[@"a"].value;
     ANEGraphValue *b = operation.operands[@"b"].value;
     ANEGraphValue *cond = operation.operands[@"cond"].value;
     if (![operation.operationName isEqualToString:@"select"] ||
-        !a || !b || !cond || constantValue(a) || constantValue(b) ||
-        constantValue(cond))
+        !a || !b || !cond || constantValue(b) || constantValue(cond))
         return NO;
     if (cond.type.elementType != ANEElementTypeBool ||
-        ![cond.type.shape isEqualToArray:a.type.shape] ||
-        ![b.type.shape isEqualToArray:a.type.shape] ||
-        ![operation.result.type.shape isEqualToArray:a.type.shape])
+        ![cond.type.shape isEqualToArray:b.type.shape] ||
+        ![operation.result.type.shape isEqualToArray:b.type.shape])
+        return NO;
+    const BOOL constFill = constantValue(a);
+    if (!constFill &&
+        ![a.type.shape isEqualToArray:b.type.shape])
         return NO;
     ane::h14::ElementwiseShape literal{};
-    if (a.type.shape.count == 4) {
+    if (b.type.shape.count == 4) {
         if (!elementwiseShape(operation.result, &literal)) return NO;
-    } else if (a.type.shape.count == 3 &&
-               [a.type.shape[0] unsignedIntegerValue] == 1) {
-        // A rank-3 [1, C, W] surface lowers to the decoded [1, 1, C, W]
-        // descriptor form.
+    } else if (b.type.shape.count == 3 &&
+               [b.type.shape[0] unsignedIntegerValue] == 1) {
         literal = {1u, static_cast<std::uint32_t>(
-            [a.type.shape[1] unsignedIntegerValue]),
+            [b.type.shape[1] unsignedIntegerValue]),
             static_cast<std::uint32_t>(
-            [a.type.shape[2] unsignedIntegerValue])};
+            [b.type.shape[2] unsignedIntegerValue])};
     } else {
         return NO;
     }
-    if (!ane::h14::supportsSelectParity(literal, false)) return NO;
+    if (!ane::h14::supportsSelectParity(literal, constFill)) return NO;
     *shape = literal;
+    if (aValueOut) *aValueOut = a;
+    return YES;
+}
+
+/// The coremltools nine-op rms_norm decomposition at one Qwen decode shape:
+/// abs(x) -> reduce_max(axes=[1,2,3], keep_dims=true) -> real_div(x, amax) ->
+/// square(scaled) -> reduce_mean(axes=[1,2,3], keep_dims=true) ->
+/// add(mean, eps) -> sqrt(meps) -> mul(rms, amax) -> real_div(x, rscaled) ->
+/// [mul(norm, gamma)]. Decodes as one 7-task H14 program (8 with gamma) the
+/// compiler encodes via a whole-program replay keyed on the channel count
+/// and whether the gamma mul rides at the tail. The eps literal and the
+/// per-channel channel/height/width layout carry over to the encoder; the
+/// caller inspects the matched slice so the dispatch loop can skip past it.
+static BOOL rmsNormChainPlan(NSArray<ANEGraphOperation *> *sourceOperations,
+                             NSUInteger startIndex,
+                             NSURL *modelRoot,
+                             ANEDiagnosticEngine *diagnostics,
+                             std::uint32_t *channelsOut,
+                             BOOL *gammaOut,
+                             NSData *__autoreleasing *gammaOut_bytes,
+                             NSUInteger *consumedOut) {
+    const NSUInteger length = sourceOperations.count;
+    if (startIndex >= length) return NO;
+    ANEGraphOperation *op0 = sourceOperations[startIndex];
+    if (![op0.operationName isEqualToString:@"abs"]) return NO;
+    ANEGraphValue *xValue = op0.operands[@"x"].value;
+    ANEGraphValue *r0 = op0.result;
+    if (!xValue || !r0 || xValue.producer) return NO;
+    if (!fp16Tensor(xValue) || xValue.type.shape.count != 4 ||
+        xValue.type.shape[0].unsignedIntegerValue != 1 ||
+        xValue.type.shape[2].unsignedIntegerValue != 1 ||
+        xValue.type.shape[3].unsignedIntegerValue != 1) return NO;
+    const std::uint32_t channels =
+        static_cast<std::uint32_t>(
+            xValue.type.shape[1].unsignedIntegerValue);
+    if (!channels) return NO;
+    auto consumeUnique = [length, sourceOperations](ANEGraphValue *value) -> BOOL {
+        if (!value) return NO;
+        NSUInteger uses = 0;
+        for (NSUInteger index = 0; index < length; ++index)
+            for (ANEGraphArgument *operand in
+                    sourceOperations[index].operands.allValues)
+                uses += (operand.value == value);
+        return uses == 1;
+    };
+    if (!consumeUnique(r0)) return NO;
+    auto nextOp = [length, sourceOperations](NSUInteger index,
+                                             NSString *name) ->
+            ANEGraphOperation * {
+        if (index >= length) return nil;
+        ANEGraphOperation *op = sourceOperations[index];
+        return [op.operationName isEqualToString:name] ? op : nil;
+    };
+    if (startIndex + 1 >= length) return NO;
+    ANEGraphOperation *op1 = nextOp(startIndex + 1, @"reduce_max");
+    if (!op1) return NO;
+    ANEGraphValue *r1 = op1.result;
+    if (op1.operands[@"x"].value != r0 ||
+        op1.arguments.count != 3 ||
+        !boolean(op1.arguments[@"keep_dims"], YES))
+        return NO;
+    long long values[3];
+    if (!int32Vector(op1.operands[@"axes"].value, 3, values) ||
+        values[0] != 1 || values[1] != 2 || values[2] != 3)
+        return NO;
+    // r1 (amax) is consumed twice: once by op2's real_div and once by op7's
+    // mul. Every other intermediate (r2..r7) must still be unique.
+    NSUInteger r1Uses = 0;
+    for (NSUInteger index = 0; index < length; ++index)
+        for (ANEGraphArgument *operand in
+                sourceOperations[index].operands.allValues)
+            r1Uses += (operand.value == r1);
+    if (r1Uses != 2) return NO;
+    ANEGraphOperation *op2 = nextOp(startIndex + 2, @"real_div");
+    if (!op2 || op2.operands[@"x"].value != xValue ||
+        op2.operands[@"y"].value != r1) return NO;
+    ANEGraphValue *r2 = op2.result;
+    if (!consumeUnique(r2)) return NO;
+    ANEGraphOperation *op3 = nextOp(startIndex + 3, @"square");
+    if (!op3 || op3.operands[@"x"].value != r2) return NO;
+    ANEGraphValue *r3 = op3.result;
+    if (!consumeUnique(r3)) return NO;
+    ANEGraphOperation *op4 = nextOp(startIndex + 4, @"reduce_mean");
+    if (!op4 || op4.operands[@"x"].value != r3) return NO;
+    if (op4.arguments.count != 3 ||
+        op4.operands[@"axes"].value != op1.operands[@"axes"].value ||
+        !boolean(op4.arguments[@"keep_dims"], YES)) return NO;
+    ANEGraphValue *r4 = op4.result;
+    if (!consumeUnique(r4)) return NO;
+    ANEGraphOperation *op5 = nextOp(startIndex + 5, @"add");
+    if (!op5 || op5.operands[@"x"].value != r4) return NO;
+    ANEGraphValue *epsValue = op5.operands[@"y"].value;
+    if (!epsValue || !constantValue(epsValue)) return NO;
+    uint16_t epsBits = 0;
+    if (!fp16Scalar(epsValue.producer.attributes[@"val"], &epsBits) ||
+        epsBits != 0x0080) return NO;
+    ANEGraphValue *r5 = op5.result;
+    if (!consumeUnique(r5)) return NO;
+    ANEGraphOperation *op6 = nextOp(startIndex + 6, @"sqrt");
+    if (!op6 || op6.operands[@"x"].value != r5) return NO;
+    ANEGraphValue *r6 = op6.result;
+    if (!consumeUnique(r6)) return NO;
+    ANEGraphOperation *op7 = nextOp(startIndex + 7, @"mul");
+    if (!op7 || op7.operands[@"x"].value != r6 ||
+        op7.operands[@"y"].value != r1) return NO;
+    ANEGraphValue *r7 = op7.result;
+    if (!consumeUnique(r7)) return NO;
+    ANEGraphOperation *op8 = nextOp(startIndex + 8, @"real_div");
+    if (!op8 || op8.operands[@"x"].value != xValue ||
+        op8.operands[@"y"].value != r7) return NO;
+    ANEGraphValue *r8 = op8.result;
+    BOOL gamma = NO;
+    NSData *gammaBytes = nil;
+    NSUInteger consumed = 9;
+    if (startIndex + 9 < length) {
+        ANEGraphOperation *op9 = sourceOperations[startIndex + 9];
+        if ([op9.operationName isEqualToString:@"mul"] &&
+            op9.operands[@"x"].value == r8 && constantValue(op9.operands[@"y"].value)) {
+            ANEGraphValue *gammaVal = op9.operands[@"y"].value;
+            if (gammaVal.type.shape.count != 4 ||
+                ![gammaVal.type.shape isEqualToArray:xValue.type.shape])
+                return NO;
+            gammaBytes = [ANEBlobResolver
+                loadConstantForOperation:gammaVal.producer
+                expectedBytes:channels * 2
+                modelRoot:modelRoot diagnostics:diagnostics];
+            if (!gammaBytes) return NO;
+            gamma = YES;
+            consumed = 10;
+            r8 = op9.result;
+        }
+    }
+    // The chain's final value is the program result; xValue must be a
+    // function input (its producer is the function boundary).
+    if (xValue.producer != nil) return NO;
+    if (!ane::h14::supportsRmsNormParity(channels, gamma)) return NO;
+    *channelsOut = channels;
+    *gammaOut = gamma;
+    *gammaOut_bytes = gammaBytes;
+    *consumedOut = consumed;
     return YES;
 }
 
@@ -903,8 +1047,22 @@ static BOOL selectPlan(ANEGraphOperation *operation,
     std::vector<ane::h14::Program> chainPrograms;
     NSMutableArray<NSDictionary *> *chainOpRecords = [NSMutableArray array];
 
-    for (ANEGraphOperation *operation in sourceOperations) {
+    std::uint32_t rmsChannels = 0;
+    BOOL rmsGamma = NO;
+    NSData *rmsGammaBytes = nil;
+    NSUInteger rmsConsumed = 0;
+    ANEGraphValue *rmsInput = nil;
+    BOOL rmsChain = rmsNormChainPlan(sourceOperations, 0, modelRoot,
+                                     diagnostics, &rmsChannels,
+                                     &rmsGamma, &rmsGammaBytes,
+                                     &rmsConsumed);
+    if (rmsChain) rmsInput = sourceOperations[0].operands[@"x"].value;
+
+    for (NSUInteger operationIndex = 0;
+         operationIndex < sourceOperations.count; ) {
+        ANEGraphOperation *operation = sourceOperations[operationIndex];
         NSString *name = operation.operationName;
+        NSData *selectAFillBytes = nil;
         if (chainSchedule && operation == lastOperation) {
             ANEGraphValue *value = operation.operands[@"x"].value;
             if (operation.arguments.count != 1 || !value)
@@ -921,6 +1079,7 @@ static BOOL selectPlan(ANEGraphOperation *operation,
                 @"logicalBytes": @(logicalBytes(operation.result)),
                 @"role": @"output",
             };
+            ++operationIndex;
             continue;
         }
         BOOL matvec = [name isEqualToString:@"matmul"] ||
@@ -937,11 +1096,25 @@ static BOOL selectPlan(ANEGraphOperation *operation,
         ane::h14::BatchedMatmulShape batchedShape{};
         ane::h14::ElementwiseShape selectShape{};
         BOOL batchedMatmul = NO, selectOp = NO;
-        if (matvec && batchedMatmulPlan(operation, &batchedShape)) {
-            batchedMatmul = YES;
+        ANEGraphValue *selectAValue = nil;
+        BOOL rmsProgram = NO;
+        if (rmsChain && operationIndex == 0) {
+            rmsProgram = YES;
         } else if ([name isEqualToString:@"select"] &&
-                   selectPlan(operation, &selectShape)) {
+                   selectPlan(operation, &selectShape, &selectAValue)) {
             selectOp = YES;
+            if (constantValue(selectAValue)) {
+                const NSUInteger elements =
+                    (NSUInteger)selectShape.channels *
+                    selectShape.height * selectShape.width;
+                selectAFillBytes = [ANEBlobResolver
+                    loadConstantForOperation:selectAValue.producer
+                    expectedBytes:elements * 2
+                    modelRoot:modelRoot diagnostics:diagnostics];
+                if (!selectAFillBytes) return NO;
+            }
+        } else if (matvec && batchedMatmulPlan(operation, &batchedShape)) {
+            batchedMatmul = YES;
         } else if (matvec) {
             if (!matvecPlan(operation, modelRoot, diagnostics, &matvecShape,
                             &matvecWeights)) return NO;
@@ -980,32 +1153,47 @@ static BOOL selectPlan(ANEGraphOperation *operation,
         const BOOL convolutionProgram = convWeights != nil;
         NSUInteger inputCount =
             (matvec && !batchedMatmul) || normalization || convolutionProgram ||
+            rmsProgram ||
             plan.unary || plan.scalarConstant ? 1 : 2;
-        if (selectOp) inputCount = 3;
+        if (selectOp) inputCount = constantValue(selectAValue) ? 2 : 3;
         ane::h14::Program program;
         try {
-            program = convolutionProgram
-                ? ane::h14::encodeConvParity(convolution.shape,
-                    static_cast<const std::uint8_t *>(convWeights.bytes),
-                    convWeights.length,
-                    static_cast<const std::uint8_t *>(convBias.bytes),
-                    convBias.length)
-                : selectOp
-                ? ane::h14::encodeSelectParity(selectShape, false)
-                : batchedMatmul
-                ? ane::h14::encodeBatchedMatmulParity(batchedShape)
-                : matvec
-                ? ane::h14::encodeMatvecParity(matvecShape,
-                    static_cast<const std::uint8_t *>(matvecWeights.bytes),
-                    matvecWeights.length)
-                : (normalization
-                    ? ane::h14::encodeNormParity(normOperation, normShape)
-                    : (plan.unary
-                        ? ane::h14::encodeElementwise(plan.unaryOperation,
-                                                      plan.shape)
-                        : ane::h14::encodeElementwise(plan.binaryOperation,
-                            plan.shape, plan.operand, plan.scalarConstant,
-                            plan.scalarBits)));
+            if (rmsProgram) {
+                program = ane::h14::encodeRmsNormParity(rmsChannels, rmsGamma,
+                    rmsGamma ? static_cast<const std::uint8_t *>(
+                        rmsGammaBytes.bytes) : nullptr,
+                    rmsGamma ? rmsGammaBytes.length : 0);
+            } else {
+                program = convolutionProgram
+                    ? ane::h14::encodeConvParity(convolution.shape,
+                        static_cast<const std::uint8_t *>(convWeights.bytes),
+                        convWeights.length,
+                        static_cast<const std::uint8_t *>(convBias.bytes),
+                        convBias.length)
+                    : selectOp
+                    ? ane::h14::encodeSelectParity(selectShape,
+                        constantValue(selectAValue),
+                        constantValue(selectAValue)
+                            ? static_cast<const std::uint8_t *>(
+                                selectAFillBytes.bytes)
+                            : nullptr,
+                        constantValue(selectAValue)
+                            ? selectAFillBytes.length : 0)
+                    : batchedMatmul
+                    ? ane::h14::encodeBatchedMatmulParity(batchedShape)
+                    : matvec
+                    ? ane::h14::encodeMatvecParity(matvecShape,
+                        static_cast<const std::uint8_t *>(matvecWeights.bytes),
+                        matvecWeights.length)
+                    : (normalization
+                        ? ane::h14::encodeNormParity(normOperation, normShape)
+                        : (plan.unary
+                            ? ane::h14::encodeElementwise(plan.unaryOperation,
+                                                          plan.shape)
+                            : ane::h14::encodeElementwise(plan.binaryOperation,
+                                plan.shape, plan.operand, plan.scalarConstant,
+                                plan.scalarBits)));
+            }
         } catch (const std::exception &exception) {
             return reject(diagnostics,
                 [NSString stringWithUTF8String:exception.what()], operation);
@@ -1028,14 +1216,23 @@ static BOOL selectPlan(ANEGraphOperation *operation,
         }
 
         NSMutableArray<ANEGraphValue *> *inputValues = [NSMutableArray array];
-        if (batchedMatmul) {
+        if (rmsProgram) {
+            [inputValues addObject:rmsInput];
+        } else if (batchedMatmul) {
             // The decoded surface order binds the weight before x.
             [inputValues addObject:operation.operands[@"y"].value];
             [inputValues addObject:operation.operands[@"x"].value];
         } else if (selectOp) {
-            [inputValues addObject:operation.operands[@"a"].value];
-            [inputValues addObject:operation.operands[@"b"].value];
-            [inputValues addObject:operation.operands[@"cond"].value];
+            // The const-fill form binds b before cond and skips a (it's the
+            // resolved constant the encoder packs into the section).
+            if (constantValue(selectAValue)) {
+                [inputValues addObject:operation.operands[@"b"].value];
+                [inputValues addObject:operation.operands[@"cond"].value];
+            } else {
+                [inputValues addObject:operation.operands[@"a"].value];
+                [inputValues addObject:operation.operands[@"b"].value];
+                [inputValues addObject:operation.operands[@"cond"].value];
+            }
         } else {
             [inputValues addObject:operation.operands[@"x"].value];
             if (inputCount == 2)
@@ -1050,28 +1247,32 @@ static BOOL selectPlan(ANEGraphOperation *operation,
                 item[@"role"] = @"intermediate";
             [inputRecords addObject:item];
         }
-        BOOL final = operation == lastOperation;
+        ANEGraphOperation *finalOperation = rmsProgram ?
+            sourceOperations[rmsConsumed - 1] : operation;
+        BOOL final = finalOperation == lastOperation;
         NSMutableDictionary *outputRecord =
-            [binding(operation.result, program.output) mutableCopy];
+            [binding(finalOperation.result, program.output) mutableCopy];
         NSString *outputRole = final ? @"output" : @"intermediate";
         if (!final) {
             outputRecord[@"role"] = @"intermediate";
-            [intermediates addObject:operation.result.name];
+            [intermediates addObject:finalOperation.result.name];
         }
-        tensors[operation.result.name] = @{@"shape": operation.result.type.shape,
-            @"logicalBytes": @(logicalBytes(operation.result)), @"role": outputRole};
+        tensors[finalOperation.result.name] = @{@"shape": finalOperation.result.type.shape,
+            @"logicalBytes": @(logicalBytes(finalOperation.result)), @"role": outputRole};
         NSUInteger programIndex = programRecords.count;
         NSDictionary *record = @{
             @"file": [NSString stringWithFormat:@"program-%lu.%@",
                 (unsigned long)programIndex, format],
             @"bytes": @(payload.length), @"taskDescriptors": @(program.taskCount),
-            @"encoder": convolutionProgram ? @"apple-parity-conv"
+            @"encoder": rmsProgram ? @"apple-parity-rms-norm"
+                : (convolutionProgram ? @"apple-parity-conv"
                 : (selectOp ? @"apple-parity-select"
                 : (batchedMatmul ? @"apple-parity-batched-matmul"
                 : (matvec ? @"apple-parity-matvec"
                 : (normalization ? @"apple-parity-norm"
-                : @"h14-oracle-parity")))),
-            @"operation": operation.operationName, @"inputs": inputRecords,
+                : @"h14-oracle-parity"))))),
+            @"operation": rmsProgram ? @"rms_norm" : operation.operationName,
+            @"inputs": inputRecords,
             @"constantInputs": @{}, @"outputs": @[outputRecord],
             @"constantOffset": @(program.constantOffsetBytes),
             @"constantBytes": @(program.constants.size()),
@@ -1080,15 +1281,22 @@ static BOOL selectPlan(ANEGraphOperation *operation,
         [programRecords addObject:record];
         [payloads addObject:payload];
         [dispatchPlan addObject:@(programIndex)];
-        if (chainSchedule) {
-            chainPrograms.push_back(std::move(program));
-            [chainOpRecords addObject:@{
-                @"result": operation.result.name,
-                @"operation": operation.operationName,
-                @"encoder": record[@"encoder"],
-                @"inputs": record[@"inputs"],
-                @"outputs": record[@"outputs"],
-            }];
+        if (rmsProgram) {
+            // The matched slice of the source operations is encoded as one
+            // program; skip past the whole chain (9 ops no-gamma, 10 gamma).
+            operationIndex += rmsConsumed;
+        } else {
+            if (chainSchedule) {
+                chainPrograms.push_back(std::move(program));
+                [chainOpRecords addObject:@{
+                    @"result": operation.result.name,
+                    @"operation": operation.operationName,
+                    @"encoder": record[@"encoder"],
+                    @"inputs": record[@"inputs"],
+                    @"outputs": record[@"outputs"],
+                }];
+            }
+            ++operationIndex;
         }
     }
 
