@@ -91,15 +91,37 @@ geometry).
 Verdict: parked behind the transpose decode; do not pursue while
 Rewrite 1 is open.
 
-## What this file deliberately does not do
+## Rewrite 4 — replace Qwen linear with a 1x1 convolution
 
-- No model MIL change: the staged Qwen graphs and the coverage harness
-  cases still emit `reduce_*` at the natural shapes.
-- No compiler change: the H14 norm template table gains a row only when
-  an Apple-decoded oracle lands for it; guessing at task words for an
-  accepted-by-reinterpretation shape would break the word-for-word
-  parity guarantee.
-- No device claim: none of these rewrites has run through Apple's
-  compiler or any ANE. The next Apple mint batch should carry the two
-  probe MILs above (rank-3 reduce_sum at [1,16,128]; rank-3 matmul-ones
-  at [1,1,2048]x[1,2048,1]) as its first two cases.
+The refused Qwen `linear` consumes the channel surface `[1, 2048, 1, 1]` with
+weights `[N, 2048]`, where `N` is 6144 or 4096. Apple accepted these exact
+convolution forms: `conv` with input `[1, 2048, 1, 1]`, weights
+`[N, 2048, 1, 1]`, `groups=1`, kernel and stride 1, and `valid` padding. The
+two decoded records are `qwen_conv1x1_k1_c2048_n6144_s1_valid` and
+`qwen_conv1x1_k1_c2048_n4096_s1_valid`; each is one H14 task.
+
+For every output channel `n`, linear computes
+`y[n] = sum(k=0..2047, x[k] * W[n,k])`. The 1x1 convolution computes
+`y[n,0,0] = sum(k=0..2047, x[0,k,0,0] * W[n,k,0,0])`. Mapping
+`x[k]` to `x[0,k,0,0]` and `W[n,k]` to `W[n,k,0,0]` makes the real-number
+expressions identical. The convolution output is `[1,N,1,1]`, not the linear
+output `[1,N]`; a rewrite must preserve or explicitly adapt the consumer
+shape.
+
+Numerical limitation: both are fp16 dot products, but Apple's convolution and
+linear kernels may use different accumulation and rounding orders. This mint
+checked compiler acceptance and task decoding only; it did not execute either
+program or compare outputs. Validate the actual rewritten model against its
+current numerical tolerance before treating the forms as interchangeable.
+
+Status: Apple-decoded rewrite proposal; staged Qwen MIL remains unchanged.
+## Scope and remaining work
+
+- The staged Qwen MIL remains unchanged. The conv1x1 rewrite is a proposal;
+  its Apple-decoded template is available, but no model conversion or device
+  execution is claimed.
+- Add decoder rows only from Apple-decoded task streams. Do not infer task words
+  from equivalent tensor shapes.
+- The reduce rewrites above remain unverified on Apple's compiler. The next
+  reduce batch should test rank-3 `reduce_sum` at `[1,16,128]` and the
+  rank-3 matmul-ones spelling at `[1,1,2048]` × `[1,2048,1]`.

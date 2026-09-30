@@ -385,10 +385,23 @@ See `~/.local/share/apple-silicon-lab/entries/H14Batch3/2026-09-30T0001Z-h14-bat
 - F4: Apple rejected `mul+add` upstream at both rank-4 and rank-2
   softmax attention. No decoded oracle exists; family cannot be finished.
 
-## Next mint batch priority
+## Next mint batch priority — historical (superseded by H14Batch7 below)
+
+The following list records the plan after Batch3, not the current blockers.
 
 1. F1b: per-head broadcast at `{16,1,128} x {16,1,1}` and
    `{16,1,1} x {16,1,128}`. Apple mint. Once landed, F1b+F3 unlocks 18 B-state.
 2. F2: inline the axes literal in the staged MIL.
 3. F5: wire the decoded 3-op chain template.
 4. F4: mint a chainable upstream variant on Apple.
+## H14Batch7 — transpose and Qwen linear probes (2026-09-30)
+
+The latest local parity run passes **838 cases**: 238 elementwise, 58 matvec, 14 known-weight matvec probes over 9 `(K,N)` grid points, 109 softmax/layer_norm, 114 reductions over 190 norm templates, 284 convolution, 16 island, 4 rms_norm chain, and 1 sigmoid/mul/add chain. The 38-program Batch5 Qwen matrix now has **1 ONE-ANEC** (`C-readout`, program 20) and 37 refusals: 2 A-first, 11 A-next, 18 B-state, 5 D-attn, and 1 E-final. No partial programs remain.
+
+The frontend now folds `transpose_x` and `transpose_y` from scalar bool `const` producers and defaults either omitted flag to `false`. The first matmul in every B-state program now passes this flag gate. The next refusal in all 18 programs (`qwen-prog-01,03,05,07,09,11,13,15,17,19,22,24,26,28,30,32,34,36`) is source `model.mil:12:5`: `matmul(transpose_x=true, transpose_y=false, x=[1,16,1,128], y=[1,16,1,128]) -> [1,16,128,128]`. The frontend reports `H14 matmul does not support transpose_x = true` at `plugins/H14/ANEH14Compiler.mm:701`.
+
+The other 19 refusals all first stop at source `model.mil:20:5`, a `linear` with input `[1,2048,1,1]`, weight `[N,2048]`, and output `[1,N]`. A-first programs 00 and 21 and A-next programs 02,04,08,10,14,16,23,27,29,33,35 use `N=6144`; D-attn programs 06,12,18,25,31 and E-final program 37 use `N=4096`. `matvecGeometry` rejects the rank mismatch (`input rank 4`, `output rank 2`) at `plugins/H14/ANEH14Compiler.mm:659`, with the refusal emitted at lines 708-713.
+
+The required standalone matvec point `(M=1,K=2048,N=4096)` is now Apple-decoded and wired alongside the existing `(1,2048,6144)` point; both shape/orientation entries are in `H14MatvecTemplates.inc`. Apple also accepted one-task 1x1 convolution forms at `x=[1,2048,1,1]`, `w=[N,2048,1,1]` for both widths; their oracle records and rows are in `research/oracles/h14/` and `H14ConvTemplates.inc`. The exact `linear -> conv1x1` semantic mapping and fp16 accumulation caveat are in `research/h14-rewrites.md`. Standalone matmul K=2048,N=4096 emits two tasks; reshape+matmul from the rank-4 chain surface emits one task, so they are distinct oracle surfaces and are not conflated.
+
+The matrix's only ONE-ANEC artifact is `/var/tmp/h14-qwen-anec/program-0.anec`; the manifest includes program/class/ops, SHA-256, tasks, IO shapes/channels/bytes, and kernel bytes. The 37 current refusals remain; the rewrite proposal does not claim that staged Qwen MIL was changed or that a device executed the convolution.
