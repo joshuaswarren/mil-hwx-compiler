@@ -120,7 +120,7 @@ def select(shape: tuple[int, ...], mode: str) -> dict[str, Any]:
                     '[name = string("y")];')
         name = f"gasel_ninf_{om.dims(shape)}"
         payload = ninf_halfwords(elements)
-        return om.case(name, "env_boolean_select", {
+        case_item = om.case(name, "env_boolean_select", {
             "operation": "select", "shape": shape, "mode": mode,
             "cond_dtype": "bool",
         }, om.program(arguments, body, "y"), aligned_blob(payload), {
@@ -129,6 +129,8 @@ def select(shape: tuple[int, ...], mode: str) -> dict[str, Any]:
             "blob_layout": "aligned",
             "payload_sha256": hashlib.sha256(payload).hexdigest(),
         })
+        case_item["capture_constant_bytes"] = True
+        return case_item
     body.append(f'{kind} y = select(a = a, b = b, cond = cond)'
                 '[name = string("y")];')
     return om.env_case(f"gasel_rrb_{om.dims(shape)}", "env_boolean_select", {
@@ -161,7 +163,8 @@ def rms_norm_reduce(operation: str, shape: tuple[int, ...],
                       "keep_dims": keep_dims}, mil)
 
 
-def rms_norm_chain(channels: int, gamma: bool) -> dict[str, Any]:
+def rms_norm_chain(channels: int, gamma: bool,
+                   capture_bytes: bool = False) -> dict[str, Any]:
     """The whole coremltools rms_norm decomposition at one Qwen decode
     shape, spelled the way the torch frontend emits it."""
     shape = (1, channels, 1, 1)
@@ -194,16 +197,21 @@ def rms_norm_chain(channels: int, gamma: bool) -> dict[str, Any]:
                     '[name = string("y")];')
         result = "y"
         name = f"garms_chain_c{channels}_gamma"
-        weights, description = elements, {
+        weights = om.aligned_blob(om.half_payload(elements))
+        description = {
             "storage": "BLOBFILE", "shape": list(shape),
             "payload_bytes": elements * 2, "value": "fp16(0x1p-1)",
+            "blob_layout": "aligned",
         }
     else:
         name = f"garms_chain_c{channels}"
         weights, description = None, {"storage": "none"}
-    return om.case(name, "rms_norm_chain", {
+    case_item = om.case(name, "rms_norm_chain", {
         "operation": "rms_norm_decomposed", "shape": shape, "gamma": gamma,
     }, om.program(arguments, body, result), weights, description)
+    if capture_bytes:
+        case_item["capture_constant_bytes"] = True
+    return case_item
 
 
 def campaign() -> list[dict[str, Any]]:
@@ -225,7 +233,13 @@ def campaign() -> list[dict[str, Any]]:
     cases.append(om.binary_runtime("add", (1, 1, 1, 1)))
     cases.append(om.binary_constant("mul", 2048, "blob"))
     cases.append(rms_norm_chain(2048, False))
-    cases.append(rms_norm_chain(2048, True))
+    # The c2048 gamma re-mint captures full constant bytes so the
+    # 4-bytes-per-channel block is modelled, not guessed. The Qwen3.8-2B
+    # per-head q/k norms (head_dim 128) are the second rms_norm size the
+    # staged decoder needs.
+    cases.append(rms_norm_chain(2048, True, capture_bytes=True))
+    cases.append(rms_norm_chain(128, False))
+    cases.append(rms_norm_chain(128, True, capture_bytes=True))
     # Island B select forms.
     cases.append(select((1, 64, 1, 1), "rr"))
     cases.append(select((1, 8, 375, 375), "rr"))
