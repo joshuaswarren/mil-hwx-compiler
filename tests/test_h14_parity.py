@@ -476,12 +476,12 @@ def main():
     norm = norm_oracles()
     families = collections.Counter(oracle["family"] for oracle in norm)
     templates = check_norm_templates()
-    assert len(elementwise) == 179, \
-        f"expected 179 decoded elementwise oracles, found {len(elementwise)}"
-    assert len(matvec) == 46, \
-        f"expected 46 decoded matvec oracles, found {len(matvec)}"
+    assert len(elementwise) == 234, \
+        f"expected 234 decoded elementwise oracles, found {len(elementwise)}"
+    assert len(matvec) == 57, \
+        f"expected 57 decoded matvec oracles, found {len(matvec)}"
     assert families == collections.Counter(
-        {"normalization": 105, "reduction": 114}), \
+        {"normalization": 109, "reduction": 114}), \
         f"decoded H14 norm oracles per family: {dict(families)}"
     grid = {(oracle["parameters"]["reduction"], oracle["parameters"]["columns"])
             for oracle in probe}
