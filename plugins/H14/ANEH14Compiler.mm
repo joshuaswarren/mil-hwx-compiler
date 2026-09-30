@@ -1454,7 +1454,16 @@ static BOOL rmsNormChainPlan(NSArray<ANEGraphOperation *> *sourceOperations,
 
     NSMutableArray<NSDictionary *> *taskRecords = nil;
     NSDictionary *scratch = nil;
-    if (chainSchedule) {
+    if (chainSchedule && creadoutChain) {
+        NSDictionary *record = programRecords.firstObject;
+        const NSUInteger taskCount =
+            [record[@"taskDescriptors"] unsignedIntegerValue];
+        taskRecords = [NSMutableArray arrayWithCapacity:taskCount];
+        for (NSUInteger index = 0; index < taskCount; ++index)
+            [taskRecords addObject:@{@"index": @(index),
+                                     @"operation": @"chain"}];
+        scratch = @{@"bytes": @0, @"regions": @{}};
+    } else if (chainSchedule) {
         NSDictionary *firstRecord = programRecords.firstObject;
         NSArray *boundaryInputs = firstRecord[@"inputs"];
         NSMutableSet<NSString *> *boundaryNames = [NSMutableSet set];

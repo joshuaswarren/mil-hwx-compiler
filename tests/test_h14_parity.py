@@ -37,6 +37,8 @@ CONV_FAMILIES = {"env_conv", "conv_probe"}
 
 
 def encoder(oracle):
+    if oracle["case"] == "env_chain_creadout_h16_s128":
+        return "composed-chain"
     if oracle["family"] in CONV_FAMILIES:
         return CONV_ENCODER
     if oracle["family"] == "rms_norm_chain":
@@ -82,6 +84,10 @@ def rms_norm_oracles():
         if oracle.get("error") is None:
             selected.append(oracle)
     return selected
+
+def sigmoid_mul_add_chain_oracle():
+    path = ROOT / "research/oracles/batch2/h14/env_chain_creadout_h16_s128.json"
+    return json.loads(path.read_text())
 
 
 def write_weights(oracle, root):
@@ -186,10 +192,12 @@ def compile_oracle(oracle, output, artifact_format):
     mil = output.parent / f"{oracle['case']}-{artifact_format}.mil"
     mil.write_text(oracle["mil"])
     write_weights(oracle, output.parent)
-    result = subprocess.run(
-        [str(COMPILER), "--mil", str(mil), "--model-root", str(output.parent),
-         "--target", "H14", "--format", artifact_format, "--output", str(output)],
-        capture_output=True, text=True, timeout=60, check=False)
+    command = [str(COMPILER), "--mil", str(mil), "--model-root", str(output.parent),
+               "--target", "H14", "--format", artifact_format, "--output", str(output)]
+    if oracle["case"] == "env_chain_creadout_h16_s128":
+        command[1:1] = ["--schedule", "chain"]
+    result = subprocess.run(command, capture_output=True, text=True,
+                            timeout=60, check=False)
     assert result.returncode == 0, \
         f"{oracle['case']} {artifact_format}: {result.stdout}{result.stderr}"
     return json.loads((output / "manifest.json").read_text())
@@ -538,19 +546,14 @@ def main():
     rms = rms_norm_oracles()
     assert len(rms) == 4, \
         f"expected 4 rms_norm_chain oracles, found {len(rms)}"
-    oracles = elementwise + matvec + probe + norm + conv + island + rms
+    chain = sigmoid_mul_add_chain_oracle()
+    oracles = elementwise + matvec + probe + norm + conv + island + rms + [chain]
     with tempfile.TemporaryDirectory(prefix="h14-parity-") as directory:
         root = Path(directory)
         check_chain_package(root)
         for oracle in oracles:
-            # The whole-program island replays (select + batched matmul) and
-            # the rms_norm chain replay carry the byte-checked payload in
-            # ANEC alone; their HWX containers place the text above the
-            # surfaces with the resource split the descriptor records (slot
-            # 2 = 0x30000000, slot 4 per case); the container-address
-            # formula is remaining work (research/h14-model-gap-findings.md),
-            # so no HWX artifact is claimed for them.
-            whole_program = oracle in island or oracle in rms
+            # Whole-program captures are currently verified only as ANEC.
+            whole_program = oracle in island or oracle in rms or oracle is chain
             formats = (("anec", check_anec),) if whole_program \
                 else (("anec", check_anec), ("hwx", check_hwx))
             for artifact_format, check in formats:
@@ -568,7 +571,8 @@ def main():
           f"{families['reduction']} reduction over {len(templates)} norm "
           f"templates, {len(conv)} convolution, {len(island)} island "
           f"select/batched-matmul (ANEC), {len(rms)} rms_norm chain (ANEC), "
-          f"{(len(oracles) - len(island) - len(rms)) * 2 + len(island) + len(rms)} artifacts)")
+          f"1 sigmoid/mul/add chain (ANEC), "
+          f"{(len(oracles) - len(island) - len(rms) - 1) * 2 + len(island) + len(rms) + 1} artifacts)")
 
 
 if __name__ == "__main__":
