@@ -468,6 +468,23 @@ static BOOL boolean(ANEGraphArgument *argument, BOOL expected) {
         [argument.text isEqualToString:expected ? @"true" : @"false"];
 }
 
+static BOOL booleanValue(ANEGraphArgument *argument, BOOL defaultValue,
+                         BOOL *valueOut) {
+    if (!argument) {
+        *valueOut = defaultValue;
+        return YES;
+    }
+    if (boolean(argument, YES)) {
+        *valueOut = YES;
+        return YES;
+    }
+    if (boolean(argument, NO)) {
+        *valueOut = NO;
+        return YES;
+    }
+    return NO;
+}
+
 /// Matches the softmax, layer_norm, and reduction programs whose whole H14
 /// task streams are decoded from Apple oracles. `epsilon` must be the decoded
 /// 1e-5 and layer_norm must carry no gamma or beta: Apple's compiler in this
@@ -672,16 +689,19 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
         return reject(diagnostics,
             @"H14 emits one program per artifact, so a linear bias has no encoder",
             operation, @"h14.linear-bias-unsupported");
-    if (!linear && (operation.arguments.count != 4 ||
-                    !boolean(operation.arguments[@"transpose_x"], NO)))
-        return reject(diagnostics,
-            @"H14 matmul requires an explicit transpose_x = false, an explicit transpose_y, x, and y",
-            operation, @"h14.transpose-x-unsupported");
-    BOOL transposeY = linear || boolean(operation.arguments[@"transpose_y"], YES);
-    if (!linear && !transposeY &&
-        !boolean(operation.arguments[@"transpose_y"], NO))
-        return reject(diagnostics, @"H14 matmul requires an explicit transpose_y flag",
-                      operation);
+    BOOL transposeX = NO, transposeY = NO;
+    if (!linear) {
+        if (!booleanValue(operation.arguments[@"transpose_x"], NO, &transposeX))
+            return reject(diagnostics, @"H14 could not fold transpose_x to a boolean",
+                          operation, @"h14.transpose-x-unsupported");
+        if (!booleanValue(operation.arguments[@"transpose_y"], NO, &transposeY))
+            return reject(diagnostics, @"H14 could not fold transpose_y to a boolean",
+                          operation, @"h14.transpose-y-unsupported");
+        if (transposeX)
+            return reject(diagnostics, @"H14 matmul does not support transpose_x = true",
+                          operation, @"h14.transpose-x-unsupported");
+    }
+    if (linear) transposeY = YES;
     NSUInteger rows = 0, reduction = 0, columns = 0;
     if (!x || !y || constantValue(x) || !constantValue(y) ||
         (linear && operation.arguments.count != 2) ||
@@ -728,16 +748,13 @@ static BOOL batchedMatmulPlan(ANEGraphOperation *operation,
     ANEGraphValue *x = operation.operands[@"x"].value;
     ANEGraphValue *y = operation.operands[@"y"].value;
     if (!x || !y || constantValue(x) || constantValue(y) ||
-        ![operation.operationName isEqualToString:@"matmul"] ||
-        operation.arguments.count != 4 ||
-        !operation.arguments[@"transpose_x"] ||
-        !operation.arguments[@"transpose_y"]) {
+        ![operation.operationName isEqualToString:@"matmul"]) {
         return NO;
     }
-    BOOL transposeY = boolean(operation.arguments[@"transpose_y"], YES);
-    // transpose_x defaults to false when absent; the early-out above ensured
-    // the argument is present so the decoded value is read here.
-    BOOL transposeX = boolean(operation.arguments[@"transpose_x"], YES);
+    BOOL transposeX = NO, transposeY = NO;
+    if (!booleanValue(operation.arguments[@"transpose_x"], NO, &transposeX) ||
+        !booleanValue(operation.arguments[@"transpose_y"], NO, &transposeY))
+        return NO;
     NSUInteger xRank = x.type.shape.count, yRank = y.type.shape.count;
     if (xRank < 3 || xRank > 4 || yRank != xRank) return NO;
     NSUInteger leading = xRank == 4 ? 2 : 1;
