@@ -8,6 +8,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from timeouts import scaled_timeout
+
 INSPECTOR = Path(__file__).resolve().parents[1] / "research" / "inspect_hwx.py"
 MAGIC = 0xBEEFFACE
 H14_BLOCKS = (
@@ -125,7 +127,7 @@ def h13_multi_task_hwx(batch: int = 1, total: int | None = None) -> bytes:
 def inspect(path: Path, success: bool = True) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         [sys.executable, str(INSPECTOR), str(path)], capture_output=True,
-        text=True, timeout=10, check=False)
+        text=True, timeout=scaled_timeout(10), check=False)
     assert (result.returncode == 0) == success, result.stdout + result.stderr
     return result
 

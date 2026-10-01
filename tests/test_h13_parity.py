@@ -19,6 +19,7 @@ from h13_td import decode_task, split_h13_tasks  # noqa: E402
 from inspect_hwx import h13_anec  # noqa: E402
 import mint_oracles  # noqa: E402
 import mint_conv_probes  # noqa: E402
+from timeouts import scaled_timeout  # noqa: E402
 
 COMPILER = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "build/mil-hwxc").resolve()
 ORACLES = ROOT / "research/oracles/h13"
@@ -252,7 +253,7 @@ def compile_oracle(oracle, output, artifact_format):
     result = subprocess.run(
         [str(COMPILER), "--mil", str(mil), "--model-root", str(output.parent),
          "--target", "H13", "--format", artifact_format, "--output", str(output)],
-        capture_output=True, text=True, timeout=600, check=False)
+        capture_output=True, text=True, timeout=scaled_timeout(600), check=False)
     assert result.returncode == 0, \
         f"{oracle['case']} {artifact_format}: {result.stdout}{result.stderr}"
     return json.loads((output / "manifest.json").read_text())

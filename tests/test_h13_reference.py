@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import h13_reference
 import h13_run_linux
+from timeouts import scaled_timeout
 
 COMPILER = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "build/mil-hwxc").resolve()
 
@@ -55,7 +56,7 @@ def test_fp16_rounding_and_ops():
             sys.executable, str(ROOT / "tools/h13_reference.py"), str(source),
             "--model-root", str(root), "--input", f"x={input_path}",
             "--output", f"y={output_path}",
-        ], capture_output=True, text=True, timeout=15, check=False)
+        ], capture_output=True, text=True, timeout=scaled_timeout(15), check=False)
         assert run.returncode == 0, run.stdout + run.stderr
         assert output_path.read_bytes() == fp16([1.0, 0.0])
 
@@ -192,7 +193,7 @@ def test_linux_runner_dry_run():
         compiled = subprocess.run([
             str(COMPILER), "--mil", str(mil), "--model-root", str(root),
             "--target", "H13", "--output", str(package),
-        ], capture_output=True, text=True, timeout=30, check=False)
+        ], capture_output=True, text=True, timeout=scaled_timeout(30), check=False)
         assert compiled.returncode == 0, compiled.stdout + compiled.stderr
         input_path = root / "input.fp16"
         output_path = root / "output.fp16"
@@ -203,7 +204,8 @@ def test_linux_runner_dry_run():
             "--input", f"x={input_path}", "--output", f"y={output_path}",
             "--dry-run",
         ]
-        run = subprocess.run(command, capture_output=True, text=True, timeout=30, check=False)
+        run = subprocess.run(command, capture_output=True, text=True,
+                             timeout=scaled_timeout(30), check=False)
         assert run.returncode == 0, run.stdout + run.stderr
         plan = json.loads(run.stdout)
         manifest = json.loads(package.joinpath("manifest.json").read_text())
@@ -214,7 +216,8 @@ def test_linux_runner_dry_run():
         assert not output_path.exists()
         manifest["dispatchPlan"] = [0] * len(manifest["programs"])
         package.joinpath("manifest.json").write_text(json.dumps(manifest))
-        rejected = subprocess.run(command, capture_output=True, text=True, timeout=30, check=False)
+        rejected = subprocess.run(command, capture_output=True, text=True,
+                                  timeout=scaled_timeout(30), check=False)
         assert rejected.returncode == 1
         assert "dispatchPlan must contain every program index exactly once" in rejected.stderr
         assert not output_path.exists()

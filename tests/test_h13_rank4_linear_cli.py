@@ -4,6 +4,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from timeouts import scaled_timeout
+
 compiler = str(Path(sys.argv[1] if len(sys.argv) > 1 else "build/mil-hwxc").resolve())
 
 source = """program(1.3)
@@ -25,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-rank4-linear-") as director
     run = subprocess.run(
         [compiler, "--mil", str(mil), "--model-root", str(root),
          "--target", "H13", "--output", str(out)],
-        capture_output=True, text=True, check=False, timeout=60)
+        capture_output=True, text=True, check=False, timeout=scaled_timeout(60))
     assert run.returncode == 65, run.stdout + run.stderr
     assert "h13.matmul-outside-envelope" in run.stderr, run.stderr
     assert not out.exists(), f"failed compilation wrote {out}"

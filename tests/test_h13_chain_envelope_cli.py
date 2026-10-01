@@ -5,6 +5,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from timeouts import scaled_timeout
+
 compiler = str(Path(sys.argv[1] if len(sys.argv) > 1 else "build/mil-hwxc").resolve())
 
 island = """program(1.3)
@@ -39,7 +41,7 @@ def compile_source(root, name, text, schedule=None, expected_code=None):
     if schedule:
         command += ["--schedule", schedule]
     run = subprocess.run(command, capture_output=True, text=True, check=False,
-                         timeout=60)
+                         timeout=scaled_timeout(60))
     if expected_code is None:
         assert run.returncode == 0, run.stdout + run.stderr
         return json.loads((out / "manifest.json").read_text())

@@ -17,6 +17,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from timeouts import scaled_timeout
+
 compiler = str(Path(sys.argv[1] if len(sys.argv) > 1 else "build/mil-hwxc").resolve())
 inspector = str(Path(__file__).resolve().parents[1] / "research" / "inspect_anec.py")
 
@@ -149,7 +151,7 @@ def compile_source(root, name, text, expected_code=None, expected_message=None,
     result = subprocess.run(
         [compiler, "--mil", str(path), "--model-root", str(root),
          "--output", str(output), "--target", "H13", "--format", format],
-        capture_output=True, text=True, timeout=300, check=False)
+        capture_output=True, text=True, timeout=scaled_timeout(300), check=False)
     if expected_code is None:
         assert result.returncode == 0, result.stderr
         return output
@@ -170,7 +172,7 @@ def deterministic(root, name, text, format="anec"):
 
 def validate(root, package):
     result = subprocess.run([sys.executable, inspector, str(package)],
-                            capture_output=True, text=True, timeout=60,
+                            capture_output=True, text=True, timeout=scaled_timeout(60),
                             check=False)
     assert result.returncode == 0, result.stderr
 
