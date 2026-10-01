@@ -2,9 +2,13 @@
 
 MIL_HWX_TEST_TIMEOUT_SCALE multiplies every deadline, for slow hosts such as
 qemu-user. An unset, unparsable, non-finite, zero or negative value means 1.0.
+A scaled deadline is capped at MAX_SECONDS: subprocess waits through
+select.poll(), which raises OverflowError above 2**31 - 1 milliseconds.
 """
 import math
 import os
+
+MAX_SECONDS = 2_147_483
 
 
 def _scale():
@@ -19,4 +23,4 @@ SCALE = _scale()
 
 
 def scaled_timeout(seconds):
-    return seconds * SCALE
+    return min(seconds * SCALE, MAX_SECONDS)
