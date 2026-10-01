@@ -12,11 +12,12 @@ inspector = str(Path(__file__).resolve().parents[1] / "research" / "inspect_anec
 hwx_inspector = str(Path(__file__).resolve().parents[1] / "research" / "inspect_hwx.py")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from research.inspect_anec import h13_task_registers
+from timeouts import scaled_timeout
 
 
 def inspect(package, *args, success=True):
     result = subprocess.run([sys.executable, inspector, str(package), *map(str, args)],
-                            capture_output=True, text=True, timeout=15, check=False)
+                            capture_output=True, text=True, timeout=scaled_timeout(15), check=False)
     assert result.returncode == (0 if success else 1), result.stderr
     return result.stdout
 
@@ -378,7 +379,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
         if schedule is not None:
             command += ['--schedule', schedule]
         run = subprocess.run(command, capture_output=True, text=True, check=False,
-                             timeout=15)
+                             timeout=scaled_timeout(15))
         assert (run.returncode == 0) == success, run.stdout + run.stderr
         if not success:
             assert diagnostic in run.stderr, run.stderr
@@ -909,7 +910,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     mil.write_text(source())
     blocked = subprocess.run([compiler, "--mil", str(mil), "--model-root", str(root),
                               "--target", "H13", "--output", str(first)],
-                             capture_output=True, text=True, timeout=15, check=False)
+                             capture_output=True, text=True, timeout=scaled_timeout(15), check=False)
     assert blocked.returncode == 74, blocked.stderr
     assert preserved == {p.name: p.read_bytes() for p in first.iterdir()}
     small_weights = bytearray(128 + 200 * 300 * 2)
@@ -1369,12 +1370,12 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     extraction = subprocess.run(
         [sys.executable, hwx_inspector, '--extract-anec',
          str(hwx / 'program-0.hwx'), str(extracted)],
-        capture_output=True, text=True, timeout=15, check=False)
+        capture_output=True, text=True, timeout=scaled_timeout(15), check=False)
     assert extraction.returncode == 0, extraction.stdout + extraction.stderr
     assert extracted.read_bytes() == (explicit_anec / 'program-0.anec').read_bytes()
     inspected_hwx = subprocess.run(
         [sys.executable, hwx_inspector, str(hwx / 'program-0.hwx')],
-        capture_output=True, text=True, timeout=15, check=False)
+        capture_output=True, text=True, timeout=scaled_timeout(15), check=False)
     assert inspected_hwx.returncode == 0, inspected_hwx.stdout + inspected_hwx.stderr
     assert 'architecture subtype=0x0004 name=H13 isa=7' in inspected_hwx.stdout
     assert 'h13_anec_content' in inspected_hwx.stdout
@@ -1393,7 +1394,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     relocation_inspection = subprocess.run(
         [sys.executable, hwx_inspector,
          str(relocation_hwx / 'program-0.hwx')],
-        capture_output=True, text=True, timeout=15, check=False)
+        capture_output=True, text=True, timeout=scaled_timeout(15), check=False)
     assert relocation_inspection.returncode == 0, (
         relocation_inspection.stdout + relocation_inspection.stderr)
     assert relocation_inspection.stdout.count('relocation[') == 16
@@ -1403,7 +1404,7 @@ with tempfile.TemporaryDirectory(prefix='mil-hwx-h13-test-') as directory:
     relocation_result = subprocess.run(
         [sys.executable, hwx_inspector, '--extract-anec',
          str(relocation_hwx / 'program-0.hwx'), str(relocation_extracted)],
-        capture_output=True, text=True, timeout=15, check=False)
+        capture_output=True, text=True, timeout=scaled_timeout(15), check=False)
     assert relocation_result.returncode == 0, (
         relocation_result.stdout + relocation_result.stderr)
     assert relocation_extracted.read_bytes() == \

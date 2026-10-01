@@ -6,6 +6,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from timeouts import scaled_timeout
+
 compiler = str(Path(sys.argv[1] if len(sys.argv) > 1 else "build/mil-hwxc").resolve())
 
 
@@ -16,7 +18,7 @@ def compile_source(root, name, text, expected_code=None):
     run = subprocess.run(
         [compiler, "--mil", str(mil), "--model-root", str(root),
          "--target", "H13", "--output", str(out)],
-        capture_output=True, text=True, check=False, timeout=30)
+        capture_output=True, text=True, check=False, timeout=scaled_timeout(30))
     if expected_code is None:
         assert run.returncode == 0, run.stdout + run.stderr
         return run

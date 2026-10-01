@@ -23,6 +23,7 @@ import mint_chain_probes  # noqa: E402
 import mint_oracles  # noqa: E402
 from generate_h14_templates import (selected_matvec_oracles,  # noqa: E402
                                     selected_oracles)
+from timeouts import scaled_timeout  # noqa: E402
 
 COMPILER = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "build/mil-hwxc").resolve()
 TILE_BYTES = 0x4000
@@ -122,7 +123,7 @@ def compile_oracle(oracle, output, artifact_format):
     result = subprocess.run(
         [str(COMPILER), "--mil", str(mil), "--model-root", str(output.parent),
          "--target", "H14", "--format", artifact_format, "--output", str(output)],
-        capture_output=True, text=True, timeout=60, check=False)
+        capture_output=True, text=True, timeout=scaled_timeout(60), check=False)
     assert result.returncode == 0, \
         f"{oracle['case']} {artifact_format}: {result.stdout}{result.stderr}"
     return json.loads((output / "manifest.json").read_text())
@@ -177,7 +178,7 @@ def check_transposed_weights(root):
             [str(COMPILER), "--mil", str(model / "model.mil"),
              "--model-root", str(model), "--target", "H14", "--format", "anec",
              "--output", str(model / "out")],
-            capture_output=True, text=True, timeout=60, check=False)
+            capture_output=True, text=True, timeout=scaled_timeout(60), check=False)
         assert result.returncode == 0, \
             f"transpose_y={flag}: {result.stdout}{result.stderr}"
         artifacts[flag] = (model / "out/program-0.anec").read_bytes()
@@ -379,7 +380,7 @@ def check_chain_package(root):
         result = subprocess.run(
             [str(COMPILER), "--mil", str(model), "--model-root", str(case_root),
              "--target", "H14", "--schedule", "chain", "--output", str(output)],
-            capture_output=True, text=True, timeout=60, check=False)
+            capture_output=True, text=True, timeout=scaled_timeout(60), check=False)
         assert result.returncode == 0, \
             f"{fused_name}: {result.stdout}{result.stderr}"
         manifest = json.loads((output / "manifest.json").read_text())
@@ -421,7 +422,7 @@ def check_chain_package(root):
                  "--model-root", str(case_root), "--target", "H14",
                  "--schedule", "chain", "--output",
                  str(case_root / "invalid-out")],
-                capture_output=True, text=True, timeout=60, check=False)
+                capture_output=True, text=True, timeout=scaled_timeout(60), check=False)
             assert invalid_result.returncode != 0
             assert "h14.chain-unrepresentable-edge" in (
                 invalid_result.stdout + invalid_result.stderr)
@@ -430,7 +431,7 @@ def check_chain_package(root):
                 [str(COMPILER), "--mil", str(model), "--model-root", str(case_root),
                  "--target", "H14", "--schedule", "chain",
                  "--output", str(case_root / "unsupported-producer")],
-                capture_output=True, text=True, timeout=60, check=False)
+                capture_output=True, text=True, timeout=scaled_timeout(60), check=False)
             assert rejected.returncode > 0, rejected.stdout + rejected.stderr
             assert "h14.chain-unrepresentable-edge" in rejected.stdout + rejected.stderr
         else:

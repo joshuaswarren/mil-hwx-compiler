@@ -25,6 +25,7 @@ sys.path[:0] = [str(ROOT), str(ROOT / "tools"), str(ROOT / "research")]
 import h13_run_linux
 from h13_reference import encode_fp16, evaluate, fp16
 from research import inspect_anec
+from timeouts import scaled_timeout
 
 COMPILER = ROOT / "build/mil-hwxc"
 CANDIDATE_LIBRARIES = [
@@ -297,7 +298,7 @@ def compile_add_package(root):
     compiled = subprocess.run(
         [str(COMPILER), "--mil", str(mil), "--model-root", str(root),
          "--target", "H13", "--output", str(package)],
-        capture_output=True, text=True, timeout=30, check=False)
+        capture_output=True, text=True, timeout=scaled_timeout(30), check=False)
     assert compiled.returncode == 0, compiled.stdout + compiled.stderr
     return mil, package
 
@@ -308,7 +309,7 @@ def compile_runtime_matmul_package(root):
     compiled = subprocess.run(
         [str(COMPILER), "--mil", str(mil), "--model-root", str(root),
          "--target", "H13", "--output", str(package)],
-        capture_output=True, text=True, timeout=30, check=False)
+        capture_output=True, text=True, timeout=scaled_timeout(30), check=False)
     assert compiled.returncode == 0, compiled.stdout + compiled.stderr
     return package
 
@@ -341,7 +342,7 @@ def compile_constant_broadcast_package(root):
     compiled = subprocess.run(
         [str(COMPILER), "--mil", str(mil), "--model-root", str(root),
          "--target", "H13", "--output", str(package)],
-        capture_output=True, text=True, timeout=30, check=False)
+        capture_output=True, text=True, timeout=scaled_timeout(30), check=False)
     assert compiled.returncode == 0, compiled.stdout + compiled.stderr
     return package
 
@@ -477,7 +478,7 @@ def test_inspector_accounts_for_tile_rounded_scratch():
 
         inspected = subprocess.run(
             [sys.executable, str(ROOT / "research/inspect_anec.py"), str(package)],
-            capture_output=True, text=True, timeout=30, check=False)
+            capture_output=True, text=True, timeout=scaled_timeout(30), check=False)
         assert inspected.returncode == 0, inspected.stdout + inspected.stderr
         report = json.loads(inspected.stdout)["bufferAllocation"]
         assert report["scratchBytes"] == inspect_anec.TILE_BYTES
@@ -678,12 +679,12 @@ def test_cli_refuses_native_timing_flags_on_dry_run():
             "--mil", "/nonexistent/mil", "--model-root", "/nonexistent",
             "--input", "x=/nonexistent", "--output", "y=/nonexistent"]
     run = subprocess.run(base + ["--dry-run", "--benchmark-json", "/tmp/h13-bench.json"],
-                         capture_output=True, text=True, timeout=30, check=False)
+                         capture_output=True, text=True, timeout=scaled_timeout(30), check=False)
     assert run.returncode != 0
     assert "--dry-run never reports native timings" in run.stderr
 
     run = subprocess.run(base + ["--warmup", "2"],
-                         capture_output=True, text=True, timeout=30, check=False)
+                         capture_output=True, text=True, timeout=scaled_timeout(30), check=False)
     assert run.returncode != 0
     assert "require --benchmark-json" in run.stderr
 

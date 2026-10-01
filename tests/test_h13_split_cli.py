@@ -5,6 +5,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from timeouts import scaled_timeout
+
 compiler = str(Path(sys.argv[1] if len(sys.argv) > 1 else "build/mil-hwxc").resolve())
 inspector = str(Path(__file__).resolve().parents[1] / "research" / "inspect_anec.py")
 
@@ -136,7 +138,7 @@ def compile_source(root, name, source, expected_code=None):
     result = subprocess.run(
         [compiler, "--mil", str(source_path), "--model-root", str(root),
          "--output", str(output), "--target", "H13", "--format", "anec"],
-        capture_output=True, text=True, timeout=30, check=False)
+        capture_output=True, text=True, timeout=scaled_timeout(30), check=False)
     if expected_code is None:
         assert result.returncode == 0, result.stderr
         return output
@@ -178,7 +180,7 @@ with tempfile.TemporaryDirectory() as temporary:
 
     inspected = subprocess.run(
         [sys.executable, inspector, str(package)], capture_output=True,
-        text=True, timeout=30, check=False)
+        text=True, timeout=scaled_timeout(30), check=False)
     assert inspected.returncode == 0, inspected.stderr
 
 
@@ -197,7 +199,7 @@ with tempfile.TemporaryDirectory() as temporary:
     assert duplicate_manifest["logicalResults"] == [mapping, mapping]
     duplicate_inspected = subprocess.run(
         [sys.executable, inspector, str(duplicate)], capture_output=True,
-        text=True, timeout=30, check=False)
+        text=True, timeout=scaled_timeout(30), check=False)
     assert duplicate_inspected.returncode == 0, duplicate_inspected.stderr
 
     reshaped = compile_source(root, "reshaped-identity-results",
@@ -213,7 +215,7 @@ with tempfile.TemporaryDirectory() as temporary:
         reshaped_mapping, reshaped_mapping]
     reshaped_inspected = subprocess.run(
         [sys.executable, inspector, str(reshaped)], capture_output=True,
-        text=True, timeout=30, check=False)
+        text=True, timeout=scaled_timeout(30), check=False)
     assert reshaped_inspected.returncode == 0, reshaped_inspected.stderr
 
     sliced = compile_source(root, "sliced-identity-results",
@@ -230,7 +232,7 @@ with tempfile.TemporaryDirectory() as temporary:
     assert sliced_manifest["logicalResults"] == [sliced_mapping, sliced_mapping]
     sliced_inspected = subprocess.run(
         [sys.executable, inspector, str(sliced)], capture_output=True,
-        text=True, timeout=30, check=False)
+        text=True, timeout=scaled_timeout(30), check=False)
     assert sliced_inspected.returncode == 0, sliced_inspected.stderr
     tall_mapping = {
         "name": "tall",
@@ -269,7 +271,7 @@ with tempfile.TemporaryDirectory() as temporary:
         assert distinct_manifest["logicalResults"] == expected_logical
         distinct_inspected = subprocess.run(
             [sys.executable, inspector, str(distinct_package)], capture_output=True,
-            text=True, timeout=30, check=False)
+            text=True, timeout=scaled_timeout(30), check=False)
         assert distinct_inspected.returncode == 0, distinct_inspected.stderr
 
     independent_physical = [
@@ -317,14 +319,14 @@ with tempfile.TemporaryDirectory() as temporary:
         assert independent_manifest["logicalResults"] == expected_logical
         independent_inspected = subprocess.run(
             [sys.executable, inspector, str(independent_package)], capture_output=True,
-            text=True, timeout=30, check=False)
+            text=True, timeout=scaled_timeout(30), check=False)
         assert independent_inspected.returncode == 0, independent_inspected.stderr
 
     sliced_manifest["logicalResults"][0]["physical"]["physicalElements"] = 128
     (sliced / "manifest.json").write_text(json.dumps(sliced_manifest))
     invalid_view_fields = subprocess.run(
         [sys.executable, inspector, str(sliced)], capture_output=True,
-        text=True, timeout=30, check=False)
+        text=True, timeout=scaled_timeout(30), check=False)
     assert invalid_view_fields.returncode != 0
     assert "physical mapping has incorrect fields" in invalid_view_fields.stderr
 
@@ -332,7 +334,7 @@ with tempfile.TemporaryDirectory() as temporary:
     (duplicate / "manifest.json").write_text(json.dumps(duplicate_manifest))
     invalid_identity = subprocess.run(
         [sys.executable, inspector, str(duplicate)], capture_output=True,
-        text=True, timeout=30, check=False)
+        text=True, timeout=scaled_timeout(30), check=False)
     assert invalid_identity.returncode != 0
     assert "identity result dtype differs" in invalid_identity.stderr
 

@@ -112,7 +112,12 @@ Descriptor parity and host simulation do not qualify native M1 execution.
 
 Run the host-only checks with `make test-h13` (set `GNUSTEP_PREFIX` on Linux).
 They cover encoding, coefficient packing, serialization, and the MIL CLI;
-they do not execute ANE commands. A minimal compilation example is:
+they do not execute ANE commands. On a slow host such as qemu-user, set
+`MIL_HWX_TEST_TIMEOUT_SCALE` to multiply every subprocess timeout in the
+Python test scripts, for example `MIL_HWX_TEST_TIMEOUT_SCALE=3 make test-h13`.
+The default is 1.0; an unparsable, non-finite, zero or negative value also
+means 1.0.
+A minimal compilation example is:
 
 ```sh
 cat > /tmp/h13-add.mil <<'MIL'
