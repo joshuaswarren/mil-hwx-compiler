@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mint and decode H13/H14 ANE compiler oracles without retaining HWX bytes."""
+"""Mint and decode H13-H18 ANE compiler oracles without retaining HWX bytes."""
 from __future__ import annotations
 
 import argparse
@@ -18,10 +18,10 @@ import sys
 import tempfile
 from typing import Any
 
-from h13_td import decode_task, split_h13_tasks, split_h14_tasks
+from h13_td import HEADER_WORDS, decode_task, split_h13_tasks, split_h14_tasks
 
 MAGIC = 0xBEEFFACE
-SUBTYPES = {"h13": 4, "h14": 5}
+SUBTYPES = {"h13": 4, "h14": 5, "h15": 6, "h16": 7, "h17": 9, "h18": 10}
 DEFAULT_TOOL = "/tmp/h13-oracle/bin/ane-compile-hwx"
 COMPILE_TIMEOUT_SECONDS = 900
 
@@ -714,13 +714,20 @@ def decode_task_safely(task: bytes, target: str) -> dict[str, Any]:
     try:
         return decode_task(task, target)
     except ValueError as error:
-        header = 10 if target == "h13" else 8
+        header = HEADER_WORDS[target]
         words = struct.unpack_from(f"<{min(len(task) // 4, header)}I", task)
         return {
             "size_bytes": len(task),
             "header_words": [f"0x{word:08x}" for word in words],
             "decode_error": str(error),
         }
+
+
+def nonzero_words(data: bytes, cursor: int, size: int) -> dict[str, str]:
+    """Every nonzero 32-bit word of one load command, keyed by command offset."""
+    return {f"0x{index * 4:03x}": f"0x{value:08x}"
+            for index, value in enumerate(
+                struct.unpack_from(f"<{size // 4}I", data, cursor)) if value}
 
 
 def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
@@ -735,6 +742,7 @@ def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
     sections: dict[tuple[str, str], dict[str, int]] = {}
     tensors = []
     programs: list[dict[str, Any]] = []
+    descriptor_words: list[dict[str, str]] = []
     cursor = 32
     command_end = cursor + command_bytes
     if command_end > len(data):
@@ -781,6 +789,7 @@ def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
                 "task_words_minus_one": struct.unpack_from("<I", data, cursor + 0x818)[0],
                 "task_count": struct.unpack_from("<I", data, cursor + 0x81C)[0],
             })
+            descriptor_words.append(nonzero_words(data, cursor, size))
         elif command == 4 and kind == 4 and size >= 0x838:
             programs.append({
                 "kind": kind, "command_size": size,
@@ -796,6 +805,7 @@ def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
                         f"<{(size - 0x810) // 4}I", data, cursor + 0x810)
                 ],
             })
+            descriptor_words.append(nonzero_words(data, cursor, size))
         cursor += size
     if cursor != command_end:
         raise ValueError("HWX load command sizes do not match the header")
@@ -841,6 +851,7 @@ def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
         "program_descriptor": programs[-1],
         "program_count": len(programs),
         "programs": programs,
+        "program_descriptor_words": descriptor_words,
         "tensor_descriptors": tensors,
         "constant_section": {
             "size": len(constant_data),
@@ -1011,8 +1022,9 @@ def parse_arguments() -> argparse.Namespace:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--local", action="store_true", help="run the Apple compiler locally")
     mode.add_argument("--host", help="copy the worker to this SSH Mac and retrieve JSON")
+    # The shipped corpus is H13 and H14; later generations are opt-in.
     parser.add_argument("--targets", nargs="+", choices=sorted(SUBTYPES),
-                        default=sorted(SUBTYPES))
+                        default=["h13", "h14"])
     parser.add_argument("--oracle-tool", default=DEFAULT_TOOL)
     parser.add_argument("--output", default="research/oracles")
     parser.add_argument("--case", help="shell pattern selecting case names")

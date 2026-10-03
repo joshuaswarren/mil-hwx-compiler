@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
-"""Decode H13 and H14 ANE task-descriptor register streams."""
+"""Decode H13 through H18 ANE task-descriptor register streams."""
 from __future__ import annotations
 
 import struct
 from typing import Any, Iterable
 
-H13_HEADER_WORDS = 10
-H14_HEADER_WORDS = 8
+# Fixed header words before the first register record. H14 and H15 carry
+# eight; H16, H17 and H18 carry nine (the reference parser's
+# `i = 8 if subtype in (5, 6) else 9`), which every decoded h16-h18 oracle
+# confirms by decoding with no unknown register address.
+HEADER_WORDS = {"h13": 10, "h14": 8, "h15": 8, "h16": 9, "h17": 9, "h18": 9}
 
+# H15 and later move every block above 0x4000 except `common`. Bases and
+# counts for H16, H17 and H18 are the reference parser's
+# (freedomtan/coreml_to_ane_hwx ce54664e hwx_dump/ane_hwx_regs.h, BSD-3-Clause).
+# For H15 that parser reuses the H14 counts, but Apple's h15 objects write
+# tile_dma_dst word 14 (0x5138) and kernel_dma_src words 70-71 (0x5618,
+# 0x561c), so those two H15 counts are widened to the words observed.
 BLOCKS = {
     "h13": (
         ("common", 0x00000, 16),
@@ -26,6 +35,47 @@ BLOCKS = {
         ("tile_dma_src", 0x1100, 53),
         ("tile_dma_dst", 0x1500, 10),
         ("kernel_dma_src", 0x1900, 70),
+    ),
+    "h15": (
+        ("common", 0x0000, 19),
+        ("l2", 0x4100, 25),
+        ("pe", 0x4500, 15),
+        ("ne", 0x4900, 5),
+        ("tile_dma_src", 0x4D00, 53),
+        ("tile_dma_dst", 0x5100, 15),
+        ("kernel_dma_src", 0x5500, 72),
+        ("cache_dma", 0x5900, 12),
+    ),
+    "h16": (
+        ("common", 0x0000, 23),
+        ("l2", 0x4100, 41),
+        ("pe_index", 0x44D0, 1),
+        ("pe", 0x4500, 15),
+        ("ne", 0x4900, 12),
+        ("tile_dma_src", 0x4D00, 81),
+        ("tile_dma_dst", 0x5100, 21),
+        ("kernel_dma_src", 0x5500, 72),
+        ("cache_dma", 0x5900, 12),
+    ),
+    "h17": (
+        ("common", 0x0000, 23),
+        ("l2", 0x4100, 42),
+        ("pe", 0x4500, 16),
+        ("ne", 0x4900, 13),
+        ("tile_dma_src", 0x4D00, 83),
+        ("tile_dma_dst", 0x5100, 23),
+        ("kernel_dma_src", 0x5500, 74),
+        ("cache_dma", 0x5900, 14),
+    ),
+    "h18": (
+        ("common", 0x0000, 23),
+        ("l2", 0x4100, 43),
+        ("pe", 0x4500, 16),
+        ("ne", 0x4900, 13),
+        ("tile_dma_src", 0x4D00, 81),
+        ("tile_dma_dst", 0x5100, 27),
+        ("kernel_dma_src", 0x5500, 83),
+        ("cache_dma", 0x5900, 14),
     ),
 }
 
@@ -49,12 +99,14 @@ def _extra_header_words(words: tuple[int, ...], header_count: int) -> int:
     Corpus values: H13 header[9] in {0x0, 0x21, 0x23, 0x26}; H14 header[7] in
     {0x1, 0x10001, 0x30001, 0x40001, 0x50001, 0x50003}. Only 0x23 and 0x50003
     carry the extra word (observed 0x0 or 0x7), so the predicate is both low
-    bits set, not bit 1 alone.
+    bits set, not bit 1 alone. The h15-h18 corpus never sets both bits: its
+    last header word is one of 0x1, 0x9, 0x30001, 0x30009, 0x40001, 0x40009,
+    0x50001, 0x50009.
     """
     return 1 if len(words) >= header_count and words[header_count - 1] & 0x3 == 0x3 else 0
 
 def _h13_records(words: tuple[int, ...]) -> list[dict[str, Any]]:
-    index = H13_HEADER_WORDS + _extra_header_words(words, H13_HEADER_WORDS)
+    index = HEADER_WORDS["h13"] + _extra_header_words(words, HEADER_WORDS["h13"])
     records = []
     while index < len(words):
         header = words[index]
@@ -72,8 +124,10 @@ def _h13_records(words: tuple[int, ...]) -> list[dict[str, Any]]:
     return records
 
 
-def _h14_records(words: tuple[int, ...]) -> list[dict[str, Any]]:
-    index = H14_HEADER_WORDS + _extra_header_words(words, H14_HEADER_WORDS)
+def _packed_records(words: tuple[int, ...], target: str) -> list[dict[str, Any]]:
+    """H14-format records, shared by H14 through H18."""
+    header_count = HEADER_WORDS[target]
+    index = header_count + _extra_header_words(words, header_count)
     records = []
     while index < len(words):
         header = words[index]
@@ -86,7 +140,8 @@ def _h14_records(words: tuple[int, ...]) -> list[dict[str, Any]]:
             count = ((header >> 15) & 0x3F) + 1
             addresses = tuple(base + offset * 4 for offset in range(count))
         if len(addresses) > len(words) - index - 1:
-            raise ValueError(f"H14 record[{len(records)}] values are truncated")
+            raise ValueError(
+                f"{target.upper()} record[{len(records)}] values are truncated")
         values = words[index + 1:index + 1 + len(addresses)]
         records.append({"header": header, "addresses": addresses, "words": values})
         index += len(addresses) + 1
@@ -99,10 +154,10 @@ def decode_task(data: bytes, target: str) -> dict[str, Any]:
     if target not in BLOCKS:
         raise ValueError(f"unsupported task descriptor target {target!r}")
     words = _words(data, f"{target.upper()} task descriptor")
-    header_count = H13_HEADER_WORDS if target == "h13" else H14_HEADER_WORDS
+    header_count = HEADER_WORDS[target]
     if len(words) < header_count:
         raise ValueError(f"{target.upper()} task descriptor header is truncated")
-    records = _h13_records(words) if target == "h13" else _h14_records(words)
+    records = _h13_records(words) if target == "h13" else _packed_records(words, target)
     blocks: dict[str, dict[str, Any]] = {}
     unknown = 0
     for record in records:
@@ -144,7 +199,7 @@ def split_h13_tasks(
     task_words = task_words_minus_one + 1
     for task_index in range(task_count):
         task_bytes = task_words * 4
-        if task_bytes < H13_HEADER_WORDS * 4:
+        if task_bytes < HEADER_WORDS["h13"] * 4:
             raise ValueError(f"H13 task[{task_index}] size 0x{task_bytes:x} is too small")
         if task_bytes > len(section) - offset:
             raise ValueError(f"H13 task[{task_index}] extends beyond __TEXT/__text")
@@ -171,7 +226,8 @@ def split_h13_tasks(
 
 
 def split_h14_tasks(section: bytes) -> list[bytes]:
-    """Split an H14 aligned task array, skipping zero-size 16-byte headers."""
+    """Split an H14-format (H14 through H18) aligned task array, skipping
+    zero-size 16-byte headers."""
     tasks = []
     offset = 0
     while offset < len(section):
@@ -184,7 +240,7 @@ def split_h14_tasks(section: bytes) -> list[bytes]:
             offset = min(offset + 16, len(section))
             continue
         task_bytes = task_words * 4
-        if task_words < H14_HEADER_WORDS:
+        if task_words < HEADER_WORDS["h14"]:
             raise ValueError(f"H14 task[{len(tasks)}] has invalid size {task_words} words")
         if task_bytes > len(section) - offset:
             raise ValueError(

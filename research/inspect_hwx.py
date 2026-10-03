@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect and validate H13, H14, or H16G HWX object structure."""
+"""Inspect and validate H13, H14, H15, H16G, H17, or H18 HWX object structure."""
 from __future__ import annotations
 
 import struct
@@ -7,11 +7,18 @@ import sys
 from h13_td import BLOCKS, decode_task, split_h13_tasks, split_h14_tasks
 
 HWX_MAGIC = 0xBEEFFACE
+# ISA versions are the reference parser's table (freedomtan/coreml_to_ane_hwx
+# ce54664e get_instruction_set_version); no HWX field carries one.
 ARCHITECTURES = {
     5: ("H14", 11),
     4: ("H13", 7),
+    6: ("H15", 8),
     7: ("H16G", 17),
+    9: ("H17", 19),
+    10: ("H18", 20),
 }
+# Subtypes whose __TEXT/__text is an H14-format aligned task stream.
+TASK_TARGETS = {5: "h14", 6: "h15", 9: "h17", 10: "h18"}
 
 
 def cstring(raw: bytes) -> str:
@@ -55,10 +62,6 @@ def inspect_tasks(raw_tasks: list[bytes], target: str) -> int:
             f"observed_words={len(observed[name])}")
     print(f"  {target}_tasks count={len(tasks)}")
     return len(tasks)
-
-
-def inspect_h14_tasks(section_data: bytes) -> int:
-    return inspect_tasks(split_h14_tasks(section_data), "h14")
 
 
 def inspect_h13_tasks(
@@ -106,8 +109,9 @@ def inspect_segment(data: bytes, cursor: int, command_size: int, subtype: int) -
             print(
                 f"  relocation[{relocation_index}] "
                 f"address=0x{address:x} info=0x{info:08x}")
-        if subtype == 5 and segment == "__TEXT" and section in ("__text", "__TEXT"):
-            inspect_h14_tasks(data[offset:offset + size])
+        target = TASK_TARGETS.get(subtype)
+        if target and segment == "__TEXT" and section in ("__text", "__TEXT"):
+            inspect_tasks(split_h14_tasks(data[offset:offset + size]), target)
         section_cursor += 80
 
 
@@ -256,20 +260,21 @@ def main(path: str, extract_path: str | None = None) -> None:
                 "<Q", data, cursor + 0x10, "buffer reference address")[0]
             name = cstring(data[cursor + 0x18:cursor + 0x20])
             print(f"  buffer_reference address=0x{address:x} name={name!r}")
-        if command == 4 and kind == 4 and subtype == 5 and command_size >= 0x838:
+        if command == 4 and kind == 4 and subtype in (5, 6) and command_size >= 0x838:
             task_words = unpack_from(
-                "<I", data, cursor + 0x824, "H14 program task words")[0]
+                "<I", data, cursor + 0x824, "program task words")[0]
             task_count = unpack_from(
-                "<I", data, cursor + 0x830, "H14 program task count")[0]
+                "<I", data, cursor + 0x830, "program task count")[0]
             text_address = unpack_from(
-                "<Q", data, cursor + 0x10, "H14 text address")[0]
+                "<Q", data, cursor + 0x10, "program text address")[0]
             constant_address = unpack_from(
-                "<Q", data, cursor + 0x20, "H14 constant address")[0]
+                "<Q", data, cursor + 0x20, "program constant address")[0]
             print(
-                "  h14_program_descriptor "
+                f"  {TASK_TARGETS[subtype]}_program_descriptor "
                 f"text=0x{text_address:x} text_const=0x{constant_address:x} "
                 f"task_words={task_words} task_count={task_count}")
-        if command == 4 and kind == 4 and subtype == 7 and command_size >= 0x898:
+        if command == 4 and kind == 4 and subtype in (7, 9, 10) and \
+                command_size >= 0x898:
             record_count = unpack_from(
                 "<I", data, cursor + 0x860, "program record count")[0]
             format_code = unpack_from(
