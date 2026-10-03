@@ -811,28 +811,13 @@ def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
         raise ValueError("HWX load command sizes do not match the header")
     text = sections.get(("__TEXT", "__text")) or sections.get(("__TEXT", "__TEXT"))
     constants = sections.get(("__TEXT", "__const"))
+    kernel = sections.get(("__KERN_0", "__kern_0"))
     if not text or not constants or not programs:
         raise ValueError("HWX lacks text, constant, or program descriptor metadata")
     text_end = text["offset"] + text["size"]
-    constant_end = constants["offset"] + constants["size"]
     if text_end > len(data):
         raise ValueError("HWX task section is truncated")
-    if constant_end > len(data):
-        raise ValueError("HWX constant section is truncated")
     text_data = data[text["offset"]:text_end]
-    constant_data = data[constants["offset"]:constant_end]
-    prefix = constant_data[:128]
-    chunk_bytes = 0x800
-    chunks = [
-        {
-            "offset": offset,
-            "size": len(chunk),
-            "sha256": hashlib.sha256(chunk).hexdigest(),
-            "nonzero_bytes": sum(value != 0 for value in chunk),
-        }
-        for offset in range(0, len(constant_data), chunk_bytes)
-        for chunk in (constant_data[offset:offset + chunk_bytes],)
-    ] if len(constant_data) <= 0x10000 else []
     raw_tasks = []
     for index, (program, region) in enumerate(
             zip(programs, program_regions(programs, text, len(text_data)))):
@@ -853,21 +838,46 @@ def parse_hwx(data: bytes, target: str) -> dict[str, Any]:
         "programs": programs,
         "program_descriptor_words": descriptor_words,
         "tensor_descriptors": tensors,
-        "constant_section": {
-            "size": len(constant_data),
-            "sha256": hashlib.sha256(constant_data).hexdigest(),
-            "nonzero_bytes": sum(value != 0 for value in constant_data),
-            "prefix_128_sha256": hashlib.sha256(prefix).hexdigest(),
-            "prefix_128_nonzero_bytes": sum(value != 0 for value in prefix),
-            "tail_after_128_nonzero_bytes": sum(
-                value != 0 for value in constant_data[128:]),
-            "nonzero_fp16_words": decode_constant_half_words(constant_data),
-            "chunk_bytes": chunk_bytes,
-            "chunk_count": (len(constant_data) + chunk_bytes - 1) // chunk_bytes,
-            "chunks": chunks,
-        },
+        "constant_section": section_summary(data, constants, "constant"),
+        # H16-H18 move the kernel table (LUT and scalar operands) that H13-H15
+        # keep in __TEXT/__const into its own __KERN_0 segment.
+        "kernel_section": section_summary(data, kernel, "kernel") if kernel else None,
         "task_descriptors": descriptors,
         "task_decode_errors": sum("decode_error" in item for item in descriptors),
+    }
+
+
+def section_summary(data: bytes, section: dict[str, int],
+                    label: str) -> dict[str, Any]:
+    """Hashes and nonzero statistics of one section; the decoded fp16 words
+    only when the section is at most 256 bytes."""
+    end = section["offset"] + section["size"]
+    if end > len(data):
+        raise ValueError(f"HWX {label} section is truncated")
+    content = data[section["offset"]:end]
+    prefix = content[:128]
+    chunk_bytes = 0x800
+    chunks = [
+        {
+            "offset": offset,
+            "size": len(chunk),
+            "sha256": hashlib.sha256(chunk).hexdigest(),
+            "nonzero_bytes": sum(value != 0 for value in chunk),
+        }
+        for offset in range(0, len(content), chunk_bytes)
+        for chunk in (content[offset:offset + chunk_bytes],)
+    ] if len(content) <= 0x10000 else []
+    return {
+        "size": len(content),
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "nonzero_bytes": sum(value != 0 for value in content),
+        "prefix_128_sha256": hashlib.sha256(prefix).hexdigest(),
+        "prefix_128_nonzero_bytes": sum(value != 0 for value in prefix),
+        "tail_after_128_nonzero_bytes": sum(value != 0 for value in content[128:]),
+        "nonzero_fp16_words": decode_constant_half_words(content),
+        "chunk_bytes": chunk_bytes,
+        "chunk_count": (len(content) + chunk_bytes - 1) // chunk_bytes,
+        "chunks": chunks,
     }
 
 
