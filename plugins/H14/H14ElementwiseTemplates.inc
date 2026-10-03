@@ -3350,7 +3350,7 @@ static constexpr ConstantRun kH14Constants164[] = {
     {42, 0x0060, 1},
 };
 
-static constexpr OracleTaskTemplate kElementwiseTasks[] = {
+static constexpr OracleTaskTemplate kH14ElementwiseTasks[] = {
     {ElementwiseKind::BinaryRuntime, 0, {1024, 1, 1}, {1024, 1, 1}, kH14Text0, std::size(kH14Text0), 1, nullptr, 0, 16384, 0x00000011, 0x00000009},
     {ElementwiseKind::BinaryRuntime, 0, {128, 16, 16}, {128, 16, 16}, kH14Text1, std::size(kH14Text1), 1, nullptr, 0, 16384, 0x00000011, 0x0000000b},
     {ElementwiseKind::BinaryRuntime, 0, {128, 1, 1}, {128, 1, 1}, kH14Text2, std::size(kH14Text2), 1, nullptr, 0, 16384, 0x00000011, 0x00000001},

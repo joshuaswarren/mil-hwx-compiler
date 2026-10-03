@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Generate the H14 elementwise parity templates from the decoded oracles.
+"""Generate the H14-format elementwise parity templates from decoded oracles.
 
-Writes `plugins/H14/H14ElementwiseTemplates.inc` from
-`research/oracles/h14/*.json`. Only decoded task words, program-descriptor
-metadata, and constant-section contents are emitted; no HWX container bytes
-are read or stored.
+Writes `plugins/<T>/<T>ElementwiseTemplates.inc` from
+`research/oracles/<t>/*.json` for every target in `ELEMENTWISE_TARGETS`, and
+`plugins/H14/H14MatvecTemplates.inc`. Only decoded task words,
+program-descriptor metadata, and constant-section contents are emitted; no HWX
+container bytes are read or stored.
 
 Regenerate and compare with:
 
@@ -26,9 +27,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from h13_td import decode_task  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-ORACLES = ROOT / "research/oracles/h14"
-OUTPUT = ROOT / "plugins/H14/H14ElementwiseTemplates.inc"
 MATVEC_OUTPUT = ROOT / "plugins/H14/H14MatvecTemplates.inc"
+# Generations with an elementwise parity target, and the program-descriptor
+# offset of the per-program word no formula resolves: 0x880 in H14's
+# 0x890-byte descriptor, 0x890 in the 0x8a0-byte H17 and H18 descriptor.
+ELEMENTWISE_TARGETS = {"h14": 0x880, "h17": 0x890, "h18": 0x890}
+TRAILER_OFFSET = 0x810
 CONSTANT_ALIGNMENT = 0x40
 
 # Task-stream framing: a 16-byte zero prefix that decodes as a zero-size task,
@@ -102,16 +106,17 @@ def classify(oracle: dict[str, Any]) -> tuple[str, str, tuple[int, int, int],
             (operand_shape[1], operand_shape[2], operand_shape[3]))
 
 
-def selected_oracles() -> list[dict[str, Any]]:
-    """Every decoded H14 case the elementwise encoder covers: the shipped
-    binary, scalar-constant, and unary campaign plus the envelope campaign's
-    activation shapes and runtime broadcast forms."""
+def selected_oracles(target: str) -> list[dict[str, Any]]:
+    """Every decoded case of `target` the elementwise encoder covers: the
+    shipped binary, scalar-constant, and unary campaign plus the envelope
+    campaign's activation shapes and runtime broadcast forms."""
     return [oracle for oracle in
-            (json.loads(path.read_text()) for path in sorted(ORACLES.glob("*.json")))
+            (json.loads(path.read_text()) for path in
+             sorted((ROOT / "research/oracles" / target).glob("*.json")))
             if classify(oracle) is not None]
 
 
-def task_words(task: dict[str, Any]) -> list[int]:
+def task_words(task: dict[str, Any], target: str) -> list[int]:
     """Rebuild one task's exact word stream from its decoded records."""
     words = [int(word, 16) for word in task["header_words"]]
     registers = {int(address, 16): int(value, 16)
@@ -132,7 +137,7 @@ def task_words(task: dict[str, Any]) -> list[int]:
         words.append(header)
         words.extend(registers[address] for address in addresses)
     stream = struct.pack(f"<{len(words)}I", *words)
-    if len(stream) != task["size_bytes"] or decode_task(stream, "h14") != task:
+    if len(stream) != task["size_bytes"] or decode_task(stream, target) != task:
         raise ValueError("rebuilt task does not decode back to the oracle")
     return words
 
@@ -142,7 +147,7 @@ def task_stream(oracle: dict[str, Any]) -> list[int]:
     words = [0] * (STREAM_PREFIX_BYTES // 4)
     tasks = oracle["task_descriptors"]
     for index, task in enumerate(tasks):
-        words.extend(task_words(task))
+        words.extend(task_words(task, oracle["target"]))
         if index + 1 != len(tasks):
             while len(words) % (TASK_ALIGNMENT // 4):
                 words.append(0)
@@ -154,9 +159,11 @@ def task_stream(oracle: dict[str, Any]) -> list[int]:
     return words
 
 
-def constant_runs(oracle: dict[str, Any]) -> list[tuple[int, int, int]]:
-    """Nonzero fp16 halfword runs (index, bits, count) of the constant section."""
-    section = oracle["constant_section"]
+def section_runs(oracle: dict[str, Any],
+                 key: str = "constant_section") -> list[tuple[int, int, int]]:
+    """Nonzero fp16 halfword runs (index, bits, count) of the constant section,
+    or of the H17/H18 `kernel_section`."""
+    section = oracle[key]
     halfwords: dict[int, int] = {}
     if section["nonzero_bytes"]:
         words = section["nonzero_fp16_words"]
@@ -212,15 +219,19 @@ def template_fields(oracle: dict[str, Any]) -> tuple:
         raise ValueError(
             f"{oracle['case']}: descriptor word 0x858 is "
             f"{trailer[18]}, which the elementwise encoder does not carry")
-    return (tuple(task_stream(oracle)), tuple(constant_runs(oracle)),
+    unresolved = (ELEMENTWISE_TARGETS[oracle["target"]] - TRAILER_OFFSET) // 4
+    kernel = oracle.get("kernel_section")
+    return (tuple(task_stream(oracle)), tuple(section_runs(oracle)),
             oracle["constant_section"]["size"],
             oracle["program_descriptor"]["task_count"],
-            int(trailer[20], 16), int(trailer[28], 16))
+            int(trailer[20], 16), int(trailer[unresolved], 16),
+            tuple(section_runs(oracle, "kernel_section")) if kernel else (),
+            kernel["size"] if kernel else 0)
 
 
-def generate() -> str:
+def generate(target: str) -> str:
     templates: dict[tuple, tuple[dict[str, Any], tuple]] = {}
-    for oracle in selected_oracles():
+    for oracle in selected_oracles(target):
         key = classify(oracle)
         fields = template_fields(oracle)
         previous = templates.setdefault(key, (oracle, fields))
@@ -228,37 +239,49 @@ def generate() -> str:
             raise ValueError(
                 f"{oracle['case']} and {previous[0]['case']} share the encoder "
                 f"key {key} but Apple emitted different programs")
-    lines = ["// Generated from decoded H14 oracle task words by",
+    name = target.upper()
+    lines = [f"// Generated from decoded {name} oracle task words by",
              "// research/generate_h14_templates.py. No HWX container bytes.",
              ""]
     entries = []
     for index, key in enumerate(templates):
         oracle, (stream, runs, constantBytes, taskCount, records,
-                 unresolved) = templates[key]
+                 unresolved, kernelRuns, kernelBytes) = templates[key]
         kind, operation, shape, operand = key
         code = (UNARY_OPERATIONS if kind == "Unary"
                 else BINARY_OPERATIONS)[operation]
         lines.append(f"// {oracle['case']}")
-        lines.append(f"static constexpr std::uint32_t kH14Text{index}[] = {{")
+        lines.append(f"static constexpr std::uint32_t k{name}Text{index}[] = {{")
         lines.append(word_rows(list(stream)))
         lines.append("};")
         constants = "nullptr, 0"
         if runs:
-            lines.append(f"static constexpr ConstantRun kH14Constants{index}[] = {{")
+            lines.append(
+                f"static constexpr ConstantRun k{name}Constants{index}[] = {{")
             for start, bits, count in runs:
                 lines.append(f"    {{{start}, 0x{bits:04x}, {count}}},")
             lines.append("};")
-            constants = (f"kH14Constants{index}, "
-                         f"std::size(kH14Constants{index})")
+            constants = (f"k{name}Constants{index}, "
+                         f"std::size(k{name}Constants{index})")
+        kernel = ""
+        if kernelBytes:
+            lines.append(
+                f"static constexpr ConstantRun k{name}Kernel{index}[] = {{")
+            for start, bits, count in kernelRuns:
+                lines.append(f"    {{{start}, 0x{bits:04x}, {count}}},")
+            lines.append("};")
+            kernel = (f", k{name}Kernel{index}, "
+                      f"std::size(k{name}Kernel{index}), {kernelBytes}")
         lines.append("")
         entries.append(
             f"    {{ElementwiseKind::{kind}, {code}, "
             f"{{{shape[0]}, {shape[1]}, {shape[2]}}}, "
-            f"{{{operand[0]}, {operand[1]}, {operand[2]}}}, kH14Text{index}, "
-            f"std::size(kH14Text{index}), {taskCount}, "
+            f"{{{operand[0]}, {operand[1]}, {operand[2]}}}, k{name}Text{index}, "
+            f"std::size(k{name}Text{index}), {taskCount}, "
             f"{constants}, {constantBytes}, "
-            f"0x{records:08x}, 0x{unresolved:08x}}},")
-    lines.append("static constexpr OracleTaskTemplate kElementwiseTasks[] = {")
+            f"0x{records:08x}, 0x{unresolved:08x}{kernel}}},")
+    lines.append(
+        f"static constexpr OracleTaskTemplate k{name}ElementwiseTasks[] = {{")
     lines.extend(entries)
     lines.append("};")
     lines.append("")
@@ -269,7 +292,7 @@ def selected_matvec_oracles() -> list[dict[str, Any]]:
     """The H14 `transpose_y=true` matmul geometries Apple decoded, ordered by
     rows, reduction, then columns."""
     selected = []
-    for path in sorted(ORACLES.glob("matmul_m*_ty1.json")):
+    for path in sorted((ROOT / "research/oracles/h14").glob("matmul_m*_ty1.json")):
         oracle = json.loads(path.read_text())
         if oracle.get("error") is None and oracle["family"] == "matmul":
             selected.append(oracle)
@@ -329,12 +352,15 @@ def main() -> None:
     parser.add_argument("--check", action="store_true",
                         help="fail when a checked-in file is stale")
     arguments = parser.parse_args()
-    for path, generated in ((OUTPUT, generate()),
-                            (MATVEC_OUTPUT, generate_matvec())):
+    outputs = [(ROOT / f"plugins/{target.upper()}/{target.upper()}"
+                       "ElementwiseTemplates.inc", generate(target))
+               for target in ELEMENTWISE_TARGETS]
+    outputs.append((MATVEC_OUTPUT, generate_matvec()))
+    for path, generated in outputs:
         if arguments.check:
             if (path.read_text() if path.exists() else "") != generated:
                 raise SystemExit(f"{path} is stale; regenerate it")
-            print(f"H14 templates: up to date ({path})")
+            print(f"parity templates: up to date ({path})")
             continue
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(generated)

@@ -65,10 +65,11 @@ Apple's launch pages use “trillion operations per second” as a peak hardware
 
 The M4 benchmark in maderix/ANE reports about 18.6 FP16 trillion operations/s and 35.1 INT8 trillion operations/s for its tested kernels. These are measured software results, not Apple specifications, and depend on the benchmark's counting and utilization. **Evidence: medium.** See the pinned [benchmark repository](https://github.com/maderix/ANE/tree/d91c9845c0784dec7753048954fc6d0e8411fe29).
 
+The `h15` through `h18` cross-compiles now decode: `h18` returns CPU subtype 10 and `h19` fails. H16, H17 and H18 objects decode with the reference parser's block bases and record forms and a 9-word task header; H15 needs two block counts widened past the parser's table. See [parity-method.md](parity-method.md#h17-and-h18-targets). **Evidence: high; 1036 decoded objects across the four targets.**
+
 ## Open questions
 
 - **Open question:** Which marketing products share identical ANE implementations rather than only the same HWX generation label?
 - **Open question:** What exact operation-counting and precision contract underlies each Apple peak figure?
 - **Open question:** Do future compiler releases preserve the H11 through H18 subtype and ISA associations?
 - **Open question:** Why does the `h11` target fail on this compiler build while `h13` through `h17` succeed — dropped support, a different target string, or an unrelated error?
-- **Open question:** Do `h15` and `h17` objects from this cross-compile decode with the same block bases and record forms their parser rows predict? No H15 or H17 oracle has been decoded here.

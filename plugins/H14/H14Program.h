@@ -14,6 +14,13 @@ constexpr std::size_t taskAlignment = 16;
 /// Eight header words precede the first register record of every H14 task.
 constexpr std::size_t taskHeaderWords = 8;
 
+/// Apple generations whose elementwise programs are decoded into templates.
+/// H17 and H18 keep H14's task framing (aligned stream, 16-byte zero prefix,
+/// packed register records) with their own register map and nine header
+/// words, so one template encoder serves all three; the generation selects
+/// the decoded Apple corpus.
+enum class Generation : std::uint8_t { H14, H17, H18 };
+
 enum class BinaryOperation { Add, Multiply, Maximum, Minimum, Subtract, RealDivide };
 enum class UnaryOperation {
     Absolute,
@@ -83,14 +90,17 @@ struct Program {
     /// 16-byte aligned tasks, with the final task left unpadded.
     std::vector<std::uint8_t> taskStream;
     std::vector<std::uint8_t> constants;
+    /// H17 and H18 only: the kernel table Apple places in its own __KERN_0
+    /// segment after __TEXT. Empty when the program reads no kernel table.
+    std::vector<std::uint8_t> kernelTable;
     std::vector<TensorLayout> inputs;
     TensorLayout output;
     std::size_t firstTaskBytes = 0;
     std::uint32_t taskCount = 1;
     std::size_t constantOffsetBytes = 0;
-    /// Decoded H14 program-descriptor words the campaign resolves no formula
-    /// for: the record count at command offset 0x860 and the word at 0x880.
-    /// Parity carries the oracle values.
+    /// Decoded program-descriptor words the campaign resolves no formula
+    /// for: the record count at command offset 0x860 and the word at 0x880
+    /// (H14) or 0x890 (H17, H18). Parity carries the oracle values.
     std::uint32_t programRecordCount = 0;
     std::uint32_t unresolvedDescriptorWord = 0;
     /// Command offset 0x858, which Apple sets to the input surface byte count
@@ -99,16 +109,20 @@ struct Program {
     std::uint32_t scratchDescriptorWord = 0;
 };
 
-bool supportsElementwise(BinaryOperation operation, ElementwiseShape shape,
-                         ElementwiseShape operand, bool scalarConstant = false);
-bool supportsElementwise(UnaryOperation operation, ElementwiseShape shape);
-/// Encodes Apple's program for `operation` over a `shape` result surface whose
-/// second runtime operand covers `operand`, which the decoded broadcast forms
-/// let differ from `shape`.
-Program encodeElementwise(BinaryOperation operation, ElementwiseShape shape,
-                          ElementwiseShape operand, bool scalarConstant = false,
+bool supportsElementwise(Generation generation, BinaryOperation operation,
+                         ElementwiseShape shape, ElementwiseShape operand,
+                         bool scalarConstant = false);
+bool supportsElementwise(Generation generation, UnaryOperation operation,
+                         ElementwiseShape shape);
+/// Encodes Apple's `generation` program for `operation` over a `shape` result
+/// surface whose second runtime operand covers `operand`, which the decoded
+/// broadcast forms let differ from `shape`.
+Program encodeElementwise(Generation generation, BinaryOperation operation,
+                          ElementwiseShape shape, ElementwiseShape operand,
+                          bool scalarConstant = false,
                           std::uint16_t scalarBits = 0x3800);
-Program encodeElementwise(UnaryOperation operation, ElementwiseShape shape);
+Program encodeElementwise(Generation generation, UnaryOperation operation,
+                          ElementwiseShape shape);
 /// True when the decoded Apple corpus covers this matmul geometry as one
 /// two-task H14 program.
 bool supportsMatvecParity(MatvecShape shape);

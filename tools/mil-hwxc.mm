@@ -11,7 +11,7 @@
 static void printUsage(const char *program) {
     fprintf(stderr,
         "usage: %s --mil FILE --model-root DIR "
-        "--output DIR [--target H16G|H13|H14] [--format anec|hwx] "
+        "--output DIR [--target H16G|H13|H14|H17|H18] [--format anec|hwx] "
         "[--schedule per-op|chain]\n", program);
 }
 
@@ -56,7 +56,10 @@ int main(int argc, const char *argv[]) {
         NSString *output = arguments[@"--output"];
         NSString *target = arguments[@"--target"] ?: @"H16G";
         NSString *requestedFormat = arguments[@"--format"];
-        NSString *format = requestedFormat ?: @"anec";
+        // H17 and H18 emit HWX only; every other target defaults to ANEC.
+        NSString *format = requestedFormat ?:
+            ([target isEqualToString:@"H17"] || [target isEqualToString:@"H18"]
+                 ? @"hwx" : @"anec");
         NSString *schedule = arguments[@"--schedule"] ?: @"per-op";
         NSSet<NSString *> *accepted = [NSSet setWithArray:@[
             @"--mil", @"--model-root", @"--output", @"--target", @"--format",
@@ -85,15 +88,16 @@ int main(int argc, const char *argv[]) {
             return 66;
         }
         ANEDiagnosticEngine *diagnostics = [[ANEDiagnosticEngine alloc] init];
-        if ([target isEqualToString:@"H13"] || [target isEqualToString:@"H14"]) {
-            BOOL h14 = [target isEqualToString:@"H14"];
+        BOOL parityTarget = [target isEqualToString:@"H14"] ||
+            [target isEqualToString:@"H17"] || [target isEqualToString:@"H18"];
+        if ([target isEqualToString:@"H13"] || parityTarget) {
             NSError *error = nil;
             NSURL *root = [NSURL fileURLWithPath:modelRoot isDirectory:YES];
             NSURL *outputURL = [NSURL fileURLWithPath:output isDirectory:YES];
-            BOOL success = h14
+            BOOL success = parityTarget
                 ? [ANEH14Compiler compileMILData:milData modelRoot:root
-                    format:format outputDirectory:outputURL schedule:schedule
-                    diagnostics:diagnostics error:&error]
+                    target:target format:format outputDirectory:outputURL
+                    schedule:schedule diagnostics:diagnostics error:&error]
                 : [ANEH13Compiler compileMILData:milData modelRoot:root
                     format:format outputDirectory:outputURL schedule:schedule
                     diagnostics:diagnostics error:&error];

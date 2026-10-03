@@ -220,6 +220,8 @@ static NSString *architectureName(HWXObjectArchitecture architecture) {
         case HWXObjectArchitectureH13: return @"h13";
         case HWXObjectArchitectureH14: return @"h14";
         case HWXObjectArchitectureH16G: return @"h16g";
+        case HWXObjectArchitectureH17: return @"h17";
+        case HWXObjectArchitectureH18: return @"h18";
     }
 }
 static NSData *compilerMetadata(HWXObjectArchitecture architecture) {
@@ -430,13 +432,19 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
         else
             [outputs addObject:binding];
     }
-    // H13 and H14 keep constants in __TEXT/__const; H16G uses a __KERN_0
-    // segment with relocated kernel-table addends.
+    // H13, H14, H17 and H18 keep constants in __TEXT/__const; H16G uses a
+    // __KERN_0 segment with relocated kernel-table addends. H17 and H18 put
+    // only their kernel table (programInfo.kernelTable) in __KERN_0.
     BOOL textConstants = architecture == HWXObjectArchitectureH13 ||
-        architecture == HWXObjectArchitectureH14;
+        architecture == HWXObjectArchitectureH14 ||
+        architecture == HWXObjectArchitectureH17 ||
+        architecture == HWXObjectArchitectureH18;
     BOOL supportedArchitecture = textConstants ||
         architecture == HWXObjectArchitectureH16G;
-    BOOL hasKernel = !textConstants && constantRegion.length != 0;
+    BOOL separateKernelTable = architecture == HWXObjectArchitectureH17 ||
+        architecture == HWXObjectArchitectureH18;
+    NSData *kernelData = textConstants ? programInfo.kernelTable : constantRegion;
+    BOOL hasKernel = kernelData.length != 0;
     BOOL hasConstants = constantRegion.length != 0;
     BOOL isThreeSurfaceProgram = bindings.count == 3 && inputs.count == 2 &&
         outputs.count == 1;
@@ -488,16 +496,18 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
     }
     NSString *rejection = nil;
     if (!supportedArchitecture)
-        rejection = @"writer supports only H13, H14 and H16G architectures";
+        rejection = @"writer supports only H13, H14, H16G, H17 and H18 architectures";
     else if (!programInfo || programInfo.taskCount == 0)
         rejection = @"writer requires program info with at least one task";
+    else if (programInfo.kernelTable.length && !separateKernelTable)
+        rejection = @"only H17 and H18 objects carry a separate kernel table";
     else if (textConstants && (taskDescriptor.length == 0 ||
                      taskDescriptor.length % sizeof(uint32_t) ||
                      programInfo.descriptorLayout != HWXProgramDescriptorLayoutLinear ||
                      (programInfo.firstTaskByteLength &&
                       (programInfo.firstTaskByteLength > taskDescriptor.length ||
                        programInfo.firstTaskByteLength % sizeof(uint32_t)))))
-        rejection = @"H13 and H14 HWX require a nonempty word-aligned linear task stream";
+        rejection = @"text-constant HWX requires a nonempty word-aligned linear task stream";
     else if (!resourceCountValid)
         rejection = @"writer requires one output, at least one input, at most four surfaces and five total resources";
     // Apple partitions one program into up to 129 tasks rather than emitting
@@ -555,9 +565,8 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
         nextBindingVM = next;
     }
     uint64_t textVM=nextBindingVM;
-    uint64_t kernelVM = 0, textEndVM = 0, textConstVM = 0;
-    if ((hasKernel && !addWithoutOverflow(textVM, 0x8000, &kernelVM)) ||
-        !addWithoutOverflow(textVM, taskDescriptor.length, &textEndVM) ||
+    uint64_t textEndVM = 0, textConstVM = 0;
+    if (!addWithoutOverflow(textVM, taskDescriptor.length, &textEndVM) ||
         !alignUpWithoutOverflow(textEndVM, 0x40, &textConstVM)) {
         if (error) *error=[NSError errorWithDomain:HWXObjectWriterErrorDomain
             code:1 userInfo:@{NSLocalizedDescriptionKey:
@@ -576,9 +585,18 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
     uint64_t textConstOffset = textConstVM - textVM;
     uint64_t textSegmentSize = textConstants
         ? alignUp(textConstOffset + constantRegion.length, 0x4000) : 0x8000;
-    uint32_t kernelFileOffset = textFileOffset + 0x8000;
+    // __KERN_0 follows __TEXT directly: 0x8000 past the text for H16G, one
+    // 16 KiB-aligned text-and-constant span for H17 and H18.
+    uint64_t kernelVM = 0;
+    if (hasKernel && !addWithoutOverflow(textVM, textSegmentSize, &kernelVM)) {
+        if (error) *error=[NSError errorWithDomain:HWXObjectWriterErrorDomain
+            code:1 userInfo:@{NSLocalizedDescriptionKey:
+                @"writer kernel VM layout overflows"}];
+        return nil;
+    }
+    uint32_t kernelFileOffset = textFileOffset + (uint32_t)textSegmentSize;
     uint64_t kernelSegmentSize = hasKernel
-        ? alignUp(constantRegion.length, 0x4000) : 0;
+        ? alignUp(kernelData.length, 0x4000) : 0;
     uint32_t textConstFile = textConstants ? textFileOffset + (uint32_t)textConstOffset :
         (uint32_t)alignUp(textFileOffset + taskDescriptor.length, 0x40);
     NSMutableArray<NSData *> *commands = [NSMutableArray array];
@@ -615,7 +633,7 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
         textFileOffset,textSegmentSize,5,5,textSegmentFlags,textSecs,2)];
     if (hasKernel) {
         struct section_64 kernSec=sectionRecord("__kern_0","__KERN_0",kernelVM,
-            constantRegion.length,kernelFileOffset,6,0x26);
+            kernelData.length,kernelFileOffset,6,0x26);
         [commands addObject:segmentRecord("__KERN_0",kernelVM,kernelSegmentSize,
             kernelFileOffset,kernelSegmentSize,1,1,4,&kernSec,1)];
     }
@@ -708,13 +726,12 @@ static NSData *symbolTableCommand(uint32_t symbolOffset,
     }
     [image replaceBytesInRange:NSMakeRange(textFileOffset,taskDescriptor.length)
                      withBytes:taskDescriptor.bytes];
-    if (textConstants) {
+    if (textConstants)
         [image replaceBytesInRange:NSMakeRange(textConstFile,constantRegion.length)
                          withBytes:constantRegion.bytes];
-    } else if (hasKernel) {
-        [image replaceBytesInRange:NSMakeRange(kernelFileOffset,constantRegion.length)
-                         withBytes:constantRegion.bytes];
-    }
+    if (hasKernel)
+        [image replaceBytesInRange:NSMakeRange(kernelFileOffset,kernelData.length)
+                         withBytes:kernelData.bytes];
     return image;
 }
 @end
