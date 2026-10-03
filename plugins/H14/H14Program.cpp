@@ -4,6 +4,7 @@
 #include <iterator>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace ane::h14 {
@@ -33,6 +34,11 @@ struct OracleTaskTemplate {
     std::size_t constantBytes;
     std::uint32_t programRecordCount;
     std::uint32_t unresolvedDescriptorWord;
+    /// H17 and H18 keep the 128-byte kernel table (LUT and scalar operands)
+    /// that H14 keeps in its constant section in a __KERN_0 segment instead.
+    const ConstantRun *kernel = nullptr;
+    std::size_t kernelRuns = 0;
+    std::size_t kernelBytes = 0;
 };
 
 struct OracleMatvecTemplate {
@@ -93,6 +99,8 @@ struct OracleConvTemplate {
 };
 
 #include "H14ElementwiseTemplates.inc"
+#include "H17ElementwiseTemplates.inc"
+#include "H18ElementwiseTemplates.inc"
 #include "H14MatvecTemplates.inc"
 #include "H14NormTemplates.inc"
 #include "H14ConvTemplates.inc"
@@ -106,15 +114,42 @@ bool sameShape(ElementwiseShape left, ElementwiseShape right) {
            left.width == right.width;
 }
 
-const OracleTaskTemplate *elementwiseTemplate(ElementwiseKind kind,
-                                              std::uint8_t operation,
-                                              ElementwiseShape shape,
-                                              ElementwiseShape operand) {
-    for (const auto &candidate : kElementwiseTasks)
+const char *generationName(Generation generation) {
+    switch (generation) {
+        case Generation::H14: return "H14";
+        case Generation::H17: return "H17";
+        case Generation::H18: return "H18";
+    }
+    throw std::logic_error("unknown parity generation");
+}
+
+template <std::size_t N>
+const OracleTaskTemplate *findElementwise(const OracleTaskTemplate (&table)[N],
+                                          ElementwiseKind kind,
+                                          std::uint8_t operation,
+                                          ElementwiseShape shape,
+                                          ElementwiseShape operand) {
+    for (const auto &candidate : table)
         if (candidate.kind == kind && candidate.operation == operation &&
             sameShape(candidate.shape, shape) &&
             sameShape(candidate.operand, operand)) return &candidate;
     return nullptr;
+}
+
+const OracleTaskTemplate *elementwiseTemplate(Generation generation,
+                                              ElementwiseKind kind,
+                                              std::uint8_t operation,
+                                              ElementwiseShape shape,
+                                              ElementwiseShape operand) {
+    switch (generation) {
+        case Generation::H14:
+            return findElementwise(kH14ElementwiseTasks, kind, operation, shape, operand);
+        case Generation::H17:
+            return findElementwise(kH17ElementwiseTasks, kind, operation, shape, operand);
+        case Generation::H18:
+            return findElementwise(kH18ElementwiseTasks, kind, operation, shape, operand);
+    }
+    throw std::logic_error("unknown parity generation");
 }
 
 const OracleMatvecTemplate *matvecTemplate(MatvecShape shape) {
@@ -171,10 +206,11 @@ std::vector<std::uint8_t> streamBytes(const std::uint32_t *text,
     return bytes;
 }
 
-std::vector<std::uint8_t> constantBytes(const OracleTaskTemplate &source) {
-    std::vector<std::uint8_t> bytes(source.constantBytes, 0);
-    for (std::size_t run = 0; run != source.constantRuns; ++run) {
-        const auto &entry = source.constants[run];
+std::vector<std::uint8_t> runBytes(const ConstantRun *runs, std::size_t count,
+                                   std::size_t size) {
+    std::vector<std::uint8_t> bytes(size, 0);
+    for (std::size_t run = 0; run != count; ++run) {
+        const auto &entry = runs[run];
         for (std::uint32_t offset = 0; offset != entry.count; ++offset) {
             const std::size_t index = (entry.index + offset) * 2;
             if (index + 1 >= bytes.size())
@@ -233,7 +269,10 @@ Program oracleProgram(const OracleTaskTemplate &source, std::size_t inputCount) 
     Program program = streamProgram(source.text, source.textWords,
                                     source.taskCount, source.programRecordCount,
                                     source.unresolvedDescriptorWord);
-    program.constants = constantBytes(source);
+    program.constants = runBytes(source.constants, source.constantRuns,
+                                 source.constantBytes);
+    program.kernelTable = runBytes(source.kernel, source.kernelRuns,
+                                   source.kernelBytes);
     program.inputs.reserve(inputCount);
     program.inputs.push_back(elementwiseTensor(5, source.shape));
     if (inputCount == 2)
@@ -417,38 +456,46 @@ std::vector<std::size_t> taskSizes(const std::vector<std::uint8_t> &stream) {
     return sizes;
 }
 
-bool supportsElementwise(BinaryOperation operation, ElementwiseShape shape,
-                         ElementwiseShape operand, bool scalarConstant) {
+bool supportsElementwise(Generation generation, BinaryOperation operation,
+                         ElementwiseShape shape, ElementwiseShape operand,
+                         bool scalarConstant) {
     const auto kind = scalarConstant ? ElementwiseKind::BinaryScalar
                                      : ElementwiseKind::BinaryRuntime;
-    return elementwiseTemplate(kind, static_cast<std::uint8_t>(operation), shape,
+    return elementwiseTemplate(generation, kind,
+                               static_cast<std::uint8_t>(operation), shape,
                                operand);
 }
 
-bool supportsElementwise(UnaryOperation operation, ElementwiseShape shape) {
-    return elementwiseTemplate(ElementwiseKind::Unary,
+bool supportsElementwise(Generation generation, UnaryOperation operation,
+                         ElementwiseShape shape) {
+    return elementwiseTemplate(generation, ElementwiseKind::Unary,
                                static_cast<std::uint8_t>(operation), shape, shape);
 }
 
-Program encodeElementwise(BinaryOperation operation, ElementwiseShape shape,
-                          ElementwiseShape operand, bool scalarConstant,
-                          std::uint16_t scalarBits) {
+Program encodeElementwise(Generation generation, BinaryOperation operation,
+                          ElementwiseShape shape, ElementwiseShape operand,
+                          bool scalarConstant, std::uint16_t scalarBits) {
     const auto kind = scalarConstant ? ElementwiseKind::BinaryScalar
                                      : ElementwiseKind::BinaryRuntime;
     const auto *source = elementwiseTemplate(
-        kind, static_cast<std::uint8_t>(operation), shape, operand);
+        generation, kind, static_cast<std::uint8_t>(operation), shape, operand);
     if (!source)
-        throw std::invalid_argument("H14 binary operation is outside the decoded parity envelope");
+        throw std::invalid_argument(std::string(generationName(generation)) +
+            " binary operation is outside the decoded parity envelope");
     if (scalarConstant && scalarBits != 0x3800)
-        throw std::invalid_argument("H14 scalar operation requires the decoded fp16 0.5 operand");
+        throw std::invalid_argument(std::string(generationName(generation)) +
+            " scalar operation requires the decoded fp16 0.5 operand");
     return oracleProgram(*source, scalarConstant ? 1 : 2);
 }
 
-Program encodeElementwise(UnaryOperation operation, ElementwiseShape shape) {
+Program encodeElementwise(Generation generation, UnaryOperation operation,
+                          ElementwiseShape shape) {
     const auto *source = elementwiseTemplate(
-        ElementwiseKind::Unary, static_cast<std::uint8_t>(operation), shape, shape);
+        generation, ElementwiseKind::Unary, static_cast<std::uint8_t>(operation),
+        shape, shape);
     if (!source)
-        throw std::invalid_argument("H14 unary operation is outside the decoded parity envelope");
+        throw std::invalid_argument(std::string(generationName(generation)) +
+            " unary operation is outside the decoded parity envelope");
     return oracleProgram(*source, 1);
 }
 

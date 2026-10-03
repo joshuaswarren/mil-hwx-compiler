@@ -22,6 +22,31 @@ static BOOL reject(ANEDiagnosticEngine *diagnostics, NSString *message,
     return NO;
 }
 
+/// One decoded-oracle parity target. H14 covers every family this compiler
+/// encodes. H17 and H18 have templates only for the elementwise, unary and
+/// scalar-constant families, and emit HWX only: no runtime reads their ANEC.
+struct ParityTarget {
+    ane::h14::Generation generation;
+    HWXObjectArchitecture architecture;
+    NSString *name;
+    NSString *prefix;
+};
+
+static BOOL parityTarget(NSString *name, ParityTarget *target) {
+    if ([name isEqualToString:@"H14"])
+        *target = {ane::h14::Generation::H14, HWXObjectArchitectureH14, @"H14", @"h14"};
+    else if ([name isEqualToString:@"H17"])
+        *target = {ane::h14::Generation::H17, HWXObjectArchitectureH17, @"H17", @"h17"};
+    else if ([name isEqualToString:@"H18"])
+        *target = {ane::h14::Generation::H18, HWXObjectArchitectureH18, @"H18", @"h18"};
+    else return NO;
+    return YES;
+}
+
+static NSString *code(const ParityTarget &target, NSString *suffix) {
+    return [NSString stringWithFormat:@"%@.%@", target.prefix, suffix];
+}
+
 static BOOL fp16Tensor(ANEGraphValue *value) {
     return value.type.kind == ANEValueTypeKindTensor &&
         value.type.elementType == ANEElementTypeFP16;
@@ -285,26 +310,60 @@ static HWXObjectBinding *objectBinding(const ane::h14::TensorLayout &layout,
         batchStrideBytes:batchStride storageByteLength:storageBytes];
 }
 
-static NSData *encodeHWX(const ane::h14::Program &program, NSError **error) {
+/// `surfaceNames` holds the MIL names of the inputs then the output. Apple's
+/// h17 objects lay their surfaces out in ascending name order (six naming
+/// probes, receipts/2026-10-03-h17-target), which moves the descriptor's
+/// resource slots when a broadcast operand is smaller than the result, so
+/// H17 and H18 sort by name. H14 keeps input-then-output order.
+static NSData *encodeHWX(const ane::h14::Program &program,
+                         HWXObjectArchitecture architecture,
+                         NSArray<NSString *> *surfaceNames, NSError **error) {
     NSMutableArray<HWXObjectBinding *> *bindings = [NSMutableArray array];
     for (NSUInteger index = 0; index < program.inputs.size(); ++index)
         [bindings addObject:objectBinding(program.inputs[index],
             HWXObjectBindingRoleInput, index)];
     [bindings addObject:objectBinding(program.output,
         HWXObjectBindingRoleOutput, 0)];
+    if (architecture != HWXObjectArchitectureH14) {
+        if (surfaceNames.count != bindings.count) {
+            if (error) *error = [NSError errorWithDomain:@"dev.maderix.H14"
+                code:3 userInfo:@{NSLocalizedDescriptionKey:
+                    @"every surface needs a MIL name to be laid out"}];
+            return nil;
+        }
+        NSMutableArray<NSNumber *> *order = [NSMutableArray array];
+        for (NSUInteger index = 0; index < bindings.count; ++index)
+            [order addObject:@(index)];
+        [order sortUsingComparator:^NSComparisonResult(NSNumber *left,
+                                                       NSNumber *right) {
+            return [surfaceNames[left.unsignedIntegerValue]
+                compare:surfaceNames[right.unsignedIntegerValue]];
+        }];
+        NSMutableArray<HWXObjectBinding *> *sorted = [NSMutableArray array];
+        for (NSNumber *index in order)
+            [sorted addObject:bindings[index.unsignedIntegerValue]];
+        bindings = sorted;
+    }
     NSData *task = [NSData dataWithBytes:program.taskStream.data()
                                   length:program.taskStream.size()];
     NSData *constants = [NSData dataWithBytes:program.constants.data()
                                        length:program.constants.size()];
-    // firstTaskByteLength stays zero: the H14 descriptor records the whole
-    // text word count at 0x824, not the first task's size.
+    // firstTaskByteLength stays zero: the descriptor records the whole text
+    // word count at 0x824, not the first task's size. H17 and H18 keep the
+    // per-program unresolved word at 0x890, the slot the 0x8a0-byte layout
+    // writes as its format code; H14 keeps it at 0x880.
+    const BOOL h14 = architecture == HWXObjectArchitectureH14;
     HWXObjectProgramInfo *info = [[HWXObjectProgramInfo alloc]
         initWithTaskCount:program.taskCount
-        recordCount:program.programRecordCount formatCode:0
+        recordCount:program.programRecordCount
+        formatCode:h14 ? 0 : program.unresolvedDescriptorWord
         scratchByteLength:0 descriptorLayout:HWXProgramDescriptorLayoutLinear];
     info.unresolvedDescriptorWord = program.unresolvedDescriptorWord;
     info.h14ScratchDescriptorWord = program.scratchDescriptorWord;
-    return [HWXObjectWriter buildObjectForArchitecture:HWXObjectArchitectureH14
+    if (!program.kernelTable.empty())
+        info.kernelTable = [NSData dataWithBytes:program.kernelTable.data()
+                                          length:program.kernelTable.size()];
+    return [HWXObjectWriter buildObjectForArchitecture:architecture
         taskDescriptor:task constantRegion:constants bindings:bindings
         kernelRelocationOffsets:@[] programInfo:info error:error];
 }
@@ -347,9 +406,11 @@ static NSUInteger parityShapes(ANEGraphValue *value,
     return count;
 }
 
-/// Matches the operations whose H14 task streams are decoded word-for-word
-/// from Apple oracles, so they encode as one whole-tensor program.
-static BOOL parityPlan(ANEGraphOperation *operation, H14ParityPlan *plan) {
+/// Matches the operations whose `generation` task streams are decoded
+/// word-for-word from Apple oracles, so they encode as one whole-tensor
+/// program.
+static BOOL parityPlan(ANEGraphOperation *operation,
+                       ane::h14::Generation generation, H14ParityPlan *plan) {
     ANEGraphValue *x = operation.operands[@"x"].value;
     ANEGraphValue *y = operation.operands[@"y"].value;
     NSString *name = operation.operationName;
@@ -372,8 +433,8 @@ static BOOL parityPlan(ANEGraphOperation *operation, H14ParityPlan *plan) {
                        epsilon != 1e-6f)))
             return NO;
         for (NSUInteger index = 0; index < shapeCount; ++index) {
-            if (!ane::h14::supportsElementwise(candidate.unaryOperation,
-                                               shapes[index])) continue;
+            if (!ane::h14::supportsElementwise(generation,
+                    candidate.unaryOperation, shapes[index])) continue;
             candidate.shape = shapes[index];
             candidate.unary = YES;
             *plan = candidate;
@@ -403,8 +464,8 @@ static BOOL parityPlan(ANEGraphOperation *operation, H14ParityPlan *plan) {
              operandIndex < (runtime ? operandCount : 1u); ++operandIndex) {
             const ane::h14::ElementwiseShape operand =
                 runtime ? operands[operandIndex] : shapes[index];
-            if (!ane::h14::supportsElementwise(candidate.binaryOperation,
-                                               shapes[index], operand, !runtime))
+            if (!ane::h14::supportsElementwise(generation,
+                    candidate.binaryOperation, shapes[index], operand, !runtime))
                 continue;
             candidate.shape = shapes[index];
             candidate.operand = operand;
@@ -686,25 +747,37 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
 @implementation ANEH14Compiler
 + (BOOL)compileMILData:(NSData *)milData
              modelRoot:(NSURL *)modelRoot
+                target:(NSString *)targetName
                 format:(NSString *)format
        outputDirectory:(NSURL *)directory
               schedule:(NSString *)schedule
            diagnostics:(ANEDiagnosticEngine *)diagnostics
                  error:(NSError **)error {
+    ParityTarget target{};
+    if (!parityTarget(targetName, &target))
+        return reject(diagnostics, [NSString stringWithFormat:
+            @"parity target must be H14, H17, or H18, not '%@'", targetName],
+            nil, @"parity.unsupported-target");
+    const BOOL h14 = target.generation == ane::h14::Generation::H14;
+    NSString *unsupported = code(target, @"unsupported-program");
     BOOL hwx = [format isEqualToString:@"hwx"];
-    if (!hwx && ![format isEqualToString:@"anec"]) {
-        reject(diagnostics, @"H14 artifact format must be 'anec' or 'hwx'",
-               nil, @"h14.unsupported-format");
-        if (error) *error = [NSError errorWithDomain:@"dev.maderix.H14" code:2
-            userInfo:@{NSLocalizedDescriptionKey:
-                @"H14 artifact format must be 'anec' or 'hwx'"}];
+    if (!hwx && (!h14 || ![format isEqualToString:@"anec"])) {
+        NSString *message = h14
+            ? @"H14 artifact format must be 'anec' or 'hwx'"
+            : [NSString stringWithFormat:@"%@ artifact format must be 'hwx'",
+                  target.name];
+        reject(diagnostics, message, nil, code(target, @"unsupported-format"));
+        if (error) *error = [NSError errorWithDomain:
+            [@"dev.maderix." stringByAppendingString:target.name] code:2
+            userInfo:@{NSLocalizedDescriptionKey: message}];
         return NO;
     }
     if (![schedule isEqualToString:@"per-op"] &&
-        ![schedule isEqualToString:@"chain"])
-        return reject(diagnostics,
-            @"H14 schedule must be 'per-op' or 'chain'", nil,
-            @"h14.unsupported-schedule");
+        (!h14 || ![schedule isEqualToString:@"chain"]))
+        return reject(diagnostics, h14
+            ? @"H14 schedule must be 'per-op' or 'chain'"
+            : [NSString stringWithFormat:@"%@ schedule must be 'per-op'",
+                  target.name], nil, code(target, @"unsupported-schedule"));
     MILLexer *lexer = [[MILLexer alloc] initWithData:milData
                                          diagnostics:diagnostics];
     MILParser *parser = [[MILParser alloc] initWithTokens:lexer.lexAllTokens
@@ -717,29 +790,32 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
         ![ANEGraphVerifier verifyModule:module diagnostics:diagnostics])
         return NO;
     if (module.functions.count != 1)
-        return reject(diagnostics, @"H14 requires exactly one function");
+        return reject(diagnostics, [NSString stringWithFormat:
+            @"%@ requires exactly one function", target.name], nil, unsupported);
     ANEGraphFunction *function = module.functions[0];
     for (ANEGraphOperation *candidate in function.operations)
         if (candidate.results.count != 1)
-            return reject(diagnostics,
-                @"H14 does not lower multi-result operations",
-                candidate, @"h14.unsupported-multi-result-operation");
+            return reject(diagnostics, [NSString stringWithFormat:
+                @"%@ does not lower multi-result operations", target.name],
+                candidate, code(target, @"unsupported-multi-result-operation"));
     NSMutableArray<ANEGraphOperation *> *sourceOperations = [NSMutableArray array];
     for (ANEGraphOperation *candidate in function.operations)
         if (![candidate.operationName isEqualToString:@"const"])
             [sourceOperations addObject:candidate];
     if (!sourceOperations.count)
-        return reject(diagnostics, @"H14 requires at least one operation");
+        return reject(diagnostics, [NSString stringWithFormat:
+            @"%@ requires at least one operation", target.name], nil, unsupported);
     BOOL chain = sourceOperations.count > 1;
     BOOL chainSchedule = [schedule isEqualToString:@"chain"];
     ANEGraphOperation *lastOperation = sourceOperations.lastObject;
     if (function.returnValues.count != 1 ||
         function.returnValues[0] != lastOperation.results[0])
-        return reject(diagnostics,
-            chain ? @"H14 chains must return only the last operation result"
-                  : @"H14 requires one operation with its result returned",
-            lastOperation, chain ? @"h14.unsupported-chain"
-                                 : @"h14.unsupported-program");
+        return reject(diagnostics, [NSString stringWithFormat:chain
+                ? @"%@ chains must return only the last operation result"
+                : @"%@ requires one operation with its result returned",
+                target.name],
+            lastOperation, chain ? code(target, @"unsupported-chain")
+                                 : unsupported);
     NSMutableSet<NSString *> *inputNames = [NSMutableSet set];
     for (ANEGraphValue *input in function.inputs) {
         [inputNames addObject:input.name];
@@ -748,8 +824,9 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
             for (ANEGraphArgument *operand in candidate.operands.allValues)
                 used = used || operand.value == input;
         if (!used)
-            return reject(diagnostics, @"H14 function inputs must all be used",
-                          sourceOperations[0]);
+            return reject(diagnostics, [NSString stringWithFormat:
+                @"%@ function inputs must all be used", target.name],
+                sourceOperations[0], unsupported);
     }
     for (NSUInteger index = 0; index + 1 < sourceOperations.count; ++index) {
         ANEGraphValue *value = sourceOperations[index].results[0];
@@ -760,9 +837,10 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
                     sourceOperations[consumer].operands.allValues)
                 used = used || operand.value == value;
         if (!used)
-            return reject(diagnostics,
-                @"H14 operation results not returned must be consumed later",
-                sourceOperations[index], @"h14.unsupported-chain");
+            return reject(diagnostics, [NSString stringWithFormat:
+                @"%@ operation results not returned must be consumed later",
+                target.name],
+                sourceOperations[index], code(target, @"unsupported-chain"));
     }
     if (chainSchedule) {
         if (!chain || function.inputs.count > 2)
@@ -848,6 +926,12 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
         NSData *convBias = nil;
         H14ConvPlan convolution{};
         BOOL normalization = NO;
+        if (!h14 && (matvec || [name isEqualToString:@"conv"] ||
+                     normEncoding(name, &normOperation)))
+            return reject(diagnostics, [NSString stringWithFormat:
+                @"%@ has decoded templates only for elementwise, unary, and scalar-constant operations, not '%@'",
+                target.name, name], operation,
+                code(target, @"outside-parity-envelope"));
         if (matvec) {
             if (!matvecPlan(operation, modelRoot, diagnostics, &matvecShape,
                             &matvecWeights)) return NO;
@@ -877,10 +961,10 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
             return reject(diagnostics, [NSString stringWithFormat:
                 @"H14 '%@' needs a decoded geometry inside the normalization parity envelope",
                 name], operation, @"h14.norm-outside-envelope");
-        } else if (!parityPlan(operation, &plan)) {
-            return reject(diagnostics,
-                @"H14 supports only the decoded fp16 elementwise, scalar-constant, and unary parity envelope",
-                operation, @"h14.outside-parity-envelope");
+        } else if (!parityPlan(operation, target.generation, &plan)) {
+            return reject(diagnostics, [NSString stringWithFormat:
+                @"%@ supports only the decoded fp16 elementwise, scalar-constant, and unary parity envelope",
+                target.name], operation, code(target, @"outside-parity-envelope"));
         }
 
         const BOOL convolutionProgram = convWeights != nil;
@@ -901,22 +985,29 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
                 : (normalization
                     ? ane::h14::encodeNormParity(normOperation, normShape)
                     : (plan.unary
-                        ? ane::h14::encodeElementwise(plan.unaryOperation,
-                                                      plan.shape)
-                        : ane::h14::encodeElementwise(plan.binaryOperation,
-                            plan.shape, plan.operand, plan.scalarConstant,
-                            plan.scalarBits)));
+                        ? ane::h14::encodeElementwise(target.generation,
+                            plan.unaryOperation, plan.shape)
+                        : ane::h14::encodeElementwise(target.generation,
+                            plan.binaryOperation, plan.shape, plan.operand,
+                            plan.scalarConstant, plan.scalarBits)));
         } catch (const std::exception &exception) {
             return reject(diagnostics,
-                [NSString stringWithUTF8String:exception.what()], operation);
+                [NSString stringWithUTF8String:exception.what()], operation,
+                unsupported);
         }
         if (program.inputs.size() != inputCount)
-            return reject(diagnostics, @"H14 encoder returned unexpected inputs",
-                          operation);
+            return reject(diagnostics, [NSString stringWithFormat:
+                @"%@ encoder returned unexpected inputs", target.name],
+                operation, unsupported);
         NSData *payload = nil;
         try {
             if (hwx) {
-                payload = encodeHWX(program, error);
+                NSMutableArray<NSString *> *names = [NSMutableArray array];
+                [names addObject:operation.operands[@"x"].value.name];
+                if (inputCount == 2)
+                    [names addObject:operation.operands[@"y"].value.name];
+                [names addObject:operation.results[0].name];
+                payload = encodeHWX(program, target.architecture, names, error);
                 if (!payload) return NO;
             } else {
                 std::vector<std::uint8_t> anec = ane::h14::encodeANEC(program);
@@ -924,7 +1015,8 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
             }
         } catch (const std::exception &exception) {
             return reject(diagnostics,
-                [NSString stringWithUTF8String:exception.what()], operation);
+                [NSString stringWithUTF8String:exception.what()], operation,
+                unsupported);
         }
 
         NSMutableArray<ANEGraphValue *> *inputValues = [NSMutableArray array];
@@ -957,7 +1049,8 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
             @"bytes": @(payload.length), @"taskDescriptors": @(program.taskCount),
             @"encoder": convolutionProgram ? @"apple-parity-conv"
                 : (matvec ? @"apple-parity-matvec"
-                : (normalization ? @"apple-parity-norm" : @"h14-oracle-parity")),
+                : (normalization ? @"apple-parity-norm"
+                : [target.prefix stringByAppendingString:@"-oracle-parity"])),
             @"operation": operation.operationName, @"inputs": inputRecords,
             @"constantInputs": @{}, @"outputs": @[outputRecord],
             @"constantOffset": @(program.constantOffsetBytes),
@@ -1026,7 +1119,8 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
             }
             combined = ane::h14::composePrograms(chainPrograms);
             if (hwx) {
-                combinedPayload = encodeHWX(combined, error);
+                combinedPayload = encodeHWX(combined, target.architecture, @[],
+                                            error);
                 if (!combinedPayload) return NO;
             } else {
                 std::vector<std::uint8_t> anec = ane::h14::encodeANEC(combined);
@@ -1073,8 +1167,9 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
         [dispatchPlan addObject:@0];
     }
     NSMutableDictionary *manifest = [@{
-        @"schema": @"mil-hwxc.h14-anec-package.v1",
-        @"target": @"H14", @"artifactFormat": format,
+        @"schema": [NSString stringWithFormat:@"mil-hwxc.%@-anec-package.v1",
+            target.prefix],
+        @"target": target.name, @"artifactFormat": format,
         @"programs": programRecords, @"dispatchPlan": dispatchPlan,
         @"intermediates": intermediates, @"tensors": tensors,
     } mutableCopy];
@@ -1092,9 +1187,11 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
                                                          error:error];
         if (!existing) return NO;
         if (existing.count != 0) {
-            if (error) *error = [NSError errorWithDomain:@"dev.maderix.H14"
+            if (error) *error = [NSError errorWithDomain:
+                [@"dev.maderix." stringByAppendingString:target.name]
                 code:1 userInfo:@{NSLocalizedDescriptionKey:
-                    @"H14 output directory must be empty"}];
+                    [NSString stringWithFormat:@"%@ output directory must be empty",
+                        target.name]}];
             return NO;
         }
     } else if (![manager createDirectoryAtURL:directory

@@ -445,7 +445,7 @@ def check_chain_package(root):
 
 
 def main():
-    elementwise = selected_oracles()
+    elementwise = selected_oracles("h14")
     matvec = selected_matvec_oracles()
     probe = grid_probe_oracles()
     norm = norm_oracles()

@@ -62,6 +62,10 @@ typedef NS_ENUM(NSUInteger, HWXProgramDescriptorLayout) {
 /// 0x858, which Apple sets to the input surface byte count for the three-task
 /// layer_norm form; parity copies the decoded value without allocating for it.
 @property(nonatomic) uint32_t h14ScratchDescriptorWord;
+/// H17 and H18 text-constant objects only: the kernel table (LUT and scalar
+/// operands) Apple writes to its own __KERN_0 segment right after __TEXT,
+/// with that address as the resource slot after the surfaces. Nil for none.
+@property(nonatomic, copy, nullable) NSData *kernelTable;
 - (instancetype)initWithTaskCount:(NSUInteger)taskCount
                        recordCount:(NSUInteger)recordCount
                         formatCode:(uint32_t)formatCode
@@ -81,10 +85,15 @@ typedef NS_ENUM(NSUInteger, HWXProgramDescriptorLayout) {
                   descriptorLayout:(HWXProgramDescriptorLayout)descriptorLayout;
 @end
 
+/// The Mach-O CPU subtype of each generation's HWX. H17 and H18 keep
+/// constants in __TEXT/__const like H13 and H14 and use the 0x8a0-byte
+/// program descriptor of the H16G layout.
 typedef NS_ENUM(NSUInteger, HWXObjectArchitecture) {
     HWXObjectArchitectureH13 = 4,
     HWXObjectArchitectureH14 = 5,
     HWXObjectArchitectureH16G = 7,
+    HWXObjectArchitectureH17 = 9,
+    HWXObjectArchitectureH18 = 10,
 };
 
 @interface HWXObjectWriter : NSObject

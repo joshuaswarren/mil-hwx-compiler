@@ -58,7 +58,15 @@ Each rung adds something the rung below cannot supply:
 4. **Device execution with valid inputs.** The hardware accepts the object and computes the tested result — for the exercised shape, data type, operation, and runtime only.
 5. **Numerical qualification against a higher-precision reference**, with recorded tolerances, host, operating-system build, and compiler revision.
 
-This repository is at rung 3 for H13 and H14. Rungs 4 and 5 are reached for H16G on an M4 and recorded in the [verification guide](../../docs/VERIFICATION.md). **Evidence: high as a status statement.**
+This repository is at rung 3 for H13 and H14, and for the H17 and H18 elementwise targets described below. Rungs 4 and 5 are reached for H16G on an M4 and recorded in the [verification guide](../../docs/VERIFICATION.md). **Evidence: high as a status statement.**
+
+## H17 and H18 targets
+
+Apple's compiler on one M1 Ultra host (macOS 26.6.2) emits `h15`, `h16`, `h17` and `h18` objects with Mach-O CPU subtypes 6, 7, 9 and 10; `h19` fails. All four keep the H14 task framing: an aligned stream behind a 16-byte zero prefix, made of packed register records. H15 keeps the 8-word header; H16, H17 and H18 carry 9 header words and move every block except `common` above 0x4000. `research/oracles/h15` through `h18` hold 316 decoded records each (259 accepted, 57 rejected, the same split as the H14 campaign for the same MIL). **Evidence: high for the decoded records; medium for the block names, which follow the [reference parser](https://github.com/freedomtan/coreml_to_ane_hwx/blob/ce54664e787976b646c450ceabed1731b506a4cd/hwx_dump/ane_hwx_regs.h).**
+
+`--target H17` and `--target H18` reproduce the 165 decoded elementwise, unary and scalar-constant points of each generation as HWX. `make test-h17-parity` and `make test-h18-parity` compile every point and require every task word, every nonzero program-descriptor word, the tensor descriptors, and the SHA-256 of both `__TEXT/__const` and the `__KERN_0` kernel table to equal the oracle. They also require named refusals (`h17.outside-parity-envelope`, `h17.unsupported-format`) for neighbouring shapes, other scalar constants, and the matmul, convolution and normalization families, which have no H17 or H18 template. Three layout facts come from the decoded objects, not from a formula: H16 to H18 move the 128-byte kernel table that H14 keeps in `__TEXT/__const` into a `__KERN_0` segment after `__TEXT` (byte-identical to the H14 table in all 33 cases that read one), add its address as the last resource slot, and lay surfaces out in ascending MIL-name order. **Evidence: high for the decoded points; the name-order rule rests on six naming probes.**
+
+Byte parity is not device execution. No H17 or H18 object from this repository has run on an A18, M5 or A19 ANE, and no Linux runtime can load one yet. The matvec family, the batched (`N > 1`) broadcast forms, and every H15 and H16 program stay outside the compiler: their oracles are decoded, but no target emits them.
 
 ## Rules this method depends on
 
