@@ -232,3 +232,7 @@ Cover any new envelope with a parity case.
 
 MIT.
 See [LICENSE](LICENSE).
+
+## Contributors
+
+Everyone credited so far: [CONTRIBUTORS.md](CONTRIBUTORS.md).
