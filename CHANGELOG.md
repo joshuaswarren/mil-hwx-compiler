@@ -2,9 +2,18 @@
 
 One entry per day the compiler changes. Newest first. Releases are tagged on GitHub.
 
-## Unreleased
+## 0.3.3 (2026-11-13)
+
+New since 0.3.2:
 
 - Fix: H17 and H18 objects now number the task stream's surface slots the way Apple's compiler does. Apple lays the surfaces out in ascending MIL-name order and renumbers every stream record to its surface's new position; the encoder sorted the surfaces but kept the template's numbering, which only matches an output named between its inputs (for one-input programs: an input named after its output). Before, `add(x, y)` named `z`, or `relu(y)` named `x`, compiled to an object whose stream wrote into an input. The parity gate now also compares eleven reordered-name oracles decoded from Apple's compiler on H17 and H18: every position of the input and output names, a broadcast operand, names whose text and numeric order differ (`x10`, `x2`) and upper against lower case. Apple's compiler orders names by plain text. `add(x = a, y = a)` is refused (`outside-parity-envelope`): Apple lays that out as one surface. `pow` and `real_div` stay refused; Apple's objects for them renumber a two-task stream with a slot 9 kernel. Matmul, convolution and normalization are still refused on H17 and H18, so no other template carries the numbering.
+
+## 0.3.2 (2026-11-02)
+
+Contributor maintenance and documentation only. Compiler sources, templates and runtime code are unchanged from 0.3.1.
+
+- A generated contributor registry (`CONTRIBUTORS.md`) for linked GitHub commit and merged-PR authors, with weekly upkeep that opens a pull request only when the registry changes (PR #33).
+- The README links the contributor registry and the projects ecosystem index (PRs #33, #34).
 
 ## 0.3.1 (2026-10-25)
 
