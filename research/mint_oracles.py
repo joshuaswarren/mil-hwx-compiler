@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import hashlib
+import itertools
 import json
 import math
 import os
@@ -100,6 +101,64 @@ def binary_runtime(operation: str, shape: tuple[int, ...]) -> dict[str, Any]:
         f"{kind} x, {kind} z",
         [f'{kind} y = {operation}(x = x, y = z)[name = string("y")];'], "y")
     return case(name, "binary_runtime", {"operation": operation, "shape": shape}, mil)
+
+
+def binary_names(first: str, second: str, result: str) -> dict[str, Any]:
+    """One add whose surfaces carry the given MIL names. Apple sorts the
+    surfaces by name and numbers the task stream's slots to match."""
+    kind = tensor_type((1, 128, 1, 1))
+    mil = program(
+        f"{kind} {first}, {kind} {second}",
+        [f'{kind} {result} = add(x = {first}, y = {second})[name = string("{result}")];'],
+        result)
+    return case(f"binary_add_names_{first}{second}_{result}", "binary_names",
+                {"operation": "add", "shape": (1, 128, 1, 1), "names": [first, second, result]}, mil)
+
+
+def name_edge(label: str, operation: str, inputs: list[tuple[str, tuple[int, ...]]],
+              operands: tuple[str, str], result: str) -> dict[str, Any]:
+    """One binary operation over named runtime inputs, for the name-order
+    cases the plain add campaign cannot show: a slot-9 operation, a
+    broadcast operand, one tensor used twice, names whose text order and
+    numeric order differ, and upper case against lower case."""
+    out_shape = tuple(max(dim) for dim in zip(*(shape for _, shape in inputs)))
+    arguments = ", ".join(f"{tensor_type(shape)} {name}" for name, shape in inputs)
+    call = f"{operation}(x = {operands[0]}, y = {operands[1]})"
+    mil = program(arguments, [
+        f'{tensor_type(out_shape)} {result} = {call}[name = string("{result}")];'], result)
+    return case(f"name_edge_{label}", "name_edge", {
+        "operation": operation, "shape": inputs[0][1], "output_shape": out_shape,
+        "names": [name for name, _ in inputs] + [result], "operands": list(operands)}, mil)
+
+
+def name_edges() -> list[dict[str, Any]]:
+    channels, spatial = (1, 64, 1, 1), (1, 64, 16, 16)
+    return [
+        name_edge("pow_xy_z", "pow", [("x", channels), ("y", channels)], ("x", "y"), "z"),
+        name_edge("real_div_xy_z", "real_div", [("x", channels), ("y", channels)], ("x", "y"), "z"),
+        name_edge("add_bcast_xy_z", "add", [("x", spatial), ("y", channels)], ("x", "y"), "z"),
+        name_edge("add_twice_a_b", "add", [("a", channels)], ("a", "a"), "b"),
+        name_edge("add_x10_x2_y", "add", [("x10", channels), ("x2", channels)], ("x10", "x2"), "y"),
+        name_edge("add_Ba_c", "add", [("B", channels), ("a", channels)], ("B", "a"), "c"),
+    ]
+
+
+def unary_names(operation: str, source: str, result: str) -> dict[str, Any]:
+    """One unary or scalar-constant operation whose input sorts after its
+    output, the reverse of every decoded one-input oracle."""
+    kind = tensor_type((1, 64, 1, 1))
+    if operation == "add_scalar":
+        constant = 'fp16 z = const()[name = string("z"), val = fp16(0x1p-1)];'
+        call = f"add(x = {source}, y = z)"
+        body = [constant]
+    else:
+        attributes = ', mode = string("EXACT")' if operation == "gelu" else ""
+        call = f"{operation}(x = {source}{attributes})"
+        body = []
+    body.append(f'{kind} {result} = {call}[name = string("{result}")];')
+    return case(f"{operation}_names_{source}_{result}", "unary_names",
+                {"operation": operation, "shape": (1, 64, 1, 1), "names": [source, result]},
+                program(f"{kind} {source}", body, result))
 
 
 def binary_constant(operation: str, channels: int, storage: str) -> dict[str, Any]:
@@ -661,6 +720,11 @@ def campaign() -> list[dict[str, Any]]:
     shapes += [(1, 64, 8, 8), (1, 128, 16, 16), (1, 3, 224, 224)]
     for operation in ("add", "mul", "maximum", "minimum", "sub", "real_div", "pow"):
         cases.extend(binary_runtime(operation, shape) for shape in shapes)
+    cases.extend(binary_names(*names) for names in itertools.permutations("xyz")
+                 if names != ("x", "z", "y"))
+    cases.extend(name_edges())
+    cases.extend(unary_names(operation, "y", "x")
+                 for operation in ("relu", "gelu", "add_scalar"))
     cases.extend(unary("abs", shape[1]) for shape in shapes[:7])
     for operation in ("add", "mul", "maximum", "minimum", "sub", "real_div"):
         for channels in (64, 512):

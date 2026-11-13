@@ -8,6 +8,7 @@
 #import "HWXObjectWriter.h"
 #include "H14Program.h"
 
+#include <cstring>
 #include <cmath>
 #include <cstdlib>
 #include <exception>
@@ -310,14 +311,56 @@ static HWXObjectBinding *objectBinding(const ane::h14::TensorLayout &layout,
         batchStrideBytes:batchStride storageByteLength:storageBytes];
 }
 
+/// Rewrites the surface BAR slots of a one- or two-input task stream. The
+/// template stream carries the numbering of the decoded oracles: the first
+/// input on slot 6, the output on 7 and the second input on 8. Apple's
+/// compiler lays the surfaces out in name order and renumbers every record
+/// to its surface's new position, so `slotMap[k]` is the new slot of the
+/// surface the template put on slot 6 + k. Other slots (constants, kernel
+/// tables) stay where they are.
+static std::vector<std::uint8_t> renumberSurfaceSlots(
+    std::vector<std::uint8_t> stream, const std::vector<std::uint32_t> &slotMap) {
+    auto word = [&](size_t at) {
+        std::uint32_t value;
+        std::memcpy(&value, &stream[at], 4);
+        return value;
+    };
+    size_t at = 16;
+    while (at + 4 <= stream.size()) {
+        std::uint32_t words = (word(at) >> 16) & 0x7ff;
+        if (!words) { at += 16; continue; }
+        size_t end = at + 4 * (size_t)words;
+        if (words < 9 || end > stream.size()) break;
+        size_t record = at + 4 * ((word(at + 32) & 3) == 3 ? 10 : 9);
+        while (record < end) {
+            std::uint32_t header = word(record);
+            size_t headerAt = record;
+            record += 4;
+            if (header & (1u << 31)) {
+                record += 4 * (1 + (size_t)__builtin_popcount((header >> 15) & 0xffff));
+                continue;
+            }
+            record += 4 * (size_t)(((header >> 15) & 0x3f) + 1);
+            if (!(header & (1u << 29))) continue;
+            std::uint32_t slot = (header >> 23) & 0x3f;
+            if (slot < 6 || slot >= 6 + slotMap.size()) continue;
+            header = (header & ~(0x3fu << 23)) | (slotMap[slot - 6] << 23);
+            std::memcpy(&stream[headerAt], &header, 4);
+        }
+        at = (end + 15) & ~(size_t)15;
+    }
+    return stream;
+}
+
 /// `surfaceNames` holds the MIL names of the inputs then the output. Apple's
 /// h17 objects lay their surfaces out in ascending name order (six naming
-/// probes, receipts/2026-10-03-h17-target), which moves the descriptor's
-/// resource slots when a broadcast operand is smaller than the result, so
-/// H17 and H18 sort by name. H14 keeps input-then-output order.
+/// probes, receipts/2026-10-03-h17-target) and number the task stream's
+/// slots to match, so H17 and H18 sort by name. H14 keeps input-then-output
+/// order.
 static NSData *encodeHWX(const ane::h14::Program &program,
                          HWXObjectArchitecture architecture,
                          NSArray<NSString *> *surfaceNames, NSError **error) {
+    std::vector<std::uint8_t> taskStream = program.taskStream;
     NSMutableArray<HWXObjectBinding *> *bindings = [NSMutableArray array];
     for (NSUInteger index = 0; index < program.inputs.size(); ++index)
         [bindings addObject:objectBinding(program.inputs[index],
@@ -343,9 +386,20 @@ static NSData *encodeHWX(const ane::h14::Program &program,
         for (NSNumber *index in order)
             [sorted addObject:bindings[index.unsignedIntegerValue]];
         bindings = sorted;
+        const NSUInteger inputCount = program.inputs.size();
+        if (inputCount == 1 || inputCount == 2) {
+            NSUInteger position[3] = {0, 0, 0};
+            for (NSUInteger place = 0; place < order.count; ++place)
+                position[order[place].unsignedIntegerValue] = place;
+            std::vector<std::uint32_t> slotMap = {
+                (std::uint32_t)(6 + position[0]),
+                (std::uint32_t)(6 + position[inputCount])};
+            if (inputCount == 2)
+                slotMap.push_back((std::uint32_t)(6 + position[1]));
+            taskStream = renumberSurfaceSlots(taskStream, slotMap);
+        }
     }
-    NSData *task = [NSData dataWithBytes:program.taskStream.data()
-                                  length:program.taskStream.size()];
+    NSData *task = [NSData dataWithBytes:taskStream.data() length:taskStream.size()];
     NSData *constants = [NSData dataWithBytes:program.constants.data()
                                        length:program.constants.size()];
     // firstTaskByteLength stays zero: the descriptor records the whole text
@@ -1089,6 +1143,12 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
         NSData *payload = nil;
         try {
             if (hwx) {
+                if (inputCount == 2 && target.architecture != HWXObjectArchitectureH14 &&
+                    operation.operands[@"x"].value == operation.operands[@"y"].value)
+                    return reject(diagnostics, [NSString stringWithFormat:
+                        @"%@ lays one tensor used for both operands out as a single surface, a form no decoded template covers",
+                        target.name], operation,
+                        code(target, @"outside-parity-envelope"));
                 NSMutableArray<NSString *> *names = [NSMutableArray array];
                 [names addObject:operation.operands[@"x"].value.name];
                 if (inputCount == 2)
