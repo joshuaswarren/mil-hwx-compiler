@@ -113,6 +113,7 @@ class ScriptedAdapter:
         self.device = 0
         self.freed = 0
         self.sent = []
+        self.payloads = []
         self.read = []
         self.exec_calls = 0
         self.src_sizes = src_sizes
@@ -135,6 +136,7 @@ class ScriptedAdapter:
 
     def _send(self, handle, buffer, index):
         self.sent.append(index)
+        self.payloads.append(bytes(buffer))
 
     def _read(self, handle, buffer, index):
         self.read.append(index)
@@ -227,6 +229,29 @@ def test_prepared_program_run_transfer_read_close():
     program.close()
     program.close()  # idempotent
     assert adapter.freed == 1
+
+def test_send_surfaces_sends_the_given_bytes_without_staging_them():
+    adapter = ScriptedAdapter(src_sizes=[4, 4], dst_sizes=[8])
+    program = h13_run_linux.PreparedProgram(adapter, b"anec", [4 * b"a", 4 * b"b"], [8])
+
+    for bad in ([4 * b"X"], [4 * b"X", b"yy"]):
+        try:
+            program.send_surfaces(bad)
+        except RuntimeError as error:
+            assert "input surfaces" in str(error) or "prepared buffer is 4" in str(error)
+        else:
+            raise AssertionError("a wrong surface set was accepted")
+    assert adapter.sent == []  # a refused set never reaches a transfer, not even its first surface
+
+    program.send_surfaces([4 * b"X", 4 * b"Y"])
+    assert adapter.sent == [0, 1]
+    assert adapter.payloads == [4 * b"X", 4 * b"Y"]
+
+    adapter.payloads.clear()
+    program.transfer_in()  # the prepared buffers still hold what they held before
+    assert adapter.payloads == [4 * b"a", 4 * b"b"]
+    program.close()
+
 
 
 class Closable:

@@ -160,8 +160,7 @@ class PreparedProgram:
             _close_all([self], sys.exc_info()[1])
             raise
 
-    def refill(self, inputs):
-        """Refresh the prepared input buffers with newly composed surfaces."""
+    def _check_surfaces(self, inputs):
         if len(inputs) != len(self.input_buffers):
             raise RuntimeError(
                 f"program takes {len(self.input_buffers)} input surfaces, got {len(inputs)}")
@@ -170,11 +169,26 @@ class PreparedProgram:
                 raise RuntimeError(
                     f"input {index} surface is {len(data)} bytes, "
                     f"prepared buffer is {len(buffer)}")
+
+    def refill(self, inputs):
+        """Refresh the prepared input buffers with newly composed surfaces."""
+        self._check_surfaces(inputs)
+        for buffer, data in zip(self.input_buffers, inputs):
             ctypes.memmove(buffer, data, len(data))
 
     def transfer_in(self):
         for index, buffer in enumerate(self.input_buffers):
             self.adapter._send(self.handle, buffer, index)
+
+    def send_surfaces(self, inputs):
+        """Send newly composed surfaces without staging them in the prepared
+        buffers: libane's send copies the bytes into the device mapping, so
+        `refill` plus `transfer_in` copies every surface twice. The prepared
+        buffers keep their old contents; use `refill` first when a later
+        `transfer_in` must send these surfaces."""
+        self._check_surfaces(inputs)
+        for index, data in enumerate(inputs):
+            self.adapter._send(self.handle, data, index)
 
     def submit(self):
         result = self.adapter._exec(self.handle)
