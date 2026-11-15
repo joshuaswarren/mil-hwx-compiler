@@ -253,6 +253,71 @@ def test_send_surfaces_sends_the_given_bytes_without_staging_them():
     program.close()
 
 
+def test_send_surface_sends_one_composed_surface_without_staging_it():
+    adapter = ScriptedAdapter(src_sizes=[4, 4], dst_sizes=[8])
+    program = h13_run_linux.PreparedProgram(adapter, b"anec", [4 * b"a", 4 * b"b"], [8])
+
+    for bad in ((5, 4 * b"X"), (0, b"yy")):
+        try:
+            program.send_surface(*bad)
+        except RuntimeError as error:
+            assert "input surface" in str(error) or "prepared buffer is 4" in str(error)
+        else:
+            raise AssertionError("a wrong surface was accepted")
+    assert adapter.sent == []  # a wrong surface never reaches a transfer
+
+    program.send_surface(1, 4 * b"Y")
+    assert adapter.sent == [1]
+    assert adapter.payloads == [4 * b"Y"]
+
+    adapter.payloads.clear()
+    program.transfer_in()  # the prepared buffer still holds its original surface
+    assert adapter.payloads == [4 * b"a", 4 * b"b"]
+    program.close()
+
+
+def test_stage_surface_stages_into_the_prepared_buffer_then_sends_it():
+    adapter = ScriptedAdapter(src_sizes=[4], dst_sizes=[8])
+    program = h13_run_linux.PreparedProgram(adapter, b"anec", [4 * b"a"], [8])
+
+    try:
+        program.stage_surface(0, b"toolong")
+    except RuntimeError as error:
+        assert "prepared buffer is 4" in str(error)
+    else:
+        raise AssertionError("a wrong surface was accepted")
+    assert adapter.sent == []
+
+    program.stage_surface(0, 4 * b"Z")
+    assert adapter.sent == [0]
+    assert adapter.payloads == [4 * b"Z"]
+
+    adapter.payloads.clear()
+    program.transfer_in()  # the prepared buffer was staged, so it sends the new bytes
+    assert adapter.payloads == [4 * b"Z"]
+    program.close()
+
+
+def test_read_surface_reads_one_output_into_its_buffer_and_returns_it():
+    adapter = ScriptedAdapter(src_sizes=[4], dst_sizes=[4])
+    program = h13_run_linux.PreparedProgram(adapter, b"anec", [4 * b"a"], [4])
+
+    try:
+        program.read_surface(1)
+    except RuntimeError as error:
+        assert "output surface" in str(error)
+    else:
+        raise AssertionError("an out-of-range output was accepted")
+    assert adapter.read == []
+
+    data = program.read_surface(0)
+    assert data == b"A\x00\x00\x00"  # the scripted readback writes 0x41 into byte 0
+    assert adapter.read == [0]
+
+    program.read_surface(0)  # a second read of the same surface is just another read
+    assert adapter.read == [0, 0]
+    program.close()
+
 
 class Closable:
     def __init__(self, fail=False):

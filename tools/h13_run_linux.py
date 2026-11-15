@@ -190,6 +190,44 @@ class PreparedProgram:
         for index, data in enumerate(inputs):
             self.adapter._send(self.handle, data, index)
 
+    def send_surface(self, index, data):
+        """Send one composed input surface straight to libane: the singular of
+        `send_surfaces`, for callers that update a subset of the surfaces (the
+        decode state worker sends everything but the chained states). The
+        prepared buffers keep their old contents."""
+        self._check_surface(index, data)
+        self.adapter._send(self.handle, data, index)
+
+    def stage_surface(self, index, data):
+        """Stage one composed input surface in its prepared buffer and send that
+        buffer: the device gets the surface now and the prepared buffer stays
+        fresh, so a later `transfer_in` still sends these bytes."""
+        self._check_surface(index, data)
+        ctypes.memmove(self.input_buffers[index], data, len(data))
+        self.adapter._send(self.handle, self.input_buffers[index], index)
+
+    def read_surface(self, index):
+        """Read one output surface into its prepared buffer and return the bytes:
+        the single step of `transfer_out`, so a caller can leave the other
+        outputs unread (the decode state worker defers the state surfaces)."""
+        if not 0 <= index < len(self.output_buffers):
+            raise RuntimeError(
+                f"program has {len(self.output_buffers)} output surfaces, "
+                f"asked to read surface {index}")
+        buffer = self.output_buffers[index]
+        self.adapter._read(self.handle, buffer, index)
+        return buffer.raw
+
+    def _check_surface(self, index, data):
+        if not 0 <= index < len(self.input_buffers):
+            raise RuntimeError(
+                f"program takes {len(self.input_buffers)} input surfaces, "
+                f"asked to send surface {index}")
+        if len(data) != len(self.input_buffers[index]):
+            raise RuntimeError(
+                f"input {index} surface is {len(data)} bytes, "
+                f"prepared buffer is {len(self.input_buffers[index])}")
+
     def submit(self):
         result = self.adapter._exec(self.handle)
         if result:
