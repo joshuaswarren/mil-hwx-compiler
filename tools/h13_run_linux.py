@@ -199,12 +199,14 @@ class PreparedProgram:
         self.adapter._send(self.handle, data, index)
 
     def stage_surface(self, index, data):
-        """Stage one composed input surface in its prepared buffer and send that
-        buffer: the device gets the surface now and the prepared buffer stays
-        fresh, so a later `transfer_in` still sends these bytes."""
+        """Send one composed input surface and stage it in the prepared buffer:
+        libane's send copies the bytes into the device mapping, so sending
+        first leaves the prepared buffer untouched when the send fails, and
+        matching what the device got when it succeeds, for a later
+        `transfer_in`."""
         self._check_surface(index, data)
+        self.adapter._send(self.handle, data, index)
         ctypes.memmove(self.input_buffers[index], data, len(data))
-        self.adapter._send(self.handle, self.input_buffers[index], index)
 
     def read_surface(self, index):
         """Read one output surface into its prepared buffer and return the bytes:

@@ -276,7 +276,42 @@ def test_send_surface_sends_one_composed_surface_without_staging_it():
     program.close()
 
 
-def test_stage_surface_stages_into_the_prepared_buffer_then_sends_it():
+class FlakySendAdapter(ScriptedAdapter):
+    """Sends raise while fail is set, so a stage can be interrupted mid-way."""
+
+    def __init__(self, src_sizes, dst_sizes):
+        super().__init__(src_sizes, dst_sizes)
+        self.fail = True
+
+    def _send(self, handle, buffer, index):
+        if self.fail:
+            raise RuntimeError("send failed")
+        super()._send(handle, buffer, index)
+
+
+def test_stage_surface_failure_leaves_the_prepared_buffer_unchanged():
+    """libane's send copies the bytes into the device mapping, so stage sends
+    before it touches the prepared buffer: when the send fails, the buffer must
+    still hold what the device really has."""
+    adapter = FlakySendAdapter(src_sizes=[4], dst_sizes=[8])
+    program = h13_run_linux.PreparedProgram(adapter, b"anec", [4 * b"a"], [8])
+
+    try:
+        program.stage_surface(0, 4 * b"Z")
+    except RuntimeError as error:
+        assert "send failed" in str(error)
+    else:
+        raise AssertionError("a failed send was swallowed")
+    assert program.input_buffers[0].raw == 4 * b"a"  # the device never got b"Z"
+
+    adapter.fail = False
+    adapter.payloads.clear()
+    program.transfer_in()  # a later whole-set send sends the old surface, not b"Z"
+    assert adapter.payloads == [4 * b"a"]
+    program.close()
+
+
+def test_stage_surface_sends_the_surface_then_stages_it_in_the_prepared_buffer():
     adapter = ScriptedAdapter(src_sizes=[4], dst_sizes=[8])
     program = h13_run_linux.PreparedProgram(adapter, b"anec", [4 * b"a"], [8])
 
