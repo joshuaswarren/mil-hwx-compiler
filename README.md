@@ -122,6 +122,40 @@ That path gives you an H16G HWX object:
 That writes `build/conv-hwx/program-0.hwx`.
 H16G is the default target, so the flag is optional there.
 
+## Reproducible M6 H18 add pack
+
+The y,x->z add program the M6 lab runs (receipts 2026-11-19: 64/64 exact on
+20/20 calls vs CPU fp16, zero DART faults) is built from checked-in files
+only. Two steps, deterministic:
+
+```sh
+./build/mil-hwxc --target H18 \
+  --mil tests/fixtures/h18_addyxz.mil \
+  --model-root /tmp/m6-add-pack \
+  --output build/h18-addyxz
+python3 tools/mkapple.py tests/fixtures/h18_v2_tmpl.bin \
+  build/h18-addyxz/program-0.hwx -o build/h18-addyxz-pack.bin
+```
+
+Expected whole-pack sha256:
+
+```
+feedd382a2209c776f1ce5395e6cde8af92217f3733f872462474483941be0bd
+```
+
+`tools/mkapple.py` splices the 316-byte task stream of the compiled HWX into
+section id 3 of the ANEP v1 template and refuses templates without the
+`ANEP` magic. The pack test enforces the hash end to end:
+
+```sh
+python3 tests/test_h18_pack_repro.py build/mil-hwxc
+```
+
+Do not substitute another packer: the template header and section table are
+part of the hash, and a packer that leaves them zeroed produces a file the
+M6 firmware rejects (`h18-addyxz-63f0cdc.bin`, sha256 `31639e47...`, zeroed
+ANEP header and blank stream).
+
 ## Usage
 
 ```text
