@@ -319,7 +319,8 @@ static HWXObjectBinding *objectBinding(const ane::h14::TensorLayout &layout,
 /// surface the template put on slot 6 + k. Other slots (constants, kernel
 /// tables) stay where they are.
 static std::vector<std::uint8_t> renumberSurfaceSlots(
-    std::vector<std::uint8_t> stream, const std::vector<std::uint32_t> &slotMap) {
+    std::vector<std::uint8_t> stream, const std::vector<std::uint32_t> &slotMap,
+    bool h18SteContexts = false) {
     auto word = [&](size_t at) {
         std::uint32_t value;
         std::memcpy(&value, &stream[at], 4);
@@ -343,6 +344,20 @@ static std::vector<std::uint8_t> renumberSurfaceSlots(
             record += 4 * (size_t)(((header >> 15) & 0x3f) + 1);
             if (!(header & (1u << 29))) continue;
             std::uint32_t slot = (header >> 23) & 0x3f;
+            // The +0x100/+0x118 records of the M6-proven add family carry
+            // the DART STE contexts for the output DMA, not surface slots
+            // (2026-11-19 receipts: renumbered pair rejected on M6, 0/64
+            // with SID 0 write STE invalid; driver pair 5/7 accepted, 64/64
+            // x20 exact vs CPU fp16). Fired only on the exact base headers
+            // of that family so every other stream keeps Apple parity.
+            if (h18SteContexts &&
+                ((headerAt == 0x100 && header == 0x23009346u) ||
+                 (headerAt == 0x118 && header == 0x23809444u))) {
+                header = (header & ~(0x3fu << 23)) |
+                         ((headerAt == 0x100 ? 5u : 7u) << 23);
+                std::memcpy(&stream[headerAt], &header, 4);
+                continue;
+            }
             if (slot < 6 || slot >= 6 + slotMap.size()) continue;
             header = (header & ~(0x3fu << 23)) | (slotMap[slot - 6] << 23);
             std::memcpy(&stream[headerAt], &header, 4);
@@ -396,7 +411,8 @@ static NSData *encodeHWX(const ane::h14::Program &program,
                 (std::uint32_t)(6 + position[inputCount])};
             if (inputCount == 2)
                 slotMap.push_back((std::uint32_t)(6 + position[1]));
-            taskStream = renumberSurfaceSlots(taskStream, slotMap);
+            taskStream = renumberSurfaceSlots(
+                taskStream, slotMap, architecture == HWXObjectArchitectureH18);
         }
     }
     NSData *task = [NSData dataWithBytes:taskStream.data() length:taskStream.size()];

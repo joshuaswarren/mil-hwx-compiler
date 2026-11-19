@@ -34,6 +34,24 @@ RECORDED = ("program_descriptor", "program_descriptor_words",
             "tensor_descriptors", "constant_section", "kernel_section",
             "task_descriptors")
 
+# The task-stream words at +0x100/+0x118 pick the DART STE contexts for the
+# output DMA and are mirrored into the NC record headers at 0x04d18/0x05110.
+# Apple's macOS captures record macOS-firmware pairs and even vary per case;
+# M6 Linux hardware rejects them (2026-11-19 receipts: 0/64 with SID 0 write
+# STE invalid) and accepts the driver-configured pair 0x22809346/0x23809444
+# (flagswap/addyxz3, 64/64 x20 exact vs CPU fp16, zero faults). Excluded from
+# Apple parity here and pinned to the hardware values by
+# tests/test_h18_yxz_slot_record_words.py.
+STE_RECORD_ADDRESSES = ("0x04d18", "0x05110")
+STE_CANONICAL_HEADER = "STE-CONTEXT"
+
+
+def neutralize_ste_records(task_descriptors):
+    for descriptor in task_descriptors:
+        for record in descriptor.get("records", []):
+            if record.get("address") in STE_RECORD_ADDRESSES:
+                record["header"] = STE_CANONICAL_HEADER
+
 
 def compile_mil(mil, root, name, extra=()):
     path = root / f"{name}.mil"
@@ -60,6 +78,8 @@ def check_oracle(oracle, root):
     parsed = mint_oracles.parse_hwx(path.read_bytes(), PREFIX)
     assert parsed["program_count"] == 1, oracle["case"]
     for key in RECORDED:
+        neutralize_ste_records(parsed["task_descriptors"])
+        neutralize_ste_records(oracle["task_descriptors"])
         assert parsed[key] == oracle[key], f"{oracle['case']}: {key} differs"
     report = io.StringIO()
     with contextlib.redirect_stdout(report):
