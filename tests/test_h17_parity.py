@@ -83,7 +83,7 @@ def scalar(operation, channels, value):
         f'{kind} y = {operation}(x = x, y = z)[name = string("y")];'], "y")
 
 
-def check_refusals(root):
+def check_refusals(root, name_cases):
     """Inputs one step off a decoded point are refused, never interpolated."""
     outside = f"[{PREFIX}.outside-parity-envelope]"
     decoded = {oracle["case"] for oracle in selected_oracles(PREFIX)}
@@ -102,6 +102,7 @@ def check_refusals(root):
         "conv_k1_c256_o512": mint_oracles.convolution(
             1, 256, 512, 1, False)["mil"],
     }
+    cases.update({oracle["case"]: oracle["mil"] for oracle in name_cases})
     for name, mil in cases.items():
         result, output = compile_mil(mil, root, f"refuse-{name}")
         assert result.returncode != 0, f"{name} compiled outside the envelope"
@@ -114,6 +115,24 @@ def check_refusals(root):
     return len(cases) + 1
 
 
+NAME_FAMILIES = ("binary_names", "unary_names", "name_edge")
+# Apple's objects for these differ in structure from the encoder's templates
+# (pow and real_div: two tasks and a slot 9 kernel; add(a, a): one surface),
+# so they must be refused, not matched.
+REFUSED_NAME_CASES = {"name_edge_pow_xy_z", "name_edge_real_div_xy_z",
+                      "name_edge_add_twice_a_b"}
+
+
+def name_oracles():
+    """Operations whose surface names sort in other orders than the decoded
+    x, z, y. Apple numbers the task stream's slots by name position, so a
+    template stream written for one order must be renumbered for the rest."""
+    return [oracle for oracle in
+            (json.loads(path.read_text()) for path in
+             sorted((ROOT / "research/oracles" / PREFIX).glob("*.json")))
+            if oracle["family"] in NAME_FAMILIES]
+
+
 def main():
     oracles = selected_oracles(PREFIX)
     assert len(oracles) == 165, \
@@ -121,11 +140,16 @@ def main():
     families = {oracle["family"] for oracle in oracles}
     with tempfile.TemporaryDirectory(prefix=f"{PREFIX}-parity-") as directory:
         root = Path(directory)
-        for oracle in oracles:
+        named = name_oracles()
+        names = [oracle for oracle in named if oracle["case"] not in REFUSED_NAME_CASES]
+        assert len(names) == 11 and len(named) - len(names) == len(REFUSED_NAME_CASES), \
+            f"expected 11 compared and {len(REFUSED_NAME_CASES)} refused {TARGET} name oracles"
+        for oracle in oracles + names:
             check_oracle(oracle, root)
-        refused = check_refusals(root)
+        refused = check_refusals(root, [oracle for oracle in named
+                                        if oracle["case"] in REFUSED_NAME_CASES])
     print(f"{TARGET} oracle parity: PASS ({len(oracles)} cases over "
-          f"{', '.join(sorted(families))}; {refused} off-point inputs refused)")
+          f"{', '.join(sorted(families))} plus {len(names)} name orders; {refused} off-point inputs refused)")
 
 
 if __name__ == "__main__":

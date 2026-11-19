@@ -4,6 +4,20 @@ One entry per day the compiler changes. Newest first. Releases are tagged on Git
 
 ## Unreleased
 
+- Fix: H17 and H18 objects now number the task stream's surface slots the way Apple's compiler does. Apple lays the surfaces out in ascending MIL-name order and renumbers every stream record to its surface's new position; the encoder sorted the surfaces but kept the template's numbering, which only matches an output named between its inputs (for one-input programs: an input named after its output). Before, `add(x, y)` named `z`, or `relu(y)` named `x`, compiled to an object whose stream wrote into an input. The parity gate now also compares eleven reordered-name oracles decoded from Apple's compiler on H17 and H18: every position of the input and output names, a broadcast operand, names whose text and numeric order differ (`x10`, `x2`) and upper against lower case. Apple's compiler orders names by plain text. `add(x = a, y = a)` is refused (`outside-parity-envelope`): Apple lays that out as one surface. `pow` and `real_div` stay refused; Apple's objects for them renumber a two-task stream with a slot 9 kernel. Matmul, convolution and normalization are still refused on H17 and H18, so no other template carries the numbering.
+
+## 0.3.1 (2026-10-25)
+
+New since 0.3.0:
+
+- H14: two more matmul shapes compile, both decoded from Apple's compiler output: M = 64 with K = 2048, N = 2048 and with K = 4096, N = 2048. Each has two tasks and a 520 byte task stream. The encoder still needs an exact decoded shape and does not interpolate. Before, both shapes failed with `h14.outside-parity-envelope`. The parity gate now covers 722 cases (PR #28).
+
+- Receipt `2026-10-25-int8-gptq-mixed-calibration`: a second GPTQ int8 calibration for the Qwen decode that adds code prompts to prose and multilingual text, with the seals of the H13 and H14 packages. On a 13-inch M1 it passes the technical set (KL 0.000390) and the code set (1.38 times the shipped KL, against 1.60 for the first set). It fails the long-position set at 2.26 times, 10 percent worse than the first set. No run on the other chips yet.
+
+- Receipt `2026-10-24-int8-gptq-qwen38-h13-h14`: the recipe scripts and the seals of the Qwen decode packages whose int8 weights are chosen by GPTQ on captured matmul inputs. KL against the CPU fp32 reference is 0.000397 on a 13-inch M1 and 0.000400 on a 14-inch M2 Max. The gate is 0.000534. Plain int8 gave 0.000547 on the M2 Max. The speed is the same. The packages were not rebuilt from the scripts after the path lines were changed to environment variables.
+
+- Receipt `2026-10-24-weight-formats-apple-compiler-h13-h14`: what Apple's compiler keeps of int8, 4-bit and blocked int8 weights for H13 and H14. A 4-bit table per output row compiles on H13. Tables per group of columns are refused. It gives the device times of six programs on a 13-inch M1 and on an M2 Max. It also records a fused pair of decode programs that compiles for H14 and not for H13. No compiler code changed.
+
 ## 0.3.0 (2026-10-18)
 
 New since 0.2.0:
