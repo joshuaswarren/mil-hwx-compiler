@@ -42,6 +42,11 @@ get their own measured bound before device acceptance; none is defined here.
 
 ## H18 device validation status
 
-Blocked on hardware: the approved H18 runtime (`ane/h18`, ANEP-v1 pack via
-`ane-prog-pack`) needs an M6-class host with a clean ANE window. No device
-run has been attempted under this policy.
+The runtime-path validation pack is staged and hash-pinned
+(`~/scratch/w72/anep-stage/h14-add/ane_h18_prog.bin`, the proven-envelope
+H14 add program); w7B schedules its one guarded `ane/h18` hs_prog run into
+the first clean ANE window. The fused H13 package cannot ride that path:
+the M2-format task stream is a format boundary, not an envelope gap
+(H13 TD leading words vs the zeroed M2 frame). Validating the fused graph
+on H18-class hardware would need an H14-target fused build - pending
+Main's call, no device run has been attempted under this policy.
