@@ -1186,6 +1186,7 @@ struct H13ParityPlan {
     uint16_t scalarBits;
     ane::h13::ElementwiseShape shape;
     NSUInteger elements;
+    NSUInteger slices = 1;
     NSUInteger inputCount;
 };
 
@@ -1269,6 +1270,16 @@ static BOOL parityPlan(ANEGraphOperation *operation,
             candidate.shape = shapes[index];
             candidate.elements = (NSUInteger)shapes[index].channels *
                 shapes[index].height * shapes[index].width;
+            candidate.unary = YES;
+            candidate.inputCount = 1;
+            *plan = candidate;
+            return YES;
+        }
+        if (preferNative && candidate.unaryOperation == ane::h13::UnaryOperation::Silu &&
+            [x.type.shape isEqualToArray:@[@1, @1024]]) {
+            candidate.shape = {512, 1, 1};
+            candidate.elements = 512;
+            candidate.slices = 2;
             candidate.unary = YES;
             candidate.inputCount = 1;
             *plan = candidate;
@@ -3964,6 +3975,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 inputSliceElements = inputPhysicalElements = xElements;
                 outputSliceElements = outputPhysicalElements = oElements;
             } else if (parity) {
+                sliceCount = operationPlan.slices;
                 inputSliceElements = outputSliceElements =
                     inputPhysicalElements = outputPhysicalElements =
                         operationPlan.elements;
@@ -4083,7 +4095,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 } else if (batched) {
                     inputOffset = outputOffset = 0;
                 } else if (parity || broadcast || normalization || convolution) {
-                    outputOffset =
+                    if (parity) inputOffset = sliceIndex * operationPlan.elements;
+                    outputOffset = inputOffset +
                         [[outputBaseOffsets objectForKey:operation] unsignedIntegerValue];
                 } else if (!tiled && !booleanLowered && !linearParity &&
                        !ffnChain && !transposeParity && !sliceParity) {

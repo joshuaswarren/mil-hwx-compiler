@@ -48,6 +48,13 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-silu-envelope-") as directo
             program = manifest["programs"][0]
             assert program["operation"] == op
             assert program["encoder"] == "h13-oracle-parity"
+    manifest = compile_source(root, "silu-ff-width", source("silu", "[1, 1024]"))
+    assert manifest["dispatchPlan"] == [0, 1]
+    for index, program in enumerate(manifest["programs"]):
+        assert program["operation"] == "silu"
+        for port, tensor in ((program["inputs"][0], "x"), (program["outputs"][0], "y")):
+            assert port["slice"] == {"tensor": tensor, "elementOffset": index * 512,
+                                     "elementCount": 512, "physicalElements": 512}
     compile_source(root, "silu-128", source("silu", "[1, 128, 1, 1]"),
                    expected_code="h13.unary-outside-envelope")
 print("h13 silu envelope cli: PASS")

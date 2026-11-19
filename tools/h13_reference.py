@@ -693,6 +693,18 @@ def _conv(value, weight, bias, strides, dilations, pad, pad_type, groups,
     return Tensor("fp16", expected, tuple(results))
 
 
+def _silu(value, result_type):
+    value = _tensor(value, result_type)
+    if value.dtype != "fp16":
+        raise ValueError("silu requires an fp16 tensor")
+    values = []
+    for element in value.values:
+        exponential = math.exp(-abs(element))
+        numerator = element * exponential if element < 0.0 else element
+        values.append(fp16(numerator / (1.0 + exponential)))
+    return Tensor("fp16", value.shape, tuple(values))
+
+
 def _execute(operation, environment, model_root):
     arguments = {name: _resolve(value, environment, model_root)
                  for name, value in operation.arguments.items()}
@@ -710,6 +722,8 @@ def _execute(operation, environment, model_root):
         return _binary(name, arguments["x"], arguments["y"], operation.result_type)
     if name == "relu":
         return _binary("maximum", arguments["x"], 0.0, operation.result_type)
+    if name == "silu":
+        return _silu(arguments["x"], operation.result_type)
     if name == "clip":
         lower = _binary("maximum", arguments["x"], arguments["alpha"], operation.result_type)
         return _binary("minimum", lower, arguments["beta"], operation.result_type)

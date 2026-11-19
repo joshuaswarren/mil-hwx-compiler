@@ -61,6 +61,22 @@ def test_fp16_rounding_and_ops():
         assert output_path.read_bytes() == fp16([1.0, 0.0])
 
 
+def test_silu_dense_fp16():
+    mil = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 8]> x) {
+    tensor<fp16, [1, 8]> y = silu(x = x)[name = string("y")];
+  } -> (y);
+}
+"""
+    inputs = [-65504.0, -8.0, -2.0, -0.0, 0.0, 1.0, 8.0, 65504.0]
+    expected = [-0.0, -0.0026836395263671875, -0.2384033203125,
+                -0.0, 0.0, 0.73095703125, 7.99609375, 65504.0]
+    assert h13_reference.evaluate(mil, Path("."), {"x": fp16(inputs)}) == {
+        "y": fp16(expected)}
+
+
 def test_h13_mul_zero_sign():
     mil = """program(1.3)
 [buildInfo = dict<string, string>({})]
