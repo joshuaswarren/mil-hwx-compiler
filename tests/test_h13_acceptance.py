@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Behavior test for research/h13_acceptance.py, plus the measured H13 SiLU set."""
 import struct
+import json
 import subprocess
 import sys
 import tempfile
@@ -10,9 +11,9 @@ checker = str(Path(__file__).resolve().parents[1] / "research/h13_acceptance.py"
 standalone = Path.home() / "scratch/w72/silu-qualification/H13"
 
 
-def run(got, ref, bound):
-    return subprocess.run([sys.executable, checker, got, ref, str(bound)],
-                          capture_output=True, text=True)
+def run(got, ref, bound, *args):
+    return subprocess.run([sys.executable, checker, str(got), str(ref), str(bound), *args],
+                          capture_output=True, text=True, check=False)
 
 
 def write(path, values):
@@ -42,6 +43,19 @@ def main():
         result = run(str(root / "got.fp16"), str(root / "ref.fp16"), 0.016)
         assert result.returncode == 1, result.stdout + result.stderr
         assert '"nonfinite": 1' in result.stdout, result.stdout
+
+        control = root / "control.fp16"
+        got = root / "got.fp16"
+        ref_path = root / "ref.fp16"
+        write(control, [0.0, 1.0009765625, -2.0, 0.5])
+        write(got, [0.0, 1.001953125, -2.0, 0.5])
+        result = run(got, ref_path, "--control", str(control))
+        assert result.returncode == 1, result.stdout + result.stderr
+        report = json.loads(result.stdout)
+        assert report["abs_bound"] == report["fused_vs_control_max_abs_error"] == 2**-10
+        write(got, [0.0, 1.0, -2.0, 0.5009765625])
+        result = run(got, ref_path, "--control", str(control))
+        assert result.returncode == 0 and json.loads(result.stdout)["abs_bound"] == 2**-10
 
     # Measured evidence: standalone H13 SiLU qualification set, bound 0.016.
     if standalone.exists():
