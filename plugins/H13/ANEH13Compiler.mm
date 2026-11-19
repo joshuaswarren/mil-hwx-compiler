@@ -1869,6 +1869,36 @@ static ANEGraphOperation *singleConsumerOf(
     return consumer;
 }
 
+static ANEGraphOperation *qwenFFOperation(ANEGraphFunction *function,
+                                          NSArray<ANEGraphOperation *> *ops) {
+    if (ops.count != 4 || function.inputs.count != 1 ||
+        function.returnValues.count != 1) return nil;
+    NSArray *vectorShape = @[@1, @1024];
+    NSArray *matrixShape = @[@1024, @1024];
+    ANEGraphValue *x = function.inputs[0];
+    ANEGraphOperation *mul = ops[2];
+    if (!tensor(x, vectorShape) || !tensor(mul.results[0], vectorShape) ||
+        ![mul.operationName isEqualToString:@"mul"] || mul.arguments.count != 2 ||
+        mul.operands[@"x"].value != ops[0].results[0] ||
+        mul.operands[@"y"].value != ops[1].results[0] ||
+        function.returnValues[0] != ops[3].results[0]) return nil;
+    NSArray *names = @[@"gate", @"up", @"down"];
+    NSMutableDictionary *arguments = [@{@"x": valueArgument(x, ops[0].range)} mutableCopy];
+    for (NSUInteger i = 0; i < names.count; ++i) {
+        ANEGraphOperation *linear = ops[i == 2 ? 3 : i];
+        ANEGraphValue *weight = linear.operands[@"weight"].value;
+        if (![linear.operationName isEqualToString:@"linear"] ||
+            linear.arguments.count != 2 || !tensor(linear.results[0], vectorShape) ||
+            linear.operands[@"x"].value != (i == 2 ? mul.results[0] : x) ||
+            !tensor(weight, matrixShape) || !blobBackedConstant(weight)) return nil;
+        arguments[names[i]] = valueArgument(weight, linear.range);
+    }
+    ANEGraphValue *y = function.returnValues[0];
+    ANEGraphValue *result = [[ANEGraphValue alloc] initWithName:y.name type:y.type];
+    return [[ANEGraphOperation alloc] initWithOperationName:@"qwen-ff"
+        results:@[result] arguments:arguments attributes:@{} range:ops[0].range];
+}
+
 /// Matches the captured five-operation FFN chain — matmul → bias add → silu
 /// → matmul → bias add at the d1024 s375 geometry with constant weights and
 /// biases, each intermediate feeding exactly one consumer — and returns the
@@ -2536,6 +2566,22 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         *inputsOut = @[x];
         *manifestOperationOut = name;
         return YES;
+    } else if ([name isEqualToString:@"qwen-ff"]) {
+        std::array<const uint8_t *, 3> weights{};
+        NSUInteger index = 0;
+        for (NSString *key in @[@"gate", @"up", @"down"]) {
+            ANEGraphValue *weight = operation.operands[key].value;
+            NSData *data = resolvedConstants[weight.name];
+            if (!data) {
+                data = [ANEBlobResolver loadConstantForOperation:weight.producer
+                    expectedBytes:1024 * 1024 * 2 modelRoot:modelRoot diagnostics:diagnostics];
+                if (!data) return NO;
+                resolvedConstants[weight.name] = data;
+            }
+            weights[index++] = static_cast<const uint8_t *>(data.bytes);
+        }
+        program = ane::h13::encodeQwenFF(weights);
+        inputs = @[x];
     } else if ([name isEqualToString:@"ffn-chain"]) {
         ANEGraphValue *weight1 = operation.operands[@"weight1"].value;
         ANEGraphValue *bias1 = operation.operands[@"bias1"].value;
@@ -3004,7 +3050,12 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     NSMutableDictionary<NSString *, NSDictionary *> *compositeFolds =
         [NSMutableDictionary dictionary];
     NSUInteger ffnChainSkip = 0;
-    for (ANEGraphOperation *candidate in sourceOperations) {
+    ANEGraphOperation *qwenFF = chainSchedule ? nil : qwenFFOperation(function, sourceOperations);
+    if (qwenFF) {
+        [operations addObject:qwenFF];
+        [manifestValues addObject:qwenFF.results[0]];
+    }
+    for (ANEGraphOperation *candidate in (qwenFF ? @[] : sourceOperations)) {
         if (ffnChainSkip) {
             --ffnChainSkip;
             continue;
@@ -3878,8 +3929,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             BOOL matmul = [operation.operationName isEqualToString:@"matmul"];
             BOOL linearParity =
                 [operation.operationName isEqualToString:@"linear"];
-            BOOL ffnChain =
-                [operation.operationName isEqualToString:@"ffn-chain"];
+            BOOL qwen = [operation.operationName isEqualToString:@"qwen-ff"];
+            BOOL ffnChain = qwen || [operation.operationName isEqualToString:@"ffn-chain"];
             ANEGraphValue *secondOperand = operation.operands[@"y"].value;
             BOOL runtimeWeight = matmul && secondOperand &&
                 !constantValue(secondOperand) &&
@@ -4063,8 +4114,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                                  operation.operands[@"bias"].value.type.shape,
                                  @"constant");
             } else if (ffnChain) {
-                for (NSString *key in @[@"weight1", @"bias1", @"weight2",
-                                        @"bias2"]) {
+                for (NSString *key in (qwen ? @[@"gate", @"up", @"down"]
+                                            : @[@"weight1", @"bias1", @"weight2", @"bias2"])) {
                     ANEGraphValue *constant = operation.operands[key].value;
                     if (constant)
                         recordTensor(tensors, constant, constant.type.shape,
@@ -4208,6 +4259,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                                          : @"apple-parity-batched-matvec")
                         : linearParity
                         ? @"apple-parity-linear"
+                        : qwen
+                        ? @"apple-parity-qwen-ff"
                         : ffnChain
                         ? @"apple-parity-ffn-chain"
                         : transposeParity

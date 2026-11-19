@@ -515,6 +515,7 @@ struct OracleUnaryTask {
 #include "H13ElementwiseConstants.inc"
 #include "H13EncoderUnaryTemplates.inc"
 #include "H13MatvecTemplates.inc"
+#include "H13QwenFFTask.inc"
 
 /// One decoded Apple rank-3 linear program: the geometry, how the bias rides
 /// (absent/uniform folds to a scalar register, distinct halves ride as
@@ -1140,6 +1141,27 @@ std::vector<std::uint8_t> packMatvecWeights(MatmulShape shape,
             "H13 matvec requires columns * reduction fp16 weights");
     return packMatvecInterleave(shape.reduction, shape.columns, shape.rows,
                                 weights, weightBytes);
+}
+
+Program encodeQwenFF(const std::array<const std::uint8_t *, 3> &weights) {
+    constexpr std::size_t matrixBytes = 1024 * 1024 * 2;
+    Program program;
+    program.constants.reserve(3 * matrixBytes);
+    // The projection rooted at the second multiply operand is packed first.
+    for (const auto index : {1u, 0u, 2u}) {
+        auto packed = packMatvecWeights({1, 1024, 1024, false, true, false},
+                                        weights[index], matrixBytes);
+        program.constants.insert(program.constants.end(), packed.begin(), packed.end());
+    }
+    program.inputs = {matvecTensor(5, 1, 1024)};
+    program.output = matvecTensor(4, 1, 1024);
+    program.task = taskBytesFor(kQwenFFTask, std::size(kQwenFFTask));
+    program.firstTaskBytes = 504;
+    program.taskCount = 5;
+    program.constantOffsetBytes = (program.task.size() + 63) & ~std::size_t{63};
+    program.scratchAllocationBytes = 0x10000;
+    program.taskSurfaceChannels = {5, 4, 6, 7};
+    return program;
 }
 
 Program encodeMatmulParity(MatmulShape shape, const std::uint8_t *weights,

@@ -324,7 +324,7 @@ def validate_program(directory, program, tensors):
                           'softmax', 'layer_norm', 'reduce_sum', 'reduce_max',
                           'reduce_mean', 'conv',
                           'less', 'floor', 'select', 'floor_div',
-                          'tile'),
+                          'tile', 'qwen-ff'),
             'unsupported operation')
     inputs, outputs = program.get('inputs'), program.get('outputs')
     require(isinstance(inputs, list) and isinstance(outputs, list),
@@ -407,6 +407,13 @@ def validate_program(directory, program, tensors):
         require(program['taskDescriptors'] % 26 == 0 and
                 program['taskDescriptors'] >= 52,
                 'a batched matmul carries 26 tasks per batch')
+    if operation == 'qwen-ff':
+        require(encoder == 'apple-parity-qwen-ff' and len(inputs) == 1 and
+                inputs[0]['shape'] == outputs[0]['shape'] == [1, 1024] and
+                all('slice' not in item for item in inputs + outputs) and
+                td_count == 5 and constants == 3 * 1024 * 1024 * 2 and
+                scratch == 0x10000,
+                'Qwen FF must bind complete vectors and match the five-task capture')
     if operation == 'tile':
         # A materialized tile runs one task over its whole surfaces: one
         # runtime input, whole-tensor bindings, and the output replicating
