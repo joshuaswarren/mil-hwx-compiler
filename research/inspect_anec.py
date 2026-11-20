@@ -411,7 +411,7 @@ def validate_program(directory, program, tensors):
         require(encoder == 'apple-parity-qwen-ff' and len(inputs) == 1 and
                 inputs[0]['shape'] == outputs[0]['shape'] == [1, 1024] and
                 all('slice' not in item for item in inputs + outputs) and
-                td_count == 5 and constants == 3 * 1024 * 1024 * 2 and
+                td_count == 5 and constants in (3 * 1024 * 1024 * 2, 3 * 1024 * 3072 * 2) and
                 scratch == 0x10000,
                 'Qwen FF must bind complete vectors and match the five-task capture')
     if operation == 'tile':

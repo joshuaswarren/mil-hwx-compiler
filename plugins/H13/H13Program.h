@@ -126,7 +126,8 @@ struct Program {
     std::array<std::uint32_t, 4> taskSurfaceChannels{4, 5, 6, 7};
 };
 
-Program encodeQwenFF(const std::array<const std::uint8_t *, 3> &weights);
+Program encodeQwenFF(const std::array<const std::uint8_t *, 3> &weights,
+                     std::uint32_t intermediate);
 
 Program encodeBinary(BinaryOperation operation);
 bool supportsElementwise(BinaryOperation operation, ElementwiseShape shape,

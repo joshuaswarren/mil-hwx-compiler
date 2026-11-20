@@ -1143,19 +1143,49 @@ std::vector<std::uint8_t> packMatvecWeights(MatmulShape shape,
                                 weights, weightBytes);
 }
 
-Program encodeQwenFF(const std::array<const std::uint8_t *, 3> &weights) {
-    constexpr std::size_t matrixBytes = 1024 * 1024 * 2;
+Program encodeQwenFF(const std::array<const std::uint8_t *, 3> &weights,
+                     std::uint32_t intermediate) {
+    constexpr std::uint32_t hidden = 1024;
+    if (intermediate != hidden && intermediate != 3072)
+        throw std::invalid_argument("H13 Qwen FF intermediate width was not captured");
+    const std::uint32_t matrixBytes = hidden * intermediate * 2;
     Program program;
     program.constants.reserve(3 * matrixBytes);
     // The projection rooted at the second multiply operand is packed first.
     for (const auto index : {1u, 0u, 2u}) {
-        auto packed = packMatvecWeights({1, 1024, 1024, false, true, false},
-                                        weights[index], matrixBytes);
+        const auto reduction = index == 2 ? intermediate : hidden;
+        const auto columns = index == 2 ? hidden : intermediate;
+        auto packed = packMatvecWeights({1, reduction, columns}, weights[index],
+                                        matrixBytes);
         program.constants.insert(program.constants.end(), packed.begin(), packed.end());
     }
     program.inputs = {matvecTensor(5, 1, 1024)};
     program.output = matvecTensor(4, 1, 1024);
     program.task = taskBytesFor(kQwenFFTask, std::size(kQwenFFTask));
+    if (intermediate != hidden) {
+        // Word slots in kQwenFFTask, checked against the 3072-wide capture.
+        auto put = [&](std::size_t word, std::uint32_t value) {
+            storeLE32(program.task, word * sizeof(value), value);
+        };
+        for (const auto word : {129, 321, 641})
+            put(word, (kQwenFFTask[word] & 0xffff0000u) | 0xb8u);
+        put(513, kQwenFFTask[513] | 2u);
+        for (const auto word : {206, 398, 558, 559, 717})
+            put(word, intermediate);
+        for (const auto word : {261, 262, 263, 264, 453, 454, 455, 456, 603, 604,
+                                605, 606, 608, 609, 610, 611, 616, 617, 764, 765, 773}) {
+            const auto base = kQwenFFTask[word] & ~0x7ffu;
+            put(word, base * (intermediate / hidden) + (kQwenFFTask[word] - base));
+        }
+        constexpr std::array<std::size_t, 3> dmaStart{157, 349, 669};
+        const auto chunkBytes = matrixBytes / 16;
+        for (std::uint32_t projection = 0; projection < dmaStart.size(); ++projection) {
+            for (std::uint32_t chunk = 0; chunk < 16; ++chunk) {
+                put(dmaStart[projection] + chunk, projection * matrixBytes + chunk * chunkBytes);
+                put(dmaStart[projection] + 16 + chunk, chunkBytes);
+            }
+        }
+    }
     program.firstTaskBytes = 504;
     program.taskCount = 5;
     program.constantOffsetBytes = (program.task.size() + 63) & ~std::size_t{63};

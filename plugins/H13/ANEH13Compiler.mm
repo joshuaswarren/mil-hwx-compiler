@@ -1874,10 +1874,13 @@ static ANEGraphOperation *qwenFFOperation(ANEGraphFunction *function,
     if (ops.count != 4 || function.inputs.count != 1 ||
         function.returnValues.count != 1) return nil;
     NSArray *vectorShape = @[@1, @1024];
-    NSArray *matrixShape = @[@1024, @1024];
     ANEGraphValue *x = function.inputs[0];
     ANEGraphOperation *mul = ops[2];
-    if (!tensor(x, vectorShape) || !tensor(mul.results[0], vectorShape) ||
+    ANEGraphValue *gateResult = ops[0].results[0];
+    NSNumber *intermediate = gateResult.type.shape.lastObject;
+    if (![@[@1024, @3072] containsObject:intermediate ?: @0]) return nil;
+    NSArray *intermediateShape = @[@1, intermediate];
+    if (!tensor(x, vectorShape) || !tensor(mul.results[0], intermediateShape) ||
         ![mul.operationName isEqualToString:@"mul"] || mul.arguments.count != 2 ||
         mul.operands[@"x"].value != ops[0].results[0] ||
         mul.operands[@"y"].value != ops[1].results[0] ||
@@ -1886,11 +1889,14 @@ static ANEGraphOperation *qwenFFOperation(ANEGraphFunction *function,
     NSMutableDictionary *arguments = [@{@"x": valueArgument(x, ops[0].range)} mutableCopy];
     for (NSUInteger i = 0; i < names.count; ++i) {
         ANEGraphOperation *linear = ops[i == 2 ? 3 : i];
+        const BOOL down = i == 2;
         ANEGraphValue *weight = linear.operands[@"weight"].value;
         if (![linear.operationName isEqualToString:@"linear"] ||
-            linear.arguments.count != 2 || !tensor(linear.results[0], vectorShape) ||
-            linear.operands[@"x"].value != (i == 2 ? mul.results[0] : x) ||
-            !tensor(weight, matrixShape) || !blobBackedConstant(weight)) return nil;
+            linear.arguments.count != 2 ||
+            !tensor(linear.results[0], down ? vectorShape : intermediateShape) ||
+            linear.operands[@"x"].value != (down ? mul.results[0] : x) ||
+            !tensor(weight, down ? @[@1024, intermediate] : @[intermediate, @1024]) ||
+            !blobBackedConstant(weight)) return nil;
         arguments[names[i]] = valueArgument(weight, linear.range);
     }
     ANEGraphValue *y = function.returnValues[0];
@@ -2567,20 +2573,23 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         *manifestOperationOut = name;
         return YES;
     } else if ([name isEqualToString:@"qwen-ff"]) {
+        NSUInteger intermediate = [operation.operands[@"gate"].value.type.shape[0]
+            unsignedIntegerValue];
+        const NSUInteger matrixBytes = 1024 * intermediate * 2;
         std::array<const uint8_t *, 3> weights{};
         NSUInteger index = 0;
         for (NSString *key in @[@"gate", @"up", @"down"]) {
             ANEGraphValue *weight = operation.operands[key].value;
             NSData *data = resolvedConstants[weight.name];
-            if (!data) {
+            if (data.length != matrixBytes) {
                 data = [ANEBlobResolver loadConstantForOperation:weight.producer
-                    expectedBytes:1024 * 1024 * 2 modelRoot:modelRoot diagnostics:diagnostics];
+                    expectedBytes:matrixBytes modelRoot:modelRoot diagnostics:diagnostics];
                 if (!data) return NO;
                 resolvedConstants[weight.name] = data;
             }
             weights[index++] = static_cast<const uint8_t *>(data.bytes);
         }
-        program = ane::h13::encodeQwenFF(weights);
+        program = ane::h13::encodeQwenFF(weights, static_cast<std::uint32_t>(intermediate));
         inputs = @[x];
     } else if ([name isEqualToString:@"ffn-chain"]) {
         ANEGraphValue *weight1 = operation.operands[@"weight1"].value;
