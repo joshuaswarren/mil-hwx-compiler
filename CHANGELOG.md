@@ -10,7 +10,7 @@ New since 0.3.3:
 - New public one-surface state IO on `PreparedProgram`: `send_surface`, `stage_surface` and `read_surface`. They are the singular steps of the existing whole-set paths, so the H13 Qwen decode state worker chains each program's state surfaces without a host round-trip and without reaching into the adapter's private buffers. A refused wrong-index or wrong-size surface never reaches a transfer; `send_surface` sends the given bytes and leaves the prepared buffers alone; `read_surface` reads exactly the asked output and returns its bytes (PR #38).
 - Fix: `stage_surface` sends the surface first and stages the same bytes into the prepared buffer only once the device has them, matching `send_surface`'s copy-on-send contract. Before, it staged the bytes and then sent them, so a raise from the send left the prepared buffer holding bytes the device never received, and a later `transfer_in` sent them as if they had landed (PR #39).
 
-Tests: `tests/test_h13_linux_runtime.py` runs 20 tests at this release (17 existing plus 3 new). The singular-IO tests were written first and were red at the parent of PR #38. A scripted-adapter test interrupts the send and checks the prepared buffer still holds the old surface; the staging-order test follows the new order.
+Tests: `tests/test_h13_linux_runtime.py` runs 21 tests at this release: 17 before these PRs, three added by PR #38 and one by PR #39. A scripted-adapter test interrupts the send and checks the prepared buffer still holds the old surface; the staging-order test follows the new order.
 
 ## 0.3.3 (2026-11-13)
 
