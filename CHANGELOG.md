@@ -5,6 +5,7 @@ One entry per day the compiler changes. Newest first. Releases are tagged on Git
 ## 2026-11-25
 
 - Add the H18G (T8152) target. It emits an ANEP pack for one fp16 256-wide constant matvec and pins the full pack SHA-256 in the parity test.
+- Stage the 512-wide H18G shape: the encoder parameterizes the width, the pack derives the six stream width words and the tile lists from it, every other task word stays at the 256-proven value, and the parity suite checks the 256 pack still matches the device-proven SHA-256 beside the new 512 fixture.
 
 ## 0.3.4 (2026-11-20)
 

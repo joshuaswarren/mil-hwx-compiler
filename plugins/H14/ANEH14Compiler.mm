@@ -877,22 +877,42 @@ static BOOL compileH18G(ANEGraphFunction *function, NSArray<ANEGraphOperation *>
     ANEGraphOperation *op = operations[0];
     ANEGraphValue *x = op.operands[@"x"].value;
     ANEGraphValue *weights = op.operands[@"y"].value;
-    if (operations.count != 1 || ![op.operationName isEqualToString:@"matmul"] ||
-        op.arguments.count != 4 || function.inputs.count != 1 || x != function.inputs[0] ||
-        !constantValue(weights) || !tensor(weights, @[@(width), @(width)]) ||
-        !tensor(x, @[@1, @(width)]) || !tensor(op.results[0], @[@1, @(width)]) ||
-        !boolean(op.arguments[@"transpose_x"], NO) || !boolean(op.arguments[@"transpose_y"], NO))
-        return reject(diagnostics, @"H18G requires one fp16 [1,256] x [256,256] constant matmul without transposes",
+    const BOOL is256 = tensor(weights, @[@(width), @(width)]) && tensor(x, @[@1, @(width)]) &&
+        tensor(op.results[0], @[@1, @(width)]);
+    const BOOL is512 = tensor(weights, @[@512, @512]) && tensor(x, @[@1, @512]) &&
+        tensor(op.results[0], @[@1, @512]);
+    const BOOL noTranspose = boolean(op.arguments[@"transpose_x"], NO) &&
+        boolean(op.arguments[@"transpose_y"], NO);
+    NSUInteger shape = 0;
+    if (operations.count == 1 && [op.operationName isEqualToString:@"matmul"] &&
+        op.arguments.count == 4 && function.inputs.count == 1 && x == function.inputs[0] &&
+        constantValue(weights) && (is256 || is512) && noTranspose)
+        shape = is512 ? 512 : static_cast<NSUInteger>(width);
+    if (shape == 0)
+        return reject(diagnostics, @"H18G requires one fp16 [1,256] x [256,256] or [1,512] x [512,512] constant matmul without transposes",
                       op, @"h18g.unsupported-program");
-    if (input.length != vectorBytes)
-        return reject(diagnostics, @"H18G requires 512 input bytes in little-endian fp16 order",
+    const std::size_t inputBytes = shape * 2;
+    if (input.length != inputBytes)
+        return reject(diagnostics, [NSString stringWithFormat:@"H18G requires %lu input bytes in little-endian fp16 order",
+                                   (unsigned long)inputBytes],
                       op, @"h18g.invalid-input");
     NSData *data = [ANEBlobResolver loadConstantForOperation:weights.producer
-        expectedBytes:weightBytes modelRoot:modelRoot diagnostics:diagnostics];
+        expectedBytes:shape * inputBytes modelRoot:modelRoot diagnostics:diagnostics];
     if (!data) return NO;
-    NSMutableData *pack = [NSMutableData dataWithLength:packBytes];
-    encode(static_cast<uint8_t *>(pack.mutableBytes),
-           static_cast<const uint8_t *>(input.bytes), static_cast<const uint8_t *>(data.bytes));
+    NSMutableData *pack;
+    if (shape == 512) {
+        // The 512 stream re-proves the shared task words on the M6; 256x512 waits on
+        // that result because its six width words would have to split K from N.
+        pack = [NSMutableData dataWithLength:H18GMatvec<512, 512>::packBytes];
+        H18GMatvec<512, 512>::encode(static_cast<uint8_t *>(pack.mutableBytes),
+                                     static_cast<const uint8_t *>(input.bytes),
+                                     static_cast<const uint8_t *>(data.bytes));
+    } else {
+        pack = [NSMutableData dataWithLength:packBytes];
+        H18GMatvec<256, 256>::encode(static_cast<uint8_t *>(pack.mutableBytes),
+                                     static_cast<const uint8_t *>(input.bytes),
+                                     static_cast<const uint8_t *>(data.bytes));
+    }
     NSDictionary *program = @{@"file": @"program-0.anep"};
     NSDictionary *manifest = @{
         @"schema": @"mil-hwxc.h18g-anep-package.v1", @"target": @"H18G",
