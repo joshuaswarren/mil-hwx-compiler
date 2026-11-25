@@ -140,7 +140,8 @@ struct H18GMatvec {
 
     static void encodeImpl(std::uint8_t *out, const std::uint8_t *weights, const std::uint8_t *input) {
         using namespace detail;
-        writeWords(out, std::array<std::uint32_t, 5>{0x50454e41, 1, sectionIds.size(), ioCount, packBytes});
+        writeWords(out, std::array<std::uint32_t, 5>{0x50454e41, 1, sectionIds.size(), ioCount,
+                                                     static_cast<std::uint32_t>(input ? packBytes : packBytesIO)});
         auto *record = out + recordBytes;
         for (std::size_t i = 0; i < sectionIds.size(); ++i, record += recordBytes) {
             put32(record, sectionIds[i]);

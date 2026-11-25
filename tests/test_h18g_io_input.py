@@ -76,6 +76,7 @@ def main():
         assert out_rec[:3] == (4, 1, SURFACE_BYTES)
         assert in_rec[0] == 5 and in_rec[1] == 0 and in_rec[2] == SURFACE_BYTES
         assert in_rec[3] == 0 and in_rec[4] == 0 and in_rec[5] == 0 and in_rec[6] == 0, in_rec
+        assert struct.unpack_from("<Q", image, 16)[0] == len(image), "the header total must match the io pack length"
 
         manifest = json.loads((root / "io" / "manifest.json").read_bytes())
         assert manifest["buffers"] == {
