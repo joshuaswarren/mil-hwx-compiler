@@ -51,7 +51,7 @@ The compiler does not guess.
 | H16G | M4 | HWX object | Research compiler. Exercised by the macOS hardware tests in `tests/` |
 | H17 | A18, A18 Pro and M5 | HWX object, oracle-parity targets | Emits Apple's exact HWX for 165 decoded elementwise, unary and scalar-constant points and refuses every other shape by name. Byte parity only; not run on a device |
 | H18 | A19 and A19 Pro | HWX object, oracle-parity target | Matches 165 decoded points byte for byte. The M6 uses the separate H18G target. |
-| H18G | M6 (T8152) | ANEP pack for `run_prog` | One fp16 `[1,256] × [256,256]` constant matmul with both transpose flags false. |
+| H18G | M6 (T8152) | ANEP pack for `run_prog` | Supports one fp16 `[1,256] × [256,256]` constant matmul with both transpose flags false. The compiler output ran on the M6 and matched all 256 CPU results bit for bit ([device run](https://github.com/joshuaswarren/mil-hwx-compiler/pull/41)). |
 
 ## Install
 
