@@ -55,13 +55,21 @@ inline constexpr std::array<std::uint32_t, 44> td0 = {
     0x22001344, 0x00000000,
 };
 
-inline constexpr std::array<std::uint32_t, 28> td1Prefix = {
-    0x00630001, 0x00000002, 0x04000000, 0x00000000, 0x00fff860, 0x00000000,
-    0x00000000, 0x00000000, 0x00050009, 0xffc01540, 0x000202c0, 0x00010021,
-    0x00010021, 0x00010021, 0x00010021, 0x00010021, 0x00010021, 0x00010021,
-    0x00010021, 0x00010021, 0x00031551, 0x00010021, 0x00010021, 0x00010021,
-    0x00010021, 0x00010021, 0x00010021, 0x00010021,
-};
+template <std::size_t N>
+inline constexpr std::array<std::uint32_t, 28> td1Prefix = [] {
+    std::array<std::uint32_t, 28> words{
+        0x00630001, 0x00000002, 0x04000000, 0x00000000, 0x00fff860, 0x00000000,
+        0x00000000, 0x00000000, 0x00050009, 0xffc01540, 0x000202c0, 0x00010021,
+        0x00010021, 0x00010021, 0x00010021, 0x00010021, 0x00010021, 0x00010021,
+        0x00010021, 0x00010021, 0x00031551, 0x00010021, 0x00010021, 0x00010021,
+        0x00010021, 0x00010021, 0x00010021, 0x00010021,
+    };
+    // Word 0 counts task 1's words (prefix + both tile lists + tail); the firmware
+    // asserts on it (CAneProgramManager.cpp 254), proven by the M6 runs at both widths.
+    constexpr std::size_t count = std::size(words) + 2 * (N / tileColumns) + 39;
+    words[0] = static_cast<std::uint32_t>(count << 16 | 0x0001);
+    return words;
+}();
 
 template <std::size_t N>
 inline constexpr std::array<std::uint32_t, 39> td1Tail = {
@@ -94,7 +102,7 @@ struct H18GMatvec {
     static constexpr std::size_t tileBytes = N * tileColumns * 2;
     static constexpr std::size_t dmaTiles = N / tileColumns;
     static constexpr std::size_t streamBytes = 16 + std::size(detail::td0<N>) * 4 +
-        std::size(detail::td1Prefix) * 4 + 2 * dmaTiles * 4 + std::size(detail::td1Tail<N>) * 4;
+        std::size(detail::td1Prefix<N>) * 4 + 2 * dmaTiles * 4 + std::size(detail::td1Tail<N>) * 4;
     // The loader refuses a stream longer than the const window, so the window grows
     // with the stream (0x40 granularity, 0x280 floor): 640 at 256, 768 at 512.
     static constexpr std::uint32_t textConst = static_cast<std::uint32_t>(
@@ -147,7 +155,7 @@ struct H18GMatvec {
         }
 
         auto *stream = writeWords(out + offsets[2] + 16, td0<N>);
-        stream = writeWords(stream, td1Prefix);
+        stream = writeWords(stream, td1Prefix<N>);
         put32(stream, static_cast<std::uint32_t>((dmaTiles - 1) << 16 | 0x1559));
         for (std::size_t tile = 1; tile < dmaTiles; ++tile)
             put32(stream + tile * 4, static_cast<std::uint32_t>(tile * tileBytes));

@@ -78,7 +78,10 @@ def main():
         body = stream[16:]
         td0 = struct.unpack_from("<44I", body, 0)
         assert all(word == 512 for word in td0[30:34]), [hex(w) for w in td0[30:34]]
+        assert td0[0] == 0x002c0000, hex(td0[0])
         prefix_end = 44 * 4 + 28 * 4
+        prefix0 = struct.unpack_from("<I", body, 44 * 4)[0]
+        assert prefix0 == (131 << 16 | 1), hex(prefix0)  # 28 prefix + 64 tile words + 39 tail
         tiles = struct.unpack_from("<I", body, 44 * 4 + 28 * 4)[0]
         assert tiles == ((DMA_TILES - 1) << 16 | 0x1559), hex(tiles)
         tail_at = 44 * 4 + 28 * 4 + 2 * DMA_TILES * 4
