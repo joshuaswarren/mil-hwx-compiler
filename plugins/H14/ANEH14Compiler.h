@@ -8,6 +8,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// The decoded-oracle parity compiler for the H14 task format. `target` is
 /// H14, or H17 or H18, which keep that format and cover only the decoded
 /// elementwise, unary, and scalar-constant families as HWX.
+/// H18G emits a T8152 ANEP and requires a 512-byte runtime input.
 @interface ANEH14Compiler : NSObject
 + (BOOL)compileMILData:(NSData *)milData
              modelRoot:(NSURL *)modelRoot
@@ -15,6 +16,7 @@ NS_ASSUME_NONNULL_BEGIN
                 format:(NSString *)format
        outputDirectory:(NSURL *)directory
               schedule:(NSString *)schedule
+                 input:(nullable NSData *)input
            diagnostics:(ANEDiagnosticEngine *)diagnostics
                  error:(NSError **)error;
 @end

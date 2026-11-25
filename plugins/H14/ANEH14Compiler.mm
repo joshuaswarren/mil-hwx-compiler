@@ -7,6 +7,7 @@
 #import "MILParser.h"
 #import "HWXObjectWriter.h"
 #include "H14Program.h"
+#include "H18GProgram.h"
 
 #include <cstring>
 #include <cmath>
@@ -842,6 +843,66 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
     return YES;
 }
 
+static BOOL writePackage(NSURL *directory, NSString *target, NSDictionary *manifest,
+                         NSArray<NSData *> *payloads, NSArray<NSDictionary *> *programs,
+                         NSError **error) {
+    NSData *metadata = [NSJSONSerialization dataWithJSONObject:manifest
+        options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:error];
+    if (!metadata) return NO;
+    NSFileManager *manager = NSFileManager.defaultManager;
+    if ([manager fileExistsAtPath:directory.path]) {
+        NSArray *existing = [manager contentsOfDirectoryAtPath:directory.path error:error];
+        if (!existing) return NO;
+        if (existing.count) {
+            if (error) *error = [NSError errorWithDomain:
+                [@"dev.maderix." stringByAppendingString:target]
+                code:1 userInfo:@{NSLocalizedDescriptionKey:
+                    [NSString stringWithFormat:@"%@ output directory must be empty", target]}];
+            return NO;
+        }
+    } else if (![manager createDirectoryAtURL:directory
+        withIntermediateDirectories:YES attributes:nil error:error]) return NO;
+    for (NSUInteger i = 0; i < payloads.count; ++i)
+        if (![payloads[i] writeToURL:[directory URLByAppendingPathComponent:programs[i][@"file"]]
+                             options:NSDataWritingAtomic error:error])
+            return NO;
+    return [metadata writeToURL:[directory URLByAppendingPathComponent:@"manifest.json"]
+                        options:NSDataWritingAtomic error:error];
+}
+
+static BOOL compileH18G(ANEGraphFunction *function, NSArray<ANEGraphOperation *> *operations,
+                       NSData *input, NSURL *modelRoot, NSURL *directory,
+                       ANEDiagnosticEngine *diagnostics, NSError **error) {
+    using namespace ane::h18g;
+    ANEGraphOperation *op = operations[0];
+    ANEGraphValue *x = op.operands[@"x"].value;
+    ANEGraphValue *weights = op.operands[@"y"].value;
+    if (operations.count != 1 || ![op.operationName isEqualToString:@"matmul"] ||
+        op.arguments.count != 4 || function.inputs.count != 1 || x != function.inputs[0] ||
+        !constantValue(weights) || !tensor(weights, @[@(width), @(width)]) ||
+        !tensor(x, @[@1, @(width)]) || !tensor(op.results[0], @[@1, @(width)]) ||
+        !boolean(op.arguments[@"transpose_x"], NO) || !boolean(op.arguments[@"transpose_y"], NO))
+        return reject(diagnostics, @"H18G requires one fp16 [1,256] x [256,256] constant matmul without transposes",
+                      op, @"h18g.unsupported-program");
+    if (input.length != vectorBytes)
+        return reject(diagnostics, @"H18G requires 512 input bytes in little-endian fp16 order",
+                      op, @"h18g.invalid-input");
+    NSData *data = [ANEBlobResolver loadConstantForOperation:weights.producer
+        expectedBytes:weightBytes modelRoot:modelRoot diagnostics:diagnostics];
+    if (!data) return NO;
+    NSMutableData *pack = [NSMutableData dataWithLength:packBytes];
+    encode(static_cast<uint8_t *>(pack.mutableBytes),
+           static_cast<const uint8_t *>(input.bytes), static_cast<const uint8_t *>(data.bytes));
+    NSDictionary *program = @{@"file": @"program-0.anep"};
+    NSDictionary *manifest = @{
+        @"schema": @"mil-hwxc.h18g-anep-package.v1", @"target": @"H18G",
+        @"soc": @"T8152", @"artifactFormat": @"anep", @"programs": @[program],
+        @"runProg": @{@"bufs": @(bufs), @"text": @(text), @"text_const": @(textConst),
+                      @"kern": @(kern), @"kern_slot": @(kernSlot)},
+    };
+    return writePackage(directory, @"H18G", manifest, @[pack], @[program], error);
+}
+
 @implementation ANEH14Compiler
 + (BOOL)compileMILData:(NSData *)milData
              modelRoot:(NSURL *)modelRoot
@@ -849,21 +910,28 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
                 format:(NSString *)format
        outputDirectory:(NSURL *)directory
               schedule:(NSString *)schedule
+                 input:(NSData *)input
            diagnostics:(ANEDiagnosticEngine *)diagnostics
                  error:(NSError **)error {
+    const BOOL h18g = [targetName isEqualToString:@"H18G"];
     ParityTarget target{};
-    if (!parityTarget(targetName, &target))
+    if (h18g) {
+        target.name = targetName;
+        target.prefix = @"h18g";
+    } else if (!parityTarget(targetName, &target)) {
         return reject(diagnostics, [NSString stringWithFormat:
-            @"parity target must be H14, H17, or H18, not '%@'", targetName],
+            @"parity target must be H14, H17, H18, or H18G, not '%@'", targetName],
             nil, @"parity.unsupported-target");
-    const BOOL h14 = target.generation == ane::h14::Generation::H14;
+    }
+    const BOOL h14 = !h18g && target.generation == ane::h14::Generation::H14;
     NSString *unsupported = code(target, @"unsupported-program");
     BOOL hwx = [format isEqualToString:@"hwx"];
-    if (!hwx && (!h14 || ![format isEqualToString:@"anec"])) {
-        NSString *message = h14
-            ? @"H14 artifact format must be 'anec' or 'hwx'"
-            : [NSString stringWithFormat:@"%@ artifact format must be 'hwx'",
-                  target.name];
+    BOOL validFormat = h18g ? [format isEqualToString:@"anep"] :
+        (hwx || (h14 && [format isEqualToString:@"anec"]));
+    if (!validFormat) {
+        NSString *message = h14 ? @"H14 artifact format must be 'anec' or 'hwx'" :
+            [NSString stringWithFormat:@"%@ artifact format must be '%@'",
+                target.name, h18g ? @"anep" : @"hwx"];
         reject(diagnostics, message, nil, code(target, @"unsupported-format"));
         if (error) *error = [NSError errorWithDomain:
             [@"dev.maderix." stringByAppendingString:target.name] code:2
@@ -914,6 +982,9 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
                 target.name],
             lastOperation, chain ? code(target, @"unsupported-chain")
                                  : unsupported);
+    if (h18g)
+        return compileH18G(function, sourceOperations, input, modelRoot, directory,
+                           diagnostics, error);
     NSMutableSet<NSString *> *inputNames = [NSMutableSet set];
     for (ANEGraphValue *input in function.inputs) {
         [inputNames addObject:input.name];
@@ -1325,31 +1396,6 @@ static BOOL matvecPlan(ANEGraphOperation *operation, NSURL *modelRoot,
             @"tasks": taskRecords, @"scratch": scratch}];
     if (programRecords.count == 1)
         [manifest addEntriesFromDictionary:programRecords[0]];
-    NSData *metadata = [NSJSONSerialization dataWithJSONObject:manifest
-        options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:error];
-    if (!metadata) return NO;
-    NSFileManager *manager = NSFileManager.defaultManager;
-    if ([manager fileExistsAtPath:directory.path]) {
-        NSArray *existing = [manager contentsOfDirectoryAtPath:directory.path
-                                                         error:error];
-        if (!existing) return NO;
-        if (existing.count != 0) {
-            if (error) *error = [NSError errorWithDomain:
-                [@"dev.maderix." stringByAppendingString:target.name]
-                code:1 userInfo:@{NSLocalizedDescriptionKey:
-                    [NSString stringWithFormat:@"%@ output directory must be empty",
-                        target.name]}];
-            return NO;
-        }
-    } else if (![manager createDirectoryAtURL:directory
-        withIntermediateDirectories:YES attributes:nil error:error]) return NO;
-    for (NSUInteger index = 0; index < payloads.count; ++index)
-        if (![payloads[index] writeToURL:[directory URLByAppendingPathComponent:
-                programRecords[index][@"file"]] options:NSDataWritingAtomic
-                error:error])
-            return NO;
-    return [metadata writeToURL:
-        [directory URLByAppendingPathComponent:@"manifest.json"]
-        options:NSDataWritingAtomic error:error];
+    return writePackage(directory, target.name, manifest, payloads, programRecords, error);
 }
 @end
