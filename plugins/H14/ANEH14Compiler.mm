@@ -892,7 +892,8 @@ static BOOL compileH18G(ANEGraphFunction *function, NSArray<ANEGraphOperation *>
         return reject(diagnostics, @"H18G requires one fp16 [1,256] x [256,256] or [1,512] x [512,512] constant matmul without transposes",
                       op, @"h18g.unsupported-program");
     const std::size_t inputBytes = shape * 2;
-    if (input.length != inputBytes)
+    const BOOL embedded = input != nil;
+    if (embedded && input.length != inputBytes)
         return reject(diagnostics, [NSString stringWithFormat:@"H18G requires %lu input bytes in little-endian fp16 order",
                                    (unsigned long)inputBytes],
                       op, @"h18g.invalid-input");
@@ -903,25 +904,37 @@ static BOOL compileH18G(ANEGraphFunction *function, NSArray<ANEGraphOperation *>
     if (shape == 512) {
         // The 512 stream re-proves the shared task words on the M6; 256x512 waits on
         // that result because its six width words would have to split K from N.
-        pack = [NSMutableData dataWithLength:H18GMatvec<512, 512>::packBytes];
-        H18GMatvec<512, 512>::encode(static_cast<uint8_t *>(pack.mutableBytes),
-                                     static_cast<const uint8_t *>(input.bytes),
-                                     static_cast<const uint8_t *>(data.bytes));
+        pack = [NSMutableData dataWithLength:embedded ? H18GMatvec<512, 512>::packBytes
+                                                     : H18GMatvec<512, 512>::packBytesIO];
+        embedded ? H18GMatvec<512, 512>::encode(static_cast<uint8_t *>(pack.mutableBytes),
+                                                static_cast<const uint8_t *>(input.bytes),
+                                                static_cast<const uint8_t *>(data.bytes))
+                 : H18GMatvec<512, 512>::encodeIO(static_cast<uint8_t *>(pack.mutableBytes),
+                                                  static_cast<const uint8_t *>(data.bytes));
     } else {
-        pack = [NSMutableData dataWithLength:packBytes];
-        H18GMatvec<256, 256>::encode(static_cast<uint8_t *>(pack.mutableBytes),
-                                     static_cast<const uint8_t *>(input.bytes),
-                                     static_cast<const uint8_t *>(data.bytes));
+        pack = [NSMutableData dataWithLength:embedded ? packBytes : H18GMatvec<256, 256>::packBytesIO];
+        embedded ? H18GMatvec<256, 256>::encode(static_cast<uint8_t *>(pack.mutableBytes),
+                                                static_cast<const uint8_t *>(input.bytes),
+                                                static_cast<const uint8_t *>(data.bytes))
+                 : H18GMatvec<256, 256>::encodeIO(static_cast<uint8_t *>(pack.mutableBytes),
+                                                  static_cast<const uint8_t *>(data.bytes));
     }
     NSDictionary *program = @{@"file": @"program-0.anep"};
-    NSDictionary *manifest = @{
+    // The IO-input pack hands buffer 5 to the driver as a writable window, so the manifest
+    // names both buffers with their logical bytes; the embedded control keeps its manifest.
+    NSDictionary *buffers = embedded ? nil : @{
+        @"inputs": @[@{@"index": @(inputBuffer), @"size": @(inputBytes)}],
+        @"outputs": @[@{@"index": @(outputBuffer), @"size": @(inputBytes)}],
+    };
+    NSMutableDictionary *manifest = [@{
         @"schema": @"mil-hwxc.h18g-anep-package.v1", @"target": @"H18G",
         @"soc": @"T8152", @"artifactFormat": @"anep", @"programs": @[program],
         @"runProg": @{@"bufs": @(bufs), @"text": @(text),
                       @"text_const": @(shape == 512 ? H18GMatvec<512, 512>::textConst
                                                     : H18GMatvec<256, 256>::textConst),
                       @"kern": @(kern), @"kern_slot": @(kernSlot)},
-    };
+    } mutableCopy];
+    if (buffers) manifest[@"buffers"] = buffers;
     return writePackage(directory, @"H18G", manifest, @[pack], @[program], error);
 }
 

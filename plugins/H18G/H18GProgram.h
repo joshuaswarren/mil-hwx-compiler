@@ -122,9 +122,23 @@ struct H18GMatvec {
     }
     static constexpr auto offsets = sectionOffsets();
     static constexpr std::size_t packBytes = offsets.back() + surfaceBytes;
+    // The IO-input pack ends after the last section: buffer 5 is a window, not a payload.
+    static constexpr std::size_t packBytesIO = offsets.back();
 
     // Destination is a zero-initialized ANEP buffer; input and weights are little-endian fp16.
     static void encode(std::uint8_t *out, const std::uint8_t *input, const std::uint8_t *weights) {
+        encodeImpl(out, weights, input);
+    }
+
+    // The G709 variant: the pack carries no input at all. Buffer 5 stays declared with its
+    // 16 KiB surface, but its data offset and size read zero, so the driver maps a writable
+    // activation window instead of finding x baked into the image. Everything else, including
+    // the task stream and the coefficient section, is byte-for-byte the embedded layout.
+    static void encodeIO(std::uint8_t *out, const std::uint8_t *weights) {
+        encodeImpl(out, weights, nullptr);
+    }
+
+    static void encodeImpl(std::uint8_t *out, const std::uint8_t *weights, const std::uint8_t *input) {
         using namespace detail;
         writeWords(out, std::array<std::uint32_t, 5>{0x50454e41, 1, sectionIds.size(), ioCount, packBytes});
         auto *record = out + recordBytes;
@@ -134,9 +148,14 @@ struct H18GMatvec {
             put32(record + 16, static_cast<std::uint32_t>(offsets[i]));
         }
         writeWords(record, std::array<std::uint32_t, 3>{outputBuffer, 1, surfaceBytes});
-        writeWords(record + recordBytes, std::array<std::uint32_t, 7>{
-            inputBuffer, 0, surfaceBytes, 0, static_cast<std::uint32_t>(offsets.back()), 0, surfaceBytes});
-        std::memcpy(out + offsets.back(), input, vectorBytes);
+        if (input) {
+            writeWords(record + recordBytes, std::array<std::uint32_t, 7>{
+                inputBuffer, 0, surfaceBytes, 0, static_cast<std::uint32_t>(offsets.back()), 0, surfaceBytes});
+            std::memcpy(out + offsets.back(), input, vectorBytes);
+        } else {
+            writeWords(record + recordBytes, std::array<std::uint32_t, 7>{
+                inputBuffer, 0, surfaceBytes, 0, 0, 0, 0});
+        }
 
         auto *generic = out + offsets[0];
         writeWords(generic, std::array<std::uint32_t, 2>{1, 0x10});

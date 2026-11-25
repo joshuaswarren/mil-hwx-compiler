@@ -81,12 +81,12 @@ int main(int argc, const char *argv[]) {
             return 64;
         }
         NSString *inputPath = arguments[@"--input"];
-        if (h18g != (inputPath != nil)) {
-            fprintf(stderr, "--input FILE is required for H18G and is only accepted for H18G\n");
+        if (!h18g && inputPath != nil) {
+            fprintf(stderr, "--input FILE is only accepted for H18G\n");
             return 64;
         }
-        NSData *input = h18g ? [NSData dataWithContentsOfFile:inputPath] : nil;
-        if (h18g && !input) {
+        NSData *input = h18g && inputPath ? [NSData dataWithContentsOfFile:inputPath] : nil;
+        if (h18g && inputPath && !input) {
             fprintf(stderr, "cannot read input file: %s\n", inputPath.UTF8String);
             return 66;
         }

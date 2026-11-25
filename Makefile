@@ -303,6 +303,7 @@ test-h18-parity: $(BUILD)/mil-hwxc
 test-h18g-parity: $(BUILD)/mil-hwxc
 	python3 tests/test_h18g_parity.py $(BUILD)/mil-hwxc
 	python3 tests/test_h18g_width512.py $(BUILD)/mil-hwxc
+	python3 tests/test_h18g_io_input.py $(BUILD)/mil-hwxc
 
 $(BUILD)/test_h13_encoding: plugins/H13/H13Program.cpp tests/test_h13_encoding.cpp plugins/H13/H13Program.h | $(BUILD)
 	$(CXX) -O2 -std=c++17 -Wall -Wextra -Werror $(filter %.cpp,$^) -o $@
