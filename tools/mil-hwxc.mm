@@ -11,8 +11,8 @@
 static void printUsage(const char *program) {
     fprintf(stderr,
         "usage: %s --mil FILE --model-root DIR "
-        "--output DIR [--target H16G|H13|H14|H17|H18] [--format anec|hwx] "
-        "[--schedule per-op|chain]\n", program);
+        "--output DIR [--target H16G|H13|H14|H17|H18|H18G] [--format anec|hwx|anep] "
+        "[--schedule per-op|chain] [--input FILE (H18G only)]\n", program);
 }
 
 static NSString *severityName(ANEDiagnosticSeverity severity) {
@@ -56,14 +56,13 @@ int main(int argc, const char *argv[]) {
         NSString *output = arguments[@"--output"];
         NSString *target = arguments[@"--target"] ?: @"H16G";
         NSString *requestedFormat = arguments[@"--format"];
-        // H17 and H18 emit HWX only; every other target defaults to ANEC.
-        NSString *format = requestedFormat ?:
-            ([target isEqualToString:@"H17"] || [target isEqualToString:@"H18"]
-                 ? @"hwx" : @"anec");
+        BOOL h18g = [target isEqualToString:@"H18G"];
+        BOOL hwxOnly = [target isEqualToString:@"H17"] || [target isEqualToString:@"H18"];
+        NSString *format = requestedFormat ?: (h18g ? @"anep" : hwxOnly ? @"hwx" : @"anec");
         NSString *schedule = arguments[@"--schedule"] ?: @"per-op";
         NSSet<NSString *> *accepted = [NSSet setWithArray:@[
             @"--mil", @"--model-root", @"--output", @"--target", @"--format",
-            @"--schedule",
+            @"--schedule", @"--input",
         ]];
         for (NSString *key in arguments) {
             if (![accepted containsObject:key]) {
@@ -81,6 +80,16 @@ int main(int argc, const char *argv[]) {
             printUsage(argv[0]);
             return 64;
         }
+        NSString *inputPath = arguments[@"--input"];
+        if (h18g != (inputPath != nil)) {
+            fprintf(stderr, "--input FILE is required for H18G and is only accepted for H18G\n");
+            return 64;
+        }
+        NSData *input = h18g ? [NSData dataWithContentsOfFile:inputPath] : nil;
+        if (h18g && !input) {
+            fprintf(stderr, "cannot read input file: %s\n", inputPath.UTF8String);
+            return 66;
+        }
 
         NSData *milData = [NSData dataWithContentsOfFile:milPath];
         if (!milData) {
@@ -88,8 +97,7 @@ int main(int argc, const char *argv[]) {
             return 66;
         }
         ANEDiagnosticEngine *diagnostics = [[ANEDiagnosticEngine alloc] init];
-        BOOL parityTarget = [target isEqualToString:@"H14"] ||
-            [target isEqualToString:@"H17"] || [target isEqualToString:@"H18"];
+        BOOL parityTarget = [target isEqualToString:@"H14"] || hwxOnly || h18g;
         if ([target isEqualToString:@"H13"] || parityTarget) {
             NSError *error = nil;
             NSURL *root = [NSURL fileURLWithPath:modelRoot isDirectory:YES];
@@ -97,7 +105,7 @@ int main(int argc, const char *argv[]) {
             BOOL success = parityTarget
                 ? [ANEH14Compiler compileMILData:milData modelRoot:root
                     target:target format:format outputDirectory:outputURL
-                    schedule:schedule diagnostics:diagnostics error:&error]
+                    schedule:schedule input:input diagnostics:diagnostics error:&error]
                 : [ANEH13Compiler compileMILData:milData modelRoot:root
                     format:format outputDirectory:outputURL schedule:schedule
                     diagnostics:diagnostics error:&error];

@@ -19,7 +19,7 @@ Part of the Omarchy on Apple Silicon ecosystem:
 
 `mil-hwxc` compiles textual MIL into programs for the Apple Neural Engine.
 MIL is Core ML's intermediate language.
-The compiler writes H13 (M1) and H14 (M2) ANEC packages, and it writes H16G (M4) HWX objects.
+The compiler writes ANEC packages for H13 and H14, HWX objects for H16G through H18, and ANEP packs for H18G.
 It never calls Apple's compiler or any Apple tool.
 
 ## What it does and who it is for
@@ -32,7 +32,7 @@ It writes packages for [omarchy-ane](https://github.com/joshuaswarren/omarchy-an
 On an M1 running Omarchy, H13 packages from this compiler run on the ANE.
 
 People who study ANE program formats are the other audience.
-Each backend matches decoded Apple-compiler output byte for byte.
+The parity tests compare emitted bytes with decoded reference programs.
 [docs/ane/README.md](docs/ane/README.md) records what that decoding work found.
 
 Inputs, outputs, and weights are fp16 with static shapes.
@@ -50,7 +50,8 @@ The compiler does not guess.
 | H14 | M2 | ANEC package, or HWX with `--format hwx` | Matches decoded Apple output byte for byte. Eight elementwise programs built by this compiler ran on an M2 Max through omarchy-ane. Each was bit-exact on 512 of 512 lanes ([receipt](receipts/2026-10-10-h14-elementwise-m2/README.md)). Matvec programs at K = N of 256, 512 and 1024 also ran on an M2 Max, every lane inside a 2 ulp or 4 condition-unit band ([receipt](receipts/2026-10-11-h14-matvec-m2/README.md)). So did the six non-square matvec shapes of 256, 512 and 1024 ([receipt](receipts/2026-10-13-h14-matvec-nonsquare-m2/README.md)). Matvec programs with 2, 8 and 64 rows ran too: 21 of 27 passed `ane-run`'s check and the six non-square 64-row shapes, which it refused, were compared off the device ([receipt](receipts/2026-10-13-h14-matvec-rows-m2/README.md)). Of 23 unary programs (abs, exp, gelu, leaky_relu, rsqrt, sigmoid, silu, sqrt, tanh), 21 met their preregistered accuracy bound and exp did not ([receipt](receipts/2026-10-13-h14-unary-m2/README.md)). Other larger H14 programs have not run from this backend |
 | H16G | M4 | HWX object | Research compiler. Exercised by the macOS hardware tests in `tests/` |
 | H17 | A18, A18 Pro and M5 | HWX object, oracle-parity targets | Emits Apple's exact HWX for 165 decoded elementwise, unary and scalar-constant points and refuses every other shape by name. Byte parity only; not run on a device |
-| H18 | A19 and A19 Pro | HWX object, oracle-parity targets | Same as H17 for H18: 165 decoded points, named refusals, byte parity only; not run on a device |
+| H18 | A19 and A19 Pro | HWX object, oracle-parity target | Matches 165 decoded points byte for byte. The M6 uses the separate H18G target. |
+| H18G | M6 (T8152) | ANEP pack for `run_prog` | One fp16 `[1,256] × [256,256]` constant matmul with both transpose flags false. |
 
 ## Install
 
@@ -126,13 +127,15 @@ H16G is the default target, so the flag is optional there.
 
 ```text
 usage: mil-hwxc --mil FILE --model-root DIR --output DIR
-                [--target H16G|H13|H14|H17|H18] [--format anec|hwx]
-                [--schedule per-op|chain]
+                [--target H16G|H13|H14|H17|H18|H18G] [--format anec|hwx|anep]
+                [--schedule per-op|chain] [--input FILE (H18G only)]
 ```
 
 `--target` picks the backend.
 The default is H16G.
 H13 and H14 write ANEC packages unless `--format hwx` says otherwise.
+H18G writes `program-0.anep` and a manifest with the `run_prog` load settings.
+Pass `--input x.fp16` with 256 little-endian fp16 values. The pack embeds that input.
 `--schedule` applies to H13 and H14.
 The default, `per-op`, emits one program per operation.
 `chain` fuses a supported producer into a following `relu`.
@@ -141,9 +144,8 @@ The pair then becomes one program with no intermediate buffer.
 For the fixtures, that is their `tests/models` directory.
 The output directory must be absent or empty.
 
-Each run writes `manifest.json` plus one `program-N.anec` or `program-N.hwx` per program.
-The manifest lists each tensor's shape, byte count, and role.
-Roles are input, output, intermediate, or constant.
+For targets other than H18G, each run writes `manifest.json` and one `.anec` or `.hwx` file per program.
+That manifest lists each tensor's shape, byte count, and role.
 It also lists the dispatch plan and each program's bindings.
 A runner can drive the package without parsing programs.
 

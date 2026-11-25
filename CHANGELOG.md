@@ -2,6 +2,10 @@
 
 One entry per day the compiler changes. Newest first. Releases are tagged on GitHub.
 
+## 2026-11-25
+
+- Add the H18G (T8152) target. It emits an ANEP pack for one fp16 256-wide constant matvec and pins the full pack SHA-256 in the parity test.
+
 ## 0.3.4 (2026-11-20)
 
 New since 0.3.3:

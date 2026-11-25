@@ -206,8 +206,8 @@ $(BUILD)/prepare_staged_attention: tests/hardware/prepare_staged_attention.mm $(
 $(BUILD)/test_compiler_e2e: tests/test_compiler_e2e.mm $(PRODUCTION_COMPILER_SOURCES) | $(BUILD)
 	$(CXX) $(CXXFLAGS) -Ilib/MIL -Ilib/IR -Ilib/Transform -Ilib/Planning -Ilib/Driver -Ilib/HWX -Ilib/Model -Ilib/Runtime -Iplugins/H16G -Iplugins/H16G/Encoding $^ $(FRAMEWORKS) -o $@
 
-$(BUILD)/mil-hwxc: tools/mil-hwxc.mm $(PRODUCTION_COMPILER_SOURCES) $(H13_SOURCES) $(H14_SOURCES) plugins/H13/ANEH13Compiler.h plugins/H13/H13Program.h $(wildcard plugins/H13/*.inc) plugins/H14/ANEH14Compiler.h plugins/H14/H14Program.h $(wildcard plugins/H14/*.inc) $(wildcard plugins/H17/*.inc) $(wildcard plugins/H18/*.inc) | $(BUILD)
-	$(CXX) $(CXXFLAGS) -Ilib/MIL -Ilib/IR -Ilib/Transform -Ilib/Planning -Ilib/Driver -Ilib/HWX -Ilib/Model -Ilib/Runtime -Iplugins/H16G -Iplugins/H16G/Encoding -Iplugins/H13 -Iplugins/H14 -Iplugins/H17 -Iplugins/H18 $(filter %.mm %.cpp,$^) $(FRAMEWORKS) -o $@
+$(BUILD)/mil-hwxc: tools/mil-hwxc.mm $(PRODUCTION_COMPILER_SOURCES) $(H13_SOURCES) $(H14_SOURCES) plugins/H13/ANEH13Compiler.h plugins/H13/H13Program.h $(wildcard plugins/H13/*.inc) plugins/H14/ANEH14Compiler.h plugins/H14/H14Program.h $(wildcard plugins/H14/*.inc) $(wildcard plugins/H17/*.inc) $(wildcard plugins/H18/*.inc) plugins/H18G/H18GProgram.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) -Ilib/MIL -Ilib/IR -Ilib/Transform -Ilib/Planning -Ilib/Driver -Ilib/HWX -Ilib/Model -Ilib/Runtime -Iplugins/H16G -Iplugins/H16G/Encoding -Iplugins/H13 -Iplugins/H14 -Iplugins/H17 -Iplugins/H18 -Iplugins/H18G $(filter %.mm %.cpp,$^) $(FRAMEWORKS) -o $@
 
 test-cli: $(BUILD)/mil-hwxc
 	bash tests/test_cli.sh
@@ -291,7 +291,7 @@ test-h14-parity: $(BUILD)/mil-hwxc
 test-h14-exp-model:
 	python3 tests/test_h14_exp_arithmetic.py
 
-.PHONY: test-h17-parity test-h18-parity
+.PHONY: test-h17-parity test-h18-parity test-h18g-parity
 test-h17-parity: $(BUILD)/mil-hwxc
 	python3 research/generate_h14_templates.py --check
 	python3 tests/test_h17_parity.py $(BUILD)/mil-hwxc H17
@@ -299,6 +299,9 @@ test-h17-parity: $(BUILD)/mil-hwxc
 test-h18-parity: $(BUILD)/mil-hwxc
 	python3 research/generate_h14_templates.py --check
 	python3 tests/test_h17_parity.py $(BUILD)/mil-hwxc H18
+
+test-h18g-parity: $(BUILD)/mil-hwxc
+	python3 tests/test_h18g_parity.py $(BUILD)/mil-hwxc
 
 $(BUILD)/test_h13_encoding: plugins/H13/H13Program.cpp tests/test_h13_encoding.cpp plugins/H13/H13Program.h | $(BUILD)
 	$(CXX) -O2 -std=c++17 -Wall -Wextra -Werror $(filter %.cpp,$^) -o $@
@@ -310,7 +313,7 @@ $(BUILD)/test_h13_anec: plugins/H13/H13ANEC.cpp tests/test_h13_anec.cpp plugins/
 test-hwx-inspection:
 	python3 tests/test_hwx_inspection.py
 
-test: test-h13 test-h13-parity test-h13-reference test-h13-simulation test-h14-parity test-h17-parity test-h18-parity test-hwx-inspection
+test: test-h13 test-h13-parity test-h13-reference test-h13-simulation test-h14-parity test-h17-parity test-h18-parity test-h18g-parity test-hwx-inspection
 
 .PHONY: test-h13-hardware
 test-h13-hardware: $(BUILD)/mil-hwxc $(BUILD)/h13_exec
