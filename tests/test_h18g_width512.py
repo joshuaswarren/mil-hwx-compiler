@@ -113,7 +113,7 @@ def main():
 
         manifest = json.loads((output / "manifest.json").read_bytes())
         assert manifest["runProg"] == {
-            "bufs": 0x30000000, "text": 0x30008000, "text_const": 0x280,
+            "bufs": 0x30000000, "text": 0x30008000, "text_const": 0x300,
             "kern": 0x30010000, "kern_slot": 1,
         }
         print(f"512 pack ok: {len(image)} bytes, sha256 {hashlib.sha256(image).hexdigest()}")

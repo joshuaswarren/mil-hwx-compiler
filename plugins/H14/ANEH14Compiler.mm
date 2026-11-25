@@ -917,7 +917,9 @@ static BOOL compileH18G(ANEGraphFunction *function, NSArray<ANEGraphOperation *>
     NSDictionary *manifest = @{
         @"schema": @"mil-hwxc.h18g-anep-package.v1", @"target": @"H18G",
         @"soc": @"T8152", @"artifactFormat": @"anep", @"programs": @[program],
-        @"runProg": @{@"bufs": @(bufs), @"text": @(text), @"text_const": @(textConst),
+        @"runProg": @{@"bufs": @(bufs), @"text": @(text),
+                      @"text_const": @(shape == 512 ? H18GMatvec<512, 512>::textConst
+                                                    : H18GMatvec<256, 256>::textConst),
                       @"kern": @(kern), @"kern_slot": @(kernSlot)},
     };
     return writePackage(directory, @"H18G", manifest, @[pack], @[program], error);

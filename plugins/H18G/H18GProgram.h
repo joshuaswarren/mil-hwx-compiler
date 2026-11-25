@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -19,7 +20,7 @@ inline constexpr std::uint32_t taskCount = 2;
 inline constexpr std::uint32_t bufs = 0x30000000;
 inline constexpr std::size_t surfaceBytes = 0x4000;
 inline constexpr std::uint32_t text = bufs + 2 * surfaceBytes;
-inline constexpr std::uint32_t textConst = 0x280;
+inline constexpr std::uint32_t textConstFloor = 0x280;
 inline constexpr std::uint32_t kern = text + 2 * surfaceBytes;
 inline constexpr std::uint32_t kernSlot = 1;
 
@@ -94,6 +95,10 @@ struct H18GMatvec {
     static constexpr std::size_t dmaTiles = N / tileColumns;
     static constexpr std::size_t streamBytes = 16 + std::size(detail::td0<N>) * 4 +
         std::size(detail::td1Prefix) * 4 + 2 * dmaTiles * 4 + std::size(detail::td1Tail<N>) * 4;
+    // The loader refuses a stream longer than the const window, so the window grows
+    // with the stream (0x40 granularity, 0x280 floor): 640 at 256, 768 at 512.
+    static constexpr std::uint32_t textConst = static_cast<std::uint32_t>(
+        std::max<std::size_t>(textConstFloor, (streamBytes + 0x3F) & ~std::size_t{0x3F}));
     static constexpr std::array<std::uint32_t, 6> sectionIds{1, 2, 3, 4, 5, 7};
     static constexpr std::array<std::size_t, sectionIds.size()> sectionBytes{
         0x208 + detail::ioCount * 0x30, surfaceBytes + weightBytes, streamBytes, 0x410, 0x38, 0x28,
