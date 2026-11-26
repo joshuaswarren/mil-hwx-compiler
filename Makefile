@@ -203,6 +203,9 @@ $(BUILD)/prepare_staged_w8a8: tests/hardware/prepare_staged_w8a8.mm $(SUPPORT_SO
 $(BUILD)/prepare_staged_attention: tests/hardware/prepare_staged_attention.mm $(SUPPORT_SOURCES) $(MIL_LEXER_SOURCES) $(MIL_PARSER_SOURCES) $(GRAPH_SOURCES) $(OP_GRAPH_SOURCES) $(TRANSFORM_SOURCES) $(FUSION_SOURCES) $(LEGALIZE_SOURCES) $(SCHEDULED_SOURCES) $(STRUCTURED_TD_SOURCES) $(OBJECT_WRITER_SOURCES) $(CONSTANT_PACKER_SOURCES) $(STAGED_DRIVER_SOURCES) lib/Model/ANEBlobResolver.mm lib/HWX/ANEHWXArtifact.mm lib/HWX/HWXImage.mm lib/Runtime/ANEExecutableBundle.mm | $(BUILD)
 	$(CXX) $(CXXFLAGS) -Ilib/MIL -Ilib/IR -Ilib/Transform -Ilib/Planning -Ilib/Driver -Ilib/Model -Ilib/HWX -Ilib/Runtime -Iplugins/H16G -Iplugins/H16G/Encoding $^ $(FRAMEWORKS) -o $@
 
+$(BUILD)/test_parakeet_encoder_ops: tests/test_parakeet_encoder_ops.mm $(PRODUCTION_COMPILER_SOURCES) | $(BUILD)
+	$(CXX) $(CXXFLAGS) -Ilib/MIL -Ilib/IR -Ilib/Transform -Ilib/Planning -Ilib/Driver -Ilib/HWX -Ilib/Model -Ilib/Runtime -Iplugins/H16G -Iplugins/H16G/Encoding $^ $(FRAMEWORKS) -o $@
+
 $(BUILD)/test_compiler_e2e: tests/test_compiler_e2e.mm $(PRODUCTION_COMPILER_SOURCES) | $(BUILD)
 	$(CXX) $(CXXFLAGS) -Ilib/MIL -Ilib/IR -Ilib/Transform -Ilib/Planning -Ilib/Driver -Ilib/HWX -Ilib/Model -Ilib/Runtime -Iplugins/H16G -Iplugins/H16G/Encoding $^ $(FRAMEWORKS) -o $@
 
