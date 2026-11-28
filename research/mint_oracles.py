@@ -713,6 +713,56 @@ def exp_scaled_chain(channels: int) -> dict[str, Any]:
                 {"operations": ["exp", "mul", "add", "mul", "mul"], "shape": (1, channels, 1, 1), "scale_shift": 4}, mil)
 
 
+def boundary_conversions() -> list[dict[str, Any]]:
+    """Standalone dtype conversions (SUP-89 class 8): the five cast
+    directions of the Parakeet boundary test plus a standalone quantize
+    (fp16->int8) and dequantize (int8->fp16). Apple rejects the int32
+    directions on h16; those cases record the rejection."""
+    entries = []
+    for src, dst, shape in (("fp16", "int32", "[1, 64, 64]"),
+                            ("int32", "fp16", "[1, 64, 64]"),
+                            ("fp16", "bool", "[1, 375, 375]"),
+                            ("fp16", "fp32", "[1, 64, 64]"),
+                            ("fp32", "fp16", "[1, 64, 64]")):
+        mil = f"""program(1.3)
+[buildInfo = dict<string, string>({{}})]
+{{
+  func main<ios18>(tensor<{src}, {shape}> x) {{
+    tensor<{dst}, {shape}> y = cast(x = x, dtype = string("{dst}"))[name = string("y")];
+  }} -> (y);
+}}
+"""
+        entries.append(case(f"boundary_cast_{src}_to_{dst}", "boundary_conversion",
+                            {"operation": "cast", "source_type": src,
+                             "destination_type": dst, "shape": shape}, mil))
+    mil = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 64, 64, 64]> x) {
+    string qd = const()[name = string("qd"), val = string("int8")];
+    fp16 qs = const()[name = string("qs"), val = fp16(0x1p-3)];
+    tensor<int8, [1, 64, 64, 64]> y = quantize(input = x, output_dtype = qd, scale = qs)[name = string("y")];
+  } -> (y);
+}
+"""
+    entries.append(case("boundary_quantize_fp16_to_int8", "boundary_conversion",
+                        {"operation": "quantize", "source_type": "fp16",
+                         "destination_type": "int8", "shape": "[1, 64, 64, 64]"}, mil))
+    mil = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<int8, [1, 64, 64, 64]> x) {
+    fp16 dqs = const()[name = string("dqs"), val = fp16(0x1p-3)];
+    tensor<fp16, [1, 64, 64, 64]> y = dequantize(input = x, scale = dqs)[name = string("y")];
+  } -> (y);
+}
+"""
+    entries.append(case("boundary_dequantize_int8_to_fp16", "boundary_conversion",
+                        {"operation": "dequantize", "source_type": "int8",
+                         "destination_type": "fp16", "shape": "[1, 64, 64, 64]"}, mil))
+    return entries
+
+
 def campaign() -> list[dict[str, Any]]:
     cases = []
     shapes = [(1, channels, 1, 1) for channels in
@@ -756,6 +806,7 @@ def campaign() -> list[dict[str, Any]]:
         convolution(1, 64, 64, 8, False, True),
     ])
     cases.extend(envelope_campaign())
+    cases.extend(boundary_conversions())
     cases.extend(exp_scaled_chain(channels) for channels in (64, 512))
     names = [item["name"] for item in cases]
     if len(names) != len(set(names)):

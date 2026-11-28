@@ -34,6 +34,7 @@ static ANEOperationKind classifyOperation(NSString *name) {
             @"depth_to_space": @(ANEOperationKindLayout),
             @"pad": @(ANEOperationKindLayout),
             @"tile": @(ANEOperationKindLayout),
+            @"cast": @(ANEOperationKindCast),
             @"quantize": @(ANEOperationKindQuantize),
             @"dequantize": @(ANEOperationKindDequantize),
             @"constexpr_affine_dequantize": @(ANEOperationKindDequantize),
@@ -63,6 +64,7 @@ static NSString *kindName(ANEOperationKind kind) {
         case ANEOperationKindLayout: return @"layout";
         case ANEOperationKindQuantize: return @"quantize";
         case ANEOperationKindDequantize: return @"dequantize";
+        case ANEOperationKindCast: return @"cast";
         case ANEOperationKindHighLevel: return @"high-level";
         case ANEOperationKindMask: return @"mask";
         case ANEOperationKindUnsupported: return @"unsupported";

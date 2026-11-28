@@ -73,7 +73,10 @@ def cast_mil(src_type, dst_type):
 # Red 1-5: cast directions. Parakeet's mask prelude is cast(fp16->int32) on
 # the length chain with cast(int32->fp16) back; bool masks materialize via
 # cast(fp16->bool); the fp32 boundary needs both promotion directions.
-# No decoded primitive exists on any target.
+# Decoded on h16 (research/oracles/h16/boundary_cast_*): fp16->bool,
+# fp16->fp32 and fp32->fp16 compile to real boundary programs; Apple rejects
+# every int32-surface form, so the int32 directions assert the documented
+# refusal instead of an artifact.
 CASTS = [
     ("fp16", "int32"),
     ("int32", "fp16"),
@@ -81,6 +84,8 @@ CASTS = [
     ("fp16", "fp32"),
     ("fp32", "fp16"),
 ]
+
+INT32_CASTS = {("fp16", "int32"), ("int32", "fp16")}
 
 # Red 6: a standalone quantize package output must materialize the int8
 # surface as a real boundary program; today the fold drops it and the
@@ -108,6 +113,30 @@ dequantize_input_mil = """program(1.3)
 }
 """
 
+# The standalone boundary encoder bakes the minted scale 0x1p-3 into its task
+# words; a standalone quantize/dequantize at any other const scale has no
+# decoded program and must refuse instead of silently encoding wrong numerics.
+quantize_wrong_scale_mil = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 64, 64, 64]> x) {
+    string qd = const()[name = string("qd"), val = string("int8")];
+    fp16 qs = const()[name = string("qs"), val = fp16(0x1p-4)];
+    tensor<int8, [1, 64, 64, 64]> y = quantize(input = x, output_dtype = qd, scale = qs)[name = string("y")];
+  } -> (y);
+}
+"""
+
+dequantize_wrong_scale_mil = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<int8, [1, 64, 64, 64]> x) {
+    fp16 dqs = const()[name = string("dqs"), val = fp16(0x1p-4)];
+    tensor<fp16, [1, 64, 64, 64]> y = dequantize(input = x, scale = dqs)[name = string("y")];
+  } -> (y);
+}
+"""
+
 
 def main():
     with tempfile.TemporaryDirectory(prefix="mil-hwx-parakeet-class8-") as directory:
@@ -127,9 +156,21 @@ def main():
             (root / "w8a8_chain" / "manifest.json").read_text())
         assert_real_program(manifest)
 
-        # Red until 'cast' has a decoded conversion primitive.
+        # Decoded cast directions emit a real boundary program; the int32
+        # directions hit the documented refusal (no int32 surface on h16).
         for src_type, dst_type in CASTS:
             name = f"cast_{src_type}_to_{dst_type}"
+            if (src_type, dst_type) in INT32_CASTS:
+                mil = root / f"{name}.mil"
+                mil.write_text(cast_mil(src_type, dst_type))
+                run = subprocess.run(
+                    [compiler, "--mil", str(mil), "--model-root", str(root),
+                     "--target", "H16G", "--output", str(root / name)],
+                    capture_output=True, text=True, check=False, timeout=30)
+                assert run.returncode != 0
+                assert "h16g.legalize.unsupported-operation" in run.stderr
+                assert "int32" in run.stderr
+                continue
             manifest = compile_source(root, name,
                                       cast_mil(src_type, dst_type))
             assert_real_program(manifest)
@@ -142,6 +183,20 @@ def main():
         manifest = compile_source(root, "dequantize_input",
                                   dequantize_input_mil)
         assert_real_program(manifest)
+
+        # A standalone boundary at any scale other than the minted 0x1p-3
+        # refuses at legalize rather than encoding wrong numerics.
+        for name, text in (("quantize_wrong_scale", quantize_wrong_scale_mil),
+                           ("dequantize_wrong_scale", dequantize_wrong_scale_mil)):
+            mil = root / f"{name}.mil"
+            mil.write_text(text)
+            run = subprocess.run(
+                [compiler, "--mil", str(mil), "--model-root", str(root),
+                 "--target", "H16G", "--output", str(root / name)],
+                capture_output=True, text=True, check=False, timeout=30)
+            assert run.returncode != 0
+            assert "h16g.legalize.unsupported-operation" in run.stderr
+            assert "scale" in run.stderr
 
     print("parakeet class-8 cast/quant lowering: PASS")
 

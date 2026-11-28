@@ -177,19 +177,25 @@ static ANEHWXArtifact *artifactForEncodedTask(
     for (NSUInteger index = 0; index < encoded.inputIdentifiers.count; ++index) {
         NSString *identifier = encoded.inputIdentifiers[index];
         NSArray<NSNumber *> *shape = encoded.inputShapes[index];
+        ANEElementType elementType = index < encoded.inputElementTypes.count
+            ? (ANEElementType)encoded.inputElementTypes[index].unsignedIntegerValue
+            : ANEElementTypeFP16;
         NSString *shortName = [NSString stringWithFormat:@"i%lu",
             (unsigned long)index];
         [objectBindings addObject:objectBinding(identifier, shortName, shape,
-            ANEElementTypeFP16, HWXObjectBindingRoleInput)];
+            elementType, HWXObjectBindingRoleInput)];
         [runtimeBindings addObject:runtimeBinding(identifier, shape,
-            ANEElementTypeFP16, ANESurfaceRoleInput, ioIndex++)];
+            elementType, ANESurfaceRoleInput, ioIndex++)];
     }
     if (encoded.outputResourceIndex > objectBindings.count) return nil;
+    ANEElementType outputElementType =
+        encoded.outputElementType != ANEElementTypeInvalid
+            ? encoded.outputElementType : ANEElementTypeFP16;
     [objectBindings insertObject:objectBinding(encoded.outputIdentifier, @"o0",
-        encoded.outputShape, ANEElementTypeFP16, HWXObjectBindingRoleOutput)
+        encoded.outputShape, outputElementType, HWXObjectBindingRoleOutput)
                           atIndex:encoded.outputResourceIndex];
     [runtimeBindings addObject:runtimeBinding(encoded.outputIdentifier,
-        encoded.outputShape, ANEElementTypeFP16, ANESurfaceRoleOutput,
+        encoded.outputShape, outputElementType, ANESurfaceRoleOutput,
         ioIndex)];
 
     HWXObjectProgramInfo *info = [[HWXObjectProgramInfo alloc]
@@ -237,14 +243,24 @@ static H16GEncodedTask *encodedTaskForTask(ANEOperationGraph *graph,
     NSArray<NSArray<NSNumber *> *> *inputShapes =
         shapesForIdentifiers(graph, inputs);
     ANEValueType *outputType = typeForIdentifier(graph, task.nodeIdentifier);
-    H16GTaskEncodingRequest *request = inputShapes && outputType
+    NSMutableArray<NSNumber *> *inputElementTypes = [NSMutableArray array];
+    BOOL elementTypesKnown = inputShapes && outputType;
+    for (NSString *identifier in inputs) {
+        ANEValueType *type = typeForIdentifier(graph, identifier);
+        if (!type) elementTypesKnown = NO;
+        [inputElementTypes addObject:@(type ? type.elementType
+                                            : ANEElementTypeInvalid)];
+    }
+    H16GTaskEncodingRequest *request = elementTypesKnown
         ? [[H16GTaskEncodingRequest alloc]
             initWithStageOperations:stageOperations(task)
             inputIdentifiers:inputs inputShapes:inputShapes
             outputIdentifier:task.nodeIdentifier outputShape:outputType.shape
             numericMode:task.numericMode
             outputStorage:ANEScheduledBridgeStorageExternal
-            scalarOperand:scalarOperandForTask(graph, task, inputs)]
+            scalarOperand:scalarOperandForTask(graph, task, inputs)
+            inputElementTypes:inputElementTypes
+            outputElementType:outputType.elementType]
         : nil;
     NSError *error = nil;
     H16GEncodedTask *encoded = request
@@ -297,6 +313,8 @@ static NSString *packetFamilyName(H16GTaskPacketFamily family) {
         case H16GTaskPacketFamilySquareALU: return @"square-alu";
         case H16GTaskPacketFamilyPrimitiveFallback:
             return @"primitive-fallback";
+        case H16GTaskPacketFamilyBoundaryConversion:
+            return @"boundary-conversion";
     }
 }
 

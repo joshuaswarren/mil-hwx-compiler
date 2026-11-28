@@ -25,6 +25,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// The constant scalar operand of a task whose packet family carries one
 /// (scalar scale). Nil for every other family.
 @property(nonatomic, readonly, nullable, strong) NSNumber *scalarOperand;
+/// Surface element types for packet families whose surfaces are not fp16
+/// (boundary conversion). Nil/Invalid keeps the fp16 default elsewhere.
+@property(nonatomic, copy, nullable) NSArray<NSNumber *> *inputElementTypes;
+@property(nonatomic) ANEElementType outputElementType;
 - (instancetype)initWithTDProgram:(H16GEncodedTDProgram *)tdProgram
                    constantRegion:(NSData *)constantRegion
                   stageOperations:(NSArray<NSString *> *)stageOperations
