@@ -763,6 +763,85 @@ def boundary_conversions() -> list[dict[str, Any]]:
     return entries
 
 
+def class4_norms() -> list[dict[str, Any]]:
+    """Parakeet normalization forms (SUP-85 class 4): the affine layer_norm the
+    encoder carries (Apple refused every ax1 4D affine oracle so far), rms_norm
+    and group_norm, which have no lowering anywhere. Rejected cases record the
+    refusal."""
+    gamma = ('tensor<fp16, [1024]> gamma = const()[name = string("gamma"), '
+             'val = tensor<fp16, [1024]>(BLOBFILE(path = '
+             'string("@model_path/weights.bin"), offset = uint64(64)))];')
+    beta = ('tensor<fp16, [1024]> beta = const()[name = string("beta"), '
+            'val = tensor<fp16, [1024]>(BLOBFILE(path = '
+            'string("@model_path/weights.bin"), offset = uint64(64)))];')
+    axes = ('tensor<int32, [1]> axes = const()[name = string("axes"), '
+            'val = tensor<int32, [1]>([-1])];')
+    kind = "tensor<fp16, [1, 375, 1024]>"
+    affine = program(f"{kind} x", [
+        axes, gamma, beta,
+        f"{kind} y = layer_norm(x = x, axes = axes, epsilon = fp32(0.00001), "
+        "gamma = gamma, beta = beta)[name = string(\"y\")];",
+    ], "y")
+    rms = program(f"{kind} x", [
+        f"{kind} y = rms_norm(x = x, epsilon = fp32(0.00001))"
+        "[name = string(\"y\")];",
+    ], "y")
+    gn_gamma = ('tensor<fp16, [64]> gamma = const()[name = string("gamma"), '
+                'val = tensor<fp16, [64]>(BLOBFILE(path = '
+                'string("@model_path/weights.bin"), offset = uint64(64)))];')
+    gn_beta = ('tensor<fp16, [64]> beta = const()[name = string("beta"), '
+               'val = tensor<fp16, [64]>(BLOBFILE(path = '
+               'string("@model_path/weights.bin"), offset = uint64(64)))];')
+    gn_kind = "tensor<fp16, [1, 64, 375, 80]>"
+    group = program(f"{gn_kind} x", [
+        gn_gamma, gn_beta,
+        f"{gn_kind} y = group_norm(x = x, gamma = gamma, beta = beta, "
+        "groups = 32, epsilon = fp32(0.00001))[name = string(\"y\")];",
+    ], "y")
+    gamma8 = ('tensor<fp16, [8]> gamma = const()[name = string("gamma"), '
+              'val = tensor<fp16, [8]>(BLOBFILE(path = '
+              'string("@model_path/weights.bin"), offset = uint64(64)))];')
+    beta8 = ('tensor<fp16, [8]> beta = const()[name = string("beta"), '
+             'val = tensor<fp16, [8]>(BLOBFILE(path = '
+             'string("@model_path/weights.bin"), offset = uint64(64)))];')
+    affine4 = program("tensor<fp16, [1, 64, 8, 8]> x", [
+        'tensor<int32, [1]> axes = const()[name = string("axes"), '
+        'val = tensor<int32, [1]>([-1])];',
+        gamma8, beta8,
+        "tensor<fp16, [1, 64, 8, 8]> y = layer_norm(x = x, axes = axes, "
+        "epsilon = fp32(0.00001), gamma = gamma, beta = beta)"
+        "[name = string(\"y\")];",
+    ], "y")
+    chain = program(f"{kind} x", [
+        axes, gamma, beta,
+        f"{kind} n = layer_norm(x = x, axes = axes, epsilon = fp32(0.00001))"
+        "[name = string(\"n\")];",
+        f"{kind} m = mul(x = n, y = gamma)[name = string(\"m\")];",
+        f"{kind} y = add(x = m, y = beta)[name = string(\"y\")];",
+    ], "y")
+    blob_desc = {"storage": "BLOBFILE", "shape": [1024],
+                 "payload_bytes": 1024 * 2, "value": "fp16(0x1p-1)"}
+    gn_blob_desc = {"storage": "BLOBFILE", "shape": [64],
+                    "payload_bytes": 64 * 2, "value": "fp16(0x1p-1)"}
+    return [
+        case("norm_affine_ln_1x375x1024", "class4_norm",
+             {"operation": "layer_norm", "affine": True,
+              "shape": [1, 375, 1024]}, affine, 1024, blob_desc),
+        case("norm_rms_1x375x1024", "class4_norm",
+             {"operation": "rms_norm", "shape": [1, 375, 1024]}, rms),
+        case("norm_group_1x64x375x80_g32", "class4_norm",
+             {"operation": "group_norm", "groups": 32,
+              "shape": [1, 64, 375, 80]}, group, 64, gn_blob_desc),
+        case("norm_affine_ln_ax-1_1x64x8x8", "class4_norm",
+             {"operation": "layer_norm", "affine": True,
+              "shape": [1, 64, 8, 8]}, affine4, 64, gn_blob_desc),
+        case("norm_affine_ln_chain_1x375x1024", "class4_norm",
+             {"operation": "layer_norm+mul+add", "affine": True,
+              "decomposed": True, "shape": [1, 375, 1024]}, chain, 1024,
+             blob_desc),
+    ]
+
+
 def campaign() -> list[dict[str, Any]]:
     cases = []
     shapes = [(1, channels, 1, 1) for channels in
@@ -807,6 +886,7 @@ def campaign() -> list[dict[str, Any]]:
     ])
     cases.extend(envelope_campaign())
     cases.extend(boundary_conversions())
+    cases.extend(class4_norms())
     cases.extend(exp_scaled_chain(channels) for channels in (64, 512))
     names = [item["name"] for item in cases]
     if len(names) != len(set(names)):
