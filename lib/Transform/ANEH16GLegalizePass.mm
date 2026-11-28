@@ -77,8 +77,28 @@ static ANEOperationNode *operandNode(ANEOperationGraph *graph,
 }
 
 static BOOL isQuantizedWeightNode(ANEOperationNode *node) {
-    return node && [node.operationName isEqualToString:
-                    @"constexpr_affine_dequantize"];
+    return node && ([node.operationName isEqualToString:
+                    @"constexpr_affine_dequantize"] ||
+        [node.operationName isEqualToString:@"constexpr_lut_to_dense"] ||
+        [node.operationName isEqualToString:@"constexpr_sparse_to_dense"] ||
+        [node.operationName isEqualToString:
+                    @"constexpr_blockwise_shift_scale"]);
+}
+
+/* A quantize whose produced value is a function return value is the
+ * package's own int8 output surface: it must materialize, not fold. */
+static BOOL writesFunctionOutput(ANEOperationGraph *graph,
+                                 ANEOperationNode *node) {
+    for (ANEGraphValue *value in graph.sourceFunction.returnValues)
+        if ([value.name isEqualToString:node.identifier]) return YES;
+    return NO;
+}
+
+/* A dequantize with no in-graph producer reads a function input: the
+ * package's own entry boundary. It must materialize the fp16 surface. */
+static BOOL readsFunctionInput(ANEOperationGraph *graph,
+                               ANEOperationNode *node) {
+    return node.inputs.count == 0;
 }
 
 static BOOL isPackedActivationBoundary(ANEOperationNode *node) {
@@ -134,9 +154,20 @@ static ANELegalNumericMode numericModeForConv(ANEOperationGraph *graph,
         [node applyPhysicalLayout:layoutForNode(node) numericMode:mode];
     }
     for (ANEOperationNode *node in graph.nodes) {
-        if (node.kind == ANEOperationKindQuantize ||
-            node.kind == ANEOperationKindDequantize)
-            [node markFoldedIntoNumericBoundary];
+        if (node.kind != ANEOperationKindQuantize &&
+            node.kind != ANEOperationKindDequantize)
+            continue;
+        /* Interior quantize/dequantize folds into the consumer's or
+         * producer's numeric mode. Boundary surfaces materialize: a
+         * quantize that writes a function return value is the package's
+         * int8 output; a dequantize with no in-graph producer reads a
+         * function input. Folding those erased the int8/fp16 surfaces
+         * entirely (the class-8 reds). */
+        BOOL boundary = (node.kind == ANEOperationKindQuantize &&
+                         writesFunctionOutput(graph, node)) ||
+            (node.kind == ANEOperationKindDequantize &&
+             readsFunctionInput(graph, node));
+        if (!boundary) [node markFoldedIntoNumericBoundary];
     }
     return YES;
 }
