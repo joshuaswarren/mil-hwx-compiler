@@ -153,6 +153,6 @@ with tempfile.TemporaryDirectory() as temporary:
             assert emitted == const_bin.read_bytes(), stem
         validate(root, package)
         verified += 1
-    assert verified == 4, f"expected all four tile captures, got {verified}"
+    assert verified == 5, f"expected all five tile captures, got {verified}"
 
     print("h13 tile cli: PASS")

@@ -931,6 +931,122 @@ def class4_norms() -> list[dict[str, Any]]:
     ]
 
 
+
+def class11_layout() -> list[dict[str, Any]]:
+    """Parakeet layout/data-movement forms (class 11): the ops our H13
+    compiler resolves to input aliases (reshape, squeeze, split) refuse
+    when the alias is the returned value - the class-11 question is
+    whether Apple mints a real data-movement program for them. pad is
+    excluded (Apple refuses every form incl. identity, 6/6
+    callback_status=1). tile beyond the four captured runtime-operand
+    forms probes whether the decoded tile envelope widens."""
+    kind = "tensor<fp16, [1, 375, 1024]>"
+    reshape = program(f"{kind} x", [
+        'tensor<int32, [4]> sh = const()[name = string("sh"), '
+        'val = tensor<int32, [4]>([1, 375, 64, 16])];',
+        "tensor<fp16, [1, 375, 64, 16]> y = reshape(x = x, shape = sh)"
+        "[name = string(\"y\")];",
+    ], "y")
+    squeeze = program("tensor<fp16, [1, 375, 1]> x", [
+        'tensor<fp16, [1, 375]> y = squeeze(x = x)'
+        "[name = string(\"y\")];",
+    ], "y")
+    split0 = program("tensor<fp16, [2, 375, 1024]> x", [
+        'tensor<int32, []> ax = const()[name = string("ax"), '
+        'val = tensor<int32, []>(0)];',
+        'tensor<int32, []> ns = const()[name = string("ns"), '
+        'val = tensor<int32, []>(2)];',
+        f"(tensor<fp16, [1, 375, 1024]> a, tensor<fp16, [1, 375, 1024]> b) "
+        "= split(axis = ax, num_splits = ns, x = x)"
+        "[name = string(\"s\")];",
+    ], "a")
+    split1 = program("tensor<fp16, [1, 2, 64]> x", [
+        'tensor<int32, []> ax = const()[name = string("ax"), '
+        'val = tensor<int32, []>(1)];',
+        'tensor<int32, []> ns = const()[name = string("ns"), '
+        'val = tensor<int32, []>(2)];',
+        "(tensor<fp16, [1, 1, 64]> a, tensor<fp16, [1, 1, 64]> b) "
+        "= split(axis = ax, num_splits = ns, x = x)"
+        "[name = string(\"s\")];",
+    ], "a")
+    tile = program("tensor<fp16, [1, 64, 1]> x", [
+        'tensor<int32, [3]> rp = const()[name = string("rp"), '
+        'val = tensor<int32, [3]>([1, 1, 64])];',
+        'tensor<fp16, [1, 64, 64]> y = tile(x = x, reps = rp)'
+        "[name = string(\"y\")];",
+    ], "y")
+    expand = program("tensor<fp16, [1, 375]> x", [
+        'tensor<int32, [1]> ax = const()[name = string("ax"), '
+        'val = tensor<int32, [1]>([1])];',
+        'tensor<fp16, [1, 1, 375]> y = expand_dims(x = x, axes = ax)'
+        "[name = string(\"y\")];",
+    ], "y")
+    concat = program("tensor<fp16, [1, 375, 512]> x, "
+                     "tensor<fp16, [1, 375, 512]> z", [
+        'tensor<int32, []> ax = const()[name = string("ax"), '
+        'val = tensor<int32, []>(2)];',
+        'tensor<bool, []> il = const()[name = string("il"), '
+        'val = tensor<bool, []>(false)];',
+        'tensor<fp16, [1, 375, 1024]> y = concat(axis = ax, '
+        'interleave = il, values = (x, z))'
+        "[name = string(\"y\")];",
+    ], "y")
+    concat_ax0 = program("tensor<fp16, [1, 375, 512]> x, "
+                         "tensor<fp16, [1, 375, 512]> z", [
+        'tensor<int32, []> ax = const()[name = string("ax"), '
+        'val = tensor<int32, []>(0)];',
+        'tensor<bool, []> il = const()[name = string("il"), '
+        'val = tensor<bool, []>(false)];',
+        'tensor<fp16, [2, 375, 512]> y = concat(axis = ax, '
+        'interleave = il, values = (x, z))'
+        "[name = string(\"y\")];",
+    ], "y")
+    concat_ax1 = program("tensor<fp16, [1, 375, 512]> x, "
+                         "tensor<fp16, [1, 375, 512]> z", [
+        'tensor<int32, []> ax = const()[name = string("ax"), '
+        'val = tensor<int32, []>(1)];',
+        'tensor<bool, []> il = const()[name = string("il"), '
+        'val = tensor<bool, []>(false)];',
+        'tensor<fp16, [1, 750, 512]> y = concat(axis = ax, '
+        'interleave = il, values = (x, z))'
+        "[name = string(\"y\")];",
+    ], "y")
+    concat_il = program("tensor<fp16, [1, 375, 512]> x, "
+                        "tensor<fp16, [1, 375, 512]> z", [
+        'tensor<int32, []> ax = const()[name = string("ax"), '
+        'val = tensor<int32, []>(2)];',
+        'tensor<bool, []> il = const()[name = string("il"), '
+        'val = tensor<bool, []>(true)];',
+        'tensor<fp16, [1, 375, 1024]> y = concat(axis = ax, '
+        'interleave = il, values = (x, z))'
+        "[name = string(\"y\")];",
+    ], "y")
+    return [
+        case("layout_reshape_1x375x1024_to_1x375x64x16", "class11_layout",
+             {"operation": "reshape", "shape": [1, 375, 64, 16]}, reshape),
+        case("layout_squeeze_1x375x1_to_1x375", "class11_layout",
+             {"operation": "squeeze", "shape": [1, 375]}, squeeze),
+        case("layout_split_ax0_2x375x1024", "class11_layout",
+             {"operation": "split", "axis": 0,
+              "shape": [1, 375, 1024]}, split0),
+        case("layout_split_ax1_1x2x64", "class11_layout",
+             {"operation": "split", "axis": 1, "shape": [1, 1, 64]},
+             split1),
+        case("layout_tile_1x64x1_reps_1x1x64", "class11_layout",
+             {"operation": "tile", "shape": [1, 64, 64]}, tile),
+        case("layout_expand_dims_1x375_to_1x1x375", "class11_layout",
+             {"operation": "expand_dims", "shape": [1, 1, 375]}, expand),
+        case("layout_concat_ax2_1x375x512x2", "class11_layout",
+             {"operation": "concat", "shape": [1, 375, 1024]}, concat),
+        case("layout_concat_ax0_1x375x512x2", "class11_layout",
+             {"operation": "concat", "shape": [2, 375, 512]}, concat_ax0),
+        case("layout_concat_ax1_1x375x512x2", "class11_layout",
+             {"operation": "concat", "shape": [1, 750, 512]}, concat_ax1),
+        case("layout_concat_ax2_il_1x375x512x2", "class11_layout",
+             {"operation": "concat", "shape": [1, 375, 1024]}, concat_il),
+    ]
+
+
 def campaign() -> list[dict[str, Any]]:
     cases = []
     shapes = [(1, channels, 1, 1) for channels in
@@ -976,6 +1092,7 @@ def campaign() -> list[dict[str, Any]]:
     cases.extend(envelope_campaign())
     cases.extend(boundary_conversions())
     cases.extend(class4_norms())
+    cases.extend(class11_layout())
     cases.extend(exp_scaled_chain(channels) for channels in (64, 512))
     names = [item["name"] for item in cases]
     if len(names) != len(set(names)):

@@ -378,5 +378,29 @@ bool supportsTileOp(H13TileShape shape);
 /// Encodes the captured task stream with its constant section.
 ane::h13::Program encodeTileOp(H13TileShape shape);
 
+/// One decoded layout geometry: a view op the frontend would alias —
+/// reshape, squeeze or expand_dims — minted as a data-movement program by Apple when
+/// the view is the returned surface. Same DMA block family as tile:
+/// input on slot 5, result on slot 4.
+enum class H13LayoutOperation : std::uint8_t {
+    Reshape = 0, Squeeze = 1, ExpandDims = 2
+};
+
+struct H13LayoutShape {
+    H13LayoutOperation operation = H13LayoutOperation::Reshape;
+    std::uint32_t inChannels = 1;
+    std::uint32_t inHeight = 1;
+    std::uint32_t inWidth = 1;
+    std::uint32_t outChannels = 1;
+    std::uint32_t outHeight = 1;
+    std::uint32_t outWidth = 1;
+};
+
+/// True when the decoded layout corpus covers this geometry.
+bool supportsLayoutOp(H13LayoutShape shape);
+
+/// Encodes the captured task stream; the constant section is all-zero.
+ane::h13::Program encodeLayoutOp(H13LayoutShape shape);
+
 }
 
