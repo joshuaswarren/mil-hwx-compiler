@@ -235,6 +235,157 @@ def test_exact_fp16_values():
             raise AssertionError('nonzero mismatch or NaN passed exact comparison')
 
 
+def test_scalar_broadcast_and_broadcast_mismatch():
+    mil = """program(1.3)
+{
+  func main<ios18>(tensor<fp16, [2, 2]> x) {
+    fp16 c = const()[name = string("c"), val = fp16(2.0)];
+    tensor<fp16, [2, 2]> y = mul(x = x, y = c)[name = string("mul")];
+  } -> (y);
+}
+"""
+    output = h13_reference.evaluate(mil, Path("."), {"x": fp16([1.0, 2.0, 3.0, 4.0])})
+    assert values(output["y"]) == [2.0, 4.0, 6.0, 8.0]
+    bad = """program(1.3)
+{
+  func main<ios18>(tensor<fp16, [2, 2]> x) {
+    tensor<fp16, [2, 2]> w = const()[name = string("w"), val = tensor<fp16, [2, 2]>([fp16(1), fp16(2), fp16(3), fp16(4)])];
+    tensor<fp16, [3, 3]> y = add(x = x, y = w)[name = string("add")];
+  } -> (y);
+}
+"""
+    try:
+        h13_reference.evaluate(bad, Path("."), {"x": fp16([1.0, 2.0, 3.0, 4.0])})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a declared shape that cannot broadcast passed evaluation")
+
+
+def test_reduce_softmax_and_layer_norm():
+    for op, want in (("reduce_sum", 6.0), ("reduce_mean", 1.5), ("reduce_max", 4.0)):
+        mil = f"""program(1.3)
+{{
+  func main<ios18>(tensor<fp16, [1, 4]> x) {{
+    tensor<fp16, [1, 1]> y = {op}(x = x, axes = tensor<int32, [1]>([1]), keep_dims = bool(true))[name = string("y")];
+  }} -> (y);
+}}
+"""
+        output = h13_reference.evaluate(mil, Path("."), {"x": fp16([1.0, 1.0, 0.0, 4.0])})
+        assert values(output["y"]) == [want], op
+    mil = """program(1.3)
+{
+  func main<ios18>(tensor<fp16, [1, 2]> x) {
+    tensor<fp16, [1, 2]> s = softmax(x = x, axis = int32(1))[name = string("s")];
+    tensor<fp16, [1, 2]> y = layer_norm(x = x, axes = tensor<int32, [1]>([1]))[name = string("y")];
+  } -> (s, y);
+}
+"""
+    output = h13_reference.evaluate(mil, Path("."), {"x": fp16([3.0, 3.0])})
+    assert values(output["s"]) == [0.5, 0.5]
+    output = h13_reference.evaluate(mil, Path("."), {"x": fp16([2.0, 4.0])})
+    a, b = values(output["y"])
+    assert abs(a + 1.0) < 1e-2 and abs(b - 1.0) < 1e-2, (a, b)
+
+
+def test_layer_norm_refuses_affine_terms():
+    mil = """program(1.3)
+{
+  func main<ios18>(tensor<fp16, [1, 2]> x) {
+    tensor<fp16, [1, 2]> g = const()[name = string("g"), val = tensor<fp16, [1, 2]>([fp16(1), fp16(1)])];
+    tensor<fp16, [1, 2]> y = layer_norm(x = x, axes = tensor<int32, [1]>([1]), gamma = g)[name = string("y")];
+  } -> (y);
+}
+"""
+    try:
+        h13_reference.evaluate(mil, Path("."), {"x": fp16([1.0, 2.0])})
+    except ValueError as error:
+        assert "no gamma or beta" in str(error)
+    else:
+        raise AssertionError("layer_norm with gamma passed evaluation")
+
+
+def test_blobfile_path_escape_and_missing_are_refused():
+    def source(path):
+        return f"""program(1.3)
+{{
+  func main<ios18>(tensor<fp16, [1, 2]> x) {{
+    tensor<fp16, [1, 2]> w = const()[name = string("w"), val = tensor<fp16, [1, 2]>(BLOBFILE(path = string("{path}"), offset = uint64(0)))];
+    tensor<fp16, [1, 2]> y = add(x = x, y = w)[name = string("add")];
+  }} -> (y);
+}}
+"""
+    with tempfile.TemporaryDirectory(prefix="h13-reference-blob-") as directory:
+        root = Path(directory)
+        root.joinpath("w.bin").write_bytes(blob(fp16([1.0, 2.0])))
+        for path in ("@model_path/../escape.bin", "@model_path/missing.bin"):
+            try:
+                h13_reference.evaluate(source(path), root, {"x": fp16([0.0, 0.0])})
+            except (ValueError, OSError):
+                pass
+            else:
+                raise AssertionError(f"BLOBFILE {path} resolved outside or beyond the model root")
+
+
+def test_evaluation_refusals():
+    cases = [
+        ("unknown MIL value", """program(1.3)
+{
+  func main<ios18>(tensor<fp16, [1, 1]> x) {
+    tensor<fp16, [1, 1]> y = add(x = z, y = x)[name = string("y")];
+  } -> (y);
+}
+""", {"x": fp16([1.0])}),
+        ("unsupported H13 MIL operation", """program(1.3)
+{
+  func main<ios18>(tensor<fp16, [1, 1]> x) {
+    tensor<fp16, [1, 1]> y = bogus(x = x)[name = string("y")];
+  } -> (y);
+}
+""", {"x": fp16([1.0])}),
+        ("duplicate MIL value", """program(1.3)
+{
+  func main<ios18>(tensor<fp16, [1, 1]> x) {
+    tensor<fp16, [1, 1]> x = add(x = x, y = x)[name = string("x")];
+  } -> (y);
+}
+""", {"x": fp16([1.0])}),
+        ("inputs must be exactly", """program(1.3)
+{
+  func main<ios18>(tensor<fp16, [1, 1]> x) {
+    tensor<fp16, [1, 1]> y = add(x = x, y = x)[name = string("y")];
+  } -> (y);
+}
+""", {"x": fp16([1.0]), "extra": fp16([1.0])}),
+        ("does not match its MIL shape", """program(1.3)
+{
+  func main<ios18>(tensor<fp16, [1, 2]> x) {
+    tensor<fp16, [1, 2]> y = add(x = x, y = x)[name = string("y")];
+  } -> (y);
+}
+""", {"x": fp16([1.0])}),
+    ]
+    for want, mil, inputs in cases:
+        try:
+            h13_reference.evaluate(mil, Path("."), inputs)
+        except ValueError as error:
+            assert want in str(error), (want, error)
+        else:
+            raise AssertionError(f"evaluation accepted a program that must refuse: {want}")
+
+
+def test_cli_error_path_reports_on_stderr():
+    with tempfile.TemporaryDirectory(prefix="h13-reference-cli-err-") as directory:
+        root = Path(directory)
+        bad = root / "bad.mil"
+        bad.write_text("program(1.3)\n{}\n")
+        run = subprocess.run([
+            sys.executable, str(ROOT / "tools/h13_reference.py"), str(bad),
+            "--model-root", str(root),
+        ], capture_output=True, text=True, timeout=scaled_timeout(15), check=False)
+        assert run.returncode == 1
+        assert "H13 reference error" in run.stderr
+
 def main():
     tests = [value for name, value in sorted(globals().items())
              if name.startswith("test_") and callable(value)]
