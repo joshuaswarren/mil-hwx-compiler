@@ -113,6 +113,30 @@ dequantize_input_mil = """program(1.3)
 }
 """
 
+# The standalone boundary encoder bakes the minted scale 0x1p-3 into its task
+# words; a standalone quantize/dequantize at any other const scale has no
+# decoded program and must refuse instead of silently encoding wrong numerics.
+quantize_wrong_scale_mil = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 64, 64, 64]> x) {
+    string qd = const()[name = string("qd"), val = string("int8")];
+    fp16 qs = const()[name = string("qs"), val = fp16(0x1p-4)];
+    tensor<int8, [1, 64, 64, 64]> y = quantize(input = x, output_dtype = qd, scale = qs)[name = string("y")];
+  } -> (y);
+}
+"""
+
+dequantize_wrong_scale_mil = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<int8, [1, 64, 64, 64]> x) {
+    fp16 dqs = const()[name = string("dqs"), val = fp16(0x1p-4)];
+    tensor<fp16, [1, 64, 64, 64]> y = dequantize(input = x, scale = dqs)[name = string("y")];
+  } -> (y);
+}
+"""
+
 
 def main():
     with tempfile.TemporaryDirectory(prefix="mil-hwx-parakeet-class8-") as directory:
@@ -159,6 +183,20 @@ def main():
         manifest = compile_source(root, "dequantize_input",
                                   dequantize_input_mil)
         assert_real_program(manifest)
+
+        # A standalone boundary at any scale other than the minted 0x1p-3
+        # refuses at legalize rather than encoding wrong numerics.
+        for name, text in (("quantize_wrong_scale", quantize_wrong_scale_mil),
+                           ("dequantize_wrong_scale", dequantize_wrong_scale_mil)):
+            mil = root / f"{name}.mil"
+            mil.write_text(text)
+            run = subprocess.run(
+                [compiler, "--mil", str(mil), "--model-root", str(root),
+                 "--target", "H16G", "--output", str(root / name)],
+                capture_output=True, text=True, check=False, timeout=30)
+            assert run.returncode != 0
+            assert "h16g.legalize.unsupported-operation" in run.stderr
+            assert "scale" in run.stderr
 
     print("parakeet class-8 cast/quant lowering: PASS")
 

@@ -113,6 +113,17 @@ static BOOL dequantizeFoldsIntoBoundary(ANEOperationGraph *graph,
     return YES;
 }
 
+static BOOL mintedQuantizeScale(ANEOperationGraph *graph,
+                                ANEOperationNode *node) {
+    ANEOperationNode *scale = operandNode(graph, node, @"scale");
+    if (!scale) return NO;
+    ANEGraphArgument *value = scale.sourceOperation.attributes[@"val"];
+    while (value.kind == ANEGraphArgumentKindCall &&
+           value.callArguments.count == 1)
+        value = value.callArguments[0].value;
+    return [value.text isEqualToString:@"0x1p-3"];
+}
+
 static ANEElementType castSourceType(ANEOperationGraph *graph,
                                      ANEOperationNode *node) {
     ANEOperationNode *input = operandNode(graph, node, @"x");
@@ -190,6 +201,27 @@ static ANELegalNumericMode numericModeForConv(ANEOperationGraph *graph,
                                   elementTypeName(
                                       castSourceType(graph, node)),
                                   elementTypeName(node.outputType.elementType)]
+                                range:node.sourceOperation ? node.sourceOperation.range
+                                                           : ANESourceRangeMake(
+                                                               ANESourceLocationMake(0, 1, 1),
+                                                               ANESourceLocationMake(0, 1, 1))];
+            return NO;
+        }
+        BOOL constexprOp = [node.operationName hasPrefix:@"constexpr_"];
+        if ((node.kind == ANEOperationKindQuantize &&
+             !constexprOp &&
+             !quantizeFoldsIntoBoundary(graph, node) &&
+             !mintedQuantizeScale(graph, node)) ||
+            (node.kind == ANEOperationKindDequantize &&
+             !constexprOp &&
+             !dequantizeFoldsIntoBoundary(graph, node) &&
+             !mintedQuantizeScale(graph, node))) {
+            [diagnostics emitSeverity:ANEDiagnosticSeverityError
+                                 code:@"h16g.legalize.unsupported-operation"
+                              message:[NSString stringWithFormat:
+                                  @"H16G standalone '%@' has a decoded program "
+                                  "only at scale 0x1p-3 (the minted form)",
+                                  node.operationName]
                                 range:node.sourceOperation ? node.sourceOperation.range
                                                            : ANESourceRangeMake(
                                                                ANESourceLocationMake(0, 1, 1),
