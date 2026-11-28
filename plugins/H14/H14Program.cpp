@@ -301,6 +301,72 @@ Program oracleProgram(const OracleTaskTemplate &source, std::size_t inputCount) 
     return program;
 }
 
+/// The program descriptor's unresolved word interpolates cleanly on the
+/// unary family: the seven-channel abs corpus (64..4096 channels, every
+/// generation) fixes it at floor(c * 9 / 2048) on H14 and H17 and
+/// floor(c * 7 / 2048) on H18. Word five of the task stream carries the
+/// same value.
+std::uint32_t unaryDescriptorWord(Generation generation,
+                                  std::uint32_t channels) {
+    const std::uint32_t numerator = generation == Generation::H18 ? 7 : 9;
+    return channels * numerator / 2048;
+}
+
+/// Generic relu covers every {c,1,1} surface with a channel count divisible
+/// by 16 by reusing the decoded c512 stream.
+bool genericReluShape(Generation generation, ElementwiseShape shape) {
+    if (!shape.channels || shape.channels % 16 || shape.height != 1 ||
+        shape.width != 1)
+        return false;
+    const auto unary = static_cast<std::uint8_t>(UnaryOperation::Relu);
+    const ElementwiseShape wide{512, 1, 1};
+    return elementwiseTemplate(generation, ElementwiseKind::Unary, unary, wide,
+                               wide) != nullptr;
+}
+
+/// The two decoded relu streams (c64, c512) differ only at the channel
+/// fields, the surface word-count fields (c * 16 words; the low six bits
+/// are flags, not size), and the descriptor word. The encoder rewrites
+/// exactly those fields and refuses to guess if the templates drift.
+Program genericReluProgram(Generation generation, ElementwiseShape shape) {
+    const auto unary = static_cast<std::uint8_t>(UnaryOperation::Relu);
+    const ElementwiseShape wide{512, 1, 1}, narrow{64, 1, 1};
+    const auto *source = elementwiseTemplate(generation, ElementwiseKind::Unary,
+                                             unary, wide, wide);
+    const auto *other = elementwiseTemplate(generation, ElementwiseKind::Unary,
+                                            unary, narrow, narrow);
+    if (!source || !other || source->textWords != other->textWords)
+        throw std::invalid_argument(std::string(generationName(generation)) +
+            " relu lacks the decoded c64/c512 pair");
+    std::vector<std::uint32_t> text(source->text,
+                                    source->text + source->textWords);
+    std::size_t patched = 0;
+    for (std::size_t index = 0; index != text.size(); ++index) {
+        if (source->text[index] == other->text[index] || index == 5)
+            continue;
+        if (source->text[index] == wide.channels &&
+            other->text[index] == narrow.channels)
+            text[index] = shape.channels;
+        else if ((source->text[index] & ~0x3fu) == wide.channels * 16 &&
+                 (other->text[index] & ~0x3fu) == narrow.channels * 16)
+            text[index] = shape.channels * 16 | (source->text[index] & 0x3fu);
+        else
+            throw std::logic_error(
+                "relu stream drifted from its decoded shape fields");
+        ++patched;
+    }
+    if (!patched || text.size() <= 5)
+        throw std::logic_error("relu stream carries no shape fields");
+    text[5] = unaryDescriptorWord(generation, shape.channels);
+    Program program = streamProgram(text.data(), text.size(), source->taskCount,
+                                    source->programRecordCount, text[5]);
+    program.constants = runBytes(source->constants, source->constantRuns,
+                                 source->constantBytes);
+    program.inputs = {elementwiseTensor(5, shape)};
+    program.output = elementwiseTensor(4, shape);
+    return program;
+}
+
 std::uint32_t loadLE32(const std::vector<std::uint8_t> &bytes, std::size_t offset) {
     std::uint32_t value = 0;
     for (std::size_t index = 0; index != 4; ++index)
@@ -488,8 +554,11 @@ bool supportsElementwise(Generation generation, BinaryOperation operation,
 
 bool supportsElementwise(Generation generation, UnaryOperation operation,
                          ElementwiseShape shape) {
-    return elementwiseTemplate(generation, ElementwiseKind::Unary,
-                               static_cast<std::uint8_t>(operation), shape, shape);
+    if (elementwiseTemplate(generation, ElementwiseKind::Unary,
+                            static_cast<std::uint8_t>(operation), shape, shape))
+        return true;
+    return operation == UnaryOperation::Relu &&
+           genericReluShape(generation, shape);
 }
 
 Program encodeElementwise(Generation generation, BinaryOperation operation,
@@ -513,9 +582,13 @@ Program encodeElementwise(Generation generation, UnaryOperation operation,
     const auto *source = elementwiseTemplate(
         generation, ElementwiseKind::Unary, static_cast<std::uint8_t>(operation),
         shape, shape);
-    if (!source)
+    if (!source) {
+        if (operation == UnaryOperation::Relu &&
+            genericReluShape(generation, shape))
+            return genericReluProgram(generation, shape);
         throw std::invalid_argument(std::string(generationName(generation)) +
             " unary operation is outside the decoded parity envelope");
+    }
     return oracleProgram(*source, 1);
 }
 
