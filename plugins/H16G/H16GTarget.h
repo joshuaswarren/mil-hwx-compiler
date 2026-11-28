@@ -22,6 +22,7 @@ typedef NS_ENUM(NSUInteger, H16GTaskPacketFamily) {
     H16GTaskPacketFamilyMatrixRowDivision,
     H16GTaskPacketFamilySquareALU,
     H16GTaskPacketFamilyPrimitiveFallback,
+    H16GTaskPacketFamilyBoundaryConversion,
 };
 
 typedef NS_ENUM(NSUInteger, H16GTaskSemanticConstraint) {

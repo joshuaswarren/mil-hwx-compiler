@@ -236,6 +236,27 @@ static NSArray<H16GTaskCapability *> *taskCapabilityRows(void) {
             packetFamily:H16GTaskPacketFamilyPrimitiveFallback geometry:128
             programTaskCount:2 semanticConstraint:
                 H16GTaskSemanticConstraintNone]];
+        // SUP-89 class 8: standalone boundary conversions. Decoded forms
+        // exist for quantize/dequantize at [1,64,64,64], cast at [1,64,64]
+        // (fp16<->fp32) and [1,375,375] (fp16->bool); the encoder selects
+        // the direction from the surface element types.
+        NSArray<NSNumber *> *boundary4d = @[@1, @64, @64, @64];
+        for (NSString *operation in @[@"quantize", @"dequantize"])
+            [result addObject:[[H16GTaskCapability alloc]
+                initWithStageOperations:@[operation]
+                inputShapes:@[boundary4d] outputShape:boundary4d
+                numericMode:ANELegalNumericModeFP16
+                outputStorage:ANEScheduledBridgeStorageExternal
+                packetFamily:H16GTaskPacketFamilyBoundaryConversion
+                geometry:64]];
+        for (NSArray<NSNumber *> *shape in @[@[@1, @64, @64], @[@1, @375, @375]])
+            [result addObject:[[H16GTaskCapability alloc]
+                initWithStageOperations:@[@"cast"]
+                inputShapes:@[shape] outputShape:shape
+                numericMode:ANELegalNumericModeFP16
+                outputStorage:ANEScheduledBridgeStorageExternal
+                packetFamily:H16GTaskPacketFamilyBoundaryConversion
+                geometry:shape[2].unsignedIntegerValue]];
         return [result copy];
     }();
     return rows;
@@ -440,6 +461,7 @@ programCompositionCapabilityRows(void) {
         case ANEOperationKindLayout:
         case ANEOperationKindQuantize:
         case ANEOperationKindDequantize:
+        case ANEOperationKindCast:
             return YES;
         case ANEOperationKindConstant:
         case ANEOperationKindHighLevel:

@@ -15,6 +15,7 @@ typedef NS_ENUM(NSUInteger, ANEOperationKind) {
     ANEOperationKindLayout,
     ANEOperationKindQuantize,
     ANEOperationKindDequantize,
+    ANEOperationKindCast,
     ANEOperationKindHighLevel,
     ANEOperationKindMask,
     ANEOperationKindUnsupported,

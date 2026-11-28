@@ -1,5 +1,6 @@
 #import "H16GTaskEncoder.h"
 
+#import "H16GBoundaryConversionEncoder.h"
 #import "H16GLUTEncoder.h"
 #import "H16GMatmulEncoder.h"
 #import "H16GALUEncoder.h"
@@ -35,6 +36,23 @@ static void setError(NSError **error, NSString *message) {
                              numericMode:(ANELegalNumericMode)numericMode
                            outputStorage:(ANEScheduledBridgeStorage)outputStorage
                            scalarOperand:(NSNumber *)scalarOperand {
+    return [self initWithStageOperations:stageOperations
+        inputIdentifiers:inputIdentifiers inputShapes:inputShapes
+        outputIdentifier:outputIdentifier outputShape:outputShape
+        numericMode:numericMode outputStorage:outputStorage
+        scalarOperand:scalarOperand inputElementTypes:nil
+        outputElementType:ANEElementTypeInvalid];
+}
+- (instancetype)initWithStageOperations:(NSArray<NSString *> *)stageOperations
+                        inputIdentifiers:(NSArray<NSString *> *)inputIdentifiers
+                             inputShapes:(NSArray<NSArray<NSNumber *> *> *)inputShapes
+                        outputIdentifier:(NSString *)outputIdentifier
+                             outputShape:(NSArray<NSNumber *> *)outputShape
+                             numericMode:(ANELegalNumericMode)numericMode
+                           outputStorage:(ANEScheduledBridgeStorage)outputStorage
+                           scalarOperand:(NSNumber *)scalarOperand
+                      inputElementTypes:(NSArray<NSNumber *> *)inputElementTypes
+                      outputElementType:(ANEElementType)outputElementType {
     self = [super init];
     if (self) {
         _stageOperations = [stageOperations copy];
@@ -45,6 +63,8 @@ static void setError(NSError **error, NSString *message) {
         _numericMode = numericMode;
         _outputStorage = outputStorage;
         _scalarOperand = scalarOperand;
+        _inputElementTypes = [inputElementTypes copy];
+        _outputElementType = outputElementType;
     }
     return self;
 }
@@ -153,13 +173,28 @@ static void setError(NSError **error, NSString *message) {
             setError(error,
                 @"compound task requires standalone primitive fallback");
             break;
+        case H16GTaskPacketFamilyBoundaryConversion: {
+            if (request.inputElementTypes.count == 0 ||
+                request.outputElementType == ANEElementTypeInvalid) {
+                setError(error,
+                    @"boundary-conversion task requires input/output element types");
+                return nil;
+            }
+            program = [H16GBoundaryConversionEncoder
+                encodeOperationName:request.stageOperations.lastObject
+                sourceType:(ANEElementType)request.inputElementTypes.firstObject.unsignedIntegerValue
+                destinationType:request.outputElementType
+                shape:request.outputShape error:error];
+            taskCount = 1;
+            break;
+        }
     }
     if (!program || !constants) return nil;
     if (taskCount != capability.standaloneTaskCount) {
         setError(error, @"encoded task count differs from target metadata");
         return nil;
     }
-    return [[H16GEncodedTask alloc] initWithTDProgram:program
+    H16GEncodedTask *task = [[H16GEncodedTask alloc] initWithTDProgram:program
         constantRegion:constants stageOperations:request.stageOperations
         inputIdentifiers:encodedInputIdentifiers inputShapes:encodedInputShapes
         outputIdentifier:request.outputIdentifier outputShape:request.outputShape
@@ -176,5 +211,10 @@ static void setError(NSError **error, NSString *message) {
         scalarOperand:
             capability.packetFamily == H16GTaskPacketFamilyScalarScale
                 ? request.scalarOperand : nil];
+    if (capability.packetFamily == H16GTaskPacketFamilyBoundaryConversion) {
+        task.inputElementTypes = request.inputElementTypes;
+        task.outputElementType = request.outputElementType;
+    }
+    return task;
 }
 @end

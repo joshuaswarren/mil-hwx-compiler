@@ -94,6 +94,59 @@ static BOOL hasQuantizedOutput(ANEOperationNode *node) {
     return NO;
 }
 
+static BOOL isW8A8Conv(ANEOperationGraph *graph, ANEOperationNode *node) {
+    return node && node.kind == ANEOperationKindConv &&
+        isQuantizedWeightNode(operandNode(graph, node, @"weight"));
+}
+
+static BOOL quantizeFoldsIntoBoundary(ANEOperationGraph *graph,
+                                      ANEOperationNode *node) {
+    return isW8A8Conv(graph, operandNode(graph, node, @"input"));
+}
+
+static BOOL dequantizeFoldsIntoBoundary(ANEOperationGraph *graph,
+                                        ANEOperationNode *node) {
+    if (node.users.count == 0) return NO;
+    for (ANEOperationNode *user in node.users)
+        if (!isW8A8Conv(graph, user) ||
+            operandNode(graph, user, @"x") != node) return NO;
+    return YES;
+}
+
+static ANEElementType castSourceType(ANEOperationGraph *graph,
+                                     ANEOperationNode *node) {
+    ANEOperationNode *input = operandNode(graph, node, @"x");
+    if (input && input.outputType) return input.outputType.elementType;
+    ANEGraphValue *value = node.sourceOperation.operands[@"x"].value;
+    for (ANEGraphValue *candidate in graph.sourceFunction.inputs)
+        if ([candidate.name isEqualToString:value.name])
+            return candidate.type.elementType;
+    return ANEElementTypeInvalid;
+}
+
+static NSString *elementTypeName(ANEElementType type) {
+    switch (type) {
+        case ANEElementTypeFP16: return @"fp16";
+        case ANEElementTypeFP32: return @"fp32";
+        case ANEElementTypeInt8: return @"int8";
+        case ANEElementTypeInt32: return @"int32";
+        case ANEElementTypeUInt64: return @"uint64";
+        case ANEElementTypeBool: return @"bool";
+        case ANEElementTypeString: return @"string";
+        default: return @"?";
+    }
+}
+
+static BOOL decodedCastDirection(ANEOperationGraph *graph,
+                                 ANEOperationNode *node) {
+    ANEElementType source = castSourceType(graph, node);
+    ANEElementType destination = node.outputType.elementType;
+    return (source == ANEElementTypeFP16 &&
+            (destination == ANEElementTypeBool ||
+             destination == ANEElementTypeFP32)) ||
+        (source == ANEElementTypeFP32 && destination == ANEElementTypeFP16);
+}
+
 static ANELegalNumericMode numericModeForConv(ANEOperationGraph *graph,
                                                ANEOperationNode *conv) {
     ANEOperationNode *weight = operandNode(graph, conv, @"weight");
@@ -127,6 +180,22 @@ static ANELegalNumericMode numericModeForConv(ANEOperationGraph *graph,
                                                                ANESourceLocationMake(0, 1, 1))];
             return NO;
         }
+        if (node.kind == ANEOperationKindCast &&
+            !decodedCastDirection(graph, node)) {
+            [diagnostics emitSeverity:ANEDiagnosticSeverityError
+                                 code:@"h16g.legalize.unsupported-operation"
+                              message:[NSString stringWithFormat:
+                                  @"H16G has no decoded primitive for 'cast' "
+                                  "%@->%@ (Apple rejects every int32 surface)",
+                                  elementTypeName(
+                                      castSourceType(graph, node)),
+                                  elementTypeName(node.outputType.elementType)]
+                                range:node.sourceOperation ? node.sourceOperation.range
+                                                           : ANESourceRangeMake(
+                                                               ANESourceLocationMake(0, 1, 1),
+                                                               ANESourceLocationMake(0, 1, 1))];
+            return NO;
+        }
         if (!validateLayoutTransform(graph, node, target, diagnostics))
             return NO;
         ANELegalNumericMode mode = node.kind == ANEOperationKindConv
@@ -134,9 +203,13 @@ static ANELegalNumericMode numericModeForConv(ANEOperationGraph *graph,
         [node applyPhysicalLayout:layoutForNode(node) numericMode:mode];
     }
     for (ANEOperationNode *node in graph.nodes) {
-        if (node.kind == ANEOperationKindQuantize ||
-            node.kind == ANEOperationKindDequantize)
-            [node markFoldedIntoNumericBoundary];
+        if (node.kind == ANEOperationKindQuantize) {
+            if (quantizeFoldsIntoBoundary(graph, node))
+                [node markFoldedIntoNumericBoundary];
+        } else if (node.kind == ANEOperationKindDequantize) {
+            if (dequantizeFoldsIntoBoundary(graph, node))
+                [node markFoldedIntoNumericBoundary];
+        }
     }
     return YES;
 }

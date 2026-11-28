@@ -76,7 +76,8 @@ static NSUInteger elementBytes(ANEElementType type) {
 }
 static uint32_t elementCode(ANEElementType type) {
     if(type==ANEElementTypeFP16)return 5; if(type==ANEElementTypeInt8)return 2;
-    if(type==ANEElementTypeFP32)return 6; return 0;
+    if(type==ANEElementTypeFP32)return 6; if(type==ANEElementTypeBool)return 3;
+    return 0;
 }
 static void shapeDimensions(NSArray<NSNumber *> *s, NSUInteger *n,
                             NSUInteger *c, NSUInteger *h, NSUInteger *w) {
