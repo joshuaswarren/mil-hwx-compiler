@@ -56,7 +56,53 @@ def main():
         (root / "model.mil").write_text(MIL.replace("transpose_y = f", "transpose_y = true"))
         result = subprocess.run(args, capture_output=True, text=True, check=False)
         assert result.returncode != 0 and "h18g.unsupported-program" in result.stderr, result.stderr
+        check_input_emission(compiler, root, image)
     print(f"H18G ANEP matches device-proven SHA-256 {PACK_SHA}")
+
+
+def h18g_compile(compiler, root, name, input_path=None, target="H18G"):
+    args = [compiler, "--target", target, "--mil", root / "model.mil",
+            "--model-root", root, "--output", root / name]
+    if input_path is not None:
+        args += ["--input", input_path]
+    return subprocess.run(args, capture_output=True, text=True, check=False)
+
+
+def input_surface_offset(pack):
+    # The io records follow the six section records at offset 0x20; the
+    # inputBuffer (io index 1, record index 7) names its surface offset in
+    # record field 4 (16 bytes into the 32-byte record).
+    return struct.unpack_from("<I", pack, 0x20 + 7 * 0x20 + 16)[0]
+
+
+def check_input_emission(compiler, root, image):
+    # main() left model.mil in the transpose_y refusal form; restore it.
+    (root / "model.mil").write_text(MIL)
+    # The --input fp16 vector is embedded verbatim at the input surface.
+    offset = input_surface_offset(image)
+    assert image[offset:offset + 512] == (root / "x.fp16").read_bytes()
+
+    # A second input produces a pack that differs only inside the input
+    # surface (the surface is zero-padded to 0x4000 bytes).
+    other = [((53 * i + 7) % 257 - 128) / 128 for i in range(256)]
+    (root / "y.fp16").write_bytes(struct.pack("<256e", *other))
+    assert h18g_compile(compiler, root, "out-b", root / "y.fp16").returncode == 0
+    image_b = (root / "out-b" / "program-0.anep").read_bytes()
+    assert input_surface_offset(image_b) == offset
+    assert image_b[offset:offset + 512] == (root / "y.fp16").read_bytes()
+    assert (image[:offset] + image[offset + 0x4000:]) == \
+           (image_b[:offset] + image_b[offset + 0x4000:])
+
+    # --input is required for H18G, rejected elsewhere, and checked.
+    result = h18g_compile(compiler, root, "out-c")
+    assert result.returncode == 64 and "required for H18G" in result.stderr, result.stderr
+    result = h18g_compile(compiler, root, "out-d", root / "x.fp16", "H14")
+    assert result.returncode == 64 and "only accepted for H18G" in result.stderr, result.stderr
+    result = h18g_compile(compiler, root, "out-e", root / "missing.bin")
+    assert result.returncode == 66 and "cannot read input file" in result.stderr, result.stderr
+    (root / "short.bin").write_bytes(struct.pack("<128e", *other[:128]))
+    result = h18g_compile(compiler, root, "out-f", root / "short.bin")
+    assert result.returncode != 0 and "h18g.invalid-input" in result.stderr, result.stderr
 
 
 if __name__ == "__main__":
