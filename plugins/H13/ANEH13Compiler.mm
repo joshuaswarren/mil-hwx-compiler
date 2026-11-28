@@ -570,7 +570,9 @@ static BOOL layoutParityShapes(ANEGraphOperation *operation,
                                ane::h13::H13LayoutShape *shape) {
     NSString *name = operation.operationName;
     BOOL reshape = [name isEqualToString:@"reshape"];
-    if (!reshape && ![name isEqualToString:@"squeeze"]) return NO;
+    BOOL expand = [name isEqualToString:@"expand_dims"];
+    if (!reshape && !expand && ![name isEqualToString:@"squeeze"])
+        return NO;
     if (!input || !result || !fp16Tensor(input) || !fp16Tensor(result))
         return NO;
     NSUInteger inElements = 0, outElements = 0;
@@ -580,6 +582,8 @@ static BOOL layoutParityShapes(ANEGraphOperation *operation,
         return NO;
     shape->operation = reshape
         ? ane::h13::H13LayoutOperation::Reshape
+        : expand
+        ? ane::h13::H13LayoutOperation::ExpandDims
         : ane::h13::H13LayoutOperation::Squeeze;
     return layoutNormalizeCHW(input.type.shape, &shape->inChannels,
                               &shape->inHeight, &shape->inWidth) &&
@@ -2148,6 +2152,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     }
 
     if ([name isEqualToString:@"reshape"] ||
+        [name isEqualToString:@"expand_dims"] ||
         [name isEqualToString:@"squeeze"]) {
         ane::h13::H13LayoutShape layout{};
         if (!layoutParityShapes(operation, x, operation.results[0],
@@ -3459,7 +3464,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 return reject(diagnostics,
                     @"H13 cannot lower shape views backed by constant storage",
                     candidate, @"h13.unsupported-constant-view-source");
-            if (!expand) {
+            {
                 // A returned view cannot stay an alias (the result needs a
                 // producing program), and Apple mints a real data-movement
                 // program for the covered forms — lower it instead.
@@ -4083,6 +4088,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     operation.results[0], &sliceIn, &sliceOut);
             BOOL layoutParity =
                 [operation.operationName isEqualToString:@"reshape"] ||
+                [operation.operationName isEqualToString:@"expand_dims"] ||
                 [operation.operationName isEqualToString:@"squeeze"];
             if (tiled) {
                 // The tile program reads its whole input surface and writes

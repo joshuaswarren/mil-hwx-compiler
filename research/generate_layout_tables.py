@@ -16,7 +16,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CAPTURES = ROOT / "research" / "oracles" / "h13"
-OPERATIONS = {"reshape": 0, "squeeze": 1}
+OPERATIONS = {"reshape": 0, "squeeze": 1, "expand_dims": 2}
+# concat decodes as a two-input program; its template family needs
+# a multi-input binding and is left for a later pass.
 
 
 def reconstruct_task(td):
@@ -39,7 +41,7 @@ def derive(path):
         return None
     op = record["parameters"]["operation"]
     if op not in OPERATIONS:
-        raise SystemExit(f"{path.name}: unmapped operation {op}")
+        return None
     descriptors = record["tensor_descriptors"]
     if len(descriptors) != 2:
         raise SystemExit(f"{path.name}: want 2 surface descriptors")

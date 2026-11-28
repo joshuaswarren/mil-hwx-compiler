@@ -139,6 +139,18 @@ tile_parakeet = """program(1.3)
 }
 """
 
+# Red 4: expand_dims - same alias refusal; Apple mints a 1-task program
+# whose in/out surfaces are identical.
+expand_parakeet = """program(1.3)
+[buildInfo = dict<string, string>({})]
+{
+  func main<ios18>(tensor<fp16, [1, 375]> x) {
+    tensor<int32, [1]> ax = const()[name = string("ax"), val = tensor<int32, [1]>([1])];
+    tensor<fp16, [1, 1, 375]> y = expand_dims(x = x, axes = ax)[name = string("y")];
+  } -> (y);
+}
+"""
+
 # Documented refusal 1: split has no decoded primitive anywhere - Apple
 # refuses both axis positions, so it is a frontend elimination job.
 split_parakeet = """program(1.3)
@@ -202,6 +214,14 @@ with tempfile.TemporaryDirectory() as tmp:
          "/layout/tile_r_1x64x1_reps_1164.json").read_text())
     assert anec_task_stream(out / "program-0.anec") == \
         capture_stream(oracle), "tile task stream != oracle"
+
+    manifest, out = compile_source(root, "expand_dims", expand_parakeet)
+    parity_program(manifest, "expand_dims", "apple-parity-layout", 1)
+    oracle = json.loads(
+        (ROOT / "research/oracles/h13"
+         "/layout_expand_dims_1x375_to_1x1x375.json").read_text())
+    assert anec_task_stream(out / "program-0.anec") == \
+        capture_stream(oracle), "expand_dims task stream != oracle"
 
     compile_source(root, "split", split_parakeet,
                    expected_code="h13.returned-input-alias")

@@ -975,6 +975,22 @@ def class11_layout() -> list[dict[str, Any]]:
         'tensor<fp16, [1, 64, 64]> y = tile(x = x, reps = rp)'
         "[name = string(\"y\")];",
     ], "y")
+    expand = program("tensor<fp16, [1, 375]> x", [
+        'tensor<int32, [1]> ax = const()[name = string("ax"), '
+        'val = tensor<int32, [1]>([1])];',
+        'tensor<fp16, [1, 1, 375]> y = expand_dims(x = x, axes = ax)'
+        "[name = string(\"y\")];",
+    ], "y")
+    concat = program("tensor<fp16, [1, 375, 512]> x, "
+                     "tensor<fp16, [1, 375, 512]> z", [
+        'tensor<int32, []> ax = const()[name = string("ax"), '
+        'val = tensor<int32, []>(2)];',
+        'tensor<bool, []> il = const()[name = string("il"), '
+        'val = tensor<bool, []>(false)];',
+        'tensor<fp16, [1, 375, 1024]> y = concat(axis = ax, '
+        'interleave = il, values = (x, z))'
+        "[name = string(\"y\")];",
+    ], "y")
     return [
         case("layout_reshape_1x375x1024_to_1x375x64x16", "class11_layout",
              {"operation": "reshape", "shape": [1, 375, 64, 16]}, reshape),
@@ -988,6 +1004,10 @@ def class11_layout() -> list[dict[str, Any]]:
              split1),
         case("layout_tile_1x64x1_reps_1x1x64", "class11_layout",
              {"operation": "tile", "shape": [1, 64, 64]}, tile),
+        case("layout_expand_dims_1x375_to_1x1x375", "class11_layout",
+             {"operation": "expand_dims", "shape": [1, 1, 375]}, expand),
+        case("layout_concat_ax2_1x375x512x2", "class11_layout",
+             {"operation": "concat", "shape": [1, 375, 1024]}, concat),
     ]
 
 

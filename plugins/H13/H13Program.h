@@ -379,10 +379,12 @@ bool supportsTileOp(H13TileShape shape);
 ane::h13::Program encodeTileOp(H13TileShape shape);
 
 /// One decoded layout geometry: a view op the frontend would alias —
-/// reshape or squeeze — minted as a data-movement program by Apple when
+/// reshape, squeeze or expand_dims — minted as a data-movement program by Apple when
 /// the view is the returned surface. Same DMA block family as tile:
 /// input on slot 5, result on slot 4.
-enum class H13LayoutOperation : std::uint8_t { Reshape = 0, Squeeze = 1 };
+enum class H13LayoutOperation : std::uint8_t {
+    Reshape = 0, Squeeze = 1, ExpandDims = 2
+};
 
 struct H13LayoutShape {
     H13LayoutOperation operation = H13LayoutOperation::Reshape;
