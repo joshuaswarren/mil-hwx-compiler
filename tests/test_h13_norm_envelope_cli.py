@@ -101,14 +101,19 @@ with tempfile.TemporaryDirectory(prefix="mil-hwx-h13-norm-envelope-") as directo
     assert sm["programs"][0]["encoder"] == "apple-parity-norm"
     assert sm["programs"][0]["taskDescriptors"] == 6
     # The 2026-09-16 encoder-geometry oracles decode the no-affine encoder
-    # forms; the affine form stays refused (Apple refuses it too).
+    # forms; the affine form lowers through the decoded decomposed chain:
+    # gamma and beta bind as runtime input surfaces (class-4 work).
     ln_enc = compile_source(root, "ln-enc", ln_encoder)
     assert len(ln_enc["programs"]) == 1
     assert ln_enc["programs"][0]["operation"] == "layer_norm"
     assert ln_enc["programs"][0]["encoder"] == "apple-parity-norm"
     assert ln_enc["programs"][0]["taskDescriptors"] == 5
-    compile_source(root, "ln-enc-aff", ln_encoder_affine,
-                   expected_code="h13.norm-outside-envelope")
+    ln_aff = compile_source(root, "ln-enc-aff", ln_encoder_affine)
+    assert len(ln_aff["programs"]) == 1
+    assert ln_aff["programs"][0]["operation"] == "layer_norm"
+    assert ln_aff["programs"][0]["encoder"] == "apple-parity-norm"
+    assert ln_aff["programs"][0]["taskDescriptors"] == 9
+    assert len(ln_aff["programs"][0]["inputs"]) == 3
     sm_enc = compile_source(root, "sm-enc", sm_encoder)
     assert len(sm_enc["programs"]) == 1
     assert sm_enc["programs"][0]["operation"] == "softmax"

@@ -26,7 +26,25 @@ enum class UnaryOperation {
     Tanh,
 };
 
-enum class NormOperation { Softmax, LayerNorm, ReduceSum, ReduceMax, ReduceMean };
+enum class NormOperation {
+    Softmax,
+    LayerNorm,
+    ReduceSum,
+    ReduceMax,
+    ReduceMean,
+    /// The affine layer_norm form Parakeet carries: Apple refuses the op
+    /// directly but accepts the decomposed LN -> mul(gamma) -> add(beta)
+    /// chain as one nine-task program with the affine operands bound as
+    /// runtime input surfaces.
+    LayerNormAffine,
+    /// RMSNorm has no Apple op form either; the accepted chain is
+    /// x*x -> reduce_mean -> sqrt -> x/rms as one three-task program.
+    RmsNorm,
+    /// GroupNorm lowers as a five-dim reshape/mean/variance chain with the
+    /// affine operands bound as [1, groups*width, 1, 1] runtime surfaces -
+    /// the only per-channel affine form Apple's h13 compiler accepts.
+    GroupNorm,
+};
 
 struct ElementwiseShape {
     std::uint32_t channels;
@@ -289,7 +307,11 @@ Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
                         std::uint16_t scalarBits = 0x3800);
 /// True when the decoded Apple corpus covers this softmax, layer_norm, or
 /// reduction geometry as one multi-task program.
-bool supportsNormParity(NormOperation operation, NormShape shape);
+/// When `affineOut` is set it receives the runtime-bound affine operand
+/// surface the matched template expects (gamma and beta share it); zeroed
+/// for the plain norm/reduce rows.
+bool supportsNormParity(NormOperation operation, NormShape shape,
+                        ElementwiseShape *affineOut = nullptr);
 /// Encodes Apple's own task stream for the geometry, with the LUT constant
 /// section the decoded oracle carries.
 Program encodeNormParity(NormOperation operation, NormShape shape);

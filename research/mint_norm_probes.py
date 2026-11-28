@@ -362,10 +362,19 @@ def canonical_shape(shape: list[int] | tuple[int, ...]) -> tuple[int, int, int]:
 
 
 RESULT_TYPE = re.compile(r"tensor<fp16, \[([\d, ]+)\]> y =")
+RETURN_BINDING = re.compile(r"-> \((\w+)\)")
 KEEP_DIMS = re.compile(r"keep_dims = bool\((true|false)\)")
 
 
 def result_shape(record: dict[str, Any]) -> tuple[int, ...]:
+    binding = RETURN_BINDING.search(record["mil"])
+    if binding and binding.group(1) != "y":
+        match = re.search(
+            rf"tensor<fp16, \[([\d, ]+)\]> {binding.group(1)} =",
+            record["mil"])
+        if match:
+            return tuple(int(value) for value in
+                         match.group(1).split(","))
     match = RESULT_TYPE.search(record["mil"])
     if not match:
         raise ValueError(f"{record['case']} has no fp16 result type")
@@ -387,17 +396,45 @@ def surface(chw: tuple[int, int, int]) -> dict[str, Any]:
             "total_bytes": plane * channels}
 
 
+CLASS4_AFFINE_INPUTS = {
+    "layer_norm+mul+add": [1, 1, 1, 1024],
+    "group_norm affine via runtime broadcast surfaces": [1, 64, 1, 1],
+}
+
+
 def covered(record: dict[str, Any]) -> bool:
     """True when the record is a decoded single-input normalization or
-    reduction whose two surfaces the encoder's own formula reproduces."""
+    reduction whose surfaces the encoder's own formula reproduces. The
+    class-4 chains carry their affine operands as runtime input surfaces,
+    which precede the data surface in Apple's descriptor order."""
     if record.get("error") is not None:
         return False
-    if record["family"] not in ("normalization", "reduction"):
+    operation = record["parameters"].get("operation")
+    affine_shape = CLASS4_AFFINE_INPUTS.get(operation)
+    if record["family"] == "class4_norm" and affine_shape is not None:
+        affine_surface = surface(canonical_shape(affine_shape))
+        if len(record["tensor_descriptors"]) != 4:
+            return False
+        expected = (affine_surface, affine_surface,
+                    surface(canonical_shape(record["parameters"]["shape"])),
+                    surface(canonical_shape(result_shape(record))))
+    elif record["family"] == "class4_norm":
+        # Only the three lowering chains have template rows; probe-only
+        # variants (stats-only, const-BLOBFILE affine) stay out of the table.
+        if operation not in OPERATION_ENUM or \
+                len(record["tensor_descriptors"]) != 2:
+            return False
+        expected = (
+            surface(canonical_shape(record["parameters"]["shape"])),
+            surface(canonical_shape(result_shape(record))))
+    elif record["family"] in ("normalization", "reduction"):
+        if len(record["tensor_descriptors"]) != 2:
+            return False
+        expected = (
+            surface(canonical_shape(record["parameters"]["shape"])),
+            surface(canonical_shape(result_shape(record))))
+    else:
         return False
-    if len(record["tensor_descriptors"]) != 2:
-        return False
-    expected = (surface(canonical_shape(record["parameters"]["shape"])),
-                surface(canonical_shape(result_shape(record))))
     for index, tensor in enumerate(record["tensor_descriptors"]):
         decoded = {key: value for key, value in tensor.items()
                    if key != "binding"}
@@ -479,7 +516,15 @@ OPERATION_ENUM = {
     "reduce_sum": "NormOperation::ReduceSum",
     "reduce_max": "NormOperation::ReduceMax",
     "reduce_mean": "NormOperation::ReduceMean",
+    "layer_norm+mul+add": "NormOperation::LayerNormAffine",
+    "mul+reduce_mean+sqrt+real_div": "NormOperation::RmsNorm",
+    "group_norm affine via runtime broadcast surfaces":
+        "NormOperation::GroupNorm",
 }
+
+# group_norm reduces (channels/groups x spatial), not MIL axes: the mask marks
+# the channel axis, and the plan matcher writes the same convention.
+CLASS4_MASK = {"group_norm affine via runtime broadcast surfaces": 0x02}
 
 
 def axis_mask(axes: tuple[int, ...], shape: tuple[int, ...] | None = None) -> int:
@@ -530,9 +575,14 @@ def emit(records: list[dict[str, Any]], out) -> None:
             print("};", file=out)
         operation, input_shape, axes, kept = template_key(record)
         output_shape = canonical_shape(result_shape(record))
-        # The axis shift mirrors normSurface on the original MIL shape, not
-        # the canonical shape (whose leading units are already gone).
-        mil_axes_mask = axis_mask(axes, tuple(record["parameters"]["shape"]))
+        if operation in CLASS4_MASK:
+            mil_axes_mask = CLASS4_MASK[operation]
+        else:
+            # The axis shift mirrors normSurface on the original MIL shape,
+            # not the canonical shape (whose leading units are already gone).
+            mil_axes_mask = axis_mask(axes, tuple(record["parameters"]["shape"]))
+        affine = CLASS4_AFFINE_INPUTS.get(operation)
+        affine_shape = canonical_shape(affine) if affine else (0, 0, 0)
         rows.append(
             f"    {{{OPERATION_ENUM[operation]}, "
             f"{{{input_shape[0]}, {input_shape[1]}, {input_shape[2]}}}, "
@@ -543,7 +593,9 @@ def emit(records: list[dict[str, Any]], out) -> None:
             f"{symbol}, std::size({symbol}), "
             f"{(descriptor['task_words_minus_one'] + 1) * 4}, "
             f"{descriptor['task_count']}, {constant}, "
-            f"{record['constant_section']['size']}, {scratch_bytes(record)}}},"
+            f"{record['constant_section']['size']}, {scratch_bytes(record)}, "
+            f"{{{affine_shape[0]}, {affine_shape[1]}, {affine_shape[2]}}}, "
+            f"{2 if affine else 0}}},"
             f"  // {record['case']}")
     print("static constexpr OracleNormTemplate kNormTasks[] = {", file=out)
     for row in rows:

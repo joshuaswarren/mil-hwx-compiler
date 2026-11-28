@@ -443,6 +443,12 @@ struct OracleNormTemplate {
     std::size_t constantOffsetBytes;
     std::size_t constantBytes;
     std::uint64_t scratchAllocationBytes;
+    /// The runtime-bound affine surface the chain templates carry (gamma and
+    /// beta share one geometry); zeroed for the plain norm/reduce rows.
+    ElementwiseShape affine = {};
+    /// How many leading input bindings are affine operand surfaces: 0 for the
+    /// decoded norm/reduce rows, 2 (gamma then beta) for the chain templates.
+    std::uint32_t affineInputs = 0;
 };
 
 /// One decoded Apple convolution program, keyed by everything the compiler
@@ -1949,8 +1955,11 @@ Program encodeBroadcast(BinaryOperation operation, BroadcastOperand operand,
     return program;
 }
 
-bool supportsNormParity(NormOperation operation, NormShape shape) {
-    return normTemplate(operation, shape);
+bool supportsNormParity(NormOperation operation, NormShape shape,
+                        ElementwiseShape *affineOut) {
+    const auto *source = normTemplate(operation, shape);
+    if (source && affineOut) *affineOut = source->affine;
+    return source;
 }
 
 Program encodeNormParity(NormOperation operation, NormShape shape) {
@@ -1959,10 +1968,20 @@ Program encodeNormParity(NormOperation operation, NormShape shape) {
         throw std::invalid_argument(
             "H13 normalization geometry is outside the decoded parity envelope");
     Program program;
-    program.taskSurfaceChannels = {5, 4, 6, 7};
     program.task = taskBytesFor(source->words, source->wordCount);
     program.constants = normConstants(source->constants, source->constantBytes);
-    program.inputs = {elementwiseTensor(5, source->input)};
+    if (source->affineInputs) {
+        // Apple's descriptor order binds the affine surfaces first: gamma,
+        // beta, then the data surface, then the output last.
+        program.taskSurfaceChannels = {5, 6, 7, 4};
+        program.inputs = {elementwiseTensor(5, source->affine),
+                          elementwiseTensor(6, source->affine),
+                          elementwiseTensor(7, source->input)};
+        program.outputBindingIndex = 3;
+    } else {
+        program.taskSurfaceChannels = {5, 4, 6, 7};
+        program.inputs = {elementwiseTensor(5, source->input)};
+    }
     program.output = elementwiseTensor(4, source->output);
     program.firstTaskBytes = source->firstTaskBytes;
     program.taskCount = source->taskCount;
