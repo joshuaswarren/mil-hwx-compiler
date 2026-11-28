@@ -881,6 +881,18 @@ def class4_norms() -> list[dict[str, Any]]:
         f"{gn_kind} y0 = mul(x = n4, y = g)[name = string(\"y0\")];",
         f"{gn_kind} y = add(x = y0, y = b)[name = string(\"y\")];",
     ], "y")
+    # Affine layer_norm with gamma/beta as runtime [1,1,1024] surfaces -
+    # the const-BLOBFILE chain also mints, but runtime surfaces need no
+    # constant packing and match the GN affine mechanism.
+    ln_rt_affine = program(
+        f"{kind} x, tensor<fp16, [1, 1, 1024]> g, "
+        "tensor<fp16, [1, 1, 1024]> b", [
+        axes,
+        f"{kind} n = layer_norm(x = x, axes = axes, epsilon = fp32(0.00001))"
+        "[name = string(\"n\")];",
+        f"{kind} m = mul(x = n, y = g)[name = string(\"m\")];",
+        f"{kind} y = add(x = m, y = b)[name = string(\"y\")];",
+    ], "y")
     blob_desc = {"storage": "BLOBFILE", "shape": [1024],
                  "payload_bytes": 1024 * 2, "value": "fp16(0x1p-1)"}
     gn_blob_desc = {"storage": "BLOBFILE", "shape": [64],
@@ -908,6 +920,10 @@ def class4_norms() -> list[dict[str, Any]]:
              {"operation": "reshape+sub+mul+reduce_mean+sqrt+real_div+reshape",
               "decomposed": True, "groups": 32,
               "shape": [1, 64, 375, 80]}, gn_chain),
+        case("norm_affine_ln_rtaffine_1x375x1024", "class4_norm",
+             {"operation": "layer_norm+mul+add",
+              "affine": True, "decomposed": True,
+              "shape": [1, 375, 1024]}, ln_rt_affine),
         case("norm_group_rtaffine_chain_1x64x375x80_g32", "class4_norm",
              {"operation": "group_norm affine via runtime broadcast surfaces",
               "decomposed": True, "groups": 32,
