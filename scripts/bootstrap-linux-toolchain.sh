@@ -30,7 +30,7 @@ linker_flavor=${linker_flavor#ld.}
 
 objc_commit=a1faad66cee79f29c4ca268b004111edc33a2ae2
 make_commit=d0349cc83a23367acdc53df364f73504c281b26c
-base_commit=3d7013e144b153abcd6c088dc8d6c64ebd43bc4b
+base_commit=4a61eee44f537e5f83f68d447c29a6e5b6e40fdc
 
 for command in "$cc" "$cxx" "$linker" cmake ninja git make pkg-config; do
     command -v "$command" >/dev/null || {
