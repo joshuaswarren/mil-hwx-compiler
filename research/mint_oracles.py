@@ -855,6 +855,32 @@ def class4_norms() -> list[dict[str, Any]]:
         'val = tensor<int32, [4]>([1, 64, 375, 80])];',
         f"{gn_kind} y = reshape(x = n, shape = sh2)[name = string(\"y\")];",
     ], "y")
+    # Full affine group_norm: same statistics chain with gamma/beta bound as
+    # runtime [1,64,1,1] surfaces — the only per-channel affine form Apple
+    # accepts on h13 (const affine refuses in every placement).
+    gn_rt_affine = program(
+        f"{gn_kind} x, tensor<fp16, [1, 64, 1, 1]> g, "
+        "tensor<fp16, [1, 64, 1, 1]> b", [
+        'tensor<int32, [5]> sh = const()[name = string("sh"), '
+        'val = tensor<int32, [5]>([1, 32, 2, 375, 80])];',
+        f"{gn_kind5} r = reshape(x = x, shape = sh)[name = string(\"r\")];",
+        'tensor<int32, [3]> ax = const()[name = string("ax"), '
+        'val = tensor<int32, [3]>([2, 3, 4])];',
+        'bool kd = const()[name = string("kd"), val = bool(true)];',
+        f"{gn_kind1} mu = reduce_mean(x = r, axes = ax, keep_dims = kd)"
+        "[name = string(\"mu\")];",
+        f"{gn_kind5} c = sub(x = r, y = mu)[name = string(\"c\")];",
+        f"{gn_kind5} sq = mul(x = c, y = c)[name = string(\"sq\")];",
+        f"{gn_kind1} va = reduce_mean(x = sq, axes = ax, keep_dims = kd)"
+        "[name = string(\"va\")];",
+        f"{gn_kind1} sd = sqrt(x = va)[name = string(\"sd\")];",
+        f"{gn_kind5} n = real_div(x = c, y = sd)[name = string(\"n\")];",
+        'tensor<int32, [4]> sh2 = const()[name = string("sh2"), '
+        'val = tensor<int32, [4]>([1, 64, 375, 80])];',
+        f"{gn_kind} n4 = reshape(x = n, shape = sh2)[name = string(\"n4\")];",
+        f"{gn_kind} y0 = mul(x = n4, y = g)[name = string(\"y0\")];",
+        f"{gn_kind} y = add(x = y0, y = b)[name = string(\"y\")];",
+    ], "y")
     blob_desc = {"storage": "BLOBFILE", "shape": [1024],
                  "payload_bytes": 1024 * 2, "value": "fp16(0x1p-1)"}
     gn_blob_desc = {"storage": "BLOBFILE", "shape": [64],
@@ -882,6 +908,10 @@ def class4_norms() -> list[dict[str, Any]]:
              {"operation": "reshape+sub+mul+reduce_mean+sqrt+real_div+reshape",
               "decomposed": True, "groups": 32,
               "shape": [1, 64, 375, 80]}, gn_chain),
+        case("norm_group_rtaffine_chain_1x64x375x80_g32", "class4_norm",
+             {"operation": "group_norm affine via runtime broadcast surfaces",
+              "decomposed": True, "groups": 32,
+              "shape": [1, 64, 375, 80]}, gn_rt_affine),
     ]
 
 
