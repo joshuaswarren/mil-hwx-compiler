@@ -819,6 +819,42 @@ def class4_norms() -> list[dict[str, Any]]:
         f"{kind} m = mul(x = n, y = gamma)[name = string(\"m\")];",
         f"{kind} y = add(x = m, y = beta)[name = string(\"y\")];",
     ], "y")
+    # Accepted rms decompose (envelope probing 2026-11-28): x*x -> mean ->
+    # sqrt -> x/mean. rsqrt and any weight-mul placement are refused.
+    rms_chain = program(f"{kind} x", [
+        'tensor<int32, [1]> ax = const()[name = string("ax"), '
+        'val = tensor<int32, [1]>([2])];',
+        'bool kd = const()[name = string("kd"), val = bool(true)];',
+        f"{kind} sq = mul(x = x, y = x)[name = string(\"sq\")];",
+        f"tensor<fp16, [1, 375, 1]> mn = reduce_mean(x = sq, axes = ax, "
+        "keep_dims = kd)[name = string(\"mn\")];",
+        f"tensor<fp16, [1, 375, 1]> rt = sqrt(x = mn)[name = string(\"rt\")];",
+        f"{kind} nm = real_div(x = x, y = rt)[name = string(\"nm\")];",
+    ], "nm")
+    # Accepted group_norm statistics chain: reshape to [1,32,2,375,80],
+    # mean/var over axes 2,3,4, normalize, reshape back. Affine has no
+    # mintable form on h13 (per-channel const mul refuses everywhere).
+    gn_kind5 = "tensor<fp16, [1, 32, 2, 375, 80]>"
+    gn_kind1 = "tensor<fp16, [1, 32, 1, 1, 1]>"
+    gn_chain = program(f"{gn_kind} x", [
+        'tensor<int32, [5]> sh = const()[name = string("sh"), '
+        'val = tensor<int32, [5]>([1, 32, 2, 375, 80])];',
+        f"{gn_kind5} r = reshape(x = x, shape = sh)[name = string(\"r\")];",
+        'tensor<int32, [3]> ax = const()[name = string("ax"), '
+        'val = tensor<int32, [3]>([2, 3, 4])];',
+        'bool kd = const()[name = string("kd"), val = bool(true)];',
+        f"{gn_kind1} mu = reduce_mean(x = r, axes = ax, keep_dims = kd)"
+        "[name = string(\"mu\")];",
+        f"{gn_kind5} c = sub(x = r, y = mu)[name = string(\"c\")];",
+        f"{gn_kind5} sq = mul(x = c, y = c)[name = string(\"sq\")];",
+        f"{gn_kind1} va = reduce_mean(x = sq, axes = ax, keep_dims = kd)"
+        "[name = string(\"va\")];",
+        f"{gn_kind1} sd = sqrt(x = va)[name = string(\"sd\")];",
+        f"{gn_kind5} n = real_div(x = c, y = sd)[name = string(\"n\")];",
+        'tensor<int32, [4]> sh2 = const()[name = string("sh2"), '
+        'val = tensor<int32, [4]>([1, 64, 375, 80])];',
+        f"{gn_kind} y = reshape(x = n, shape = sh2)[name = string(\"y\")];",
+    ], "y")
     blob_desc = {"storage": "BLOBFILE", "shape": [1024],
                  "payload_bytes": 1024 * 2, "value": "fp16(0x1p-1)"}
     gn_blob_desc = {"storage": "BLOBFILE", "shape": [64],
@@ -839,6 +875,13 @@ def class4_norms() -> list[dict[str, Any]]:
              {"operation": "layer_norm+mul+add", "affine": True,
               "decomposed": True, "shape": [1, 375, 1024]}, chain, 1024,
              blob_desc),
+        case("norm_rms_chain_1x375x1024", "class4_norm",
+             {"operation": "mul+reduce_mean+sqrt+real_div",
+              "decomposed": True, "shape": [1, 375, 1024]}, rms_chain),
+        case("norm_group_stats_chain_1x64x375x80_g32", "class4_norm",
+             {"operation": "reshape+sub+mul+reduce_mean+sqrt+real_div+reshape",
+              "decomposed": True, "groups": 32,
+              "shape": [1, 64, 375, 80]}, gn_chain),
     ]
 
 
