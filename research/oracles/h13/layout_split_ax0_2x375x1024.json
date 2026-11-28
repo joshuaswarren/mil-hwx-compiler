@@ -1,0 +1,41 @@
+{
+  "case": "layout_split_ax0_2x375x1024",
+  "compiler": {
+    "command": [
+      "/tmp/h13-oracle/bin/ane-compile-hwx",
+      "CAPTURE_DIR",
+      "OUTPUT_DIR",
+      "h13"
+    ],
+    "decoder_sha256": "789f5df961cd62d19199539718cbf7b4c4ff6fed93b761358eb4d050f320fb11",
+    "driver_sha256": "e2369dd8cade39c16003c3b5a732ab493db793d5fa7ba663b578d80dbda4d6d2",
+    "host": "MacStudio.local",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "tool": "/tmp/h13-oracle/bin/ane-compile-hwx",
+    "tool_sha256": "2060776c98e385d091ca244a2083be25919ed0c340ba1c8c89840208473b05d5"
+  },
+  "constant_section": null,
+  "error": "callback_status=1",
+  "family": "class11_layout",
+  "hwx_bytes": null,
+  "hwx_sha256": null,
+  "mil": "program(1.3)\n[buildInfo = dict<string, string>({})]\n{\n  func main<ios18>(tensor<fp16, [2, 375, 1024]> x) {\n    tensor<int32, []> ax = const()[name = string(\"ax\"), val = tensor<int32, []>(0)];\n    tensor<int32, []> ns = const()[name = string(\"ns\"), val = tensor<int32, []>(2)];\n    (tensor<fp16, [1, 375, 1024]> a, tensor<fp16, [1, 375, 1024]> b) = split(axis = ax, num_splits = ns, x = x)[name = string(\"s\")];\n  } -> (a);\n}\n",
+  "parameters": {
+    "axis": 0,
+    "operation": "split",
+    "shape": [
+      1,
+      375,
+      1024
+    ]
+  },
+  "program_descriptor": null,
+  "schema_version": 1,
+  "source_commit": "ef52e1a7bed3b9c138baff62a76952e49c1c881c",
+  "target": "h13",
+  "task_descriptors": [],
+  "tensor_descriptors": [],
+  "weights": {
+    "storage": "none"
+  }
+}
