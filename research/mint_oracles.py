@@ -763,6 +763,174 @@ def boundary_conversions() -> list[dict[str, Any]]:
     return entries
 
 
+def class4_norms() -> list[dict[str, Any]]:
+    """Parakeet normalization forms (SUP-85 class 4): the affine layer_norm the
+    encoder carries (Apple refused every ax1 4D affine oracle so far), rms_norm
+    and group_norm, which have no lowering anywhere. Rejected cases record the
+    refusal."""
+    gamma = ('tensor<fp16, [1024]> gamma = const()[name = string("gamma"), '
+             'val = tensor<fp16, [1024]>(BLOBFILE(path = '
+             'string("@model_path/weights.bin"), offset = uint64(64)))];')
+    beta = ('tensor<fp16, [1024]> beta = const()[name = string("beta"), '
+            'val = tensor<fp16, [1024]>(BLOBFILE(path = '
+            'string("@model_path/weights.bin"), offset = uint64(64)))];')
+    axes = ('tensor<int32, [1]> axes = const()[name = string("axes"), '
+            'val = tensor<int32, [1]>([-1])];')
+    kind = "tensor<fp16, [1, 375, 1024]>"
+    affine = program(f"{kind} x", [
+        axes, gamma, beta,
+        f"{kind} y = layer_norm(x = x, axes = axes, epsilon = fp32(0.00001), "
+        "gamma = gamma, beta = beta)[name = string(\"y\")];",
+    ], "y")
+    rms = program(f"{kind} x", [
+        f"{kind} y = rms_norm(x = x, epsilon = fp32(0.00001))"
+        "[name = string(\"y\")];",
+    ], "y")
+    gn_gamma = ('tensor<fp16, [64]> gamma = const()[name = string("gamma"), '
+                'val = tensor<fp16, [64]>(BLOBFILE(path = '
+                'string("@model_path/weights.bin"), offset = uint64(64)))];')
+    gn_beta = ('tensor<fp16, [64]> beta = const()[name = string("beta"), '
+               'val = tensor<fp16, [64]>(BLOBFILE(path = '
+               'string("@model_path/weights.bin"), offset = uint64(64)))];')
+    gn_kind = "tensor<fp16, [1, 64, 375, 80]>"
+    group = program(f"{gn_kind} x", [
+        gn_gamma, gn_beta,
+        f"{gn_kind} y = group_norm(x = x, gamma = gamma, beta = beta, "
+        "groups = 32, epsilon = fp32(0.00001))[name = string(\"y\")];",
+    ], "y")
+    gamma8 = ('tensor<fp16, [8]> gamma = const()[name = string("gamma"), '
+              'val = tensor<fp16, [8]>(BLOBFILE(path = '
+              'string("@model_path/weights.bin"), offset = uint64(64)))];')
+    beta8 = ('tensor<fp16, [8]> beta = const()[name = string("beta"), '
+             'val = tensor<fp16, [8]>(BLOBFILE(path = '
+             'string("@model_path/weights.bin"), offset = uint64(64)))];')
+    affine4 = program("tensor<fp16, [1, 64, 8, 8]> x", [
+        'tensor<int32, [1]> axes = const()[name = string("axes"), '
+        'val = tensor<int32, [1]>([-1])];',
+        gamma8, beta8,
+        "tensor<fp16, [1, 64, 8, 8]> y = layer_norm(x = x, axes = axes, "
+        "epsilon = fp32(0.00001), gamma = gamma, beta = beta)"
+        "[name = string(\"y\")];",
+    ], "y")
+    chain = program(f"{kind} x", [
+        axes, gamma, beta,
+        f"{kind} n = layer_norm(x = x, axes = axes, epsilon = fp32(0.00001))"
+        "[name = string(\"n\")];",
+        f"{kind} m = mul(x = n, y = gamma)[name = string(\"m\")];",
+        f"{kind} y = add(x = m, y = beta)[name = string(\"y\")];",
+    ], "y")
+    # Accepted rms decompose (envelope probing 2026-11-28): x*x -> mean ->
+    # sqrt -> x/mean. rsqrt and any weight-mul placement are refused.
+    rms_chain = program(f"{kind} x", [
+        'tensor<int32, [1]> ax = const()[name = string("ax"), '
+        'val = tensor<int32, [1]>([2])];',
+        'bool kd = const()[name = string("kd"), val = bool(true)];',
+        f"{kind} sq = mul(x = x, y = x)[name = string(\"sq\")];",
+        f"tensor<fp16, [1, 375, 1]> mn = reduce_mean(x = sq, axes = ax, "
+        "keep_dims = kd)[name = string(\"mn\")];",
+        f"tensor<fp16, [1, 375, 1]> rt = sqrt(x = mn)[name = string(\"rt\")];",
+        f"{kind} nm = real_div(x = x, y = rt)[name = string(\"nm\")];",
+    ], "nm")
+    # Accepted group_norm statistics chain: reshape to [1,32,2,375,80],
+    # mean/var over axes 2,3,4, normalize, reshape back. Affine has no
+    # mintable form on h13 (per-channel const mul refuses everywhere).
+    gn_kind5 = "tensor<fp16, [1, 32, 2, 375, 80]>"
+    gn_kind1 = "tensor<fp16, [1, 32, 1, 1, 1]>"
+    gn_chain = program(f"{gn_kind} x", [
+        'tensor<int32, [5]> sh = const()[name = string("sh"), '
+        'val = tensor<int32, [5]>([1, 32, 2, 375, 80])];',
+        f"{gn_kind5} r = reshape(x = x, shape = sh)[name = string(\"r\")];",
+        'tensor<int32, [3]> ax = const()[name = string("ax"), '
+        'val = tensor<int32, [3]>([2, 3, 4])];',
+        'bool kd = const()[name = string("kd"), val = bool(true)];',
+        f"{gn_kind1} mu = reduce_mean(x = r, axes = ax, keep_dims = kd)"
+        "[name = string(\"mu\")];",
+        f"{gn_kind5} c = sub(x = r, y = mu)[name = string(\"c\")];",
+        f"{gn_kind5} sq = mul(x = c, y = c)[name = string(\"sq\")];",
+        f"{gn_kind1} va = reduce_mean(x = sq, axes = ax, keep_dims = kd)"
+        "[name = string(\"va\")];",
+        f"{gn_kind1} sd = sqrt(x = va)[name = string(\"sd\")];",
+        f"{gn_kind5} n = real_div(x = c, y = sd)[name = string(\"n\")];",
+        'tensor<int32, [4]> sh2 = const()[name = string("sh2"), '
+        'val = tensor<int32, [4]>([1, 64, 375, 80])];',
+        f"{gn_kind} y = reshape(x = n, shape = sh2)[name = string(\"y\")];",
+    ], "y")
+    # Full affine group_norm: same statistics chain with gamma/beta bound as
+    # runtime [1,64,1,1] surfaces — the only per-channel affine form Apple
+    # accepts on h13 (const affine refuses in every placement).
+    gn_rt_affine = program(
+        f"{gn_kind} x, tensor<fp16, [1, 64, 1, 1]> g, "
+        "tensor<fp16, [1, 64, 1, 1]> b", [
+        'tensor<int32, [5]> sh = const()[name = string("sh"), '
+        'val = tensor<int32, [5]>([1, 32, 2, 375, 80])];',
+        f"{gn_kind5} r = reshape(x = x, shape = sh)[name = string(\"r\")];",
+        'tensor<int32, [3]> ax = const()[name = string("ax"), '
+        'val = tensor<int32, [3]>([2, 3, 4])];',
+        'bool kd = const()[name = string("kd"), val = bool(true)];',
+        f"{gn_kind1} mu = reduce_mean(x = r, axes = ax, keep_dims = kd)"
+        "[name = string(\"mu\")];",
+        f"{gn_kind5} c = sub(x = r, y = mu)[name = string(\"c\")];",
+        f"{gn_kind5} sq = mul(x = c, y = c)[name = string(\"sq\")];",
+        f"{gn_kind1} va = reduce_mean(x = sq, axes = ax, keep_dims = kd)"
+        "[name = string(\"va\")];",
+        f"{gn_kind1} sd = sqrt(x = va)[name = string(\"sd\")];",
+        f"{gn_kind5} n = real_div(x = c, y = sd)[name = string(\"n\")];",
+        'tensor<int32, [4]> sh2 = const()[name = string("sh2"), '
+        'val = tensor<int32, [4]>([1, 64, 375, 80])];',
+        f"{gn_kind} n4 = reshape(x = n, shape = sh2)[name = string(\"n4\")];",
+        f"{gn_kind} y0 = mul(x = n4, y = g)[name = string(\"y0\")];",
+        f"{gn_kind} y = add(x = y0, y = b)[name = string(\"y\")];",
+    ], "y")
+    # Affine layer_norm with gamma/beta as runtime [1,1,1024] surfaces -
+    # the const-BLOBFILE chain also mints, but runtime surfaces need no
+    # constant packing and match the GN affine mechanism.
+    ln_rt_affine = program(
+        f"{kind} x, tensor<fp16, [1, 1, 1024]> g, "
+        "tensor<fp16, [1, 1, 1024]> b", [
+        axes,
+        f"{kind} n = layer_norm(x = x, axes = axes, epsilon = fp32(0.00001))"
+        "[name = string(\"n\")];",
+        f"{kind} m = mul(x = n, y = g)[name = string(\"m\")];",
+        f"{kind} y = add(x = m, y = b)[name = string(\"y\")];",
+    ], "y")
+    blob_desc = {"storage": "BLOBFILE", "shape": [1024],
+                 "payload_bytes": 1024 * 2, "value": "fp16(0x1p-1)"}
+    gn_blob_desc = {"storage": "BLOBFILE", "shape": [64],
+                    "payload_bytes": 64 * 2, "value": "fp16(0x1p-1)"}
+    return [
+        case("norm_affine_ln_1x375x1024", "class4_norm",
+             {"operation": "layer_norm", "affine": True,
+              "shape": [1, 375, 1024]}, affine, 1024, blob_desc),
+        case("norm_rms_1x375x1024", "class4_norm",
+             {"operation": "rms_norm", "shape": [1, 375, 1024]}, rms),
+        case("norm_group_1x64x375x80_g32", "class4_norm",
+             {"operation": "group_norm", "groups": 32,
+              "shape": [1, 64, 375, 80]}, group, 64, gn_blob_desc),
+        case("norm_affine_ln_ax-1_1x64x8x8", "class4_norm",
+             {"operation": "layer_norm", "affine": True,
+              "shape": [1, 64, 8, 8]}, affine4, 64, gn_blob_desc),
+        case("norm_affine_ln_chain_1x375x1024", "class4_norm",
+             {"operation": "layer_norm+mul+add", "affine": True,
+              "decomposed": True, "shape": [1, 375, 1024]}, chain, 1024,
+             blob_desc),
+        case("norm_rms_chain_1x375x1024", "class4_norm",
+             {"operation": "mul+reduce_mean+sqrt+real_div",
+              "decomposed": True, "shape": [1, 375, 1024]}, rms_chain),
+        case("norm_group_stats_chain_1x64x375x80_g32", "class4_norm",
+             {"operation": "reshape+sub+mul+reduce_mean+sqrt+real_div+reshape",
+              "decomposed": True, "groups": 32,
+              "shape": [1, 64, 375, 80]}, gn_chain),
+        case("norm_affine_ln_rtaffine_1x375x1024", "class4_norm",
+             {"operation": "layer_norm+mul+add",
+              "affine": True, "decomposed": True,
+              "shape": [1, 375, 1024]}, ln_rt_affine),
+        case("norm_group_rtaffine_chain_1x64x375x80_g32", "class4_norm",
+             {"operation": "group_norm affine via runtime broadcast surfaces",
+              "decomposed": True, "groups": 32,
+              "shape": [1, 64, 375, 80]}, gn_rt_affine),
+    ]
+
+
 def campaign() -> list[dict[str, Any]]:
     cases = []
     shapes = [(1, channels, 1, 1) for channels in
@@ -807,6 +975,7 @@ def campaign() -> list[dict[str, Any]]:
     ])
     cases.extend(envelope_campaign())
     cases.extend(boundary_conversions())
+    cases.extend(class4_norms())
     cases.extend(exp_scaled_chain(channels) for channels in (64, 512))
     names = [item["name"] for item in cases]
     if len(names) != len(set(names)):

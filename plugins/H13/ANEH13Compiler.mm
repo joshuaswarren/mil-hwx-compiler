@@ -97,6 +97,8 @@ static BOOL normEncoding(NSString *name, ane::h13::NormOperation *encoding) {
     else if ([name isEqualToString:@"reduce_sum"]) *encoding = ane::h13::NormOperation::ReduceSum;
     else if ([name isEqualToString:@"reduce_max"]) *encoding = ane::h13::NormOperation::ReduceMax;
     else if ([name isEqualToString:@"reduce_mean"]) *encoding = ane::h13::NormOperation::ReduceMean;
+    else if ([name isEqualToString:@"rms_norm"]) *encoding = ane::h13::NormOperation::RmsNorm;
+    else if ([name isEqualToString:@"group_norm"]) *encoding = ane::h13::NormOperation::GroupNorm;
     else return NO;
     return YES;
 }
@@ -1457,12 +1459,18 @@ struct H13NormPlan {
     ane::h13::NormShape shape;
     NSUInteger inputElements;
     NSUInteger outputElements;
+    /// The affine operands the chain templates bind as runtime surfaces:
+    /// gamma then beta, in Apple's descriptor order. nil for plain forms.
+    ANEGraphValue *gamma;
+    ANEGraphValue *beta;
 };
 
 /// Matches the softmax, layer_norm, and reduction programs whose whole H13
 /// task streams are decoded from Apple oracles. `epsilon` must be the decoded
-/// 1e-5 and layer_norm must carry no gamma or beta: Apple's compiler in this
-/// harness rejects every affine form, so no oracle covers one.
+/// 1e-5. Apple's compiler refuses the affine forms directly but accepts the
+/// decomposed chains as single programs with gamma and beta bound as runtime
+/// input surfaces; rms_norm and the Parakeet g32 group_norm lower the same
+/// way from their own decoded chains.
 static BOOL normParityPlan(ANEGraphOperation *operation, H13NormPlan *plan) {
     ANEGraphValue *x = operation.operands[@"x"].value;
     NSString *name = operation.operationName;
@@ -1475,29 +1483,82 @@ static BOOL normParityPlan(ANEGraphOperation *operation, H13NormPlan *plan) {
         !normSurface(x.type.shape, &candidate.shape.input, &inputShift) ||
         !normSurface(operation.results[0].type.shape, &candidate.shape.output, nullptr))
         return NO;
-    if (!constantAxisMask(operation.operands[softmax ? @"axis" : @"axes"].value,
-                          x.type.shape.count, inputShift,
-                          &candidate.shape.axisMask))
-        return NO;
+    const BOOL rmsNorm = candidate.operation == ane::h13::NormOperation::RmsNorm;
+    const BOOL groupNorm = candidate.operation == ane::h13::NormOperation::GroupNorm;
     float epsilon = 0.0f;
     if (softmax) {
         if (operation.arguments.count != 2) return NO;
-    } else if (layerNorm) {
-        if (operation.arguments.count != 3 ||
+        if (!constantAxisMask(operation.operands[@"axis"].value,
+                              x.type.shape.count, inputShift,
+                              &candidate.shape.axisMask))
+            return NO;
+    } else if (rmsNorm) {
+        // The decoded rms chain normalizes the last axis; the covered form
+        // carries no axes operand, no keep_dims, and no affine operands.
+        if (operation.arguments.count != 2 ||
             !fp32Attribute(operation.arguments[@"epsilon"], &epsilon) ||
             epsilon != 1e-5f) return NO;
+        candidate.shape.axisMask = 0x08;
+    } else if (groupNorm) {
+        // The only decoded group_norm program is the Parakeet g32 chain:
+        // the mask marks the grouped-statistics form and the affine
+        // operands bind as runtime input surfaces.
+        ANEGraphArgument *groups = operation.arguments[@"groups"];
+        if (operation.arguments.count != 5 || !groups ||
+            groups.kind != ANEGraphArgumentKindInteger ||
+            ![groups.text isEqualToString:@"32"] ||
+            !fp32Attribute(operation.arguments[@"epsilon"], &epsilon) ||
+            epsilon != 1e-5f) return NO;
+        candidate.shape.axisMask = 0x02;
+        candidate.gamma = operation.operands[@"gamma"].value;
+        candidate.beta = operation.operands[@"beta"].value;
+        if (!candidate.gamma || !candidate.beta) return NO;
     } else {
-        if (operation.arguments.count != 3) return NO;
+        if (!constantAxisMask(operation.operands[@"axes"].value,
+                              x.type.shape.count, inputShift,
+                              &candidate.shape.axisMask))
+            return NO;
+        if (layerNorm) {
+            candidate.gamma = operation.operands[@"gamma"].value;
+            candidate.beta = operation.operands[@"beta"].value;
+            const BOOL affine = candidate.gamma != nil;
+            if (!candidate.gamma != !candidate.beta ||
+                operation.arguments.count != (affine ? 5 : 3) ||
+                !fp32Attribute(operation.arguments[@"epsilon"], &epsilon) ||
+                epsilon != 1e-5f) return NO;
+            if (affine)
+                candidate.operation = ane::h13::NormOperation::LayerNormAffine;
+        } else if (operation.arguments.count != 3) {
+            return NO;
+        }
     }
-    candidate.shape.keepDims = softmax || layerNorm ||
+    candidate.shape.keepDims = softmax || layerNorm || rmsNorm || groupNorm ||
         boolean(operation.arguments[@"keep_dims"], YES);
     if (!candidate.shape.keepDims &&
         !boolean(operation.arguments[@"keep_dims"], NO)) return NO;
     if (!tensorElementCount(x, &candidate.inputElements) ||
         !tensorElementCount(operation.results[0], &candidate.outputElements))
         return NO;
-    if (!ane::h13::supportsNormParity(candidate.operation, candidate.shape))
+    ane::h13::ElementwiseShape affine{};
+    if (!ane::h13::supportsNormParity(candidate.operation, candidate.shape,
+                                      &affine))
         return NO;
+    if (candidate.gamma) {
+        // The affine operands must be fp16 constants whose element counts
+        // match the template's runtime-bound operand surface: the binding
+        // lays them out at that shape, which need not match their rank-1
+        // MIL spelling (group_norm's [64] binds the {64,1,1} surface).
+        NSUInteger affineElements = (NSUInteger)affine.channels *
+            affine.height * affine.width;
+        NSUInteger gammaElements = 0, betaElements = 0;
+        if (!constantValue(candidate.gamma) || !constantValue(candidate.beta) ||
+            !fp16Tensor(candidate.gamma) || !fp16Tensor(candidate.beta) ||
+            !tensorElementCount(candidate.gamma, &gammaElements) ||
+            !tensorElementCount(candidate.beta, &betaElements) ||
+            gammaElements != affineElements ||
+            betaElements != affineElements)
+            return NO;
+    }
     *plan = candidate;
     return YES;
 }
@@ -1939,8 +2000,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                            NSUInteger elementOffset, NSUInteger inputElementCount,
                            NSUInteger outputElementOffset, ane::h13::Program &program,
                            NSArray<ANEGraphValue *> *__autoreleasing *inputsOut,
-                           ANEGraphValue *__autoreleasing *constantInputOut,
-                           NSData *__autoreleasing *constantDataOut,
+                           NSDictionary<NSString *, NSDictionary *> *__autoreleasing *constantsOut,
                            NSString *__autoreleasing *manifestOperationOut) {
     ANEGraphValue *x = operation.operands[@"x"].value;
     ANEGraphValue *y = operation.operands[@"y"].value;
@@ -1951,6 +2011,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     NSArray<ANEGraphValue *> *inputs = nil;
     ANEGraphValue *constantInput = nil;
     NSData *constantData = nil;
+    NSDictionary<NSString *, NSDictionary *> *constants = nil;
     NSString *manifestOperation = name;
 
     H13BroadcastPlan broadcast{};
@@ -1970,8 +2031,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             static_cast<const std::uint8_t *>(values.bytes), values.length,
             broadcast.scalarBits);
         *inputsOut = broadcast.inputCount == 2 ? @[x, y] : @[x];
-        *constantInputOut = nil;
-        *constantDataOut = nil;
+        *constantsOut = nil;
         *manifestOperationOut = name;
         return YES;
     }
@@ -1999,8 +2059,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 plan.shape, static_cast<const std::uint8_t *>(whole.bytes),
                 whole.length);
             *inputsOut = @[x];
-            *constantInputOut = nil;
-            *constantDataOut = nil;
+            *constantsOut = nil;
             *manifestOperationOut = name;
             return YES;
         }
@@ -2009,8 +2068,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             : ane::h13::encodeElementwise(plan.binaryOperation, plan.shape,
                                           plan.scalarConstant, plan.scalarBits);
         *inputsOut = plan.inputCount == 2 ? @[x, y] : @[x];
-        *constantInputOut = nil;
-        *constantDataOut = nil;
+        *constantsOut = nil;
         *manifestOperationOut = name;
         return YES;
     }
@@ -2024,8 +2082,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 operation, @"h13.nonfoldable-transpose");
         program = ane::h13::encodeTransposeParity(transposeIn, transposeOut);
         *inputsOut = @[x];
-        *constantInputOut = nil;
-        *constantDataOut = nil;
+        *constantsOut = nil;
         *manifestOperationOut = name;
         return YES;
     }
@@ -2039,8 +2096,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 operation, @"h13.noncontiguous-slice");
         program = ane::h13::encodeSliceParity(sliceIn, sliceOut);
         *inputsOut = @[x];
-        *constantInputOut = nil;
-        *constantDataOut = nil;
+        *constantsOut = nil;
         *manifestOperationOut = name;
         return YES;
     }
@@ -2049,9 +2105,38 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     if (normParityPlan(operation, &normalization)) {
         program = ane::h13::encodeNormParity(normalization.operation,
                                              normalization.shape);
-        *inputsOut = @[x];
-        *constantInputOut = nil;
-        *constantDataOut = nil;
+        if (normalization.gamma) {
+            // The chain templates bind the affine operands as extra input
+            // surfaces in Apple's descriptor order: gamma, beta, then x.
+            // Their constant payloads ride the manifest so a driver can fill
+            // the surfaces without re-reading the graph.
+            NSUInteger elements = 0;
+            if (!tensorElementCount(normalization.gamma, &elements))
+                return reject(diagnostics,
+                    @"H13 affine operands require a positive static shape",
+                    operation, @"h13.invalid-constant-input");
+            NSMutableDictionary *bound = [NSMutableDictionary dictionary];
+            for (ANEGraphValue *affine in
+                 @[normalization.gamma, normalization.beta]) {
+                NSData *data = resolvedConstants[affine.name];
+                if (!data) {
+                    data = [ANEBlobResolver
+                        loadConstantForOperation:affine.producer
+                        expectedBytes:elements * 2
+                        modelRoot:modelRoot diagnostics:diagnostics];
+                    if (!data) return NO;
+                    resolvedConstants[affine.name] = data;
+                }
+                bound[affine.name] = @{@"data": data,
+                                       @"shape": affine.type.shape,
+                                       @"whole": @YES};
+            }
+            *inputsOut = @[normalization.gamma, normalization.beta, x];
+            *constantsOut = bound;
+        } else {
+            *inputsOut = @[x];
+            *constantsOut = nil;
+        }
         *manifestOperationOut = name;
         return YES;
     }
@@ -2082,8 +2167,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             static_cast<const std::uint8_t *>(weights.bytes), weights.length,
             static_cast<const std::uint8_t *>(biasData.bytes), biasData.length);
         *inputsOut = @[x];
-        *constantInputOut = nil;
-        *constantDataOut = nil;
+        *constantsOut = nil;
         *manifestOperationOut = name;
         return YES;
     }
@@ -2226,6 +2310,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 manifestOperation = @"mul";
             }
             constantData = folded;
+            constants = @{constantInput.name: @{
+                @"data": folded,
+                @"shape": operation.results[0].type.shape}};
             inputs = @[runtimeInput, constantInput];
         }
         const ane::h13::BinaryOperation operations[] = {
@@ -2287,8 +2374,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 packed.empty() ? nullptr : packed.data(), packed.size());
             *inputsOut = batched.runtimeWeight
                 ? @[operation.operands[@"y"].value, x] : @[x];
-            *constantInputOut = nil;
-            *constantDataOut = nil;
+            *constantsOut = nil;
             *manifestOperationOut = name;
             return YES;
         }
@@ -2331,8 +2417,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             // Apple declares the second operand first and lays the output out
             // below both, so the package's channel 5 carries y and 6 carries x.
             *inputsOut = @[y, x];
-            *constantInputOut = nil;
-            *constantDataOut = nil;
+            *constantsOut = nil;
             *manifestOperationOut = name;
             return YES;
         }
@@ -2418,8 +2503,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 static_cast<const std::uint8_t *>(rowMajor.bytes),
                 rowMajor.length);
             *inputsOut = @[x];
-            *constantInputOut = nil;
-            *constantDataOut = nil;
+            *constantsOut = nil;
             *manifestOperationOut = name;
             return YES;
         }
@@ -2732,8 +2816,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
             }
             *inputsOut = inputs;
         }
-        *constantInputOut = nil;
-        *constantDataOut = nil;
+        *constantsOut = nil;
         *manifestOperationOut = name;
         return YES;
      } else {
@@ -2790,8 +2873,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 }
                 program = ane::h13::encodeTileOp(tile);
                 *inputsOut = tile.runtimeInput ? @[x] : @[];
-                *constantInputOut = nil;
-                *constantDataOut = nil;
+                *constantsOut = nil;
                 *manifestOperationOut = name;
                 return YES;
             }
@@ -2831,8 +2913,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
     }
 
     *inputsOut = inputs;
-    *constantInputOut = constantInput;
-    *constantDataOut = constantData;
+    *constantsOut = constants;
     *manifestOperationOut = manifestOperation;
     return YES;
 }
@@ -4100,13 +4181,12 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 }
                 ane::h13::Program program;
                 NSArray<ANEGraphValue *> *inputs = nil;
-                ANEGraphValue *constantInput = nil;
-                NSData *constantData = nil;
+                NSDictionary<NSString *, NSDictionary *> *constants = nil;
                 NSString *manifestOperation = nil;
                 if (!lowerOperation(operation, modelRoot, diagnostics, !chainSchedule,
                                     synthesizedConstants, resolvedConstants,
                                     inputOffset, inputSliceElements, outputOffset,
-                                    program, &inputs, &constantInput, &constantData,
+                                    program, &inputs, &constants,
                                     &manifestOperation))
                     return NO;
                 std::vector<std::uint8_t> anec = ane::h13::encodeANEC(program);
@@ -4115,11 +4195,12 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 NSMutableDictionary *constantInputs = [NSMutableDictionary dictionary];
                 for (NSUInteger index = 0; index < inputs.count; ++index) {
                     ANEGraphValue *input = inputs[index];
-                    NSArray<NSNumber *> *fullShape = input == constantInput
-                        ? operation.results[0].type.shape : input.type.shape;
-                    BOOL intermediate = input != constantInput &&
+                    NSDictionary *bound = constants[input.name];
+                    NSArray<NSNumber *> *fullShape = bound
+                        ? bound[@"shape"] : input.type.shape;
+                    BOOL intermediate = !bound &&
                         [intermediateStorageNames containsObject:input.name];
-                    NSString *role = input == constantInput ? @"constant"
+                    NSString *role = bound ? @"constant"
                         : (intermediate ? @"intermediate" : @"input");
                     recordTensor(tensors, input, fullShape, role);
                     NSUInteger fullElements = 1;
@@ -4128,7 +4209,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                     // A broadcast and a runtime-operand matmul read each
                     // operand whole, and the operands differ in size, so the
                     // program-wide slice counts do not apply to them.
-                    const BOOL wholeOperand = broadcast || runtimeWeight;
+                    const BOOL wholeOperand = broadcast || runtimeWeight ||
+                        [bound[@"whole"] boolValue];
                     NSUInteger sliceElements =
                         wholeOperand ? fullElements : inputSliceElements;
                     NSUInteger physicalElements =
@@ -4150,9 +4232,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                         physicalElements != sliceElements || aliasShape)
                         addSlice(record, input, bindingOffset, sliceElements,
                                  physicalElements);
-                    if (input == constantInput) {
+                    if (bound) {
                         record[@"binding"] = @"constant";
-                        constantInputs[input.name] = hexData(constantData);
+                        constantInputs[input.name] = hexData(bound[@"data"]);
                     } else if (intermediate) {
                         record[@"role"] = @"intermediate";
                     }
