@@ -542,6 +542,52 @@ static BOOL transposeParityShapes(ANEGraphOperation *operation,
     return ane::h13::supportsTransposeParity(*inputShape, *outputShape);
 }
 
+/// Whether the decoded corpus lowers this reshape/squeeze as a real
+/// data-movement program rather than the host-side alias: fp16 both
+/// sides, equal element counts, and the Apple-normalized [1,C,H,W]
+/// surface pair covered by a layout table row. The normalized form
+/// strips leading ones below rank 4 then left-pads — the same fold the
+/// oracle tensor descriptors carry.
+static BOOL layoutNormalizeCHW(NSArray<NSNumber *> *shape,
+                               std::uint32_t *channels,
+                               std::uint32_t *height,
+                               std::uint32_t *width) {
+    if (!shape || !shape.count || shape.count > 4) return NO;
+    NSMutableArray<NSNumber *> *dims = [shape mutableCopy];
+    while (dims.count < 4 && dims.count &&
+           [dims[0] unsignedIntegerValue] == 1)
+        [dims removeObjectAtIndex:0];
+    while (dims.count < 4) [dims insertObject:@1 atIndex:0];
+    if ([dims[0] unsignedIntegerValue] != 1) return NO;
+    *channels = [dims[1] unsignedIntValue];
+    *height = [dims[2] unsignedIntValue];
+    *width = [dims[3] unsignedIntValue];
+    return *channels && *height && *width;
+}
+
+static BOOL layoutParityShapes(ANEGraphOperation *operation,
+                               ANEGraphValue *input, ANEGraphValue *result,
+                               ane::h13::H13LayoutShape *shape) {
+    NSString *name = operation.operationName;
+    BOOL reshape = [name isEqualToString:@"reshape"];
+    if (!reshape && ![name isEqualToString:@"squeeze"]) return NO;
+    if (!input || !result || !fp16Tensor(input) || !fp16Tensor(result))
+        return NO;
+    NSUInteger inElements = 0, outElements = 0;
+    if (!tensorElementCount(input, &inElements) ||
+        !tensorElementCount(result, &outElements) ||
+        inElements != outElements)
+        return NO;
+    shape->operation = reshape
+        ? ane::h13::H13LayoutOperation::Reshape
+        : ane::h13::H13LayoutOperation::Squeeze;
+    return layoutNormalizeCHW(input.type.shape, &shape->inChannels,
+                              &shape->inHeight, &shape->inWidth) &&
+           layoutNormalizeCHW(result.type.shape, &shape->outChannels,
+                              &shape->outHeight, &shape->outWidth) &&
+           ane::h13::supportsLayoutOp(*shape);
+}
+
 /// Whether the decoded corpus lowers this slice_by_index as one 1-task
 /// program: a rank-4 [1, C, H, W] fp16 input whose only sliced axis is the
 /// last one, from element 0, with every earlier axis full, unit strides, and
@@ -2101,6 +2147,21 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
         return YES;
     }
 
+    if ([name isEqualToString:@"reshape"] ||
+        [name isEqualToString:@"squeeze"]) {
+        ane::h13::H13LayoutShape layout{};
+        if (!layoutParityShapes(operation, x, operation.results[0],
+                                &layout))
+            return reject(diagnostics,
+                @"H13 layout view is outside the decoded layout envelope",
+                operation, @"h13.unsupported-layout");
+        program = ane::h13::encodeLayoutOp(layout);
+        *inputsOut = @[x];
+        *constantsOut = nil;
+        *manifestOperationOut = name;
+        return YES;
+    }
+
     H13NormPlan normalization{};
     if (normParityPlan(operation, &normalization)) {
         program = ane::h13::encodeNormParity(normalization.operation,
@@ -3398,6 +3459,33 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 return reject(diagnostics,
                     @"H13 cannot lower shape views backed by constant storage",
                     candidate, @"h13.unsupported-constant-view-source");
+            if (!expand) {
+                // A returned view cannot stay an alias (the result needs a
+                // producing program), and Apple mints a real data-movement
+                // program for the covered forms — lower it instead.
+                BOOL returned = NO;
+                for (ANEGraphValue *logical in function.returnValues)
+                    returned = returned ||
+                        [logical.name isEqualToString:
+                            candidate.results[0].name];
+                ane::h13::H13LayoutShape layout{};
+                if (returned &&
+                    layoutParityShapes(candidate, x, candidate.results[0],
+                                       &layout)) {
+                    ANEGraphValue *result = [[ANEGraphValue alloc]
+                        initWithName:candidate.results[0].name
+                               type:candidate.results[0].type];
+                    [operations addObject:[[ANEGraphOperation alloc]
+                        initWithOperationName:name results:@[result]
+                        arguments:arguments
+                        attributes:candidate.attributes
+                        range:candidate.range]];
+                    [manifestValues addObject:result];
+                    [loweredValues setObject:result
+                                      forKey:candidate.results[0]];
+                    continue;
+                }
+            }
             ANEGraphValue *alias = [[ANEGraphValue alloc]
                 initWithName:x.name type:candidate.results[0].type];
             NSNumber *baseOffset = [valueBaseOffsets objectForKey:x];
@@ -3993,6 +4081,9 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                 [operation.operationName isEqualToString:@"slice_by_index"] &&
                 sliceParityShapes(operation, operation.operands[@"x"].value,
                     operation.results[0], &sliceIn, &sliceOut);
+            BOOL layoutParity =
+                [operation.operationName isEqualToString:@"reshape"] ||
+                [operation.operationName isEqualToString:@"squeeze"];
             if (tiled) {
                 // The tile program reads its whole input surface and writes
                 // its whole output surface in one program, so both slice
@@ -4030,7 +4121,7 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                                 elements;
                 }
             } else if (linearParity || ffnChain || transposeParity ||
-                       sliceParity) {
+                       sliceParity || layoutParity) {
                 // Whole-tensor programs: one input slice and one output
                 // slice covering the rank-3 surfaces.
                 NSUInteger xElements = 1;
@@ -4283,6 +4374,8 @@ static BOOL lowerOperation(ANEGraphOperation *operation, NSURL *modelRoot,
                         ? @"apple-parity-transpose"
                         : sliceParity
                         ? @"apple-parity-slice"
+                        : layoutParity
+                        ? @"apple-parity-layout"
                         : tiled
                         ? @"apple-parity-tile"
                         : booleanLowered

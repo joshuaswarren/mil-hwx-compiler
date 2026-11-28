@@ -606,6 +606,8 @@ struct OracleSliceTemplate {
 #include "H13BooleanTemplates.inc"
 #include "H13TileTemplates.inc"
 
+#include "H13LayoutTemplates.inc"
+
 bool sameShape(ElementwiseShape left, ElementwiseShape right) {
     return left.channels == right.channels && left.height == right.height &&
            left.width == right.width;
@@ -1896,6 +1898,69 @@ Program encodeTileOp(H13TileShape shape) {
     // operand from the constant section and writes through template 4,
     // which lands on slot 5 — the same first-input slot the blob floor
     // twin uses.
+    program.taskSurfaceChannels = {5, 4, 6, 7};
+    return program;
+}
+
+const H13LayoutTemplate *layoutTemplate(H13LayoutShape shape) {
+    for (const auto &candidate : kLayoutTasks)
+        if (candidate.operation ==
+                static_cast<std::uint8_t>(shape.operation) &&
+            candidate.inChannels == shape.inChannels &&
+            candidate.inHeight == shape.inHeight &&
+            candidate.inWidth == shape.inWidth &&
+            candidate.outChannels == shape.outChannels &&
+            candidate.outHeight == shape.outHeight &&
+            candidate.outWidth == shape.outWidth)
+            return &candidate;
+    return nullptr;
+}
+
+bool supportsLayoutOp(H13LayoutShape shape) {
+    return layoutTemplate(shape) != nullptr;
+}
+
+Program encodeLayoutOp(H13LayoutShape shape) {
+    const auto *source = layoutTemplate(shape);
+    if (!source)
+        throw std::invalid_argument(
+            "H13 layout op is outside the decoded envelope");
+    Program program;
+    std::size_t cursor = 0;
+    std::size_t offset = 0;
+    for (std::size_t index = 0; index < source->taskCount; ++index) {
+        const std::uint32_t sizeWords = source->taskWords[index];
+        if (cursor + sizeWords > source->wordCount)
+            throw std::logic_error("H13 layout template is truncated");
+        if (program.task.size() < offset + sizeWords * 4)
+            program.task.resize(offset + sizeWords * 4);
+        std::memcpy(program.task.data() + offset,
+                    source->words + cursor, sizeWords * 4);
+        const std::size_t next =
+            (source->words + cursor)[7];
+        cursor += sizeWords;
+        if (index + 1 == source->taskCount) {
+            if (next)
+                throw std::logic_error(
+                    "H13 layout template final task links on");
+            break;
+        }
+        if (next <= offset + sizeWords * 4 || next % 4)
+            throw std::logic_error("H13 layout template link is invalid");
+        offset = next;
+    }
+    program.taskCount = static_cast<std::uint32_t>(source->taskCount);
+    program.firstTaskBytes = source->taskWords[0] * 4;
+    program.constants.assign(source->constantBytes, 0);
+    program.constantOffsetBytes = (program.task.size() + 127) / 128 * 128;
+    program.inputs = std::vector<TensorLayout>{
+        booleanTensor(5, {H13BooleanKind::Floor, false,
+                          source->inChannels, source->inHeight,
+                          source->inWidth}, false)};
+    program.output = booleanTensor(4, {H13BooleanKind::Floor, false,
+                                       source->outChannels,
+                                       source->outHeight,
+                                       source->outWidth}, false);
     program.taskSurfaceChannels = {5, 4, 6, 7};
     return program;
 }

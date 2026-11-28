@@ -63,6 +63,9 @@ def reconstruct_task(td):
     return words
 
 
+SURFACE_REMAP = {5: 4, 4: 5}
+
+
 def capture_stream(record):
     stream = bytearray()
     offset = 0
@@ -71,7 +74,15 @@ def capture_stream(record):
         blob = struct.pack(f"<{len(words)}I", *words)
         if len(stream) < offset + len(blob):
             stream.extend(b"\0" * (offset + len(blob) - len(stream)))
-        stream[offset:offset + len(blob)] = blob
+        linked = list(words)
+        linked[0] = (linked[0] & ~0x00FF0000) | 0x00400000
+        for shift in (0, 6, 12):
+            channel = (linked[8] >> shift) & 0x1F
+            if channel in SURFACE_REMAP:
+                linked[8] = (linked[8] & ~(0x1F << shift)) | \
+                    (SURFACE_REMAP[channel] << shift)
+        stream[offset:offset + len(blob)] = struct.pack(
+            f"<{len(linked)}I", *linked)
         offset = words[7]
     return bytes(stream)
 
@@ -188,7 +199,7 @@ with tempfile.TemporaryDirectory() as tmp:
     parity_program(manifest, "tile", "apple-parity-tile", 1)
     oracle = json.loads(
         (ROOT / "research/oracles/h13"
-         "/layout_tile_1x64x1_reps_1x1x64.json").read_text())
+         "/layout/tile_r_1x64x1_reps_1164.json").read_text())
     assert anec_task_stream(out / "program-0.anec") == \
         capture_stream(oracle), "tile task stream != oracle"
 
