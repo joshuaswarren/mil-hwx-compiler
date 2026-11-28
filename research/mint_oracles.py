@@ -991,6 +991,36 @@ def class11_layout() -> list[dict[str, Any]]:
         'interleave = il, values = (x, z))'
         "[name = string(\"y\")];",
     ], "y")
+    concat_ax0 = program("tensor<fp16, [1, 375, 512]> x, "
+                         "tensor<fp16, [1, 375, 512]> z", [
+        'tensor<int32, []> ax = const()[name = string("ax"), '
+        'val = tensor<int32, []>(0)];',
+        'tensor<bool, []> il = const()[name = string("il"), '
+        'val = tensor<bool, []>(false)];',
+        'tensor<fp16, [2, 375, 512]> y = concat(axis = ax, '
+        'interleave = il, values = (x, z))'
+        "[name = string(\"y\")];",
+    ], "y")
+    concat_ax1 = program("tensor<fp16, [1, 375, 512]> x, "
+                         "tensor<fp16, [1, 375, 512]> z", [
+        'tensor<int32, []> ax = const()[name = string("ax"), '
+        'val = tensor<int32, []>(1)];',
+        'tensor<bool, []> il = const()[name = string("il"), '
+        'val = tensor<bool, []>(false)];',
+        'tensor<fp16, [1, 750, 512]> y = concat(axis = ax, '
+        'interleave = il, values = (x, z))'
+        "[name = string(\"y\")];",
+    ], "y")
+    concat_il = program("tensor<fp16, [1, 375, 512]> x, "
+                        "tensor<fp16, [1, 375, 512]> z", [
+        'tensor<int32, []> ax = const()[name = string("ax"), '
+        'val = tensor<int32, []>(2)];',
+        'tensor<bool, []> il = const()[name = string("il"), '
+        'val = tensor<bool, []>(true)];',
+        'tensor<fp16, [1, 375, 1024]> y = concat(axis = ax, '
+        'interleave = il, values = (x, z))'
+        "[name = string(\"y\")];",
+    ], "y")
     return [
         case("layout_reshape_1x375x1024_to_1x375x64x16", "class11_layout",
              {"operation": "reshape", "shape": [1, 375, 64, 16]}, reshape),
@@ -1008,6 +1038,12 @@ def class11_layout() -> list[dict[str, Any]]:
              {"operation": "expand_dims", "shape": [1, 1, 375]}, expand),
         case("layout_concat_ax2_1x375x512x2", "class11_layout",
              {"operation": "concat", "shape": [1, 375, 1024]}, concat),
+        case("layout_concat_ax0_1x375x512x2", "class11_layout",
+             {"operation": "concat", "shape": [2, 375, 512]}, concat_ax0),
+        case("layout_concat_ax1_1x375x512x2", "class11_layout",
+             {"operation": "concat", "shape": [1, 750, 512]}, concat_ax1),
+        case("layout_concat_ax2_il_1x375x512x2", "class11_layout",
+             {"operation": "concat", "shape": [1, 375, 1024]}, concat_il),
     ]
 
 
